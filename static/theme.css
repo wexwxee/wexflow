@@ -1,0 +1,197 @@
+/* ============================================================
+   Job Apply Hub — общая дизайн-система (Salling + 7-Eleven).
+   ИСТОЧНИК ПРАВДЫ: C:\saling\static\theme.css
+   Копия для 7-Eleven: C:\seven11-apply\web_static\theme.css
+   (правишь здесь — скопируй туда же).
+
+   Тема задаётся атрибутом <html data-theme="dark|light">.
+   Акцентный цвет приложения: переопредели --accent / --accent-hover
+   в CSS приложения (Salling — синий по умолчанию, 7-Eleven — зелёный).
+   ============================================================ */
+
+:root, html[data-theme="dark"] {
+  --bg: #0f1115;
+  --bg-soft: #13161d;
+  --card: #1a1d24;
+  --card-2: #151922;
+  --input-bg: #0d0f14;
+  --chip-bg: #222733;
+  --menu-bg: #11151d;
+  --line: #2a2e38;
+  --line-strong: #334155;
+  --hover-line: #3a4150;
+  --txt: #e7e9ee;
+  --txt-strong: #f8fafc;
+  --muted: #9aa0ac;
+  --accent: #3b82f6;
+  --accent-hover: #2f6fe0;
+  --accent-soft: rgba(59, 130, 246, .18);
+  --ok-bg: #12231a;  --ok-txt: #86efac;  --ok-line: #24543a;
+  --err-bg: #2a1518; --err-txt: #fca5a5; --err-line: #5f2630;
+  --warn-bg: #3b2f0a; --warn-txt: #fcd34d; --warn-line: #7a5e12;
+  --info-bg: #1e2a4d; --info-txt: #93c5fd; --info-line: #2d4378;
+  --shadow: 0 12px 35px rgba(0, 0, 0, .45);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, .35);
+  --radius: 12px;
+  --header-bg: rgba(15, 17, 21, .92);
+  color-scheme: dark;
+}
+
+html[data-theme="light"] {
+  --bg: #eef2f0;
+  --bg-soft: #e6ece9;
+  --card: #ffffff;
+  --card-2: #f7faf8;
+  --input-bg: #f3f6f4;
+  --chip-bg: #e7ecea;
+  --menu-bg: #ffffff;
+  --line: #e2e9e5;
+  --line-strong: #d2ddd7;
+  --hover-line: #b9c7c0;
+  --txt: #14201c;
+  --txt-strong: #0b1512;
+  --muted: #6b7a74;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, .15);
+  --ok-bg: #e7f5ef;  --ok-txt: #006a51;  --ok-line: #bfe3d4;
+  --err-bg: #fdeceb; --err-txt: #b3261e; --err-line: #f3c2bd;
+  --warn-bg: #fbf3e0; --warn-txt: #8a5a00; --warn-line: #ecd9a8;
+  --info-bg: #e7eefc; --info-txt: #1d4ed8; --info-line: #c4d6f6;
+  --shadow: 0 12px 35px rgba(20, 50, 40, .14);
+  --shadow-sm: 0 2px 8px rgba(20, 50, 40, .08);
+  --radius: 12px;
+  --header-bg: rgba(255, 255, 255, .9);
+  color-scheme: light;
+}
+
+/* ---------- база ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--txt);
+  font-size: 14px;
+}
+a { color: var(--accent); text-decoration: none; }
+h1 { font-size: 18px; margin: 0; }
+.muted, .meta { color: var(--muted); font-size: 13px; }
+.hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
+code { background: var(--chip-bg); padding: 2px 6px; border-radius: 6px; font-size: 12px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 24px; }
+.wrap.narrow { max-width: 860px; }
+
+/* ---------- кнопки ---------- */
+button {
+  cursor: pointer; border: 1px solid var(--line); background: var(--card);
+  color: var(--txt); border-radius: 8px; padding: 8px 14px; font-size: 13px;
+  font-family: inherit;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.primary:hover { background: var(--accent-hover); }
+button.secondary { background: var(--chip-bg); border: 1px solid var(--line-strong); color: var(--txt); }
+button.ghost { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+button.ghost:hover { color: var(--txt); border-color: var(--hover-line); }
+button.large { padding: 13px 20px; font-size: 15px; }
+button.loading { opacity: .85; cursor: wait; }
+button.loading::before {
+  content: ""; display: inline-block; width: 13px; height: 13px; margin-right: 8px;
+  border: 2px solid rgba(255, 255, 255, .35); border-top-color: #fff; border-radius: 50%;
+  vertical-align: -2px; animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- панели и карточки ---------- */
+.panel {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 18px; margin: 16px 0;
+}
+
+/* ---------- уведомления ---------- */
+.ok { background: var(--ok-bg); color: var(--ok-txt); border: 1px solid var(--ok-line); border-radius: 10px; padding: 12px 14px; }
+.err { background: var(--err-bg); color: var(--err-txt); border: 1px solid var(--err-line); border-radius: 10px; padding: 12px 14px; }
+
+/* ---------- бейджи ---------- */
+.badge {
+  font-size: 11px; background: var(--chip-bg); border: 1px solid var(--line);
+  border-radius: 999px; padding: 2px 9px; color: var(--muted);
+}
+.badge.new, .badge.st-new { background: var(--ok-bg); color: var(--ok-txt); border-color: var(--ok-line); }
+.badge.applied, .badge.st-applied { background: var(--ok-bg); color: var(--ok-txt); border-color: var(--ok-line); font-weight: 700; }
+.badge.st-interview { background: var(--info-bg); color: var(--info-txt); border-color: var(--info-line); font-weight: 700; }
+.badge.st-offer { background: var(--warn-bg); color: var(--warn-txt); border-color: var(--warn-line); font-weight: 700; }
+.badge.st-rejected { background: var(--err-bg); color: var(--err-txt); border-color: var(--err-line); }
+
+/* индикатор свежести данных */
+.fresh { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; border-radius: 999px; padding: 4px 11px;
+  background: var(--ok-bg); color: var(--ok-txt); border: 1px solid var(--ok-line); }
+.fresh.stale { background: var(--warn-bg); color: var(--warn-txt); border-color: var(--warn-line); }
+
+/* ---------- переключатель приложений + темы ---------- */
+.app-switch {
+  display: inline-flex; gap: 4px; background: var(--input-bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 3px;
+}
+.app-switch a, .app-switch span {
+  text-decoration: none; padding: 6px 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 600;
+}
+.app-switch .cur { background: var(--accent); color: #fff; }
+.app-switch a { color: var(--muted); }
+.app-switch a:hover { color: var(--txt); background: var(--card); }
+
+.theme-toggle {
+  width: 36px; height: 34px; padding: 0; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 16px;
+  background: var(--input-bg); border: 1px solid var(--line); border-radius: 10px;
+}
+.theme-toggle:hover { border-color: var(--hover-line); }
+
+/* ---------- поля ввода ---------- */
+input[type="text"], input[type="email"], input[type="tel"],
+input[type="password"], input[type="number"], input[type="date"] {
+  width: 100%; background: var(--input-bg); color: var(--txt);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  font-size: 14px; min-width: 0; font-family: inherit;
+}
+input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--txt);
+  -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  caret-color: var(--txt);
+  transition: background-color 9999s ease-in-out 0s;
+}
+label.lbl {
+  display: block; font-size: 12px; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted); margin: 0 0 6px;
+}
+
+/* ---------- выбор файла ---------- */
+.file-card { min-width: 0; background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.file-card input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.file-picker {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px; min-width: 0;
+  background: var(--input-bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px;
+}
+.file-button {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--chip-bg); border: 1px solid var(--line-strong); color: var(--txt);
+  border-radius: 8px; padding: 9px 12px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.file-button:hover { border-color: var(--accent); }
+.file-name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
+.file-name.saved { color: var(--ok-txt); }
+.file-name.missing { color: var(--err-txt); }
+
+/* ---------- пароль с глазиком ---------- */
+.pwd-wrap { position: relative; }
+.pwd-wrap input { padding-right: 44px; }
+.pwd-eye {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; border-radius: 8px; cursor: pointer;
+  font-size: 17px; color: var(--muted); padding: 0;
+}
+.pwd-eye:hover { background: var(--chip-bg); color: var(--txt); }

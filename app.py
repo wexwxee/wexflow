@@ -15,6 +15,7 @@ from urllib.parse import quote_plus
 
 from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import func
 
@@ -74,6 +75,7 @@ async def _lifespan(app):
 
 
 app = FastAPI(title="Salling Jobs", lifespan=_lifespan)
+app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["brand_label"] = labels.brand
 templates.env.globals["L"] = labels

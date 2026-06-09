@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Salling Jobs{% endblock %}</title>
+<link rel="icon" href="data:,">
+<script>
+  // применяем сохранённую тему ДО отрисовки, чтобы не мигало.
+  // cookie общая для 127.0.0.1 (все порты) — тема едина для Salling и 7-Eleven.
+  (function () {
+    var m = document.cookie.match(/(?:^|;\s*)jobhub_theme=(dark|light)/);
+    var t = (m && m[1]) || localStorage.getItem("jobhub-theme") || "dark";
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<link rel="stylesheet" href="/static/theme.css">
+{% block style %}{% endblock %}
+</head>
+<body>
+{% block body %}{% endblock %}
+<script>
+  // переключатель темы (кнопка с data-theme-toggle есть в шапке каждой страницы)
+  document.querySelectorAll("[data-theme-toggle]").forEach(function (btn) {
+    function paint() {
+      btn.textContent = document.documentElement.dataset.theme === "light" ? "🌙" : "☀️";
+    }
+    btn.addEventListener("click", function () {
+      var next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("jobhub-theme", next); } catch (e) {}
+      document.cookie = "jobhub_theme=" + next + ";path=/;max-age=31536000;samesite=lax";
+      paint();
+    });
+    paint();
+  });
+</script>
+{% block script %}{% endblock %}
+</body>
+</html>

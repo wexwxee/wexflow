@@ -1,163 +1,131 @@
-{% import "_icons.html" as ic %}<!doctype html>
-<html lang="da">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Salling Jobs</title>
-<link rel="icon" href="data:,">
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}Salling Jobs{% endblock %}
+
+{% block style %}
 <style>
-  :root { --bg:#0f1115; --card:#1a1d24; --line:#2a2e38; --txt:#e7e9ee; --muted:#9aa0ac; --accent:#3b82f6; --green:#22c55e; }
-  * { box-sizing:border-box; }
-  body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
   header { padding:14px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:16px; flex-wrap:wrap;
-           position:sticky; top:0; background:rgba(15,17,21,.92); backdrop-filter:blur(8px); z-index:10; }
-  h1 { font-size:18px; margin:0; }
-  .muted { color:var(--muted); font-size:13px; }
-  a { color:var(--accent); text-decoration:none; }
-  button { cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--txt); border-radius:8px; padding:8px 14px; font-size:13px; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
-  button.primary:hover { background:#2f6fe0; }
+           position:sticky; top:0; background:var(--header-bg); backdrop-filter:blur(8px); z-index:10; }
 
   /* ---- панель фильтров ---- */
   .filterbar { padding:16px 22px; border-bottom:1px solid var(--line);
-               background:linear-gradient(180deg,#13161d,#0f1115); }
+               background:linear-gradient(180deg,var(--bg-soft),var(--bg)); }
   .fgrid { display:grid; grid-template-columns:1.6fr repeat(6, minmax(120px,1fr)); gap:12px; align-items:end; }
   @media (max-width:1100px){ .fgrid{ grid-template-columns:repeat(3,1fr); } }
   @media (max-width:640px){ .fgrid{ grid-template-columns:repeat(2,1fr); } }
   .field { display:flex; flex-direction:column; gap:5px; min-width:0; }
   .field > label { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); padding-left:2px; }
   .field input, .field select, .combo-btn {
-     width:100%; background:#0d0f14; color:var(--txt); border:1px solid var(--line);
+     width:100%; background:var(--input-bg); color:var(--txt); border:1px solid var(--line);
      border-radius:10px; padding:9px 12px; font-size:13.5px; appearance:none; transition:border-color .15s, box-shadow .15s; }
-  .field input:hover, .field select:hover, .combo-btn:hover { border-color:#3a4150; }
-  .field input:focus, .field select:focus, .combo.open .combo-btn { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(59,130,246,.18); }
+  .field input:hover, .field select:hover, .combo-btn:hover { border-color:var(--hover-line); }
+  .field input:focus, .field select:focus, .combo.open .combo-btn { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
   .field.sel { position:relative; }
   .field.sel::after { content:"▾"; position:absolute; right:12px; bottom:10px; color:var(--muted); pointer-events:none; font-size:11px; }
-  .field select option { background:#15181f; }
+  .field select option { background:var(--card); }
   .combo { position:relative; }
-  .combo-btn { display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; height:37px; }
+  .combo-btn { display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; height:37px; cursor:pointer; }
   .combo-btn span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .combo-btn::after { content:"▾"; color:#b7c0d1; font-size:11px; flex:0 0 auto; }
+  .combo-btn::after { content:"▾"; color:var(--muted); font-size:11px; flex:0 0 auto; }
   .combo-menu {
      display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:30;
-     background:#11151d; border:1px solid #334155; border-radius:10px;
-     box-shadow:0 18px 45px rgba(0,0,0,.45); padding:6px; max-height:310px; overflow:auto; }
+     background:var(--menu-bg); border:1px solid var(--line-strong); border-radius:10px;
+     box-shadow:var(--shadow); padding:6px; max-height:310px; overflow:auto; }
   .combo.open .combo-menu { display:block; }
   .combo-option {
      width:100%; border:none; background:transparent; color:var(--txt); border-radius:7px;
      padding:8px 10px; text-align:left; font-size:13px; line-height:1.25;
      display:flex; justify-content:space-between; gap:10px; }
-  .combo-option:hover, .combo-option.active { background:#1f2937; }
-  .combo-option.selected { background:#1d4ed8; color:#fff; font-weight:600; }
-  .combo-menu::-webkit-scrollbar { width:10px; }
-  .combo-menu::-webkit-scrollbar-track { background:#0d0f14; border-radius:999px; }
-  .combo-menu::-webkit-scrollbar-thumb { background:#475569; border-radius:999px; border:2px solid #0d0f14; }
-  .fsearch::before { }
+  .combo-option:hover, .combo-option.active { background:var(--chip-bg); }
+  .combo-option.selected { background:var(--accent); color:#fff; font-weight:600; }
   .factions { display:flex; gap:8px; margin-top:14px; align-items:center; flex-wrap:wrap; }
   .chip { font-size:12px; color:var(--muted); }
 
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:12px; padding:16px 22px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:6px; transition:border-color .15s, transform .1s; }
-  .card:hover { border-color:#39414f; transform:translateY(-1px); }
-  .card h3 { margin:0; font-size:15px; }
-  .badges { display:flex; gap:6px; flex-wrap:wrap; }
-  .badge { font-size:11px; background:#222733; border:1px solid var(--line); border-radius:999px; padding:2px 9px; color:var(--muted); }
-  .badge.new { background:#16351f; color:#86efac; border-color:#1f4d2c; }
-  .badge.applied, .badge.st-applied { background:#14532d; color:#86efac; border-color:#22c55e; font-weight:700; }
-  .badge.st-new { background:#16351f; color:#86efac; border-color:#1f4d2c; }
-  .badge.st-interview { background:#1e2a4d; color:#93c5fd; border-color:#2d4378; font-weight:700; }
-  .badge.st-offer { background:#3b2f0a; color:#fcd34d; border-color:#7a5e12; font-weight:700; }
-  .badge.st-rejected { background:#3a1518; color:#fca5a5; border-color:#5f2630; }
-  .tablink { display:inline-flex; align-items:center; gap:6px; background:#14532d; color:#86efac;
-    border:1px solid #22c55e; border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600; }
-  .tablink:hover { background:#16613a; }
-  .app-switch { display:inline-flex; gap:4px; background:#0d0f14; border:1px solid var(--line); border-radius:10px; padding:3px; }
-  .app-switch a, .app-switch span { text-decoration:none; padding:6px 12px; border-radius:8px; font-size:13px; font-weight:600; }
-  .app-switch .cur { background:var(--accent); color:#fff; }
-  .app-switch a { color:var(--muted); }
-  .app-switch a:hover { color:var(--txt); background:#1a1d24; }
+  .card { position:relative; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:6px; transition:border-color .15s, transform .1s; }
+  .card:hover { border-color:var(--hover-line); transform:translateY(-1px); }
+  .card h3 { margin:4px 0 2px; font-size:15.5px; line-height:1.3; }
+  .badges { display:flex; gap:6px; flex-wrap:wrap; padding-right:32px; }
+  .tablink { display:inline-flex; align-items:center; gap:6px; background:var(--ok-bg); color:var(--ok-txt);
+    border:1px solid var(--ok-line); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600; }
   .pager { display:flex; justify-content:center; align-items:center; gap:16px; padding:18px 22px 90px; }
   .pager a { background:var(--card); border:1px solid var(--line); color:var(--txt); border-radius:10px; padding:9px 16px; text-decoration:none; font-weight:600; font-size:14px; }
   .pager a:hover { border-color:var(--accent); }
-  .pager .dis { color:#3a4150; padding:9px 16px; font-size:14px; }
+  .pager .dis { color:var(--hover-line); padding:9px 16px; font-size:14px; }
   .pager .pinfo { color:var(--muted); font-size:13px; }
-  /* убрать нативные стрелки у числовых полей (не «гугловский» вид) */
   input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
   input[type=number] { -moz-appearance:textfield; appearance:textfield; }
-  /* кастомный степпер − [значение] + */
-  .num-stepper { display:flex; align-items:stretch; background:#0d0f14; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
-  .num-stepper:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px rgba(59,130,246,.18); }
-  .num-stepper input { border:none !important; box-shadow:none !important; text-align:center; width:100%; min-width:0; background:transparent; }
-  .num-stepper button { background:#1a1d24; border:none; color:var(--txt); width:34px; flex:0 0 34px; cursor:pointer; font-size:17px; font-weight:700; line-height:1; }
+  .num-stepper { display:flex; align-items:stretch; background:var(--input-bg); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .num-stepper:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .num-stepper input { border:none !important; box-shadow:none !important; text-align:center; width:100%; min-width:0; background:transparent; padding:9px 4px; }
+  .num-stepper button { background:var(--card); border:none; color:var(--txt); width:34px; flex:0 0 34px; cursor:pointer; font-size:17px; font-weight:700; line-height:1; border-radius:0; }
   .num-stepper button:hover { background:var(--accent); color:#fff; }
-  .grpchk { display:inline-flex; align-items:center; gap:7px; color:var(--txt); font-size:13px; font-weight:600; cursor:pointer; background:#0d0f14; border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
+  .grpchk { display:inline-flex; align-items:center; gap:7px; color:var(--txt); font-size:13px; font-weight:600; cursor:pointer; background:var(--input-bg); border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
   .grpchk input { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
   .group-card { cursor:default; }
   .group-jobs { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
-  .gjob { color:var(--txt); text-decoration:none; font-size:13px; padding:5px 8px; border-radius:7px; background:#13161d; border:1px solid var(--line); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gjob { color:var(--txt); text-decoration:none; font-size:13px; padding:5px 8px; border-radius:7px; background:var(--bg-soft); border:1px solid var(--line); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .gjob:hover { border-color:var(--accent); }
-  .gjob b { color:#c4b5fd; font-weight:700; }
+  .gjob b { color:var(--info-txt); font-weight:700; }
   .gmore { color:var(--muted); font-size:12px; padding:3px 8px; }
   .undo-toast { position:fixed; left:20px; bottom:20px; z-index:60; display:none; align-items:center; gap:14px;
-    background:#11151d; border:1px solid #2f3744; box-shadow:0 12px 32px rgba(0,0,0,.5); border-radius:12px; padding:12px 16px; font-size:14px; }
+    background:var(--menu-bg); border:1px solid var(--line-strong); box-shadow:var(--shadow); border-radius:12px; padding:12px 16px; font-size:14px; }
   .undo-toast.show { display:flex; }
   .undo-toast .undo-btn { background:var(--accent); border:none; color:#fff; border-radius:8px; padding:7px 13px; font-weight:600; cursor:pointer; font-size:13px; }
-  .undo-toast .undo-btn:hover { background:#2f6fe0; }
+  .undo-toast .undo-btn:hover { background:var(--accent-hover); }
   .presets { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 22px 0; }
   .presets-lbl { color:var(--muted); font-size:13px; }
-  .preset-chip { display:inline-flex; align-items:center; background:#1a1d24; border:1px solid var(--line); border-radius:999px; overflow:hidden; }
+  .preset-chip { display:inline-flex; align-items:center; background:var(--card); border:1px solid var(--line); border-radius:999px; overflow:hidden; }
   .preset-chip a { color:var(--txt); text-decoration:none; padding:6px 8px 6px 13px; font-size:13px; font-weight:600; }
   .preset-chip a:hover { color:var(--accent); }
   .preset-chip form { display:inline; margin:0; }
-  .preset-chip button { background:transparent; border:none; color:#6b7280; cursor:pointer; padding:6px 9px; font-size:12px; }
-  .preset-chip button:hover { color:#fca5a5; }
+  .preset-chip button { background:transparent; border:none; color:var(--muted); cursor:pointer; padding:6px 9px; font-size:12px; }
+  .preset-chip button:hover { color:var(--err-txt); }
   .toggle-applied { display:inline-flex; align-items:center; gap:6px; text-decoration:none;
-    background:#14532d; color:#86efac; border:1px solid #22c55e; border-radius:10px;
+    background:var(--ok-bg); color:var(--ok-txt); border:1px solid var(--ok-line); border-radius:10px;
     padding:9px 14px; font-size:13px; font-weight:600; }
-  .toggle-applied:hover { background:#16613a; }
-  .toggle-applied.on { background:#3b82f6; color:#fff; border-color:#3b82f6; }
-  .toggle-applied.on:hover { background:#2f6fe0; }
-  .badge.brand { background:#2a2233; color:#d8b4fe; border-color:#3b2f4d; }
-  .badge.dist { background:#10233a; color:#7dd3fc; border-color:#1b3a55; }
-  .card h3 { margin:4px 0 2px; font-size:15.5px; line-height:1.3; }
+  .toggle-applied.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .toggle-applied.on:hover { background:var(--accent-hover); }
+  .badge.brand { font-weight:700; }
+  .badge.dist { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
   .role { display:inline-block; margin-top:2px; font-size:12.5px; font-weight:700;
-    color:#c4b5fd; letter-spacing:.01em; }
-  .role .lvl { color:#fbbf24; }
+    color:var(--info-txt); letter-spacing:.01em; }
+  .role .lvl { color:var(--warn-txt); }
   .row { display:flex; gap:7px; margin-top:12px; flex-wrap:wrap; align-items:center; }
   .row a { display:inline-flex; }
   .row button { white-space:nowrap; padding:8px 12px; font-size:12.5px; }
   .row .primary { font-weight:700; }
-  .row .ghost { background:transparent; border:1px solid var(--line); color:var(--muted); }
-  .row .ghost:hover { color:var(--txt); border-color:#3a4150; }
-  .meta { font-size:12px; color:var(--muted); }
+  .meta { font-size:12px; }
   /* кастомный чекбокс выбора вакансии */
   .selwrap { position:absolute; top:12px; right:12px; z-index:3; cursor:pointer; line-height:0; }
   .selwrap input { position:absolute; opacity:0; width:0; height:0; }
   .selbox-ui { display:inline-flex; align-items:center; justify-content:center;
-    width:22px; height:22px; border:1.5px solid #3a4150; border-radius:7px;
-    background:#0d0f14; transition:background .12s, border-color .12s; }
+    width:22px; height:22px; border:1.5px solid var(--hover-line); border-radius:7px;
+    background:var(--input-bg); transition:background .12s, border-color .12s; }
   .selbox-ui::after { content:"✓"; color:#fff; font-size:14px; font-weight:700; opacity:0; transition:opacity .12s; }
   .selwrap input:checked + .selbox-ui { background:var(--accent); border-color:var(--accent); }
   .selwrap input:checked + .selbox-ui::after { opacity:1; }
   .selwrap:hover .selbox-ui { border-color:var(--accent); }
-  .card { position:relative; }
-  .card .badges { padding-right:32px; }  /* чтобы бейджи не заходили под чекбокс */
-  .card.selected { border-color:var(--accent); box-shadow:0 0 0 2px rgba(59,130,246,.25); }
+  .card.selected { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
   /* плашка пакетной подачи */
   .batchbar { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:50;
     display:none; align-items:center; gap:14px; flex-wrap:wrap; justify-content:center;
-    max-width:calc(100vw - 24px); background:#11151d; border:1px solid #2f3744;
-    box-shadow:0 16px 40px rgba(0,0,0,.5); border-radius:14px; padding:12px 18px; }
+    max-width:calc(100vw - 24px); background:var(--menu-bg); border:1px solid var(--line-strong);
+    box-shadow:var(--shadow); border-radius:14px; padding:12px 18px; }
   .batchbar.show { display:flex; }
   .batchbar .binfo { display:flex; flex-direction:column; gap:2px; }
   .batchbar .cnt { font-weight:700; }
   .batchbar .files { font-size:11.5px; color:var(--muted); }
   .batchbar .files a { margin-left:6px; }
-  .batchbar .submitbtn { background:#16a34a; border-color:#16a34a; color:#fff; font-weight:600; }
+  .batchbar .submitbtn { background:#16a34a; border:1px solid #16a34a; color:#fff; font-weight:600; }
   .batchbar .submitbtn:hover { background:#15803d; }
+  .notice-line { padding:8px 22px; font-size:13px; }
 </style>
-</head>
-<body>
+{% endblock %}
+
+{% block body %}
 {% macro custom_select(name, label, placeholder, options, selected) -%}
   {% set ns = namespace(text=placeholder) %}
   {% for key,lbl in options %}
@@ -180,23 +148,21 @@
 {%- endmacro %}
 
 <header>
-  <div class="app-switch">
-    <span class="cur">{{ ic.i('cart') }} Salling</span>
-    <a href="http://127.0.0.1:8080/__app/7eleven" title="Переключиться на 7-Eleven">{{ ic.i('store') }} 7-Eleven</a>
-  </div>
+  {{ ui.app_switch() }}
   <h1>{{ ic.i('cart', 18) }} Salling Jobs</h1>
-  <span class="muted">Активных: {{ total_active }} · найдено: {{ total_filtered }}{% if pages > 1 %} · стр. {{ page }}/{{ pages }}{% endif %}
-    {% if last_update %}· обновлено: {{ last_update.strftime("%Y-%m-%d %H:%M") }} UTC{% endif %}</span>
+  <span class="muted">Активных: {{ total_active }} · найдено: {{ total_filtered }}{% if pages > 1 %} · стр. {{ page }}/{{ pages }}{% endif %}</span>
+  {{ ui.freshness(data_age_min, sync_running) }}
   <a class="tablink" href="/?status=applied&sort={{ f.sort or 'published' }}">{{ check() }} Мои поданные ({{ applied_count }})</a>
-  <a class="tablink" style="background:#1a1d24;color:var(--txt);border-color:var(--line);margin-left:auto;" href="/settings">{{ ic.i('sliders') }} Настройки</a>
+  <a class="tablink" style="background:var(--card);color:var(--txt);border-color:var(--line);margin-left:auto;" href="/settings">{{ ic.i('sliders') }} Настройки</a>
   <form method="post" action="/refresh">
-    <button class="primary" type="submit">⟳ Обновить вакансии</button>
+    <button class="primary" type="submit" title="Обновить прямо сейчас (и так обновляется каждые 30 минут автоматически)">⟳ Обновить вакансии</button>
   </form>
+  {{ ui.theme_toggle() }}
 </header>
-{% if geoerror %}<div style="padding:8px 22px;color:#fca5a5;background:#2a1518;font-size:13px;">Не удалось распознать адрес — попробуй точнее (например: «M.P. Bruuns Gade 55, Aarhus» или индекс «8000»).</div>{% endif %}
-{% if home %}<div style="padding:8px 22px;color:#86efac;background:#12231a;font-size:13px;">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings">изменить</a></div>
-{% else %}<div style="padding:8px 22px;color:#9aa0ac;background:#161922;font-size:13px;">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
-{% if batch %}<div style="padding:8px 22px;color:#86efac;background:#12231a;font-size:13px;">🚀 Запущена пакетная подача на {{ batch }} вакансий ({{ 'с авто-отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — открывается по 2 окна за раз.</div>{% endif %}
+{% if geoerror %}<div class="notice-line" style="color:var(--err-txt);background:var(--err-bg);">Не удалось распознать адрес — попробуй точнее (например: «M.P. Bruuns Gade 55, Aarhus» или индекс «8000»).</div>{% endif %}
+{% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings">изменить</a></div>
+{% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
+{% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">🚀 Запущена пакетная подача на {{ batch }} вакансий ({{ 'с авто-отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — открывается по 2 окна за раз.</div>{% endif %}
 
 {% if presets %}
 <div class="presets">
@@ -296,7 +262,7 @@
   {% for g in groups %}
   <div class="card group-card">
     <div class="badges">
-      {% if g.brand %}{% set bc = brand_colors.get(g.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};font-weight:700"{% endif %}>{{ brand_label(g.brand) }}</span>{% endif %}
+      {% if g.brand %}{% set bc = brand_colors.get(g.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(g.brand) }}</span>{% endif %}
       {% if g.dist is not none %}<span class="badge dist">≈ {{ g.dist }} км</span>{% endif %}
       <span class="badge st-interview">{{ ic.i('store', 12) }} {{ g.jobs|length }} вакансий</span>
     </div>
@@ -324,7 +290,7 @@
     </label>
     {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','hidden':'скрыто','closed':'закрыта'} %}
     <div class="badges">
-      {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};font-weight:700"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
+      {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
       {% if j.id in distances %}<span class="badge dist" title="Примерно по прямой от дома">≈ {{ distances[j.id] }} км</span>{% endif %}
       <span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>
     </div>
@@ -391,7 +357,9 @@
   <span class="undo-text">Вакансия скрыта</span>
   <button type="button" class="undo-btn">Отменить (<span class="undo-count">5</span>)</button>
 </div>
+{% endblock %}
 
+{% block script %}
 <script>
   // --- пакетный выбор вакансий ---
   const selboxes = [...document.querySelectorAll('[data-selbox]')];
@@ -519,5 +487,4 @@
     if (event.key === "Escape") closeCombos();
   });
 </script>
-</body>
-</html>
+{% endblock %}
