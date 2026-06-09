@@ -108,7 +108,8 @@ def sync():
                 new_count += 1
             else:
                 # обновляем поля, но сохраняем пользовательский статус applied
-                data = job.model_dump(exclude={"id", "first_seen", "status", "applied_at"})
+                # и уже найденные координаты (у свежего hit их нет — затирать нельзя)
+                data = job.model_dump(exclude={"id", "first_seen", "status", "applied_at", "lat", "lon"})
                 for k, v in data.items():
                     setattr(existing, k, v)
                 existing.last_seen = now

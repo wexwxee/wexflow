@@ -3,9 +3,21 @@
   "configurations": [
     {
       "name": "salling-jobs",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
       "runtimeArgs": ["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000"],
       "port": 8000
+    },
+    {
+      "name": "seven11",
+      "runtimeExecutable": "C:\\seven11-apply\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["C:\\seven11-apply\\web_app.py"],
+      "port": 7111
+    },
+    {
+      "name": "hub",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "hub:app", "--host", "127.0.0.1", "--port", "8080"],
+      "port": 8080
     }
   ]
 }
