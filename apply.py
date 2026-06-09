@@ -39,6 +39,14 @@ def load_profile() -> dict:
     return json.loads(config.PROFILE_PATH.read_text(encoding="utf-8"))
 
 
+def _mask_email(email: str) -> str:
+    """ivan@gmail.com -> iv***@gmail.com (чтобы email не светился в логах)."""
+    name, _, domain = (email or "").partition("@")
+    if not domain:
+        return "***"
+    return f"{name[:2]}***@{domain}"
+
+
 # карта: подстрока в label/name/placeholder -> ключ профиля
 FIELD_HINTS = {
     "first": "first_name", "fornavn": "first_name", "given": "first_name",
@@ -142,9 +150,8 @@ def try_login(page, profile: dict) -> bool:
         creds = credentials_store.get()
     except Exception:
         creds = {}
-    login = profile.get("sf_login") or {}
-    username = creds.get("email") or login.get("username") or profile.get("email") or ""
-    password = creds.get("password") or login.get("password") or ""
+    username = creds.get("email") or profile.get("email") or ""
+    password = creds.get("password") or ""
     if not username and not password:
         print("  логин: сохранённых данных нет — войди вручную в окне.")
         return not _login_present(page)
@@ -154,7 +161,7 @@ def try_login(page, profile: dict) -> bool:
         email_input = _first_visible(page.locator('input[type="email"], input[name*="mail" i], input[id*="mail" i], input[id*="user" i], input[type="text"]'))
         if email_input and username and not email_input.input_value():
             email_input.fill(username)
-            print(f"  логин: ввёл email {username}")
+            print(f"  логин: ввёл email {_mask_email(username)}")
         # 2) если пароля ещё нет (двухшаговый) — жмём «Далее»
         password_input = _first_visible(page.locator('input[type="password"]'))
         if not password_input:

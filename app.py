@@ -484,16 +484,8 @@ def settings_save(
         "zip": zipcode.strip(), "city": city.strip(), "country": country.strip(),
         "linkedin": linkedin.strip(),
     })
-    # файлы: загрузка > указанный путь > СОХРАНИТЬ прежний (не стираем случайно)
-    if cv_file and cv_file.filename:
-        profile["cv_path"] = profile_store.save_upload(cv_file, "cv")
-    elif cv_path.strip():
-        profile["cv_path"] = cv_path.strip()
-    if cover_letter_file and cover_letter_file.filename:
-        profile["cover_letter_path"] = profile_store.save_upload(cover_letter_file, "cover_letter")
-    elif cover_letter_path.strip():
-        profile["cover_letter_path"] = cover_letter_path.strip()
-    profile_store.save_profile(profile)
+    profile_store.save_profile(
+        _update_profile_files(profile, cv_path, cover_letter_path, cv_file, cover_letter_file))
     return RedirectResponse("/settings?saved=1", status_code=303)
 
 
@@ -589,14 +581,15 @@ def clear_credentials(request: Request):
 
 
 def _update_profile_files(profile: dict, cv_path: str, cover_letter_path: str, cv_file, cover_letter_file) -> dict:
+    # приоритет: загруженный файл > указанный путь > СОХРАНИТЬ прежний (не стираем случайно)
     if cv_file and cv_file.filename:
         profile["cv_path"] = profile_store.save_upload(cv_file, "cv")
-    else:
+    elif cv_path.strip():
         profile["cv_path"] = cv_path.strip()
 
     if cover_letter_file and cover_letter_file.filename:
         profile["cover_letter_path"] = profile_store.save_upload(cover_letter_file, "cover_letter")
-    else:
+    elif cover_letter_path.strip():
         profile["cover_letter_path"] = cover_letter_path.strip()
     return profile
 
@@ -638,15 +631,18 @@ def start_apply(
     cmd = [sys.executable, "-u", str(config.BASE_DIR / "apply.py"), job_id, "--web"]
     if mode == "submit":
         cmd.append("--submit")
-    subprocess.Popen(
-        cmd,
-        cwd=str(config.BASE_DIR),
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        env=env,
-        creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-    )
+    try:
+        subprocess.Popen(
+            cmd,
+            cwd=str(config.BASE_DIR),
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+    finally:
+        log.close()  # потомок унаследовал свой хэндл; родительский больше не нужен
     return RedirectResponse(f"/job/{job_id}/apply?started=1", status_code=303)
 
 
@@ -663,11 +659,14 @@ def apply_batch(job_ids: list[str] = Form(default=[]), mode: str = Form("dry")):
     if mode == "submit":
         cmd.append("--submit")
     log = open(config.BASE_DIR / "apply_last.log", "w", encoding="utf-8")
-    subprocess.Popen(
-        cmd, cwd=str(config.BASE_DIR),
-        stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
-        creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-    )
+    try:
+        subprocess.Popen(
+            cmd, cwd=str(config.BASE_DIR),
+            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+    finally:
+        log.close()
     return RedirectResponse(f"/?batch={len(ids)}&mode={mode}", status_code=303)
 
 
