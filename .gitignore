@@ -1,0 +1,17 @@
+# локальные данные и секреты — НЕ коммитить
+profile.json
+sf_credentials.json
+secrets.json
+settings.json
+jobs.db
+geocache.json
+transit_cache.json
+browser_profile/
+uploads/
+apply_last.log
+hub_launcher.log
+logs/
+translator_install_status.json
+samples/
+__pycache__/
+*.pyc

@@ -1,0 +1,18 @@
+{
+  "first_name": "Имя",
+  "last_name": "Фамилия",
+  "email": "you@example.com",
+  "phone": "+45 12345678",
+  "address": "Gadenavn 1",
+  "zip": "8000",
+  "city": "Aarhus C",
+  "country": "Danmark",
+  "cv_path": "C:\\saling\\cv\\cv.pdf",
+  "cover_letter_path": "",
+  "linkedin": "",
+  "sf_login": {
+    "comment": "Если уже есть аккаунт кандидата в SuccessFactors — логин запомнится в browser_profile/ после первого ручного входа. Поля ниже можно оставить пустыми.",
+    "username": "",
+    "password": ""
+  }
+}

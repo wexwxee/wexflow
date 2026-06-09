@@ -1,0 +1,158 @@
+{% import "_icons.html" as ic %}<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Настройки — Salling Jobs</title>
+<link rel="icon" href="data:,">
+<style>
+  *, *::before, *::after { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:#0f1115; color:#e7e9ee; }
+  .wrap { max-width:860px; margin:0 auto; padding:24px; }
+  a { color:#3b82f6; text-decoration:none; }
+  h1 { margin:6px 0 4px; }
+  .sub { color:#9aa0ac; margin:0 0 18px; }
+  .panel { background:#1a1d24; border:1px solid #2a2e38; border-radius:14px; padding:20px; margin:16px 0; }
+  .panel h2 { margin:0 0 4px; font-size:17px; }
+  .panel .hint { color:#9aa0ac; font-size:13px; margin:0 0 14px; line-height:1.5; }
+  label.lbl { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#9aa0ac; margin:0 0 6px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:640px){ .grid2 { grid-template-columns:1fr; } }
+  .field { margin-bottom:14px; }
+  input[type="text"], input[type="email"], input[type="tel"], input[type="password"] {
+    width:100%; background:#0d0f14; color:#e7e9ee; border:1px solid #2a2e38; border-radius:10px; padding:10px 12px; font-size:14px; }
+  input:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.18); }
+  input:-webkit-autofill { -webkit-text-fill-color:#e7e9ee; -webkit-box-shadow:0 0 0 1000px #0d0f14 inset; transition:background-color 9999s; }
+  button { background:#3b82f6; color:#fff; border:none; border-radius:9px; padding:10px 18px; font-size:14px; cursor:pointer; font-weight:600; }
+  button.secondary { background:#222733; border:1px solid #334155; }
+  .file-card { background:#151922; border:1px solid #2a2e38; border-radius:12px; padding:14px; }
+  .file-card input[type="file"] { position:absolute; width:1px; height:1px; opacity:0; }
+  .file-picker { display:flex; align-items:center; gap:10px; margin-top:10px; background:#0d0f14; border:1px solid #2a2e38; border-radius:10px; padding:8px; }
+  .file-button { flex:0 0 auto; background:#222733; border:1px solid #3b4558; color:#e7e9ee; border-radius:8px; padding:9px 12px; font-size:13px; font-weight:700; cursor:pointer; }
+  .file-button:hover { border-color:#3b82f6; }
+  .file-name { flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#9aa0ac; font-size:13px; }
+  .file-name.saved { color:#86efac; } .file-name.missing { color:#fca5a5; }
+  .pwd-wrap { position:relative; } .pwd-wrap input { padding-right:42px; }
+  .pwd-eye { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:30px; height:30px; background:transparent; border:none; color:#9aa0ac; cursor:pointer; font-size:16px; }
+  .ok { background:#12231a; color:#86efac; border:1px solid #24543a; border-radius:10px; padding:12px 14px; margin:10px 0; }
+  .err { background:#2a1518; color:#fca5a5; border:1px solid #5f2630; border-radius:10px; padding:12px 14px; margin:10px 0; }
+  .switch { display:inline-flex; gap:4px; background:#0d0f14; border:1px solid #2a2e38; border-radius:10px; padding:3px; }
+  .switch a, .switch span { padding:6px 12px; border-radius:8px; font-size:13px; font-weight:600; text-decoration:none; }
+  .switch .cur { background:#3b82f6; color:#fff; } .switch a { color:#9aa0ac; }
+  .actions { margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .help { margin:8px 0 4px; background:#13161d; border:1px solid #2a2e38; border-radius:10px; padding:0 14px; }
+  .help summary { cursor:pointer; padding:11px 0; color:#93c5fd; font-size:13px; font-weight:600; list-style:none; display:flex; align-items:center; gap:7px; }
+  .help summary::-webkit-details-marker { display:none; }
+  .help[open] summary { border-bottom:1px solid #2a2e38; }
+  .help-body { padding:12px 0 14px; color:#cbd5e1; font-size:13px; line-height:1.6; }
+  .help-body ul { margin:6px 0; padding-left:20px; }
+  .help-body code { background:#222733; padding:2px 6px; border-radius:5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="display:flex;align-items:center;gap:14px;">
+    <div class="switch"><span class="cur">{{ ic.i('cart') }} Salling</span><a href="http://127.0.0.1:8080/__app/7eleven">{{ ic.i('store') }} 7-Eleven</a></div>
+    <a href="/">← к вакансиям</a>
+  </div>
+  <h1>{{ ic.i('sliders', 22) }} Настройки</h1>
+  <p class="sub">Профиль, документы и логин — заполни один раз, используется для всех подач.</p>
+
+  {% if saved %}<div class="ok">✓ Сохранено.</div>{% endif %}
+  {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее (улица, город или индекс).</div>{% endif %}
+
+  <!-- Профиль + документы -->
+  <form id="profileForm" class="panel" method="post" action="/settings/save" enctype="multipart/form-data">
+    <h2>Профиль кандидата</h2>
+    <p class="hint">Эти данные бот подставляет в анкеты (где поля доступны).</p>
+    <div class="grid2">
+      <div class="field"><label class="lbl">Имя</label><input type="text" name="first_name" value="{{ profile.first_name or '' }}"></div>
+      <div class="field"><label class="lbl">Фамилия</label><input type="text" name="last_name" value="{{ profile.last_name or '' }}"></div>
+      <div class="field"><label class="lbl">Email</label><input type="email" name="email" value="{{ profile.email or '' }}"></div>
+      <div class="field"><label class="lbl">Телефон</label><input type="tel" name="phone" value="{{ profile.phone or '' }}"></div>
+      <div class="field"><label class="lbl">Адрес</label><input type="text" name="address" value="{{ profile.address or '' }}"></div>
+      <div class="field"><label class="lbl">Индекс</label><input type="text" name="zipcode" value="{{ profile.zip or '' }}"></div>
+      <div class="field"><label class="lbl">Город</label><input type="text" name="city" value="{{ profile.city or '' }}"></div>
+      <div class="field"><label class="lbl">Страна</label><input type="text" name="country" value="{{ profile.country or '' }}"></div>
+      <div class="field"><label class="lbl">LinkedIn (необязательно)</label><input type="text" name="linkedin" value="{{ profile.linkedin or '' }}"></div>
+    </div>
+
+    <h2 style="margin-top:18px;">Документы</h2>
+    <p class="hint">CV можно оставить пустым, если сайт уже помнит резюме.</p>
+    <div class="grid2">
+      <div class="file-card">
+        <label class="lbl">CV / резюме</label>
+        <input type="text" name="cv_path" value="{{ profile.cv_path or '' }}" placeholder="путь к файлу или выбери ниже">
+        <div class="file-picker">
+          <label class="file-button" for="cv_file">Выбрать файл</label>
+          <span class="file-name {{ 'saved' if file_info.cv_status=='ok' else ('missing' if file_info.cv_status=='missing' else '') }}" data-file-name="cv_file">{{ file_info.cv_label }}</span>
+          <input id="cv_file" type="file" name="cv_file" accept=".pdf,.doc,.docx">
+        </div>
+      </div>
+      <div class="file-card">
+        <label class="lbl">Мотивационное письмо</label>
+        <input type="text" name="cover_letter_path" value="{{ profile.cover_letter_path or '' }}" placeholder="путь к файлу или выбери ниже">
+        <div class="file-picker">
+          <label class="file-button" for="cover_letter_file">Выбрать файл</label>
+          <span class="file-name {{ 'saved' if file_info.cover_status=='ok' else ('missing' if file_info.cover_status=='missing' else '') }}" data-file-name="cover_letter_file">{{ file_info.cover_label }}</span>
+          <input id="cover_letter_file" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
+        </div>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:16px;"><button type="submit">Сохранить профиль</button></div>
+  </form>
+
+  <!-- Аккаунт Salling -->
+  <form class="panel" method="post" action="/credentials/save">
+    <h2>Аккаунт Salling Group</h2>
+    <p class="hint">Бот сам введёт это на странице входа Salling. Хранится локально в <code>sf_credentials.json</code>, никуда не отправляется.</p>
+    <div class="grid2">
+      <div class="field"><label class="lbl">Email</label>
+        <input type="email" name="sf_email" value="{{ creds.email or '' }}" autocomplete="email" placeholder="твой email на Salling"></div>
+      <div class="field"><label class="lbl">Пароль {% if creds.has_password %}<span style="color:#86efac;text-transform:none;">(сохранён)</span>{% endif %}</label>
+        <div class="pwd-wrap">
+          <input id="sf_pwd" type="password" name="sf_password" value="" placeholder="{{ '•••••••• сохранён' if creds.has_password else 'пароль' }}" autocomplete="current-password">
+          <button type="button" class="pwd-eye" id="pwdToggle">👁</button>
+        </div>
+      </div>
+    </div>
+    <div class="actions"><button class="secondary" type="submit">Сохранить вход</button></div>
+  </form>
+
+  <!-- Дом -->
+  <form class="panel" method="post" action="/set-home">
+    <h2>{{ ic.i('home', 17) }} Домашний адрес</h2>
+    <p class="hint">Нужен для сортировки и фильтра вакансий по расстоянию. Можно по-русски (Копенгаген) или индекс.</p>
+    <div class="field"><input type="text" name="address" value="{{ home.address if home else '' }}" placeholder="улица, город / индекс"></div>
+    {% if home %}<p class="hint">Текущий: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %}</p>{% endif %}
+    <div class="actions"><button class="secondary" type="submit">{{ 'Обновить дом' if home else 'Задать дом' }}</button></div>
+  </form>
+
+  <!-- Управление -->
+  <div class="panel" style="border-color:#3a2a2e;">
+    <h2>{{ ic.i('broom', 17) }} Управление</h2>
+    <p class="hint">Если бот зашёл под чужим/старым аккаунтом или нужно сменить логин.</p>
+    <div class="actions">
+      <form method="post" action="/apply/reset-browser" onsubmit="return confirm('Выйти из аккаунта Salling в браузере бота? Сессия очистится, при следующей подаче бот войдёт заново.')">
+        <button class="secondary" type="submit">{{ ic.i('unlock', 13) }} Выйти из аккаунта (сброс браузера)</button>
+      </form>
+      <form method="post" action="/credentials/clear" onsubmit="return confirm('Удалить сохранённый email и пароль Salling?')">
+        <button class="secondary" type="submit">{{ ic.i('trash', 13) }} Очистить сохранённый логин</button>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  document.querySelectorAll('input[type="file"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      const t = document.querySelector(`[data-file-name="${input.id}"]`);
+      if (t && input.files.length) { t.textContent = input.files[0].name; t.classList.remove('saved','missing'); t.style.color = '#e7e9ee'; }
+    });
+  });
+  const pwd = document.getElementById('sf_pwd'), tg = document.getElementById('pwdToggle');
+  if (pwd && tg) tg.addEventListener('click', () => {
+    const show = pwd.type === 'password'; pwd.type = show ? 'text' : 'password'; tg.textContent = show ? '🙈' : '👁';
+  });
+</script>
+</body>
+</html>
