@@ -6,12 +6,11 @@ hitsPerPage до 1000, поэтому листаем постранично.
 Запуск:  python scraper.py
 """
 import re
-from datetime import datetime
 
 import httpx
 
 import config
-from db import Job, init_db, get_session, select
+from db import Job, init_db, get_session, select, utcnow
 
 PAGE_SIZE = 1000
 
@@ -90,7 +89,7 @@ def sync():
     """Главная функция: забрать вакансии, обновить БД, пометить исчезнувшие как closed."""
     init_db()
     hits = fetch_all_hits()
-    now = datetime.utcnow()
+    now = utcnow()
     seen_ids = set()
     new_count = 0
 

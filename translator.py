@@ -24,10 +24,6 @@ def _argos_pair_available() -> bool:
         return False
 
 
-def configured() -> bool:
-    return True
-
-
 def provider_name() -> str:
     if config.DEEPL_API_KEY:
         return "DeepL"
@@ -124,7 +120,7 @@ def translate_html_to_ru(html: str, *, title: str = "") -> str:
     DeepL умеет HTML tag handling, поэтому структура описания сохраняется лучше,
     чем при переводе уже очищенного plain text.
     """
-    if not configured():
+    if not config.DEEPL_API_KEY:
         raise TranslationError("DeepL API key is not configured")
     text = (html or "").strip()
     if not text:

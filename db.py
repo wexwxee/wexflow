@@ -1,10 +1,16 @@
 """Модель вакансии и доступ к SQLite."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 
 import config
+
+
+def utcnow() -> datetime:
+    """Текущее время UTC без таймзоны (как datetime.utcnow, но без deprecation).
+    Naive UTC — чтобы не ломать сравнения с уже сохранёнными в базе значениями."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Job(SQLModel, table=True):
@@ -34,9 +40,9 @@ class Job(SQLModel, table=True):
     application_link: Optional[str] = None
     requisition_id: Optional[str] = None
 
-    status: str = "new"                          # new | seen | applied | closed
-    first_seen: datetime = Field(default_factory=datetime.utcnow)
-    last_seen: datetime = Field(default_factory=datetime.utcnow)
+    status: str = "new"                          # new | seen | applied | closed | hidden
+    first_seen: datetime = Field(default_factory=utcnow)
+    last_seen: datetime = Field(default_factory=utcnow)
     applied_at: Optional[datetime] = None
 
 

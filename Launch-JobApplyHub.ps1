@@ -65,8 +65,12 @@ function Start-AppIfNeeded {
 try {
     Write-HubLog "Launcher started."
 
+    # приоритет: .venv проекта -> системный Python 3.11 -> python из PATH
+    $venvPython = Join-Path $root ".venv\Scripts\python.exe"
     $defaultPython = "C:\Users\ivanm\AppData\Local\Programs\Python\Python311\python.exe"
-    if (Test-Path -LiteralPath $defaultPython) {
+    if (Test-Path -LiteralPath $venvPython) {
+        $python = $venvPython
+    } elseif (Test-Path -LiteralPath $defaultPython) {
         $python = $defaultPython
     } else {
         $python = "python"

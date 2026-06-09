@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 import scraper
-from db import get_session, Job, select
+from db import get_session, Job, select, utcnow
 
 
 def notify(title: str, message: str):
@@ -35,7 +35,7 @@ def job_tick():
     print(f"\n[{datetime.now():%H:%M:%S}] ре-скрейп…")
     scraper.sync()
     # вакансии, впервые увиденные за последние 35 минут
-    cutoff = datetime.utcnow() - timedelta(minutes=35)
+    cutoff = utcnow() - timedelta(minutes=35)
     with get_session() as s:
         fresh = s.exec(
             select(Job).where(Job.first_seen >= cutoff, Job.status != "closed")

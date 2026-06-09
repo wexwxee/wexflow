@@ -29,13 +29,14 @@ C:\saling\hub_launcher.log
 
 ```powershell
 cd C:\saling
-C:\Users\ivanm\AppData\Local\Programs\Python\Python311\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8000
+.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-Обновить вакансии:
+Обновить вакансии вручную (при работающем приложении они и так
+обновляются автоматически каждые 30 минут):
 
 ```powershell
-C:\Users\ivanm\AppData\Local\Programs\Python\Python311\python.exe scraper.py
+.venv\Scripts\python.exe scraper.py
 ```
 
 ## Что умеет дашборд
@@ -75,11 +76,25 @@ C:\Users\ivanm\AppData\Local\Programs\Python\Python311\python.exe scraper.py
 
 ## Установка зависимостей
 
+Зависимости живут в изолированном окружении `.venv` внутри проекта.
+Пересоздать его (например, после переустановки Python):
+
 ```powershell
 cd C:\saling
-C:\Users\ivanm\AppData\Local\Programs\Python\Python311\python.exe -m pip install -r requirements.txt
-C:\Users\ivanm\AppData\Local\Programs\Python\Python311\python.exe -m playwright install chromium
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+Бот подачи использует установленный Google Chrome / Edge, отдельный
+браузер Playwright ставить не нужно.
+
+## Структура
+
+- `app.py` — веб-дашборд (FastAPI), `scraper.py` — сбор вакансий,
+  `apply.py` — бот подачи, `hub.py` — общий вход (порт 8080).
+- `scheduler.py` — НЕобязательный отдельный процесс: уведомления Windows
+  о новых вакансиях (само обновление встроено в app.py).
+- `tools/` — одноразовые скрипты разведки API и иконки (не нужны для работы).
 
 ## Ограничения
 

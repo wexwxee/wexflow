@@ -26,7 +26,7 @@ import translator_setup
 import profile_store
 import credentials_store
 import transit
-from db import Job, init_db, get_session, select
+from db import Job, init_db, get_session, select, utcnow
 import scraper
 
 app = FastAPI(title="Salling Jobs")
@@ -400,7 +400,7 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
         if job:
             job.status = status
             if status == "applied":
-                job.applied_at = datetime.utcnow()
+                job.applied_at = utcnow()
             s.add(job)
             s.commit()
     ref = request.headers.get("referer")
@@ -491,7 +491,6 @@ def settings_save(
 
 @app.get("/job/{job_id}", response_class=HTMLResponse)
 def detail(request: Request, job_id: str):
-    translation_error = ""
     with get_session() as s:
         job = s.get(Job, job_id)
         if job and job.status == "new":
@@ -513,10 +512,8 @@ def detail(request: Request, job_id: str):
             "has_home": bool(home),
             "maps_url": maps_url,
             "facts": facts,
-            "deepl_configured": translator.configured(),
             "translator_name": translator.provider_name(),
             "translator_install": translator_setup.status(),
-            "translation_error": translation_error,
         }
     )
 

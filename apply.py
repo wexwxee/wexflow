@@ -736,12 +736,12 @@ def _save_proof(page, job):
 def _mark_applied(job_id: str):
     """Отмечает вакансию как поданную в дашборде после реальной отправки."""
     try:
-        from datetime import datetime
+        from db import utcnow
         with get_session() as s:
             j = s.get(Job, job_id)
             if j:
                 j.status = "applied"
-                j.applied_at = datetime.utcnow()
+                j.applied_at = utcnow()
                 s.add(j)
                 s.commit()
         print("  ✔ отмечено «подано» в дашборде")

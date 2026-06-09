@@ -87,14 +87,6 @@
       <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
         <button class="secondary" type="submit" data-loading-text="Обновляю перевод...">Обновить перевод</button>
       </form>
-    {% elif translation_error %}
-      <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
-        <button type="submit" data-loading-text="Перевожу...">Перевести на русский</button>
-      </form>
-    {% elif deepl_configured %}
-      <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
-        <button type="submit" data-loading-text="Перевожу...">Перевести на русский</button>
-      </form>
     {% else %}
       <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
         <button type="submit" data-loading-text="Перевожу...">Перевести на русский</button>
