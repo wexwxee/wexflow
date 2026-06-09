@@ -8,7 +8,8 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime
+import threading
+from contextlib import asynccontextmanager
 from collections import Counter
 from urllib.parse import quote_plus
 
@@ -28,8 +29,51 @@ import credentials_store
 import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
+from apscheduler.schedulers.background import BackgroundScheduler
 
-app = FastAPI(title="Salling Jobs")
+# --- автообновление вакансий: каждые 30 минут + при старте, если данные устарели ---
+_sync_lock = threading.Lock()
+_sync_state = {"running": False, "last_error": ""}
+
+
+def _sync_jobs():
+    """Обновляет базу вакансий. Не запускается параллельно сам с собой."""
+    if not _sync_lock.acquire(blocking=False):
+        return
+    _sync_state["running"] = True
+    try:
+        scraper.sync()
+        _sync_state["last_error"] = ""
+    except Exception as e:
+        _sync_state["last_error"] = str(e)[:200]
+        print(f"автообновление: ошибка — {e}")
+    finally:
+        _sync_state["running"] = False
+        _sync_lock.release()
+
+
+def _data_age_minutes() -> int | None:
+    """Сколько минут назад вакансии обновлялись (по last_seen в базе)."""
+    with get_session() as s:
+        last = s.exec(select(func.max(Job.last_seen))).one()
+    if not last:
+        return None
+    return max(0, int((utcnow() - last).total_seconds() // 60))
+
+
+@asynccontextmanager
+async def _lifespan(app):
+    sched = BackgroundScheduler(daemon=True)
+    sched.add_job(_sync_jobs, "interval", minutes=30, id="auto_sync")
+    sched.start()
+    age = _data_age_minutes()
+    if age is None or age >= 30:  # данные устарели — обновить сразу, в фоне
+        threading.Thread(target=_sync_jobs, daemon=True).start()
+    yield
+    sched.shutdown(wait=False)
+
+
+app = FastAPI(title="Salling Jobs", lifespan=_lifespan)
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["brand_label"] = labels.brand
 templates.env.globals["L"] = labels
@@ -365,6 +409,8 @@ def index(
               "job_level": level_code,
               "status": status, "sort": sort, "radius": radius, "group": group}),
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
+        "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
+        "sync_running": _sync_state["running"],
         "home": home, "distances": distances, "geoerror": geoerror,
         "presets": settings_store.get_presets(),
         "batch": batch, "batch_mode": mode,
@@ -409,7 +455,7 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
 
 @app.post("/refresh")
 def refresh(request: Request):
-    scraper.sync()
+    _sync_jobs()  # если автообновление уже идёт — просто вернёмся на страницу
     # вернуться на ту же страницу с теми же фильтрами
     ref = request.headers.get("referer")
     return RedirectResponse(ref or "/", status_code=303)
