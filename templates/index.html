@@ -360,6 +360,12 @@
 {% endblock %}
 
 {% block script %}
+{% if sync_running %}
+<script>
+  // идёт фоновое обновление вакансий — перезагрузим страницу, чтобы показать результат
+  setTimeout(() => location.reload(), 8000);
+</script>
+{% endif %}
 <script>
   // --- пакетный выбор вакансий ---
   const selboxes = [...document.querySelectorAll('[data-selbox]')];

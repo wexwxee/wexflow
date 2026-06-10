@@ -19,6 +19,16 @@
   button { padding:11px 18px; font-size:14px; font-weight:600; }
   .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  /* живой лог бота — тёмный «терминал» в обеих темах */
+  .botlog { margin:10px 0 0; padding:12px; max-height:340px; overflow:auto;
+    background:#0f1714; color:#d8e6df; border-radius:10px; border:1px solid #1f2a25;
+    font:12px/1.55 Consolas, "Cascadia Code", monospace; white-space:pre-wrap; word-break:break-word; }
+  .botlog:empty::before { content:"Лог пока пуст — запусти подачу."; color:#5f7a70; }
+  .loghead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .loghead h2 { margin:0; }
+  .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;
+    animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.25; } }
 </style>
 {% endblock %}
 
@@ -121,6 +131,19 @@
         </a>
       </div>
     </form>
+
+    <div class="panel" id="botlogPanel" {% if not started %}hidden{% endif %}>
+      <div class="loghead">
+        <h2>Ход подачи</h2>
+        <span class="pulse" id="logPulse" hidden></span>
+        <span class="hint" style="margin:0;">лог бота, обновляется сам · файл apply_last.log</span>
+        <button type="button" class="secondary" id="logRefresh" style="margin-left:auto;padding:6px 12px;font-size:12px;">Обновить</button>
+      </div>
+      <pre class="botlog" id="botlog"></pre>
+    </div>
+    {% if not started %}
+    <p><a href="#" id="showLog" class="hint">показать лог последней подачи</a></p>
+    {% endif %}
   {% endif %}
 </div>
 {% endblock %}
@@ -150,5 +173,40 @@
       }
     });
   });
+
+  // --- живой лог бота ---
+  const logPanel = document.getElementById("botlogPanel");
+  const logEl = document.getElementById("botlog");
+  const logPulse = document.getElementById("logPulse");
+  let logTimer = null, lastLen = -1, idleTicks = 0;
+  async function fetchLog() {
+    try {
+      const r = await fetch("/api/apply-log");
+      const d = await r.json();
+      const text = (d.lines || []).join("\n");
+      if (text.length !== lastLen) {
+        lastLen = text.length;
+        idleTicks = 0;
+        const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
+        logEl.textContent = text;
+        if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+      } else {
+        idleTicks++;
+      }
+      // лог не растёт 60 секунд — перестаём опрашивать (бот закончил)
+      if (idleTicks > 30 && logTimer) { clearInterval(logTimer); logTimer = null; logPulse.hidden = true; }
+    } catch (e) { /* сервер перезапускается — просто попробуем позже */ }
+  }
+  function startLogPolling() {
+    logPanel.hidden = false;
+    logPulse.hidden = false;
+    fetchLog();
+    if (!logTimer) logTimer = setInterval(fetchLog, 2000);
+  }
+  if (!logPanel.hidden) startLogPolling();
+  const showLog = document.getElementById("showLog");
+  if (showLog) showLog.addEventListener("click", (e) => { e.preventDefault(); showLog.remove(); startLogPolling(); });
+  const logRefresh = document.getElementById("logRefresh");
+  if (logRefresh) logRefresh.addEventListener("click", () => { idleTicks = 0; if (!logTimer) logTimer = setInterval(fetchLog, 2000); fetchLog(); });
 </script>
 {% endblock %}

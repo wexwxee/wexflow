@@ -457,8 +457,9 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
 
 @app.post("/refresh")
 def refresh(request: Request):
-    _sync_jobs()  # если автообновление уже идёт — просто вернёмся на страницу
-    # вернуться на ту же страницу с теми же фильтрами
+    # обновление уходит в фон: страница не виснет, индикатор в шапке показывает
+    # «обновляется…», список сам перезагрузится по окончании
+    threading.Thread(target=_sync_jobs, daemon=True).start()
     ref = request.headers.get("referer")
     return RedirectResponse(ref or "/", status_code=303)
 
@@ -487,6 +488,19 @@ def set_home(request: Request, address: str = Form(...)):
         return RedirectResponse(ref or "/?sort=distance", status_code=303)
     sep = "&" if (ref and "?" in ref) else "?"
     return RedirectResponse((ref + sep + "geoerror=1") if ref else "/?geoerror=1", status_code=303)
+
+
+@app.get("/api/apply-log")
+def apply_log():
+    """Хвост лога последней подачи — показывается прямо на странице «Подать»."""
+    path = config.BASE_DIR / "apply_last.log"
+    if not path.exists():
+        return JSONResponse({"ok": False, "lines": []})
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as e:
+        return JSONResponse({"ok": False, "error": str(e)[:120], "lines": []})
+    return JSONResponse({"ok": True, "lines": lines[-120:]})
 
 
 @app.get("/api/transit/{job_id}")
@@ -538,7 +552,7 @@ def settings_save(
 
 
 @app.get("/job/{job_id}", response_class=HTMLResponse)
-def detail(request: Request, job_id: str):
+def detail(request: Request, job_id: str, trerror: str = ""):
     with get_session() as s:
         job = s.get(Job, job_id)
         if job and job.status == "new":
@@ -562,6 +576,7 @@ def detail(request: Request, job_id: str):
             "facts": facts,
             "translator_name": translator.provider_name(),
             "translator_install": translator_setup.status(),
+            "trerror": trerror,
         }
     )
 
@@ -717,6 +732,7 @@ def apply_batch(job_ids: list[str] = Form(default=[]), mode: str = Form("dry")):
 
 @app.post("/job/{job_id}/translate")
 def translate_job(job_id: str):
+    error = ""
     with get_session() as s:
         job = s.get(Job, job_id)
         if job and job.description:
@@ -724,9 +740,10 @@ def translate_job(job_id: str):
                 job.description_ru = translator.translate_to_ru(job.description, title=job.title)
                 s.add(job)
                 s.commit()
-            except translator.TranslationError:
-                pass
-    return RedirectResponse(f"/job/{job_id}", status_code=303)
+            except translator.TranslationError as e:
+                error = str(e)[:120]
+    target = f"/job/{job_id}" + (f"?trerror={quote_plus(error)}" if error else "")
+    return RedirectResponse(target, status_code=303)
 
 
 @app.post("/translator/install")

@@ -73,8 +73,26 @@ body {
   background: var(--bg);
   color: var(--txt);
   font-size: 14px;
+  transition: background-color .15s ease, color .15s ease;
 }
 a { color: var(--accent); text-decoration: none; }
+
+/* видимый фокус при работе с клавиатуры */
+button:focus-visible, a:focus-visible, .theme-toggle:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+
+/* выделение текста в цвет акцента */
+::selection { background: var(--accent); color: #fff; }
+
+/* аккуратные скроллбары под тему */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--hover-line); border-radius: 999px;
+  border: 3px solid var(--bg); background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--muted); border: 3px solid var(--bg); background-clip: padding-box; }
 h1 { font-size: 18px; margin: 0; }
 .muted, .meta { color: var(--muted); font-size: 13px; }
 .hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
