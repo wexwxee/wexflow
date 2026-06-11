@@ -14,6 +14,12 @@
       "port": 7111
     },
     {
+      "name": "mockups",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "http.server", "8099", "--directory", "static/mockups"],
+      "port": 8099
+    },
+    {
       "name": "hub",
       "runtimeExecutable": ".venv\\Scripts\\python.exe",
       "runtimeArgs": ["-m", "uvicorn", "hub:app", "--host", "127.0.0.1", "--port", "8080"],

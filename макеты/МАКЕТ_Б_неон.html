@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Макет Б — Командный центр (тёмный, неон, стекло)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #070b09; --txt: #e9f5ef; --muted: #7d948a;
+    --neon: #2ee6a8; --neon-dim: rgba(46, 230, 168, .14);
+    --glass: rgba(255, 255, 255, .035); --glass-line: rgba(255, 255, 255, .09);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font: 14px/1.5 "Inter", system-ui, sans-serif; color: var(--txt); min-height: 100vh;
+    background:
+      radial-gradient(800px 500px at 80% -10%, rgba(46,230,168,.13), transparent 60%),
+      radial-gradient(600px 500px at -5% 100%, rgba(46,230,168,.07), transparent 55%),
+      var(--bg);
+    display: flex;
+  }
+  /* ── вертикальный рельс шагов ── */
+  .rail { width: 92px; border-right: 1px solid var(--glass-line); padding: 22px 0; display: flex; flex-direction: column; align-items: center; gap: 26px; }
+  .rail .mark { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--neon), #0d9f6e); color: #04221a; font: 700 20px "Space Grotesk"; display: grid; place-items: center; box-shadow: 0 0 24px rgba(46,230,168,.4); }
+  .rail .steps { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .rstep { width: 56px; padding: 10px 0; text-align: center; border-radius: 12px; color: var(--muted); cursor: pointer; }
+  .rstep b { display: block; font: 700 17px "Space Grotesk"; }
+  .rstep span { font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .rstep.active { background: var(--neon-dim); color: var(--neon); box-shadow: inset 0 0 0 1px rgba(46,230,168,.35); }
+  .rstep.done { color: var(--txt); }
+  .rstep.done b::after { content: " ✓"; color: var(--neon); font-size: 12px; }
+  .rail .theme { margin-top: auto; color: var(--muted); }
+
+  main { flex: 1; padding: 34px 46px 120px; max-width: 1060px; }
+  .hud { display: flex; align-items: center; gap: 10px; margin-bottom: 26px; }
+  .hud .pill { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--glass-line); color: var(--muted); }
+  .hud .pill.on { border-color: rgba(46,230,168,.4); color: var(--neon); background: var(--neon-dim); }
+  .hud .switch { margin-left: auto; display: flex; border: 1px solid var(--glass-line); border-radius: 10px; overflow: hidden; font-size: 12px; font-weight: 600; }
+  .hud .switch span { padding: 7px 14px; color: var(--muted); }
+  .hud .switch .cur { background: var(--neon-dim); color: var(--neon); }
+
+  h1 { font: 700 34px/1.1 "Space Grotesk"; letter-spacing: -.02em; margin-bottom: 6px; }
+  h1 em { font-style: normal; color: var(--neon); }
+  .sub { color: var(--muted); margin-bottom: 30px; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .glass { background: var(--glass); border: 1px solid var(--glass-line); border-radius: 18px; padding: 22px; backdrop-filter: blur(8px); position: relative; }
+  .glass::before { content: ""; position: absolute; inset: 0 18% auto 18%; top: -1px; height: 1px; background: linear-gradient(90deg, transparent, rgba(46,230,168,.7), transparent); }
+  .glass.wide { grid-column: 1/-1; }
+  .g-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .g-num { font: 700 13px "Space Grotesk"; color: var(--neon); border: 1px solid rgba(46,230,168,.35); border-radius: 8px; padding: 3px 8px; }
+  .g-head h2 { font: 700 16px "Space Grotesk"; letter-spacing: .01em; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .f { display: flex; flex-direction: column; gap: 6px; }
+  .f.wide { grid-column: 1/-1; }
+  label { font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  input, select, textarea { font: inherit; padding: 11px 13px; background: rgba(0,0,0,.35); border: 1px solid var(--glass-line); border-radius: 11px; color: var(--txt); }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--neon); box-shadow: 0 0 0 3px rgba(46,230,168,.15), 0 0 18px rgba(46,230,168,.12); }
+  .hintline { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+  .hintline b { color: var(--neon); }
+
+  .dock { position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; display: flex; align-items: center; gap: 14px; background: rgba(10,16,13,.85); border: 1px solid var(--glass-line); border-radius: 16px; padding: 12px 16px; backdrop-filter: blur(14px); box-shadow: 0 18px 50px rgba(0,0,0,.5); }
+  .dock .stat { font-size: 12px; color: var(--muted); }
+  .dock .stat b { color: var(--neon); font-size: 14px; }
+  .btn { font: 700 13.5px "Inter"; border: none; border-radius: 11px; padding: 12px 20px; cursor: pointer; }
+  .btn.neon { background: linear-gradient(135deg, var(--neon), #0d9f6e); color: #04221a; box-shadow: 0 0 22px rgba(46,230,168,.35); }
+  .btn.ghost { background: transparent; border: 1px solid var(--glass-line); color: var(--txt); }
+</style>
+</head>
+<body>
+  <div class="rail">
+    <div class="mark">7</div>
+    <div class="steps">
+      <div class="rstep active"><b>01</b><span>Профиль</span></div>
+      <div class="rstep"><b>02</b><span>Магазины</span></div>
+      <div class="rstep"><b>03</b><span>Запуск</span></div>
+    </div>
+    <div class="theme">☾</div>
+  </div>
+
+  <main>
+    <div class="hud">
+      <span class="pill on">● база: сегодня</span>
+      <span class="pill">бот: готов</span>
+      <span class="pill">97 магазинов</span>
+      <div class="switch"><span>Salling</span><span class="cur">7-Eleven</span></div>
+    </div>
+
+    <h1>Профиль <em>кандидата</em></h1>
+    <p class="sub">Эти данные бот подставит в каждую анкету — заполни один раз.</p>
+
+    <div class="cards">
+      <div class="glass">
+        <div class="g-head"><span class="g-num">01</span><h2>Личные данные</h2></div>
+        <div class="grid">
+          <div class="f"><label>Имя</label><input value="Ivan"></div>
+          <div class="f"><label>Фамилия</label><input value="Malamen"></div>
+          <div class="f"><label>Email</label><input value="you@example.com"></div>
+          <div class="f"><label>Телефон · 8/8</label><input value="20 30 40 50"></div>
+        </div>
+      </div>
+
+      <div class="glass">
+        <div class="g-head"><span class="g-num">02</span><h2>Работа</h2></div>
+        <div class="grid">
+          <div class="f"><label>Занятость</label><select><option>Подработка (deltid)</option></select></div>
+          <div class="f"><label>Позиция</label><select><option>Butiksassistent</option></select></div>
+          <div class="f"><label>Старт</label><input type="date" value="2026-06-25"></div>
+          <div class="f"><label>CV</label><input value="attachments/CV.pdf"></div>
+        </div>
+        <p class="hintline">PDF или DOCX · файл прикрепится к каждой анкете</p>
+      </div>
+
+      <div class="glass wide">
+        <div class="g-head"><span class="g-num">03</span><h2>Ответы по-датски</h2></div>
+        <div class="grid">
+          <div class="f wide"><label>Почему 7-Eleven · мин. 3 причины</label>
+            <textarea rows="4">1) Erfaring fra service…  2) Jeg lærer dansk…  3) Fleksible vagter passer mig…</textarea></div>
+          <div class="f wide"><label>Описание себя · одна фраза</label>
+            <textarea rows="2">Energisk og pålidelig — klar til at tage vagter med kort varsel.</textarea></div>
+          <div class="f"><label>Опыт в ритейле</label><select><option>Нет опыта</option></select></div>
+          <div class="f"><label>Где работал раньше</label><input placeholder="необязательно — будет пропущено"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dock">
+      <span class="stat">готово: <b>2</b> анкеты</span>
+      <button class="btn ghost">Сохранить</button>
+      <button class="btn neon">Дальше: магазины →</button>
+    </div>
+  </main>
+</body>
+</html>
