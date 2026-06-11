@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>7-Eleven Apply Studio</title>
+  <script>
+    // применяем сохранённую тему ДО отрисовки (cookie общая для всех портов 127.0.0.1)
+    (function () {
+      var m = document.cookie.match(/(?:^|;\s*)jobhub_theme=(dark|light)/);
+      var t = (m && m[1]) || localStorage.getItem("jobhub-theme") || "dark";
+      document.documentElement.dataset.theme = t;
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div id="toasts" class="toasts"></div>
+
+  <header class="appbar">
+    <div class="brand">
+      <div class="brand-mark">7</div>
+      <div class="brand-text">
+        <strong>Apply Studio</strong>
+        <span>7-Eleven DK — авто-подача анкет</span>
+      </div>
+    </div>
+
+    <nav class="stepper" id="stepper">
+      <button class="step" data-step="profile">
+        <span class="step-no">1</span>
+        <span class="step-label">Профиль</span>
+        <span class="step-flag" data-flag="profile"></span>
+      </button>
+      <button class="step" data-step="addresses">
+        <span class="step-no">2</span>
+        <span class="step-label">Магазины</span>
+        <span class="step-flag" data-flag="addresses"></span>
+      </button>
+      <button class="step" data-step="run">
+        <span class="step-no">3</span>
+        <span class="step-label">Запуск</span>
+      </button>
+    </nav>
+
+    <div class="appbar-right">
+      <span class="pill soft" id="dbAge" title="Когда база магазинов в последний раз сверялась с сайтом 7-Eleven" hidden></span>
+      <span class="run-pill" id="runPill">Готов</span>
+      <div class="app-switch" style="margin-left:14px;">
+        <a href="http://127.0.0.1:8080/__app/salling" title="Переключиться на Salling"><i data-ic="cart" data-sz="13"></i> Salling</a>
+        <span class="cur"><i data-ic="store" data-sz="13"></i> 7-Eleven</span>
+      </div>
+      <button type="button" class="theme-toggle" data-theme-toggle title="Светлая/тёмная тема" style="margin-left:8px;"></button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <!-- ───────────── ШАГ 1: ПРОФИЛЬ ───────────── -->
+    <section class="view" data-view="profile">
+      <div class="view-head">
+        <h1>Профиль кандидата</h1>
+        <p>Эти данные подставляются в каждую анкету. Заполни один раз — дальше переиспользуется.</p>
+      </div>
+
+      <div class="grid-2">
+        <article class="card">
+          <header class="card-head"><h2>Личные данные</h2></header>
+          <div class="fields">
+            <label class="field">Имя
+              <input id="first" autocomplete="given-name" placeholder="Имя">
+            </label>
+            <label class="field">Фамилия
+              <input id="last" autocomplete="family-name" placeholder="Фамилия">
+            </label>
+            <label class="field">Email
+              <span class="input-wrap">
+                <input id="email" autocomplete="email" placeholder="you@example.com">
+                <i class="mark" id="emailMark"></i>
+              </span>
+            </label>
+            <label class="field">Телефон DK (8 цифр)
+              <span class="input-wrap">
+                <input id="phone" maxlength="8" inputmode="numeric" placeholder="20304050">
+                <i class="mark counter" id="phoneMark"></i>
+              </span>
+            </label>
+          </div>
+        </article>
+
+        <article class="card">
+          <header class="card-head"><h2>Работа</h2></header>
+          <div class="fields">
+            <label class="field">Занятость
+              <select id="hours">
+                <option value="deltid">Подработка (deltid)</option>
+                <option value="fuldtid">Полная (fuldtid)</option>
+                <option value="ligegyldigt">Не важно (ligegyldigt)</option>
+              </select>
+            </label>
+            <label class="field">Позиция
+              <select id="position">
+                <option>Butiksassistent</option>
+                <option>Servicemedarbejder (U18)</option>
+                <option>Leder</option>
+                <option>Elev</option>
+                <option>Nattevagt</option>
+              </select>
+            </label>
+            <label class="field">Готов начать
+              <input id="startDate" type="date">
+            </label>
+            <label class="field">Файл резюме (CV)
+              <input id="cv" spellcheck="false" placeholder="attachments/CV.pdf">
+            </label>
+          </div>
+          <p class="hint" id="cvHint">PDF или DOCX. Положи файл в папку <code>attachments\</code> и укажи путь.</p>
+        </article>
+      </div>
+
+      <article class="card">
+        <header class="card-head">
+          <h2>Ответы по-датски</h2>
+          <p>Можно вставить готовый шаблон и поправить под себя.</p>
+        </header>
+        <div class="fields">
+          <div class="field wide">
+            <div class="field-top">
+              <span>Почему 7-Eleven (минимум 3 причины)</span>
+              <select class="tpl" id="whyTpl"><option value="">Вставить шаблон…</option></select>
+            </div>
+            <textarea id="why" rows="5" placeholder="1) …&#10;2) …&#10;3) …"></textarea>
+            <div class="field-foot"><span class="muted" id="whyCount"></span></div>
+          </div>
+          <div class="field wide">
+            <div class="field-top">
+              <span>Короткое описание себя</span>
+              <select class="tpl" id="selfTpl"><option value="">Вставить шаблон…</option></select>
+            </div>
+            <textarea id="self" rows="2" placeholder="Одно короткое предложение о себе."></textarea>
+          </div>
+          <label class="field">Опыт в ритейле (магазины)
+            <select id="retailExp">
+              <option value="">Нет опыта (ответ по умолчанию)</option>
+              <option value="0-1 years">0–1 год</option>
+              <option value="1-2 years">1–2 года</option>
+              <option value="2-3 years">2–3 года</option>
+              <option value="3-4 years">3–4 года</option>
+              <option value="4+ years">4+ лет</option>
+            </select>
+          </label>
+          <div class="field">
+            <span>Где работал раньше (необязательно)</span>
+            <textarea id="workExp" rows="2" placeholder="Название компании, должность, период. Пусто — вопрос будет пропущен."></textarea>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- ───────────── ШАГ 2: МАГАЗИНЫ ───────────── -->
+    <section class="view" data-view="addresses" hidden>
+      <div class="view-head">
+        <h1>Магазины</h1>
+        <p>Отметь магазины — на каждый уйдёт отдельная анкета. База берётся прямо с сайта 7-Eleven.</p>
+      </div>
+
+      <article class="card">
+        <div class="filterbar">
+          <label class="ico-input grow" title="Поиск по адресу, району или городу">
+            <i data-ic="search" data-sz="15"></i>
+            <input id="addressSearch" placeholder="Поиск: адрес, район или город">
+          </label>
+          <select id="filterRegion" title="Регион"></select>
+          <select id="filterCity" title="Город"></select>
+          <select id="sortAddr" title="Порядок списка">
+            <option value="city">По городам</option>
+            <option value="near">Сначала ближние</option>
+            <option value="selected">Сначала выбранные</option>
+          </select>
+          <span class="pill soft" id="selectedText">Выбрано: 0</span>
+          <button class="btn ghost" id="clearAddrs" title="Снять все галочки"><i data-ic="eraser" data-sz="14"></i> Снять всё</button>
+        </div>
+
+        <div class="home-row">
+          <span class="home-label"><i data-ic="pin" data-sz="14"></i> Откуда</span>
+          <input class="search" id="homeAddr" placeholder="Твой адрес — напр. Nørrebrogade 1, 2200 København N">
+          <button class="btn ghost" id="useGeo"><i data-ic="target" data-sz="14"></i> Моё местоположение</button>
+          <label class="mode-pick">Как добираться
+            <select id="travelMode">
+              <option value="transit">Транспорт</option>
+              <option value="driving">Авто</option>
+              <option value="walking">Пешком</option>
+              <option value="bicycling">Вело</option>
+            </select>
+          </label>
+          <span class="muted" id="homeStatus">не задано</span>
+        </div>
+
+        <div class="scan-banner" id="scanBanner" hidden></div>
+        <div class="address-list" id="addressList"></div>
+
+        <div class="list-foot">
+          <button class="btn ghost sm" id="scanAddresses"><i data-ic="refresh" data-sz="13"></i> Обновить базу с сайта</button>
+          <span class="muted" id="addrTotal"></span>
+        </div>
+      </article>
+    </section>
+
+    <!-- ───────────── ШАГ 3: ЗАПУСК ───────────── -->
+    <section class="view" data-view="run" hidden>
+      <div class="view-head">
+        <h1>Запуск</h1>
+        <p>Сначала тестовый прогон — он всё заполняет, но ничего не отправляет.</p>
+      </div>
+
+      <article class="card">
+        <div class="url-row">
+          <label class="field grow">URL анкеты
+            <input id="url" spellcheck="false">
+          </label>
+          <button class="btn ghost" id="resetUrl">Сбросить</button>
+        </div>
+        <div class="run-actions">
+          <button class="run-card test" id="dryRun">
+            <span class="run-emoji"><i data-ic="flask" data-sz="22"></i></span>
+            <span class="run-title">Тестовый прогон</span>
+            <span class="run-sub">Заполнит форму, ничего не отправит</span>
+          </button>
+          <button class="run-card live" id="realRun">
+            <span class="run-emoji"><i data-ic="send" data-sz="22"></i></span>
+            <span class="run-title">Реальная отправка</span>
+            <span class="run-sub">Отправит анкеты по-настоящему</span>
+          </button>
+          <button class="btn ghost danger-text big" id="stopRun"><i data-ic="x" data-sz="14"></i> Остановить</button>
+        </div>
+      </article>
+
+      <div class="metrics">
+        <div class="metric"><span>Выбрано</span><strong id="metricSelected">0</strong></div>
+        <div class="metric"><span>В очереди</span><strong id="metricQueued">0</strong></div>
+        <div class="metric ok"><span>Успешно</span><strong id="metricOk">0</strong></div>
+        <div class="metric warn"><span>Проверить</span><strong id="metricCheck">0</strong></div>
+      </div>
+
+      <article class="card">
+        <header class="card-head">
+          <h2>Очередь прогонов</h2>
+          <button class="btn ghost" id="openReport">Открыть отчёт</button>
+        </header>
+        <div class="queue" id="queue"></div>
+      </article>
+
+      <div class="grid-2">
+        <article class="card log-card">
+          <header class="card-head">
+            <h2>Логи</h2>
+            <div class="filters">
+              <button class="chip-btn active" data-filter="all">Все</button>
+              <button class="chip-btn" data-filter="step">Шаги</button>
+              <button class="chip-btn" data-filter="error">Ошибки</button>
+              <button class="btn ghost sm" id="copyLogs">Копировать</button>
+            </div>
+          </header>
+          <div class="log-stream" id="logs"></div>
+        </article>
+
+        <article class="card">
+          <header class="card-head"><h2>Итог проверки</h2></header>
+          <div class="report-box" id="reportBox">
+            <div class="empty">Отчёт появится после первого прогона.</div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="actionbar">
+    <div class="ready-summary" id="readySummary"></div>
+    <div class="actionbar-right">
+      <button class="btn ghost" id="saveProfile"><i data-ic="save" data-sz="14"></i> Сохранить</button>
+      <button class="btn ghost" id="backBtn" hidden>← Назад</button>
+      <button class="btn primary" id="nextBtn">Далее →</button>
+    </div>
+  </footer>
+
+  <script src="/static/icons.js"></script>
+  <script>
+    applyStaticIcons();
+    // переключатель темы — общий для Salling и 7-Eleven (cookie на 127.0.0.1)
+    document.querySelectorAll("[data-theme-toggle]").forEach(function (btn) {
+      function paint() {
+        btn.innerHTML = icon7(document.documentElement.dataset.theme === "light" ? "moon" : "sun", 16);
+      }
+      btn.addEventListener("click", function () {
+        var next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+        document.documentElement.dataset.theme = next;
+        try { localStorage.setItem("jobhub-theme", next); } catch (e) {}
+        document.cookie = "jobhub_theme=" + next + ";path=/;max-age=31536000;samesite=lax";
+        paint();
+      });
+      paint();
+    });
+  </script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
