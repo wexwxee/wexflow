@@ -9,16 +9,19 @@
 {%- endmacro %}
 
 {% macro theme_toggle() -%}
-  <button type="button" class="theme-toggle" data-theme-toggle title="Светлая/тёмная тема">☀️</button>
+  <button type="button" class="theme-toggle" data-theme-toggle title="Светлая/тёмная тема">
+    <span class="ic-sun">{{ ic.i('sun', 15) }}</span>
+    <span class="ic-moon">{{ ic.i('moon', 15) }}</span>
+  </button>
 {%- endmacro %}
 
 {% macro freshness(age_min, running=false) -%}
   {% if running %}
-    <span class="fresh" title="Идёт обновление вакансий с сайта Salling">⟳ обновляется…</span>
+    <span class="fresh" title="Идёт обновление вакансий с сайта Salling">{{ ic.i('refresh', 12) }} обновляется…</span>
   {% elif age_min is not none %}
     {% set stale = age_min > 120 %}
     <span class="fresh {{ 'stale' if stale }}" title="Когда вакансии в последний раз сверялись с сайтом Salling. Обновляется автоматически каждые 30 минут, пока приложение запущено.">
-      {{ '⚠' if stale else '✓' }}
+      {% if stale %}{{ ic.i('alert', 12) }}{% else %}{{ ic.i('check', 12) }}{% endif %}
       {% if age_min < 1 %}обновлено только что
       {%- elif age_min < 60 %}обновлено {{ age_min }} мин назад
       {%- elif age_min < 60*48 %}обновлено {{ (age_min // 60) }} ч назад

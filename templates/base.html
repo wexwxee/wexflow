@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Salling Jobs{% endblock %}</title>
 <link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>
   // применяем сохранённую тему ДО отрисовки, чтобы не мигало.
   // cookie общая для 127.0.0.1 (все порты) — тема едина для Salling и 7-Eleven.
@@ -20,19 +23,14 @@
 <body>
 {% block body %}{% endblock %}
 <script>
-  // переключатель темы (кнопка с data-theme-toggle есть в шапке каждой страницы)
+  // переключатель темы — иконки sun/moon переключаются через CSS (html[data-theme])
   document.querySelectorAll("[data-theme-toggle]").forEach(function (btn) {
-    function paint() {
-      btn.textContent = document.documentElement.dataset.theme === "light" ? "🌙" : "☀️";
-    }
     btn.addEventListener("click", function () {
       var next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
       document.documentElement.dataset.theme = next;
       try { localStorage.setItem("jobhub-theme", next); } catch (e) {}
       document.cookie = "jobhub_theme=" + next + ";path=/;max-age=31536000;samesite=lax";
-      paint();
     });
-    paint();
   });
 </script>
 {% block script %}{% endblock %}
