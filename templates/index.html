@@ -29,13 +29,22 @@
   .help::before { content:"i"; font-size:9px; line-height:1; font-family:"Space Grotesk", system-ui, sans-serif; }
   .help:hover, .help:focus-visible { color:var(--txt); border-color:var(--accent); background:var(--accent-soft); transform:translateY(-1px); }
   .smart-tip {
-    position:fixed; left:0; top:0; z-index:1000; width:min(280px, calc(100vw - 24px));
-    padding:10px 11px; border:1px solid var(--glass-line); border-radius:10px;
-    background:rgba(20,24,22,.96); color:#f5faf7; box-shadow:0 14px 38px rgba(0,0,0,.32);
-    opacity:0; transform:translateY(-4px); pointer-events:none;
-    transition:opacity .12s, transform .12s; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+    position:fixed; left:0; top:0; z-index:1000; width:min(264px, calc(100vw - 24px));
+    padding:10px 12px; border:1px solid var(--glass-line); border-radius:11px;
+    background:rgba(20,24,22,.97); color:#f5faf7; box-shadow:0 16px 40px rgba(0,0,0,.38);
+    opacity:0; transform:translateY(-3px); pointer-events:none;
+    transition:opacity .13s ease, transform .13s ease; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
   }
-  html[data-theme="light"] .smart-tip { background:rgba(255,255,255,.97); color:var(--txt); }
+  /* стрелка-указатель на элемент, к которому относится подсказка */
+  .smart-tip::after {
+    content:""; position:absolute; left:var(--tip-arrow, 50%);
+    width:11px; height:11px; transform:translateX(-50%) rotate(45deg);
+    background:rgba(20,24,22,.97); border:1px solid var(--glass-line);
+  }
+  .smart-tip[data-pos="below"]::after { top:-6px; border-right:0; border-bottom:0; }
+  .smart-tip[data-pos="above"]::after { bottom:-6px; border-left:0; border-top:0; }
+  html[data-theme="light"] .smart-tip { background:rgba(255,255,255,.98); color:var(--txt); }
+  html[data-theme="light"] .smart-tip::after { background:rgba(255,255,255,.98); }
   .smart-tip.show { opacity:1; transform:translateY(0); }
   .smart-tip-title { font-size:12px; line-height:1.25; font-weight:800; margin-bottom:3px; color:var(--accent); }
   .smart-tip-body { font-size:12.5px; line-height:1.38; color:inherit; }
@@ -592,54 +601,68 @@
     showUndo(id, card);
   }));
 
-  // --- кастомные подсказки вместо нативных title ---
+  // --- кастомные подсказки: задержка при наведении, стрелка, надёжное скрытие ---
   const smartTip = document.createElement('div');
   smartTip.className = 'smart-tip';
   smartTip.innerHTML = '<div class="smart-tip-title"></div><div class="smart-tip-body"></div>';
   document.body.appendChild(smartTip);
   const smartTipTitle = smartTip.querySelector('.smart-tip-title');
   const smartTipBody = smartTip.querySelector('.smart-tip-body');
-  let smartTipTarget = null;
+  let smartTipTarget = null, tipShowTimer = null;
+  const TIP_DELAY = 320; // мс — короткое наведение не дёргает подсказку
 
   function placeSmartTip(target) {
     const r = target.getBoundingClientRect();
-    const margin = 10;
+    const margin = 10, gap = 9;
     smartTip.style.left = '0px';
     smartTip.style.top = '0px';
     smartTip.classList.add('show');
     const tr = smartTip.getBoundingClientRect();
-    let left = r.left + (r.width / 2) - (tr.width / 2);
-    let top = r.bottom + 8;
-    if (left < margin) left = margin;
-    if (left + tr.width > window.innerWidth - margin) left = window.innerWidth - tr.width - margin;
-    if (top + tr.height > window.innerHeight - margin) top = r.top - tr.height - 8;
+    let left = r.left + r.width / 2 - tr.width / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - tr.width - margin));
+    let top = r.bottom + gap, pos = 'below';
+    if (top + tr.height > window.innerHeight - margin) { top = r.top - tr.height - gap; pos = 'above'; }
     if (top < margin) top = margin;
+    smartTip.dataset.pos = pos;
+    // стрелка указывает на центр элемента
+    const arrow = Math.max(14, Math.min(r.left + r.width / 2 - left, tr.width - 14));
+    smartTip.style.setProperty('--tip-arrow', `${Math.round(arrow)}px`);
     smartTip.style.left = `${Math.round(left)}px`;
     smartTip.style.top = `${Math.round(top)}px`;
   }
 
-  function showSmartTip(target) {
-    if (!target?.dataset?.tipTitle) return;
+  function renderSmartTip(target) {
     smartTipTarget = target;
-    smartTipTitle.textContent = target.dataset.tipTitle || '';
+    const title = target.dataset.tipTitle || '';
+    smartTipTitle.textContent = title;
+    smartTipTitle.style.display = title ? '' : 'none';
     smartTipBody.textContent = target.dataset.tipBody || '';
     placeSmartTip(target);
   }
 
-  function hideSmartTip(target = null) {
-    if (target && target !== smartTipTarget) return;
+  function scheduleSmartTip(target, immediate) {
+    if (!target || (!target.dataset.tipBody && !target.dataset.tipTitle)) return;
+    clearTimeout(tipShowTimer);
+    if (immediate) { renderSmartTip(target); return; }
+    tipShowTimer = setTimeout(() => renderSmartTip(target), TIP_DELAY);
+  }
+
+  function hideSmartTip() {
+    clearTimeout(tipShowTimer); tipShowTimer = null;
     smartTip.classList.remove('show');
     smartTipTarget = null;
   }
 
-  document.querySelectorAll('[data-tip-title]').forEach((el) => {
-    el.addEventListener('mouseenter', () => showSmartTip(el));
-    el.addEventListener('focus', () => showSmartTip(el));
-    el.addEventListener('mouseleave', () => hideSmartTip(el));
-    el.addEventListener('blur', () => hideSmartTip(el));
+  document.querySelectorAll('[data-tip-title], [data-tip-body]').forEach((el) => {
+    el.addEventListener('mouseenter', () => scheduleSmartTip(el, false));
+    el.addEventListener('mouseleave', hideSmartTip);
+    el.addEventListener('focus', () => scheduleSmartTip(el, true)); // клавиатура — сразу
+    el.addEventListener('blur', hideSmartTip);
+    el.addEventListener('click', hideSmartTip); // клик по кнопке убирает подсказку
   });
-  window.addEventListener('scroll', () => hideSmartTip(), { passive:true });
-  window.addEventListener('resize', () => smartTipTarget && placeSmartTip(smartTipTarget));
+  window.addEventListener('scroll', hideSmartTip, { passive:true });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideSmartTip(); });
+  window.addEventListener('resize', () => { if (smartTipTarget) placeSmartTip(smartTipTarget); });
 </script>
 <script>
   const combos = [...document.querySelectorAll("[data-combo]")];
