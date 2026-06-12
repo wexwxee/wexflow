@@ -603,3 +603,41 @@ button:active { transform: translateY(1px); }
 
 /* refresh-иконка крутится, пока идёт обновление */
 .fresh.syncing svg { animation: spin 1s linear infinite; }
+
+/* ============================================================
+   Светлая тема — доводка (Salling).
+   Раньше левый рейл был чёрным и фон плоским — приводим к
+   единому светлому виду с мягкой глубиной.
+   ============================================================ */
+html[data-theme="light"] body {
+  background:
+    radial-gradient(1200px 600px at 92% -12%, rgba(13, 159, 110, .06), transparent 60%),
+    radial-gradient(900px 520px at -8% 18%, rgba(13, 159, 110, .04), transparent 55%),
+    linear-gradient(180deg, #f4f8f6 0%, var(--bg) 46%, #e7ede9 100%);
+  background-attachment: fixed;
+}
+/* левый рейл — светлый, в тон приложению (а не чёрный) */
+html[data-theme="light"] .wex-sidebar {
+  background: rgba(255, 255, 255, .82);
+  border-right: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+html[data-theme="light"] .wex-side-logo:hover,
+html[data-theme="light"] .wex-side-btn:hover {
+  background: var(--chip-bg);
+  border-color: var(--line);
+}
+html[data-theme="light"] .wex-side-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* стеклянные элементы шапки в светлой теме — мягче и читаемее */
+html[data-theme="light"] .wex-topbar { box-shadow: 0 1px 0 rgba(0, 0, 0, .03); }
+html[data-theme="light"] .tablink,
+html[data-theme="light"] .app-switch,
+html[data-theme="light"] .theme-toggle { background: #ffffff; }
+html[data-theme="light"] .tablink:hover { background: var(--chip-bg); }
+/* карточки вакансий в светлой теме — чуть выразительнее край и тень */
+html[data-theme="light"] .card { border-color: var(--line); box-shadow: 0 1px 2px rgba(20, 50, 40, .05); }
+html[data-theme="light"] .card:hover { box-shadow: var(--shadow-sm); }
