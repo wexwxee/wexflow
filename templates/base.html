@@ -17,7 +17,7 @@
     document.documentElement.dataset.theme = t;
   })();
 </script>
-<link rel="stylesheet" href="/static/theme.css?v=20260612-light">
+<link rel="stylesheet" href="/static/theme.css?v=20260612-rail">
 {% block style %}{% endblock %}
 </head>
 <body>
@@ -32,6 +32,39 @@
       document.cookie = "jobhub_theme=" + next + ";path=/;max-age=31536000;samesite=lax";
     });
   });
+</script>
+<script>
+  // тонкий индикатор загрузки при переходах между страницами
+  (function () {
+    var bar = document.createElement("div");
+    bar.className = "wexnav-progress";
+    document.body.appendChild(bar);
+    var timer = null, w = 0;
+    function start() {
+      if (timer) return;
+      w = 10; bar.classList.add("go"); bar.style.width = w + "%";
+      timer = setInterval(function () {
+        w += Math.max(0.6, (92 - w) * 0.09);
+        if (w > 92) w = 92;
+        bar.style.width = w + "%";
+      }, 180);
+    }
+    function done() {
+      if (timer) { clearInterval(timer); timer = null; }
+      bar.style.width = "100%";
+      setTimeout(function () { bar.classList.remove("go"); bar.style.width = "0"; }, 280);
+    }
+    window.addEventListener("beforeunload", start);
+    window.addEventListener("pageshow", done);
+    // отправка форм — индикатор + «крутилка» на нажатой кнопке
+    document.addEventListener("submit", function (e) {
+      start();
+      var b = e.submitter;
+      if (b && b.tagName === "BUTTON" && !b.classList.contains("pwd-eye")) {
+        b.classList.add("loading");
+      }
+    });
+  })();
 </script>
 {% block script %}{% endblock %}
 </body>

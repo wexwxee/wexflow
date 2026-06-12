@@ -147,27 +147,45 @@ a { color: var(--accent); text-decoration: none; }
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 50;
-  width: 72px;
+  width: 84px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 18px 12px;
+  gap: 8px;
+  padding: 16px 10px;
   background: #0b0c0c;
   border-right: 1px solid rgba(255, 255, 255, .08);
 }
-.wex-side-logo,
-.wex-side-btn {
-  width: 46px;
-  min-height: 42px;
+.wex-side-logo {
+  width: 60px;
+  min-height: 46px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--muted);
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 12px;
   text-decoration: none;
   position: relative;
+  margin-bottom: 4px;
+  transition: background .15s, border-color .15s;
+}
+.wex-side-btn {
+  width: 64px;
+  min-height: 52px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 2px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  text-decoration: none;
+  position: relative;
+  cursor: pointer;
+  font-family: inherit;
   transition: background .15s, color .15s, border-color .15s;
 }
 .wex-side-logo:hover,
@@ -179,50 +197,43 @@ a { color: var(--accent); text-decoration: none; }
 .wex-side-nav {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
+  width: 100%;
+  align-items: center;
 }
+/* подпись под иконкой — постоянная, чтобы было понятно новичку */
 .wex-side-btn span {
-  position: absolute;
-  left: 58px;
-  top: 50%;
-  transform: translateY(-50%);
-  opacity: 0;
-  pointer-events: none;
-  background: var(--menu-bg);
-  color: var(--txt);
-  border: 1px solid var(--glass-line);
-  border-radius: 8px;
-  padding: 7px 9px;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: .005em;
+  text-align: center;
+  max-width: 100%;
   white-space: nowrap;
-  box-shadow: var(--shadow-sm);
-  transition: opacity .12s, transform .12s;
-}
-.wex-side-btn:hover span {
-  opacity: 1;
-  transform: translate(2px, -50%);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .wex-side-btn.active {
-  color: var(--txt-strong);
-  background: var(--chip-bg);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 .wex-side-btn.active::before {
   content: "";
   position: absolute;
-  left: -12px;
-  top: 9px;
-  bottom: 9px;
+  left: -10px;
+  top: 11px;
+  bottom: 11px;
   width: 3px;
   border-radius: 0 4px 4px 0;
   background: var(--accent);
+  box-shadow: var(--neon-glow);
 }
 .wex-side-spacer {
   flex: 1;
 }
 .wex-main {
   min-height: 100vh;
-  margin-left: 72px;
+  margin-left: 84px;
   display: flex;
   flex-direction: column;
 }
@@ -603,6 +614,16 @@ button:active { transform: translateY(1px); }
 
 /* refresh-иконка крутится, пока идёт обновление */
 .fresh.syncing svg { animation: spin 1s linear infinite; }
+
+/* ---------- индикатор загрузки при переходах ---------- */
+.wexnav-progress {
+  position: fixed; top: 0; left: 0; height: 2.5px; width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  box-shadow: 0 0 10px var(--accent);
+  z-index: 9999; opacity: 0; pointer-events: none;
+  transition: width .2s ease, opacity .35s ease;
+}
+.wexnav-progress.go { opacity: 1; }
 
 /* ============================================================
    Светлая тема — доводка (Salling).
