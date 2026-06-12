@@ -2,7 +2,7 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}Подача заявки{% endblock %}
+{% block title %}WexFlow Apply{% endblock %}
 
 {% block style %}
 <style>
@@ -18,7 +18,8 @@
   .hint { margin-top:6px; }
   button { padding:11px 18px; font-size:14px; font-weight:600; }
   .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--glass-line); }
+  .apply-brand { margin:18px 0 12px; }
   /* живой лог бота — всегда тёмный «терминал» */
   .botlog { margin:10px 0 0; padding:14px; max-height:340px; overflow:auto;
     background:#06090a; color:#c8ded6; border-radius:10px; border:1px solid rgba(34,209,158,.15);
@@ -33,12 +34,21 @@
 {% endblock %}
 
 {% block body %}
-<div class="wrap">
-  <div class="topline">
-    {{ ui.app_switch() }}
-    <a href="{{ '/job/' ~ job.id if job else '/' }}">← назад</a> · <a href="/settings">{{ ic.i('sliders', 13) }} Профиль и логин</a>
-    <span style="margin-left:auto;">{{ ui.theme_toggle() }}</span>
+{{ ui.shell_start('apply') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Apply') }}</h1>
+    <span class="wex-title-meta">{{ job.title if job else 'Вакансия не найдена' }}</span>
   </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    <a class="tablink" href="{{ '/job/' ~ job.id if job else '/' }}">← назад</a>
+    <a class="tablink" href="/settings">{{ ic.i('sliders', 13) }} Профиль и логин</a>
+    {{ ui.app_switch() }}
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+<section class="wex-workbench wex-narrow">
   {% if not job %}
     <p>Вакансия не найдена.</p>
   {% else %}
@@ -145,7 +155,8 @@
     <p><a href="#" id="showLog" class="hint">показать лог последней подачи</a></p>
     {% endif %}
   {% endif %}
-</div>
+</section>
+{{ ui.shell_end() }}
 {% endblock %}
 
 {% block script %}

@@ -2,36 +2,79 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}Настройки — Salling Jobs{% endblock %}
+{% block title %}WexFlow Settings{% endblock %}
 
 {% block style %}
 <style>
-  h1 { font-size:26px; margin:6px 0 4px; }
+  h1 { font-size:26px; margin:12px 0 4px; }
   .sub { color:var(--muted); margin:0 0 18px; }
-  .panel { border-radius:14px; padding:20px; background:var(--glass); border-color:var(--glass-line); }
+  .panel { border-radius:8px; padding:20px; background:var(--card); border-color:var(--glass-line); }
   .panel h2 { margin:0 0 4px; font-size:17px; }
   .panel .hint { margin:0 0 14px; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
   @media (max-width:640px){ .grid2 { grid-template-columns:1fr; } }
-  .field { margin-bottom:14px; }
+  .field { margin-bottom:14px; position:relative; }
+  .field.suggest-open { z-index:40; margin-bottom:176px; }
+  .field input.invalid { border-color:var(--err-line); box-shadow:0 0 0 3px rgba(252,165,165,.16); }
+  .field .req { color:var(--err-txt); font-size:12px; margin-top:6px; display:none; }
+  .field.missing .req { display:block; }
   button { padding:10px 18px; font-size:14px; font-weight:600; }
   .actions { margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .ok, .err { margin:10px 0; }
-  .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--glass-line); }
+  .autosave { color:var(--muted); font-size:13px; }
+  .autosave.saved { color:var(--ok-txt); }
+  .autosave.error { color:var(--err-txt); }
+  .suggest-menu {
+    display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:30;
+    max-height:156px; overflow:auto; padding:5px; background:var(--menu-bg);
+    border:1px solid var(--glass-line); border-radius:10px; box-shadow:var(--shadow);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    overscroll-behavior:contain;
+  }
+  .field.suggest-open .suggest-menu { display:block; }
+  .suggest-menu::-webkit-scrollbar { width:10px; }
+  .suggest-menu::-webkit-scrollbar-track { background:transparent; }
+  .suggest-menu::-webkit-scrollbar-thumb { background:var(--hover-line); border-radius:999px; border:3px solid var(--menu-bg); background-clip:padding-box; }
+  .suggest-item {
+    width:100%; display:block; text-align:left; border:none; background:transparent; color:var(--txt);
+    border-radius:7px; padding:7px 9px; font-size:13px;
+  }
+  .suggest-item:hover, .suggest-item.active { background:var(--chip-bg); }
+  .suggest-empty, .suggest-meta { color:var(--muted); font-size:12px; padding:7px 9px; }
+  .suggest-meta { border-bottom:1px solid var(--line); margin-bottom:4px; }
+  .file-card input[type="text"] { overflow:hidden; text-overflow:ellipsis; }
+  .file-open {
+    flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
+    min-height:34px; padding:0 10px; border-radius:8px; border:1px solid var(--line);
+    color:var(--accent); background:var(--glass); font-size:13px; font-weight:700; text-decoration:none;
+  }
+  .file-open:hover { border-color:var(--accent); background:var(--accent-soft); }
+  .settings-brand { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:18px 0 8px; }
+  .settings-brand h1 { margin:0; }
+  @media (max-width:640px){ .field.suggest-open { margin-bottom:166px; } }
 </style>
 {% endblock %}
 
 {% block body %}
-<div class="wrap narrow">
-  <div class="topline">
-    {{ ui.app_switch() }}
-    <a href="/">← к вакансиям</a>
-    <span style="margin-left:auto;">{{ ui.theme_toggle() }}</span>
+{{ ui.shell_start('settings') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Settings') }}</h1>
+    <span class="wex-title-meta">Профиль, документы, адрес дома и логин Salling</span>
   </div>
-  <h1>{{ ic.i('sliders', 22) }} Настройки</h1>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    <a class="tablink" href="/">← к вакансиям</a>
+    {{ ui.app_switch() }}
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+<section class="wex-workbench wex-narrow">
   <p class="sub">Профиль, документы и логин — заполни один раз, используется для всех подач.</p>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
+  {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
   {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее (улица, город или индекс).</div>{% endif %}
 
   <!-- Профиль + документы -->
@@ -39,14 +82,14 @@
     <h2>Профиль кандидата</h2>
     <p class="hint">Эти данные бот подставляет в анкеты (где поля доступны).</p>
     <div class="grid2">
-      <div class="field"><label class="lbl">Имя</label><input type="text" name="first_name" value="{{ profile.first_name or '' }}"></div>
-      <div class="field"><label class="lbl">Фамилия</label><input type="text" name="last_name" value="{{ profile.last_name or '' }}"></div>
-      <div class="field"><label class="lbl">Email</label><input type="email" name="email" value="{{ profile.email or '' }}"></div>
-      <div class="field"><label class="lbl">Телефон</label><input type="tel" name="phone" value="{{ profile.phone or '' }}"></div>
-      <div class="field"><label class="lbl">Адрес</label><input type="text" name="address" value="{{ profile.address or '' }}"></div>
-      <div class="field"><label class="lbl">Индекс</label><input type="text" name="zipcode" value="{{ profile.zip or '' }}"></div>
-      <div class="field"><label class="lbl">Город</label><input type="text" name="city" value="{{ profile.city or '' }}"></div>
-      <div class="field"><label class="lbl">Страна</label><input type="text" name="country" value="{{ profile.country or '' }}"></div>
+      <div class="field"><label class="lbl">Имя</label><input type="text" name="first_name" value="{{ profile.first_name or '' }}" data-required="Имя" autocomplete="given-name"><div class="req">Заполни имя</div></div>
+      <div class="field"><label class="lbl">Фамилия</label><input type="text" name="last_name" value="{{ profile.last_name or '' }}" data-required="Фамилия" autocomplete="family-name"><div class="req">Заполни фамилию</div></div>
+      <div class="field"><label class="lbl">Email</label><input type="email" name="email" value="{{ profile.email or '' }}" data-required="Email" autocomplete="email"><div class="req">Заполни email</div></div>
+      <div class="field"><label class="lbl">Телефон</label><input type="tel" name="phone" value="{{ profile.phone or '' }}" data-required="Телефон" autocomplete="tel"><div class="req">Заполни телефон</div></div>
+      <div class="field"><label class="lbl">Адрес</label><input type="text" name="address" value="{{ profile.address or '' }}" data-required="Адрес" autocomplete="street-address"><div class="req">Заполни адрес</div></div>
+      <div class="field"><label class="lbl">Индекс</label><input type="text" name="zipcode" value="{{ profile.zip or '' }}" data-required="Индекс" autocomplete="postal-code"><div class="req">Заполни индекс</div></div>
+      <div class="field" data-suggest='{{ city_options|tojson }}' data-suggest-kind="city"><label class="lbl">Город</label><input type="text" name="city" value="{{ profile.city or '' }}" data-required="Город" autocomplete="off" placeholder="ищи город по всей Дании"><div class="req">Выбери или введи город</div><div class="suggest-menu"></div></div>
+      <div class="field" data-suggest='{{ country_options|tojson }}' data-suggest-kind="country"><label class="lbl">Страна</label><input type="text" name="country" value="{{ profile.country or '' }}" data-required="Страна" autocomplete="off" placeholder="например: Danmark"><div class="req">Выбери страну</div><div class="suggest-menu"></div></div>
       <div class="field"><label class="lbl">LinkedIn (необязательно)</label><input type="text" name="linkedin" value="{{ profile.linkedin or '' }}"></div>
     </div>
 
@@ -59,6 +102,7 @@
         <div class="file-picker">
           <label class="file-button" for="cv_file">Выбрать файл</label>
           <span class="file-name {{ 'saved' if file_info.cv_status=='ok' else ('missing' if file_info.cv_status=='missing' else '') }}" data-file-name="cv_file">{{ file_info.cv_label }}</span>
+          {% if file_info.cv_url %}<a class="file-open" href="{{ file_info.cv_url }}" target="_blank" rel="noopener" title="Открыть сохранённый CV">{{ ic.i('eye', 14) }} Открыть</a>{% endif %}
           <input id="cv_file" type="file" name="cv_file" accept=".pdf,.doc,.docx">
         </div>
       </div>
@@ -68,11 +112,12 @@
         <div class="file-picker">
           <label class="file-button" for="cover_letter_file">Выбрать файл</label>
           <span class="file-name {{ 'saved' if file_info.cover_status=='ok' else ('missing' if file_info.cover_status=='missing' else '') }}" data-file-name="cover_letter_file">{{ file_info.cover_label }}</span>
+          {% if file_info.cover_url %}<a class="file-open" href="{{ file_info.cover_url }}" target="_blank" rel="noopener" title="Открыть сохранённое мотивационное письмо">{{ ic.i('eye', 14) }} Открыть</a>{% endif %}
           <input id="cover_letter_file" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
         </div>
       </div>
     </div>
-    <div class="actions" style="margin-top:16px;"><button class="primary" type="submit">Сохранить профиль</button></div>
+    <div class="actions" style="margin-top:16px;"><button class="primary" type="submit">Сохранить профиль</button><span id="autosaveStatus" class="autosave">Автосохранение включено</span></div>
   </form>
 
   <!-- Аккаунт Salling -->
@@ -114,11 +159,148 @@
       </form>
     </div>
   </div>
-</div>
+</section>
+{{ ui.shell_end() }}
 {% endblock %}
 
 {% block script %}
 <script>
+  const profileForm = document.getElementById('profileForm');
+  const autosaveStatus = document.getElementById('autosaveStatus');
+  const requiredInputs = [...document.querySelectorAll('#profileForm [data-required]')];
+  let saveTimer = null;
+
+  function normalizeProfileValue(input) {
+    const key = (input.name || '').toLowerCase();
+    const v = input.value.trim();
+    if (key === 'city') {
+      const folded = v.toLowerCase();
+      if (['k??benhavn', 'k?benhavn', 'kobenhavn', 'koebenhavn', 'copenhagen'].includes(folded)) input.value = 'København';
+    }
+    if (key === 'country') {
+      const folded = v.toLowerCase();
+      if (['denmark', 'dk', 'danish'].includes(folded)) input.value = 'Danmark';
+    }
+  }
+
+  function validateProfile(show = false) {
+    const missing = [];
+    requiredInputs.forEach((input) => {
+      normalizeProfileValue(input);
+      const bad = !input.value.trim();
+      input.classList.toggle('invalid', bad && show);
+      input.closest('.field')?.classList.toggle('missing', bad && show);
+      if (bad) missing.push(input.dataset.required);
+    });
+    return missing;
+  }
+
+  async function autosaveProfile() {
+    if (!profileForm) return;
+    requiredInputs.forEach(normalizeProfileValue);
+    autosaveStatus.textContent = 'Сохраняю...';
+    autosaveStatus.className = 'autosave';
+    const fd = new FormData();
+    ['first_name','last_name','email','phone','address','zipcode','city','country','linkedin','cv_path','cover_letter_path'].forEach((name) => {
+      const input = profileForm.querySelector(`[name="${name}"]`);
+      if (input) fd.append(name, input.value || '');
+    });
+    try {
+      const res = await fetch('/settings/profile/autosave', { method:'POST', body:fd });
+      const data = await res.json();
+      if (!data.ok) throw new Error('save failed');
+      const missing = data.missing || [];
+      autosaveStatus.textContent = missing.length ? 'Сохранено, но нужно заполнить: ' + missing.join(', ') : 'Сохранено';
+      autosaveStatus.className = 'autosave saved';
+      validateProfile(false);
+    } catch (e) {
+      autosaveStatus.textContent = 'Не удалось автосохранить';
+      autosaveStatus.className = 'autosave error';
+    }
+  }
+
+  if (profileForm) {
+    profileForm.addEventListener('input', (event) => {
+      if (event.target.matches('input[type="file"]')) return;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(autosaveProfile, 550);
+    });
+    profileForm.addEventListener('submit', (event) => {
+      const missing = validateProfile(true);
+      if (missing.length) {
+        event.preventDefault();
+        autosaveStatus.textContent = 'Нужно заполнить: ' + missing.join(', ');
+        autosaveStatus.className = 'autosave error';
+        requiredInputs.find((input) => !input.value.trim())?.focus();
+      }
+    });
+    validateProfile(false);
+  }
+
+  document.querySelectorAll('[data-suggest]').forEach((field) => {
+    const input = field.querySelector('input');
+    const menu = field.querySelector('.suggest-menu');
+    const items = JSON.parse(field.dataset.suggest || '[]');
+    let active = -1;
+
+    function fold(value) {
+      return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/ø/g, 'o')
+        .replace(/æ/g, 'ae')
+        .replace(/å/g, 'a');
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function render() {
+      const q = fold(input.value.trim());
+      const shown = items.filter((x) => !q || fold(x).includes(q)).slice(0, 60);
+      const meta = field.dataset.suggestKind === 'city'
+        ? '<div class="suggest-meta">Поиск по городам Дании</div>'
+        : '<div class="suggest-meta">Выбор страны</div>';
+      const body = shown.length
+        ? shown.map((item, i) => `<button type="button" class="suggest-item${i === active ? ' active' : ''}" data-value="${escapeHtml(item)}">${escapeHtml(item)}</button>`).join('')
+        : '<div class="suggest-empty">Ничего не найдено, можно ввести вручную</div>';
+      menu.innerHTML = meta + body;
+      field.classList.toggle('suggest-open', shown.length > 0);
+    }
+
+    input.addEventListener('focus', () => { active = -1; render(); });
+    input.addEventListener('input', () => { active = -1; render(); });
+    input.addEventListener('keydown', (event) => {
+      const buttons = [...menu.querySelectorAll('.suggest-item')];
+      if (!buttons.length) return;
+      if (event.key === 'ArrowDown') { event.preventDefault(); active = Math.min(buttons.length - 1, active + 1); render(); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); active = Math.max(0, active - 1); render(); }
+      if (event.key === 'Enter' && active >= 0) {
+        event.preventDefault();
+        input.value = buttons[active].dataset.value;
+        field.classList.remove('suggest-open');
+        input.dispatchEvent(new Event('input', { bubbles:true }));
+      }
+    });
+    menu.addEventListener('click', (event) => {
+      const btn = event.target.closest('.suggest-item');
+      if (!btn) return;
+      input.value = btn.dataset.value;
+      field.classList.remove('suggest-open');
+      input.dispatchEvent(new Event('input', { bubbles:true }));
+    });
+    document.addEventListener('click', (event) => {
+      if (!field.contains(event.target)) field.classList.remove('suggest-open');
+    });
+  });
+
   document.querySelectorAll('input[type="file"]').forEach((input) => {
     input.addEventListener("change", () => {
       const t = document.querySelector(`[data-file-name="${input.id}"]`);

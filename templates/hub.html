@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block body %}
+<style>
+  .hub-screen {
+    min-height: calc(100vh - 2px);
+    display: grid;
+    place-items: center;
+    padding: 42px 22px 70px;
+  }
+  .hub-stack {
+    width: min(880px, 100%);
+    display: grid;
+    gap: 24px;
+  }
+  .hub-brand-lockup {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 13px;
+    color: var(--txt-strong);
+  }
+  .hub-brand-lockup .wex-mark {
+    width: 34px;
+    height: 34px;
+  }
+  .hub-brand-lockup strong {
+    font-size: clamp(26px, 5vw, 40px);
+    line-height: 1;
+    letter-spacing: 0;
+    font-weight: 800;
+  }
+  .hub-modules {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .hub-module {
+    --module-accent: var(--accent);
+    position: relative;
+    min-height: 212px;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid var(--glass-line);
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--module-accent) 10%, transparent), transparent 52%),
+      var(--card);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+    transition: transform .18s cubic-bezier(.22,.61,.36,1), border-color .18s ease, box-shadow .18s ease;
+  }
+  .hub-module:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--module-accent) 40%, var(--glass-line));
+    box-shadow: var(--shadow);
+  }
+  .hub-module::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: var(--module-accent);
+    opacity: .82;
+  }
+  .hub-module.seven {
+    --module-accent: #31c95d;
+  }
+  .hub-module-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .hub-module-title {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+  }
+  .hub-module-title h2 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.2;
+  }
+  .hub-module-title p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .hub-module-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    color: var(--txt-strong);
+    background: color-mix(in srgb, var(--module-accent) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--module-accent) 34%, var(--glass-line));
+    flex: 0 0 auto;
+  }
+  .hub-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .hub-stat {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+  .hub-stat b {
+    font-size: 22px;
+    line-height: 1;
+    color: var(--txt-strong);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+  }
+  .hub-stat span {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    white-space: nowrap;
+  }
+  .hub-module-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .hub-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid var(--glass-line);
+    color: var(--txt);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 700;
+    background: var(--glass);
+    transition: transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+  }
+  .hub-link:hover {
+    transform: translateY(-1px);
+    border-color: var(--hover-line);
+    color: var(--txt-strong);
+  }
+  .hub-link.primary {
+    border-color: color-mix(in srgb, var(--module-accent) 42%, var(--glass-line));
+    background: var(--module-accent);
+    color: #07100b;
+  }
+  .hub-link.primary:hover {
+    border-color: var(--module-accent);
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--module-accent) 32%, transparent);
+  }
+  .hub-quiet-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .hub-quiet-row .fresh {
+    margin: 0;
+  }
+  .hub-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 99px;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  @media (max-width: 780px) {
+    .hub-screen {
+      align-items: start;
+      padding-top: 28px;
+    }
+    .hub-modules {
+      grid-template-columns: 1fr;
+    }
+    .hub-module {
+      min-height: 0;
+    }
+  }
+</style>
+
+{{ ui.shell_start('hub') }}
+<section class="hub-screen">
+  <div class="hub-stack">
+    <div class="hub-brand-lockup">
+      {{ ui.plane(34) }}
+      <strong>WexFlow</strong>
+    </div>
+
+    <div class="hub-modules">
+      <section class="hub-module salling">
+        <div class="hub-module-head">
+          <div class="hub-module-title">
+            <h2>Salling Jobs</h2>
+            <p>Лента вакансий, фильтры, статусы, маршрут и пакетная подача.</p>
+          </div>
+          <div class="hub-module-icon">{{ ic.i('cart', 20) }}</div>
+        </div>
+        <div class="hub-stats">
+          <div class="hub-stat"><b>{{ active_jobs }}</b><span>active</span></div>
+          <div class="hub-stat"><b>{{ applied_jobs }}</b><span>applied</span></div>
+          <div class="hub-stat"><b>{{ total_jobs }}</b><span>total</span></div>
+        </div>
+        <div class="hub-module-actions">
+          <a class="hub-link primary" href="/">{{ ic.i('cart', 15) }} Открыть Jobs</a>
+          <a class="hub-link" href="/settings">{{ ic.i('sliders', 15) }} Настройки</a>
+        </div>
+      </section>
+
+      <section class="hub-module seven">
+        <div class="hub-module-head">
+          <div class="hub-module-title">
+            <h2>7-Eleven Apply Studio</h2>
+            <p>Отдельный модуль для профиля, магазинов и запуска автоподачи.</p>
+          </div>
+          <div class="hub-module-icon">{{ ic.i('store', 20) }}</div>
+        </div>
+        <div class="hub-stats">
+          <div class="hub-stat"><b>3</b><span>steps</span></div>
+          <div class="hub-stat"><b>CV</b><span>profile</span></div>
+          <div class="hub-stat"><b>Run</b><span>apply</span></div>
+        </div>
+        <div class="hub-module-actions">
+          <a class="hub-link primary" href="http://127.0.0.1:8080/__app/7eleven">{{ ic.i('store', 15) }} Открыть 7-Eleven</a>
+          <a class="hub-link" href="http://127.0.0.1:7111/">{{ ic.i('send', 15) }} Прямой запуск</a>
+        </div>
+      </section>
+    </div>
+
+    <div class="hub-quiet-row">
+      <span class="hub-status-dot"></span>
+      <span>Единый рабочий центр для двух локальных модулей</span>
+      {{ ui.freshness(data_age_min, sync_running) }}
+    </div>
+  </div>
+</section>
+{{ ui.shell_end() }}
+{% endblock %}

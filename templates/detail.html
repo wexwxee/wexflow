@@ -2,14 +2,14 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}{{ job.title if job else 'Не найдено' }}{% endblock %}
+{% block title %}{{ 'WexFlow · ' ~ job.title if job else 'WexFlow' }}{% endblock %}
 
 {% block style %}
 <style>
-  .wrap { max-width:820px; }
+  .wrap { max-width:860px; }
   .badge { padding:3px 11px; margin-right:6px; }
   .meta { font-size:14px; margin:12px 0; line-height:1.7; }
-  .desc { background:var(--glass); border:1px solid var(--glass-line); border-radius:12px; padding:18px; line-height:1.6; }
+  .desc { background:var(--card); border:1px solid var(--glass-line); border-radius:8px; padding:18px; line-height:1.6; }
   .desc h3 { margin-top:0; }
   .translation { background:var(--ok-bg); border-color:var(--ok-line); }
   .facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin:16px 0 18px; }
@@ -29,17 +29,26 @@
   .st { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; transition:border-color .15s; }
   .st:hover { border-color:var(--accent); }
   .st.cur { background:var(--ok-bg); border-color:var(--ok-line); color:var(--ok-txt); }
-  .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--glass-line); }
+  .detail-brand { margin:18px 0 12px; }
 </style>
 {% endblock %}
 
 {% block body %}
-<div class="wrap">
-  <div class="topline">
-    {{ ui.app_switch() }}
-    <a href="/">← к списку</a>
-    <span style="margin-left:auto;">{{ ui.theme_toggle() }}</span>
+{{ ui.shell_start('jobs') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Job') }}</h1>
+    <span class="wex-title-meta">{{ job.title if job else 'Вакансия не найдена' }}</span>
   </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    <a class="tablink" href="/">← к списку</a>
+    {{ ui.app_switch() }}
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+<section class="wex-workbench wex-narrow">
   {% if not job %}
     <p>Вакансия не найдена.</p>
   {% else %}
@@ -97,7 +106,8 @@
     <h2 class="section-title">Оригинал</h2>
     <div class="desc">{{ job.description | safe }}</div>
   {% endif %}
-</div>
+</section>
+{{ ui.shell_end() }}
 {% endblock %}
 
 {% block script %}

@@ -6,10 +6,35 @@ import config
 
 UPLOAD_DIR = config.BASE_DIR / "uploads"
 
+CITY_FIXES = {
+    "k??benhavn": "København",
+    "k?benhavn": "København",
+    "kobenhavn": "København",
+    "koebenhavn": "København",
+    "copenhagen": "København",
+}
+
+COUNTRY_FIXES = {
+    "denmark": "Danmark",
+    "danish": "Danmark",
+    "dk": "Danmark",
+}
+
+
+def clean_profile(data: dict) -> dict:
+    data = dict(data or {})
+    city_key = str(data.get("city") or "").strip().lower()
+    country_key = str(data.get("country") or "").strip().lower()
+    if city_key in CITY_FIXES:
+        data["city"] = CITY_FIXES[city_key]
+    if country_key in COUNTRY_FIXES:
+        data["country"] = COUNTRY_FIXES[country_key]
+    return data
+
 
 def load_profile() -> dict:
     if config.PROFILE_PATH.exists():
-        return json.loads(config.PROFILE_PATH.read_text(encoding="utf-8"))
+        return clean_profile(json.loads(config.PROFILE_PATH.read_text(encoding="utf-8")))
     if (config.BASE_DIR / "profile.example.json").exists():
         data = json.loads((config.BASE_DIR / "profile.example.json").read_text(encoding="utf-8"))
         data["first_name"] = ""
@@ -27,6 +52,7 @@ def load_profile() -> dict:
 
 
 def save_profile(data: dict):
+    data = clean_profile(data)
     config.PROFILE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

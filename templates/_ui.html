@@ -1,15 +1,52 @@
 {# Общие куски интерфейса. Используются всеми страницами. #}
 {% import "_icons.html" as ic %}
 
+{% macro plane(size=18) -%}
+  <img class="wex-mark" src="/static/wexflow_mark.png" alt="" width="{{ size }}" height="{{ size }}">
+{%- endmacro %}
+
+{% macro brand(suffix="") -%}
+  <span class="wex-brand">
+    {{ plane(24) }}
+    <span class="wex-brand-text">WexFlow{% if suffix %}<em>{{ suffix }}</em>{% endif %}</span>
+  </span>
+{%- endmacro %}
+
+{% macro sidebar(active="jobs") -%}
+  <aside class="wex-sidebar" aria-label="WexFlow navigation">
+    <a class="wex-side-logo" href="/hub" data-tip-title="WexFlow" data-tip-body="Единый рабочий центр для Salling и 7-Eleven.">{{ plane(28) }}</a>
+    <nav class="wex-side-nav">
+      <a class="wex-side-btn {{ 'active' if active == 'hub' }}" href="/hub" data-tip-title="Hub" data-tip-body="Главный экран WexFlow с быстрым входом в оба модуля.">{{ ic.i('home', 18) }}<span>Hub</span></a>
+      <a class="wex-side-btn {{ 'active' if active == 'jobs' }}" href="/" data-tip-title="Salling Jobs" data-tip-body="Лента вакансий, фильтры, статусы и пакетная подача.">{{ ic.i('cart', 18) }}<span>Jobs</span></a>
+      <a class="wex-side-btn {{ 'active' if active == 'applied' }}" href="/?status=applied&show_applied=1" data-tip-title="Поданные" data-tip-body="Вакансии, на которые заявка уже отправлена.">{{ ic.i('check', 18) }}<span>Applied</span></a>
+      <a class="wex-side-btn {{ 'active' if active == 'settings' }}" href="/settings" data-tip-title="Настройки" data-tip-body="Профиль кандидата, CV, письмо и логин Salling.">{{ ic.i('sliders', 18) }}<span>Settings</span></a>
+      <a class="wex-side-btn {{ 'active' if active == 'apply' }}" href="/settings" data-tip-title="Подача" data-tip-body="Перед запуском подачи проверь профиль, файлы и логин.">{{ ic.i('send', 18) }}<span>Apply</span></a>
+    </nav>
+    <div class="wex-side-spacer"></div>
+    <a class="wex-side-btn" href="http://127.0.0.1:8080/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Перейти в отдельный модуль автоподачи 7-Eleven.">{{ ic.i('store', 18) }}<span>7-Eleven</span></a>
+  </aside>
+{%- endmacro %}
+
+{% macro shell_start(active="jobs") -%}
+  <div class="wex-shell">
+    {{ sidebar(active) }}
+    <main class="wex-main">
+{%- endmacro %}
+
+{% macro shell_end() -%}
+    </main>
+  </div>
+{%- endmacro %}
+
 {% macro app_switch() -%}
   <div class="app-switch">
     <span class="cur">{{ ic.i('cart') }} Salling</span>
-    <a href="http://127.0.0.1:8080/__app/7eleven" title="Переключиться на 7-Eleven">{{ ic.i('store') }} 7-Eleven</a>
+    <a href="http://127.0.0.1:8080/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Переключает на отдельный локальный поиск вакансий 7-Eleven.">{{ ic.i('store') }} 7-Eleven</a>
   </div>
 {%- endmacro %}
 
 {% macro theme_toggle() -%}
-  <button type="button" class="theme-toggle" data-theme-toggle title="Светлая/тёмная тема">
+  <button type="button" class="theme-toggle" data-theme-toggle data-tip-title="Тема" data-tip-body="Переключает светлый и тёмный режим интерфейса.">
     <span class="ic-sun">{{ ic.i('sun', 15) }}</span>
     <span class="ic-moon">{{ ic.i('moon', 15) }}</span>
   </button>
@@ -17,10 +54,10 @@
 
 {% macro freshness(age_min, running=false) -%}
   {% if running %}
-    <span class="fresh" title="Идёт обновление вакансий с сайта Salling">{{ ic.i('refresh', 12) }} обновляется…</span>
+    <span class="fresh syncing" data-tip-title="Обновление" data-tip-body="Идёт синхронизация вакансий с сайта Salling.">{{ ic.i('refresh', 12) }} обновляется…</span>
   {% elif age_min is not none %}
     {% set stale = age_min > 120 %}
-    <span class="fresh {{ 'stale' if stale }}" title="Когда вакансии в последний раз сверялись с сайтом Salling. Обновляется автоматически каждые 30 минут, пока приложение запущено.">
+    <span class="fresh {{ 'stale' if stale }}" data-tip-title="Свежесть данных" data-tip-body="Когда вакансии в последний раз сверялись с сайтом Salling. Пока приложение запущено, обновление идёт автоматически примерно раз в 30 минут.">
       {% if stale %}{{ ic.i('alert', 12) }}{% else %}{{ ic.i('check', 12) }}{% endif %}
       {% if age_min < 1 %}обновлено только что
       {%- elif age_min < 60 %}обновлено {{ age_min }} мин назад

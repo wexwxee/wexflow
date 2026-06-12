@@ -13,8 +13,8 @@ from contextlib import asynccontextmanager
 from collections import Counter
 from urllib.parse import quote_plus
 
-from fastapi import FastAPI, Request, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import func
@@ -31,6 +31,17 @@ import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
 from apscheduler.schedulers.background import BackgroundScheduler
+
+PROFILE_REQUIRED = [
+    ("first_name", "Имя"),
+    ("last_name", "Фамилия"),
+    ("email", "Email"),
+    ("phone", "Телефон"),
+    ("address", "Адрес"),
+    ("zip", "Индекс"),
+    ("city", "Город"),
+    ("country", "Страна"),
+]
 
 # --- автообновление вакансий: каждые 30 минут + при старте, если данные устарели ---
 _sync_lock = threading.Lock()
@@ -106,6 +117,46 @@ def _maps_url(job: Job, home: dict | None = None) -> str:
     )
 
 
+def _profile_missing(profile: dict) -> list[str]:
+    return [label for key, label in PROFILE_REQUIRED if not str(profile.get(key) or "").strip()]
+
+
+def _profile_choices() -> tuple[list[str], list[str]]:
+    city_set = {
+        "København", "København K", "København N", "København S", "København V",
+        "København Ø", "København NV", "København SV", "Frederiksberg",
+        "Brønshøj", "Valby", "Vanløse", "Rødovre", "Hvidovre", "Herlev",
+        "Glostrup", "Ballerup", "Taastrup", "Kastrup", "Aarhus", "Aarhus C",
+        "Odense", "Aalborg", "Esbjerg", "Randers", "Kolding", "Vejle",
+        "Roskilde", "Køge", "Greve", "Ishøj", "Kgs. Lyngby", "Hillerød",
+        "Helsingør", "Næstved", "Slagelse", "Holbæk", "Svendborg",
+        "Sønderborg", "Viborg", "Horsens", "Silkeborg", "Herning",
+        "Fredericia", "Hjørring", "Skive", "Ringsted", "Haderslev",
+        "Skanderborg", "Nyborg", "Aabenraa", "Kalundborg", "Nørresundby",
+        "Farum", "Birkerød", "Værløse", "Allerød", "Solrød Strand",
+        "Frederikssund", "Frederiksværk", "Hundested", "Tårnby", "Dragør",
+        "Albertslund", "Brøndby", "Hedehusene", "Nivå", "Humlebæk",
+        "Fredensborg", "Espergærde", "Rønne", "Nykøbing F", "Nakskov",
+        "Vordingborg", "Haslev", "Sorø", "Ringkøbing", "Holstebro",
+        "Struer", "Ikast", "Brande", "Billund", "Vejen", "Middelfart",
+        "Assens", "Faaborg", "Middelfart", "Frederikshavn", "Thisted",
+        "Hobro", "Grenaa", "Ebeltoft", "Skagen", "Ribe", "Tønder",
+        "Varde", "Brønderslev", "Lemvig", "Odder", "Nykøbing Mors",
+        "Lillerød", "Charlottenlund", "Hellerup", "Gentofte", "Virum",
+        "Søborg", "Bagsværd", "Lyngby", "Måløv", "Smørum", "Ølstykke",
+    }
+    for values in labels.CITY_GROUPS.values():
+        city_set.update(values)
+    city_set.update(labels.CITY_ALIASES.values())
+    try:
+        with get_session() as s:
+            city_set.update(c for c in s.exec(select(Job.city)).all() if c)
+    except Exception:
+        pass
+    countries = ["Danmark", "Sverige", "Norge", "Tyskland", "Polen"]
+    return sorted(city_set, key=str.casefold), countries
+
+
 def _text(html: str | None) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html or "")).strip().lower()
 
@@ -168,7 +219,7 @@ def _distinct(session, column):
 
 
 def _active_counts(session):
-    rows = session.exec(select(Job).where(Job.status.not_in(["closed", "hidden"]))).all()
+    rows = session.exec(select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))).all()
     counts = {
         "brand": Counter(),
         "region": Counter(),
@@ -194,6 +245,32 @@ def _active_counts(session):
     return counts
 
 
+@app.get("/hub", response_class=HTMLResponse)
+def hub(request: Request):
+    with get_session() as s:
+        total_jobs = s.exec(select(func.count(Job.id))).one() or 0
+        active_jobs = (
+            s.exec(
+                select(func.count(Job.id)).where(
+                    Job.status.not_in(["closed", "hidden", "applied"])
+                )
+            ).one()
+            or 0
+        )
+        applied_jobs = s.exec(select(func.count(Job.id)).where(Job.status == "applied")).one() or 0
+    return templates.TemplateResponse(
+        "hub.html",
+        {
+            "request": request,
+            "total_jobs": total_jobs,
+            "active_jobs": active_jobs,
+            "applied_jobs": applied_jobs,
+            "data_age_min": _data_age_minutes(),
+            "sync_running": _sync_state["running"],
+        },
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(
     request: Request,
@@ -208,6 +285,7 @@ def index(
     sort: str = "",
     radius: str = "",
     group: str = "",
+    show_applied: str = "",
     page: str = "1",
     geoerror: str = "",
     batch: str = "",
@@ -215,7 +293,7 @@ def index(
     reset: str = "",
 ):
     # запоминаем фильтры в cookie и восстанавливаем при заходе на голую "/"
-    _fkeys = ["q", "city", "brand", "region", "employment_type", "category", "job_level", "status", "sort"]
+    _fkeys = ["q", "city", "brand", "region", "employment_type", "category", "job_level", "status", "sort", "show_applied"]
     if not request.query_params and not reset:
         raw = request.cookies.get("saling_filters")
         if raw:
@@ -226,6 +304,7 @@ def index(
                 employment_type = saved.get("employment_type", employment_type)
                 category = saved.get("category", category); job_level = saved.get("job_level", job_level)
                 status = saved.get("status", status); sort = saved.get("sort", sort)
+                show_applied = saved.get("show_applied", show_applied)
                 radius = saved.get("radius", radius); group = saved.get("group", group)
             except Exception:
                 pass
@@ -236,7 +315,10 @@ def index(
     with get_session() as s:
         stmt = select(Job)
         if status == "active":
-            stmt = stmt.where(Job.status.not_in(["closed", "hidden"]))
+            excluded_statuses = ["closed", "hidden"]
+            if not show_applied:
+                excluded_statuses.append("applied")
+            stmt = stmt.where(Job.status.not_in(excluded_statuses))
         elif status:
             stmt = stmt.where(Job.status == status)
         city_lookup = labels.city_query(city)
@@ -304,7 +386,7 @@ def index(
         cats = sorted({c for row in cat_rows for c in row.split(",") if c})
         counts = _active_counts(s)
         total_active = s.exec(
-            select(func.count()).select_from(Job).where(Job.status.not_in(["closed", "hidden"]))
+            select(func.count()).select_from(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))
         ).one()
         applied_count = s.exec(
             select(func.count()).select_from(Job).where(Job.status == "applied")
@@ -409,7 +491,8 @@ def index(
               "category": category_code,
               "employment_type": employment_code,
               "job_level": level_code,
-              "status": status, "sort": sort, "radius": radius, "group": group}),
+              "status": status, "sort": sort, "radius": radius, "group": group,
+              "show_applied": show_applied}),
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
         "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
         "sync_running": _sync_state["running"],
@@ -516,18 +599,23 @@ def api_transit(job_id: str):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, saved: str = "", geoerror: str = ""):
+def settings_page(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     profile = profile_store.load_profile()
     file_info = {
         "cv_label": profile_store.file_label(profile.get("cv_path", "")),
         "cv_status": profile_store.file_status(profile.get("cv_path", "")),
+        "cv_url": "/settings/file/cv" if profile_store.file_status(profile.get("cv_path", "")) == "ok" else "",
         "cover_label": profile_store.file_label(profile.get("cover_letter_path", "")),
         "cover_status": profile_store.file_status(profile.get("cover_letter_path", "")),
+        "cover_url": "/settings/file/cover" if profile_store.file_status(profile.get("cover_letter_path", "")) == "ok" else "",
     }
+    city_options, country_options = _profile_choices()
+    missing_fields = [x for x in missing.split(",") if x]
     return templates.TemplateResponse("settings.html", {
         "request": request, "profile": profile, "file_info": file_info,
         "creds": credentials_store.status(), "home": settings_store.get_home(),
-        "saved": saved, "geoerror": geoerror,
+        "saved": saved, "geoerror": geoerror, "missing_fields": missing_fields,
+        "city_options": city_options, "country_options": country_options,
     })
 
 
@@ -546,9 +634,43 @@ def settings_save(
         "zip": zipcode.strip(), "city": city.strip(), "country": country.strip(),
         "linkedin": linkedin.strip(),
     })
+    missing = _profile_missing(profile)
+    if missing:
+        return RedirectResponse("/settings?missing=" + quote_plus(",".join(missing)), status_code=303)
     profile_store.save_profile(
         _update_profile_files(profile, cv_path, cover_letter_path, cv_file, cover_letter_file))
     return RedirectResponse("/settings?saved=1", status_code=303)
+
+
+@app.post("/settings/profile/autosave")
+async def settings_profile_autosave(request: Request):
+    form = await request.form()
+    profile = profile_store.load_profile()
+    for form_key, profile_key in [
+        ("first_name", "first_name"), ("last_name", "last_name"), ("email", "email"),
+        ("phone", "phone"), ("address", "address"), ("zipcode", "zip"),
+        ("city", "city"), ("country", "country"), ("linkedin", "linkedin"),
+        ("cv_path", "cv_path"), ("cover_letter_path", "cover_letter_path"),
+    ]:
+        if form_key in form:
+            profile[profile_key] = str(form.get(form_key) or "").strip()
+    profile = profile_store.clean_profile(profile)
+    profile_store.save_profile(profile)
+    return JSONResponse({"ok": True, "missing": _profile_missing(profile), "profile": profile})
+
+
+@app.get("/settings/file/{kind}")
+def settings_file(kind: str):
+    profile = profile_store.load_profile()
+    path = {
+        "cv": profile.get("cv_path", ""),
+        "cover": profile.get("cover_letter_path", ""),
+    }.get(kind)
+    if not path or profile_store.file_status(path) != "ok":
+        raise HTTPException(status_code=404, detail="file not found")
+    filename = profile_store.file_label(path)
+    media_type = "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream"
+    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="inline")
 
 
 @app.get("/job/{job_id}", response_class=HTMLResponse)

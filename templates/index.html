@@ -2,51 +2,144 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}Salling Jobs{% endblock %}
+{% block title %}WexFlow Jobs{% endblock %}
 
 {% block style %}
 <style>
-  header { padding:12px 22px; border-bottom:1px solid var(--glass-line); display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-           position:sticky; top:0; background:var(--header-bg); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:10; }
-
+  .jobs-topbar .tablink { flex:0 0 auto; }
+  .jobs-shell-band { background:rgba(255,255,255,.018); border-top:1px solid var(--glass-line); border-bottom:1px solid var(--glass-line); }
+  .jobs-result-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 22px 0; }
+  .jobs-result-head .muted { font-size:12px; }
   /* ---- панель фильтров ---- */
-  .filterbar { padding:16px 22px; border-bottom:1px solid var(--glass-line);
-               background:var(--glass); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
-  .fgrid { display:grid; grid-template-columns:1.6fr repeat(6, minmax(120px,1fr)); gap:12px; align-items:end; }
-  @media (max-width:1100px){ .fgrid{ grid-template-columns:repeat(3,1fr); } }
-  @media (max-width:640px){ .fgrid{ grid-template-columns:repeat(2,1fr); } }
-  .field { display:flex; flex-direction:column; gap:5px; min-width:0; }
-  .field > label { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); padding-left:2px; }
+  .filterbar { padding:16px 22px 18px; border-bottom:0;
+               background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .fgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:10px 12px; align-items:end; }
+  .fgrid > .field:first-child { grid-column:span 2; }
+  @media (max-width:1280px){ .fgrid{ grid-template-columns:repeat(3,minmax(180px,1fr)); } }
+  @media (max-width:760px){ .fgrid{ grid-template-columns:repeat(2,minmax(150px,1fr)); } }
+  @media (max-width:520px){ .fgrid{ grid-template-columns:1fr; } }
+  .field { display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .field > label { display:flex; align-items:center; gap:4px; font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); padding-left:2px; }
+  .help {
+    display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px;
+    border:1px solid var(--line); border-radius:50%; color:var(--muted);
+    font-size:0; font-weight:800; letter-spacing:0; text-transform:none; cursor:help;
+    background:transparent; transition:background .12s, border-color .12s, color .12s, transform .12s;
+  }
+  .help::before { content:"i"; font-size:9px; line-height:1; font-family:"Space Grotesk", system-ui, sans-serif; }
+  .help:hover, .help:focus-visible { color:var(--txt); border-color:var(--accent); background:var(--accent-soft); transform:translateY(-1px); }
+  .smart-tip {
+    position:fixed; left:0; top:0; z-index:1000; width:min(280px, calc(100vw - 24px));
+    padding:10px 11px; border:1px solid var(--glass-line); border-radius:10px;
+    background:rgba(20,24,22,.96); color:#f5faf7; box-shadow:0 14px 38px rgba(0,0,0,.32);
+    opacity:0; transform:translateY(-4px); pointer-events:none;
+    transition:opacity .12s, transform .12s; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  }
+  html[data-theme="light"] .smart-tip { background:rgba(255,255,255,.97); color:var(--txt); }
+  .smart-tip.show { opacity:1; transform:translateY(0); }
+  .smart-tip-title { font-size:12px; line-height:1.25; font-weight:800; margin-bottom:3px; color:var(--accent); }
+  .smart-tip-body { font-size:12.5px; line-height:1.38; color:inherit; }
+  .smart-tip-body kbd {
+    display:inline-flex; align-items:center; min-height:16px; padding:0 5px; border-radius:5px;
+    background:var(--chip-bg); border:1px solid var(--line); font:11px/1.2 "Space Grotesk", system-ui, sans-serif;
+  }
   .field input, .field select, .combo-btn {
-     width:100%; background:var(--input-bg); color:var(--txt); border:1px solid var(--line);
-     border-radius:10px; padding:9px 12px; font-size:13.5px; appearance:none; transition:border-color .15s, box-shadow .15s; }
+     width:100%; height:36px; background:var(--input-bg); color:var(--txt); border:1px solid var(--line);
+     border-radius:9px; padding:7px 10px; font-size:12.5px; appearance:none; transition:border-color .15s, box-shadow .15s; }
   .field input:hover, .field select:hover, .combo-btn:hover { border-color:var(--hover-line); }
   .field input:focus, .field select:focus, .combo.open .combo-btn { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
   .field.sel { position:relative; }
   .field.sel::after { content:"▾"; position:absolute; right:12px; bottom:10px; color:var(--muted); pointer-events:none; font-size:11px; }
   .field select option { background:var(--card); }
   .combo { position:relative; }
-  .combo-btn { display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; height:37px; cursor:pointer; }
+  .combo-btn { display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; cursor:pointer; }
   .combo-btn span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .combo-btn::after { content:"▾"; color:var(--muted); font-size:11px; flex:0 0 auto; }
   .combo-menu {
      display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:30;
      background:var(--menu-bg); border:1px solid var(--glass-line); border-radius:10px;
      box-shadow:var(--shadow); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
-     padding:6px; max-height:310px; overflow:auto; }
+     padding:5px; max-height:176px; overflow:auto; overscroll-behavior:contain; }
   .combo.open .combo-menu { display:block; }
   .combo-option {
      width:100%; border:none; background:transparent; color:var(--txt); border-radius:7px;
-     padding:8px 10px; text-align:left; font-size:13px; line-height:1.25;
+     padding:6px 9px; text-align:left; font-size:12px; line-height:1.2;
      display:flex; justify-content:space-between; gap:10px; }
   .combo-option:hover, .combo-option.active { background:var(--chip-bg); }
   .combo-option.selected { background:var(--accent); color:#fff; font-weight:600; }
-  .factions { display:flex; gap:8px; margin-top:14px; align-items:center; flex-wrap:wrap; }
+  .factions {
+    display:grid;
+    grid-template-columns:repeat(4,minmax(135px,1fr));
+    gap:10px 12px; margin-top:12px; align-items:end;
+  }
+  .factions > * { min-width:0; margin-top:0 !important; }
+  .filter-actions {
+    display:grid;
+    grid-column:1 / -1;
+    grid-template-columns:minmax(145px,.85fr) minmax(190px,1fr) minmax(135px,.72fr) minmax(78px,.42fr);
+    gap:6px;
+    align-items:end;
+    min-width:0;
+    background:var(--input-bg);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:4px;
+  }
+  .grpchk,
+  .filter-action,
+  .toggle-applied,
+  .filter-reset {
+    min-height:36px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    white-space:nowrap;
+  }
+  .filter-action { width:100%; }
+  .toggle-applied { width:100%; }
+  .filter-actions .filter-action,
+  .filter-actions .toggle-applied,
+  .filter-actions .filter-reset { min-height:30px; border-radius:7px; padding-left:8px; padding-right:8px; font-size:12px; }
+  .filter-actions .primary { box-shadow:none; }
+  html[data-theme="dark"] .filter-actions .primary { box-shadow:none; }
+  .filter-reset {
+    color:var(--muted);
+    border:1px solid transparent;
+    font-weight:600;
+    padding:0 10px;
+  }
+  .filter-reset:hover { color:var(--txt); border-color:var(--hover-line); background:var(--glass); }
+  .factions .chip { grid-column:1 / -1; }
+  @media (max-width:1280px){ .fgrid > .field:first-child { grid-column:span 1; } }
+  @media (max-width:760px){
+    .factions{ grid-template-columns:1fr 1fr; }
+    .filter-actions{ grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width:520px){
+    .factions{ grid-template-columns:1fr; }
+    .filter-actions{ grid-template-columns:1fr; }
+  }
   .chip { font-size:12px; color:var(--muted); }
 
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:12px; padding:16px 22px; }
-  .card { position:relative; background:var(--glass); border:1px solid var(--glass-line); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:6px; transition:border-color .15s, box-shadow .15s, transform .1s; }
-  .card:hover { border-color:var(--accent); transform:translateY(-1px); box-shadow:0 0 0 1px var(--accent-soft), var(--shadow-sm); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; padding:18px 22px; }
+  .card {
+    --state-line: transparent;
+    --state-bg: transparent;
+    position:relative; background:linear-gradient(90deg, var(--state-bg), transparent 52%), var(--card);
+    border:1px solid var(--glass-line); border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:6px;
+    overflow:hidden; transition:border-color .15s, box-shadow .15s, transform .1s;
+  }
+  .card[data-jobcard]::before {
+    content:""; position:absolute; left:0; top:12px; bottom:12px; width:3px;
+    background:var(--state-line); border-radius:0 4px 4px 0; opacity:.78; pointer-events:none;
+  }
+  .card.job-status-new { --state-line:var(--accent); --state-bg:rgba(30,215,96,.075); }
+  .card.job-status-seen { --state-line:var(--info-line); --state-bg:rgba(125,211,252,.052); }
+  .card.job-status-applied { --state-line:#a78bfa; --state-bg:rgba(167,139,250,.11); border-color:rgba(167,139,250,.38); }
+  html[data-theme="light"] .card.job-status-new { --state-bg:rgba(13,159,110,.055); }
+  html[data-theme="light"] .card.job-status-seen { --state-bg:rgba(29,78,216,.045); }
+  html[data-theme="light"] .card.job-status-applied { --state-line:#7c3aed; --state-bg:rgba(124,58,237,.075); border-color:rgba(124,58,237,.26); }
+  .card:hover { border-color:var(--hover-line); transform:translateY(-1px); box-shadow:var(--shadow-sm); }
   .card h3 { margin:4px 0 2px; font-size:15.5px; line-height:1.3; }
   .badges { display:flex; gap:6px; flex-wrap:wrap; padding-right:32px; }
   .tablink { display:inline-flex; align-items:center; gap:6px; background:var(--glass); color:var(--muted);
@@ -94,16 +187,23 @@
     background:var(--glass); color:var(--muted); border:1px solid var(--glass-line); border-radius:10px;
     padding:9px 14px; font-size:13px; font-weight:600; transition:border-color .15s, color .15s; }
   .toggle-applied:hover { color:var(--txt); border-color:var(--hover-line); }
-  .toggle-applied.on { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
-  .toggle-applied.on:hover { border-color:var(--ok-txt); }
+  .toggle-applied.on { background:rgba(167,139,250,.12); color:#c4b5fd; border-color:rgba(167,139,250,.36); }
+  .toggle-applied.on:hover { border-color:#c4b5fd; }
+  html[data-theme="light"] .toggle-applied.on { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
   .badge.brand { font-weight:700; }
   .badge.dist { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
+  .badge.st-new { background:var(--accent-soft); color:var(--accent); border-color:rgba(30,215,96,.32); }
+  .badge.st-seen { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
+  .badge.st-applied { background:rgba(167,139,250,.14); color:#c4b5fd; border-color:rgba(167,139,250,.38); font-weight:800; }
+  html[data-theme="light"] .badge.st-applied { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
   .role { display:inline-block; margin-top:2px; font-size:12.5px; font-weight:700;
     color:var(--info-txt); letter-spacing:.01em; }
   .role .lvl { color:var(--warn-txt); }
   .row { display:flex; gap:7px; margin-top:12px; flex-wrap:wrap; align-items:center; }
   .row a { display:inline-flex; }
   .row button { white-space:nowrap; padding:8px 12px; font-size:12.5px; }
+  .row button:disabled { cursor:default; color:#c4b5fd; border-color:rgba(167,139,250,.38); background:rgba(167,139,250,.14); opacity:1; }
+  html[data-theme="light"] .row button:disabled { color:#6d28d9; border-color:#d8ccff; background:#f1edff; }
   .row .primary { font-weight:700; }
   .meta { font-size:12px; }
   /* кастомный чекбокс выбора вакансии */
@@ -116,7 +216,7 @@
   .selwrap input:checked + .selbox-ui { background:var(--accent); border-color:var(--accent); }
   .selwrap input:checked + .selbox-ui::after { opacity:1; }
   .selwrap:hover .selbox-ui { border-color:var(--accent); }
-  .card.selected { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft), var(--neon-glow); }
+  .card.selected { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft), var(--shadow-sm); }
   /* плашка пакетной подачи */
   .batchbar { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:50;
     display:none; align-items:center; gap:14px; flex-wrap:wrap; justify-content:center;
@@ -138,13 +238,16 @@
 {% endblock %}
 
 {% block body %}
-{% macro custom_select(name, label, placeholder, options, selected) -%}
+{% macro tip(title, body) -%}
+  <span class="help" tabindex="0" role="button" aria-label="{{ title }}: {{ body }}" data-tip-title="{{ title }}" data-tip-body="{{ body }}"></span>
+{%- endmacro %}
+{% macro custom_select(name, label, placeholder, options, selected, hint='') -%}
   {% set ns = namespace(text=placeholder) %}
   {% for key,lbl in options %}
     {% if selected == key %}{% set ns.text = lbl %}{% endif %}
   {% endfor %}
   <div class="field combo" data-combo>
-    <label>{{ label }}</label>
+    <label>{{ label }}{% if hint %}{{ tip(label, hint) }}{% endif %}</label>
     <input type="hidden" name="{{ name }}" value="{{ selected }}">
     <button type="button" class="combo-btn" data-combo-button><span>{{ ns.text }}</span></button>
     <div class="combo-menu" data-combo-menu>
@@ -159,18 +262,27 @@
 <svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><polyline points="20 6 9 17 4 12"/></svg>
 {%- endmacro %}
 
-<header>
-  {{ ui.app_switch() }}
-  <h1>{{ ic.i('cart', 18) }} Salling Jobs</h1>
-  <span class="muted">Активных: {{ total_active }} · найдено: {{ total_filtered }}{% if pages > 1 %} · стр. {{ page }}/{{ pages }}{% endif %}</span>
-  {{ ui.freshness(data_age_min, sync_running) }}
-  <a class="tablink {{ 'active' if f.status == 'applied' }}" href="/?status=applied&sort={{ f.sort or 'published' }}">{{ check() }} Поданные ({{ applied_count }})</a>
-  <a class="tablink" style="margin-left:auto;" href="/settings">{{ ic.i('sliders') }} Настройки</a>
-  <form method="post" action="/refresh">
-    <button class="primary" type="submit" title="Обновить прямо сейчас (и так обновляется каждые 30 минут автоматически)">{{ ic.i('refresh', 13) }} Обновить</button>
-  </form>
-  {{ ui.theme_toggle() }}
+{{ ui.shell_start('jobs') }}
+
+<header class="wex-topbar jobs-topbar">
+  <div class="wex-title-group">
+    <div class="wex-title-stack">
+      <h1>{{ ui.brand('Jobs') }}</h1>
+      <span class="wex-title-meta">Активных: {{ total_active }} · найдено: {{ total_filtered }}{% if pages > 1 %} · стр. {{ page }}/{{ pages }}{% endif %}</span>
+    </div>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    {{ ui.freshness(data_age_min, sync_running) }}
+    <a class="tablink {{ 'active' if f.status == 'applied' }}" href="/?status=applied&sort={{ f.sort or 'published' }}">{{ check() }} Поданные ({{ applied_count }})</a>
+    {{ ui.app_switch() }}
+    <form method="post" action="/refresh">
+      <button class="primary" type="submit" data-tip-title="Обновление" data-tip-body="Запускает свежую синхронизацию вакансий. Обычно это не нужно: список и так обновляется в фоне примерно раз в 30 минут.">{{ ic.i('refresh', 13) }} Обновить</button>
+    </form>
+    {{ ui.theme_toggle() }}
+  </div>
 </header>
+<section class="jobs-shell-band">
 {% if geoerror %}<div class="notice-line" style="color:var(--err-txt);background:var(--err-bg);">Не удалось распознать адрес — попробуй точнее (например: «M.P. Bruuns Gade 55, Aarhus» или индекс «8000»).</div>{% endif %}
 {% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings">изменить</a></div>
 {% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
@@ -183,7 +295,7 @@
   <span class="preset-chip">
     <a href="/?{{ p.query }}">{{ p.name }}</a>
     <form method="post" action="/presets/delete" onsubmit="return confirm('Удалить пресет «{{ p.name }}»?')">
-      <input type="hidden" name="name" value="{{ p.name }}"><button type="submit" title="Удалить">✕</button>
+      <input type="hidden" name="name" value="{{ p.name }}"><button type="submit" aria-label="Удалить фильтр">✕</button>
     </form>
   </span>
   {% endfor %}
@@ -191,15 +303,16 @@
 {% endif %}
 
 <form id="filterform" class="filterbar" method="get" action="/">
+  {% if f.show_applied %}<input type="hidden" name="show_applied" value="1">{% endif %}
   {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','hidden':'Скрытые','closed':'Закрытые'} %}
   {% set sorts = {'published':'↓ по дате','distance':'по расстоянию','title':'по названию','city':'по городу'} %}
   <div class="fgrid">
     <div class="field">
-      <label>Поиск</label>
+      <label>Поиск {{ tip('Умный поиск', 'Ищет по названию, описанию, адресу и городу. Можно писать по-русски: например кассир, пекарь, склад.') }}</label>
       <input name="q" value="{{ f.q }}" placeholder="можно по-русски: кассир, пекарь, склад…">
     </div>
     <div class="field">
-      <label>Город {{ ic.i('edit', 11) }}</label>
+      <label>Город {{ ic.i('edit', 11) }} {{ tip('Город или район', 'Понимает русские и датские названия. Копенгаген мапится на København и ближайшие районы, если они есть в базе.') }}</label>
       <input name="city" list="dl_city" value="{{ f.city }}" placeholder="Напиши по-русски: Копенгаген" autocomplete="off">
       <datalist id="dl_city">
         <option value="Копенгаген"><option value="Орхус"><option value="Оденсе"><option value="Ольборг">
@@ -207,18 +320,18 @@
         {% for city,lbl in city_suggestions %}<option value="{{city}}" label="{{lbl}}">{% endfor %}
       </datalist>
     </div>
-    {{ custom_select('brand', 'Бренд', 'Все бренды', brands, f.brand) }}
-    {{ custom_select('region', 'Регион', 'Все регионы', regions, f.region) }}
-    {{ custom_select('category', 'Категория', 'Все категории', cats, f.category) }}
-    {{ custom_select('employment_type', 'Занятость', 'Любая', etypes, f.employment_type) }}
-    {{ custom_select('job_level', 'Уровень', 'Любой', levels, f.job_level) }}
+    {{ custom_select('brand', 'Бренд', 'Все бренды', brands, f.brand, 'Фильтрует конкретную сеть. Удобно, если хочешь смотреть только Netto/Føtex/Bilka и не смешивать разные форматы магазинов.') }}
+    {{ custom_select('region', 'Регион', 'Все регионы', regions, f.region, 'Широкий фильтр по части Дании. Используй, когда город не принципиален, но ехать в другой регион не хочется.') }}
+    {{ custom_select('category', 'Категория', 'Все категории', cats, f.category, 'Тип работы: касса, продажи, склад, пекарня, кухня, обслуживание. Лучше комбинировать с городом или радиусом.') }}
+    {{ custom_select('employment_type', 'Занятость', 'Любая', etypes, f.employment_type, 'Отсекает полную/частичную занятость. Оставь Любая, если важнее место и расстояние, чем часы.') }}
+    {{ custom_select('job_level', 'Уровень', 'Любой', levels, f.job_level, 'Помогает отделить обычные позиции, under 18, менеджмент и trainee. Если не уверен, оставь Любой.') }}
   </div>
   <div class="factions">
-    <div style="min-width:150px;">{{ custom_select('status', 'Статус', 'Любой статус', statuses.items(), f.status) }}</div>
-    <div style="min-width:170px;">{{ custom_select('sort', 'Сортировка', 'по умолчанию', sorts.items(), f.sort) }}</div>
+    <div class="filter-status">{{ custom_select('status', 'Статус', 'Любой статус', statuses.items(), f.status, 'Быстро переключает рабочий список: новые, просмотренные, поданные, скрытые. Активные по умолчанию прячут уже поданные.') }}</div>
+    <div class="filter-sort">{{ custom_select('sort', 'Сортировка', 'по умолчанию', sorts.items(), f.sort, 'Меняет приоритет карточек. По расстоянию работает только когда задан домашний адрес в настройках.') }}</div>
     {% if home %}
-    <div class="field" style="min-width:140px;max-width:150px;">
-      <label>Радиус, км</label>
+    <div class="field filter-radius">
+      <label>Радиус, км {{ tip('Радиус от дома', 'Оставь пустым или ∞, чтобы не ограничивать выдачу. Расстояние считается от домашнего адреса в настройках.') }}</label>
       <div class="num-stepper">
         <button type="button" data-step="-1" tabindex="-1">−</button>
         <input name="radius" type="number" min="0" step="1" value="{{ f.radius }}" placeholder="∞" inputmode="numeric">
@@ -226,23 +339,29 @@
       </div>
     </div>
     {% endif %}
-    <label class="grpchk" style="margin-top:18px;" title="Схлопнуть вакансии одного магазина в группу">
-      <input type="checkbox" name="group" value="1" {{ 'checked' if f.group }} onchange="this.form.submit()"> {{ ic.i('store') }} По магазинам
+    <label class="grpchk" style="margin-top:18px;" data-tip-title="Группировка" data-tip-body="Собирает вакансии одного магазина в одну карточку. Полезно, когда один Netto/Føtex публикует много похожих позиций.">
+      <input type="checkbox" name="group" value="1" {{ 'checked' if f.group }} onchange="this.form.submit()"> {{ ic.i('store') }} По магазинам {{ tip('По магазинам', 'Сжимает список: сначала видишь магазин и адрес, а внутри уже все позиции этого места.') }}
     </label>
-    <button class="primary" type="submit" style="margin-top:18px;">Применить фильтры</button>
+    <div class="filter-actions">
+    <button class="primary filter-action" type="submit" style="margin-top:18px;" data-tip-title="Применить" data-tip-body="Обновляет список по текущим фильтрам. Выпадающие фильтры применяются сразу после выбора, текстовые поля — этой кнопкой.">Применить</button>
     {# переключатель «Поданные»: сохраняет остальные фильтры, меняет только статус #}
     {% set parts = [] %}
     {% for k in ['q','city','brand','region','category','employment_type','job_level','sort','radius','group'] %}
       {% if f[k] %}{% set _ = parts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
     {% endfor %}
     {% set base_qs = parts|join('&') %}
-    {% if f.status == 'applied' %}
-      <a class="toggle-applied on" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active">← К списку вакансий</a>
+    {% if f.status == 'active' and f.show_applied %}
+      <a class="toggle-applied on" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active" data-tip-title="Поданные" data-tip-body="Убирает уже отправленные вакансии из общего активного списка, чтобы они не мешали новым.">{{ check() }} Скрыть поданные</a>
+    {% elif f.status == 'active' %}
+      <a class="toggle-applied" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active&show_applied=1" data-tip-title="Поданные вместе" data-tip-body="Показывает отправленные вакансии рядом с активными. Они подсвечены отдельным цветом и не выбираются для повторной подачи.">{{ check() }} Поданные ({{ applied_count }})</a>
+    {% elif f.status == 'applied' %}
+      <a class="toggle-applied on" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active" data-tip-title="Назад к активным" data-tip-body="Вернёт обычную выдачу активных вакансий с теми же поисковыми фильтрами.">← К списку вакансий</a>
     {% else %}
-      <a class="toggle-applied" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=applied">{{ check() }} Показать поданные ({{ applied_count }})</a>
+      <a class="toggle-applied" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=applied" data-tip-title="Архив подач" data-tip-body="Открывает отдельный список вакансий, куда ты уже отправлял заявку.">{{ check() }} Показать поданные ({{ applied_count }})</a>
     {% endif %}
-    <button type="button" id="savePreset" class="ghost" style="margin-top:18px;">{{ ic.i('save', 13) }} Сохранить фильтр</button>
-    <a href="/?reset=1" style="margin-top:18px;">Сбросить</a>
+    <button type="button" id="savePreset" class="ghost filter-action" style="margin-top:18px;" data-tip-title="Сохранить набор" data-tip-body="Запоминает текущие фильтры как быстрый пресет над списком. Удобно для разных сценариев поиска.">{{ ic.i('save', 13) }} Сохранить</button>
+    <a class="filter-reset" href="/?reset=1" style="margin-top:18px;" data-tip-title="Сброс фильтров" data-tip-body="Очищает все фильтры и возвращает обычную активную выдачу. Статусы вакансий не меняет.">Сброс</a>
+    </div>
     {% if resolved.city or resolved.brand or resolved.region or resolved.category or resolved.employment_type or resolved.job_level %}
       <span class="chip" style="margin-top:18px;">
         Понял:
@@ -256,6 +375,12 @@
     {% endif %}
   </div>
 </form>
+</section>
+
+<div class="jobs-result-head">
+  <span class="muted">{{ 'Группировка по магазинам' if group else 'Карточки вакансий' }} · {{ total_filtered }} найдено</span>
+  <span class="muted">Новые, просмотренные и поданные различаются мягкой левой линией</span>
+</div>
 
 {% set brand_colors = {
   'netto': ('#ffe400', '#1a1a1a'),
@@ -293,17 +418,19 @@
   {% endfor %}
   {% else %}
   {% for j in jobs %}
-  <div class="card" data-jobcard
-       onclick="if(!event.target.closest('.row') && !event.target.closest('.selwrap')){ const cb=this.querySelector('[data-selbox]'); cb.checked=!cb.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); }"
-       title="Нажми, чтобы выбрать вакансию" style="cursor:pointer;">
-    <label class="selwrap" title="Выбрать для пакетной подачи">
+  <div class="card job-status-{{ j.status }}" data-jobcard
+       onclick="if(!event.target.closest('.row') && !event.target.closest('.selwrap')){ const cb=this.querySelector('[data-selbox]'); if(cb){ cb.checked=!cb.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); } }"
+       aria-label="{{ 'Уже подано' if j.status == 'applied' else 'Нажми, чтобы выбрать вакансию' }}" style="cursor:{{ 'default' if j.status == 'applied' else 'pointer' }};">
+    {% if j.status != 'applied' %}
+    <label class="selwrap" aria-label="Выбрать для пакетной подачи">
       <input type="checkbox" name="job_ids" value="{{ j.id }}" form="batchform" data-selbox>
       <span class="selbox-ui"></span>
     </label>
+    {% endif %}
     {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','hidden':'скрыто','closed':'закрыта'} %}
     <div class="badges">
       {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
-      {% if j.id in distances %}<span class="badge dist" title="Примерно по прямой от дома">≈ {{ distances[j.id] }} км</span>{% endif %}
+      {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно по прямой от домашнего адреса. Маршрут общественным транспортом смотри через кнопку Маршрут.">≈ {{ distances[j.id] }} км</span>{% endif %}
       <span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>
     </div>
     <h3>{{ j.title }}</h3>
@@ -317,19 +444,25 @@
       {% if j.pay_rate %}{{ ic.i('money', 13) }} {{ j.pay_rate }} · {% endif %}{% if j.published %}размещено {{ j.published[:10] }}{% endif %}
     </div>
     <div class="row">
+      {% if j.status == 'applied' %}
+      <button type="button" class="ghost" disabled>{{ check(13) }} Уже подано</button>
+      {% else %}
       <a href="/job/{{ j.id }}/apply"><button class="primary">Подать →</button></a>
+      {% endif %}
       <a href="/job/{{ j.id }}"><button type="button" class="ghost">Подробнее</button></a>
       <a href="{{ maps_urls[j.id] }}" target="_blank" rel="noopener"><button type="button" class="ghost">{{ ic.i('map', 13) }} Маршрут</button></a>
+      {% if j.status != 'applied' %}
       <form method="post" action="/job/{{ j.id }}/status">
         <input type="hidden" name="status" value="applied">
         <button type="submit" class="ghost">{{ ic.i('check', 13) }} Подал</button>
       </form>
+      {% endif %}
       {% if j.status == 'hidden' %}
       <form method="post" action="/job/{{ j.id }}/status">
-        <input type="hidden" name="status" value="seen"><button type="submit" class="ghost" title="Вернуть из скрытых">{{ ic.i('undo', 13) }}</button>
+        <input type="hidden" name="status" value="seen"><button type="submit" class="ghost" aria-label="Вернуть из скрытых">{{ ic.i('undo', 13) }}</button>
       </form>
       {% else %}
-      <button type="button" class="ghost hide-btn" data-job="{{ j.id }}" title="Скрыть — не интересно">{{ ic.i('eyeoff', 13) }}</button>
+      <button type="button" class="ghost hide-btn" data-job="{{ j.id }}" aria-label="Скрыть вакансию">{{ ic.i('eyeoff', 13) }}</button>
       {% endif %}
     </div>
   </div>
@@ -341,7 +474,7 @@
 
 {% if pages > 1 %}
 {% set pparts = [] %}
-{% for k in ['q','city','brand','region','category','employment_type','job_level','status','sort','radius','group'] %}
+{% for k in ['q','city','brand','region','category','employment_type','job_level','status','sort','radius','group','show_applied'] %}
   {% if f[k] %}{% set _ = pparts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
 {% endfor %}
 {% set pqs = pparts|join('&') %}
@@ -359,9 +492,9 @@
       <a href="#" id="changefiles">изменить файлы</a></span>
   </div>
   <button class="primary" type="submit" name="mode" value="dry"
-          title="Бот откроет форму и заполнит/прикрепит файлы, но НЕ нажмёт Ansøg — проверишь сам">Запустить подготовку без отправки</button>
+          data-tip-title="Без отправки" data-tip-body="Бот откроет форму, заполнит поля и прикрепит файлы, но не нажмёт Ansøg. Хорошо для проверки.">Запустить подготовку без отправки</button>
   <button class="submitbtn" type="submit" name="mode" value="submit"
-          title="Бот заполнит форму, нажмёт Ansøg/Apply и подтвердит всплывающее согласие, если оно появится">Авто-отправка: нажать Apply и подтверждение</button>
+          data-tip-title="Авто-отправка" data-tip-body="Бот заполнит форму, нажмёт Ansøg/Apply и подтвердит согласие, если сайт его покажет.">Авто-отправка: нажать Apply и подтверждение</button>
   <button type="button" id="selclear">Сброс</button>
 </form>
 
@@ -369,6 +502,7 @@
   <span class="undo-text">Вакансия скрыта</span>
   <button type="button" class="undo-btn">Отменить (<span class="undo-count">5</span>)</button>
 </div>
+{{ ui.shell_end() }}
 {% endblock %}
 
 {% block script %}
@@ -457,6 +591,55 @@
     await setStatus(id, 'hidden');
     showUndo(id, card);
   }));
+
+  // --- кастомные подсказки вместо нативных title ---
+  const smartTip = document.createElement('div');
+  smartTip.className = 'smart-tip';
+  smartTip.innerHTML = '<div class="smart-tip-title"></div><div class="smart-tip-body"></div>';
+  document.body.appendChild(smartTip);
+  const smartTipTitle = smartTip.querySelector('.smart-tip-title');
+  const smartTipBody = smartTip.querySelector('.smart-tip-body');
+  let smartTipTarget = null;
+
+  function placeSmartTip(target) {
+    const r = target.getBoundingClientRect();
+    const margin = 10;
+    smartTip.style.left = '0px';
+    smartTip.style.top = '0px';
+    smartTip.classList.add('show');
+    const tr = smartTip.getBoundingClientRect();
+    let left = r.left + (r.width / 2) - (tr.width / 2);
+    let top = r.bottom + 8;
+    if (left < margin) left = margin;
+    if (left + tr.width > window.innerWidth - margin) left = window.innerWidth - tr.width - margin;
+    if (top + tr.height > window.innerHeight - margin) top = r.top - tr.height - 8;
+    if (top < margin) top = margin;
+    smartTip.style.left = `${Math.round(left)}px`;
+    smartTip.style.top = `${Math.round(top)}px`;
+  }
+
+  function showSmartTip(target) {
+    if (!target?.dataset?.tipTitle) return;
+    smartTipTarget = target;
+    smartTipTitle.textContent = target.dataset.tipTitle || '';
+    smartTipBody.textContent = target.dataset.tipBody || '';
+    placeSmartTip(target);
+  }
+
+  function hideSmartTip(target = null) {
+    if (target && target !== smartTipTarget) return;
+    smartTip.classList.remove('show');
+    smartTipTarget = null;
+  }
+
+  document.querySelectorAll('[data-tip-title]').forEach((el) => {
+    el.addEventListener('mouseenter', () => showSmartTip(el));
+    el.addEventListener('focus', () => showSmartTip(el));
+    el.addEventListener('mouseleave', () => hideSmartTip(el));
+    el.addEventListener('blur', () => hideSmartTip(el));
+  });
+  window.addEventListener('scroll', () => hideSmartTip(), { passive:true });
+  window.addEventListener('resize', () => smartTipTarget && placeSmartTip(smartTipTarget));
 </script>
 <script>
   const combos = [...document.querySelectorAll("[data-combo]")];
