@@ -19,15 +19,15 @@
   button { padding:11px 18px; font-size:14px; font-weight:600; }
   .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-  /* живой лог бота — тёмный «терминал» в обеих темах */
-  .botlog { margin:10px 0 0; padding:12px; max-height:340px; overflow:auto;
-    background:#0f1714; color:#d8e6df; border-radius:10px; border:1px solid #1f2a25;
-    font:12px/1.55 Consolas, "Cascadia Code", monospace; white-space:pre-wrap; word-break:break-word; }
-  .botlog:empty::before { content:"Лог пока пуст — запусти подачу."; color:#5f7a70; }
+  /* живой лог бота — всегда тёмный «терминал» */
+  .botlog { margin:10px 0 0; padding:14px; max-height:340px; overflow:auto;
+    background:#06090a; color:#c8ded6; border-radius:10px; border:1px solid rgba(34,209,158,.15);
+    font:12.5px/1.55 "Cascadia Code", Consolas, monospace; white-space:pre-wrap; word-break:break-word; }
+  .botlog:empty::before { content:"Лог пока пуст — запусти подачу."; color:#3d5e54; }
   .loghead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .loghead h2 { margin:0; }
-  .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;
-    animation:pulse 1.2s ease-in-out infinite; }
+  .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--neon);
+    box-shadow:0 0 8px var(--neon); animation:pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity:.25; } }
 </style>
 {% endblock %}
@@ -47,7 +47,7 @@
     {% if saved %}<div class="ok">Данные входа сохранены. Теперь бот сам введёт их и нажмёт Sign In.</div>{% endif %}
     {% if reset %}<div class="ok">Сессия браузера бота очищена. При следующем запуске бот войдёт заново под сохранёнными данными.</div>{% endif %}
 
-    <div class="panel">
+    <div class="glass panel">
       <h2 style="margin-top:0;">{{ job.title }}</h2>
       <div class="badges">
         {% if job.brand %}<span class="badge">{{ brand_label(job.brand) }}</span>{% endif %}
@@ -63,7 +63,7 @@
       </div>
     </div>
 
-    <form class="panel" method="post" action="/credentials/save">
+    <form class="glass panel" method="post" action="/credentials/save">
       <input type="hidden" name="job_id" value="{{ job.id }}">
       <h2 style="margin-top:0;">Аккаунт Salling Group</h2>
       <p class="hint" style="margin-top:0;">Бот сам введёт эти данные на странице входа Salling и нажмёт <b>Sign In</b>.
@@ -79,17 +79,17 @@
           <div class="pwd-wrap">
             <input id="sf_password" type="password" name="sf_password" value="" placeholder="{{ '•••••••• сохранён' if creds.has_password else 'пароль от Salling' }}"
                    autocomplete="current-password">
-            <button type="button" class="pwd-eye" id="pwd-toggle" aria-label="Показать пароль" title="Показать пароль">👁</button>
+            <button type="button" class="pwd-eye" id="pwd-toggle" aria-label="Показать пароль" title="Показать пароль">{{ ic.i('eye', 16) }}</button>
           </div>
         </div>
         <div class="actions">
           <button class="secondary" type="submit">Сохранить вход</button>
-          {% if creds.email %}<span class="hint" style="margin-top:0;">✓ {{ creds.email }}{% if creds.has_password %} · пароль сохранён{% endif %}</span>{% endif %}
+          {% if creds.email %}<span class="hint" style="margin-top:0;color:var(--ok-txt);">{{ ic.i('check', 12) }} {{ creds.email }}{% if creds.has_password %} · пароль сохранён{% endif %}</span>{% endif %}
         </div>
       </div>
     </form>
 
-    <form class="panel" method="post" action="/apply/reset-browser" style="padding:14px 18px;">
+    <form class="glass panel" method="post" action="/apply/reset-browser" style="padding:14px 18px;">
       <input type="hidden" name="job_id" value="{{ job.id }}">
       <span class="hint" style="margin-top:0;">Бот заходит под чужим/старым аккаунтом? Сбрось сессию браузера — войдёт заново под сохранёнными данными.</span>
       <div class="actions" style="margin-top:10px;">
@@ -97,7 +97,7 @@
       </div>
     </form>
 
-    <form id="apply-files-form" class="panel" method="post" action="/job/{{ job.id }}/apply/save" enctype="multipart/form-data">
+    <form id="apply-files-form" class="glass panel" method="post" action="/job/{{ job.id }}/apply/save" enctype="multipart/form-data">
       <h2 style="margin-top:0;">Файлы для подачи</h2>
       <div class="grid">
         <div class="file-card">
@@ -132,12 +132,12 @@
       </div>
     </form>
 
-    <div class="panel" id="botlogPanel" {% if not started %}hidden{% endif %}>
+    <div class="glass panel" id="botlogPanel" {% if not started %}hidden{% endif %}>
       <div class="loghead">
         <h2>Ход подачи</h2>
         <span class="pulse" id="logPulse" hidden></span>
         <span class="hint" style="margin:0;">лог бота, обновляется сам · файл apply_last.log</span>
-        <button type="button" class="secondary" id="logRefresh" style="margin-left:auto;padding:6px 12px;font-size:12px;">Обновить</button>
+        <button type="button" class="ghost" id="logRefresh" style="margin-left:auto;padding:6px 12px;font-size:12px;">{{ ic.i('refresh', 12) }} Обновить</button>
       </div>
       <pre class="botlog" id="botlog"></pre>
     </div>
@@ -152,11 +152,13 @@
 <script>
   const pwd = document.getElementById("sf_password");
   const toggle = document.getElementById("pwd-toggle");
+  const eyeSvg    = `<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const eyeOffSvg = `<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
   if (pwd && toggle) {
     toggle.addEventListener("click", () => {
       const show = pwd.type === "password";
       pwd.type = show ? "text" : "password";
-      toggle.textContent = show ? "🙈" : "👁";
+      toggle.innerHTML = show ? eyeOffSvg : eyeSvg;
       toggle.title = show ? "Скрыть пароль" : "Показать пароль";
     });
   }
