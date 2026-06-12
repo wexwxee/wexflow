@@ -16,3 +16,8 @@ samples/
 __pycache__/
 *.pyc
 .venv/
+# сборка десктоп-приложения (PyInstaller) — артефакты не коммитим
+build/
+dist/
+*.spec
+WexFlow.exe
