@@ -8,7 +8,7 @@
 <style>
   h1 { font-size:26px; margin:6px 0 4px; }
   .sub { color:var(--muted); margin:0 0 18px; }
-  .panel { border-radius:14px; padding:20px; }
+  .panel { border-radius:14px; padding:20px; background:var(--glass); border-color:var(--glass-line); }
   .panel h2 { margin:0 0 4px; font-size:17px; }
   .panel .hint { margin:0 0 14px; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
@@ -31,7 +31,7 @@
   <h1>{{ ic.i('sliders', 22) }} Настройки</h1>
   <p class="sub">Профиль, документы и логин — заполни один раз, используется для всех подач.</p>
 
-  {% if saved %}<div class="ok">✓ Сохранено.</div>{% endif %}
+  {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее (улица, город или индекс).</div>{% endif %}
 
   <!-- Профиль + документы -->
@@ -85,7 +85,7 @@
       <div class="field"><label class="lbl">Пароль {% if creds.has_password %}<span style="color:var(--ok-txt);text-transform:none;">(сохранён)</span>{% endif %}</label>
         <div class="pwd-wrap">
           <input id="sf_pwd" type="password" name="sf_password" value="" placeholder="{{ '•••••••• сохранён' if creds.has_password else 'пароль' }}" autocomplete="current-password">
-          <button type="button" class="pwd-eye" id="pwdToggle">👁</button>
+          <button type="button" class="pwd-eye" id="pwdToggle" title="Показать пароль">{{ ic.i('eye', 16) }}</button>
         </div>
       </div>
     </div>
@@ -102,7 +102,7 @@
   </form>
 
   <!-- Управление -->
-  <div class="panel" style="border-color:var(--err-line);">
+  <div class="panel" style="border-color:var(--err-line);background:var(--err-bg);">
     <h2>{{ ic.i('broom', 17) }} Управление</h2>
     <p class="hint">Если бот зашёл под чужим/старым аккаунтом или нужно сменить логин.</p>
     <div class="actions">
@@ -126,8 +126,12 @@
     });
   });
   const pwd = document.getElementById('sf_pwd'), tg = document.getElementById('pwdToggle');
+  const eyeSvg    = `<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
+  const eyeOffSvg = `<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
   if (pwd && tg) tg.addEventListener('click', () => {
-    const show = pwd.type === 'password'; pwd.type = show ? 'text' : 'password'; tg.textContent = show ? '🙈' : '👁';
+    const show = pwd.type === 'password'; pwd.type = show ? 'text' : 'password';
+    tg.innerHTML = show ? eyeOffSvg : eyeSvg;
+    tg.title = show ? 'Скрыть пароль' : 'Показать пароль';
   });
 </script>
 {% endblock %}
