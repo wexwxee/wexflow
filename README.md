@@ -16,7 +16,7 @@ The app runs locally on your PC. Your profile, documents, credentials, and job s
 1. Open the latest release:
    [github.com/wexwxee/wexflow/releases/latest](https://github.com/wexwxee/wexflow/releases/latest)
 2. Download the file named like:
-   `WexFlow-1.0.12.zip`
+   `WexFlow-1.0.13.zip`
 3. Extract the zip anywhere you want, for example:
    `C:\Apps\WexFlow`
 4. Open the extracted folder and run:
