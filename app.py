@@ -86,8 +86,34 @@ async def _lifespan(app):
 
 
 app = FastAPI(title="Salling Jobs", lifespan=_lifespan)
+
+
+@app.middleware("http")
+async def _no_cache(request, call_next):
+    # WebView2 кэширует страницы/скрипты агрессивно — для desktop-приложения это
+    # вредно (после обновления показывает старый интерфейс). Запрещаем кэш.
+    resp = await call_next(request)
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return resp
+
+
+@app.get("/api/version")
+def api_version():
+    """Версия и результат проверки обновлений — для баннера и диагностики."""
+    try:
+        import version
+        import update_check
+        return {
+            "version": version.__version__,
+            "repo": version.GITHUB_REPO,
+            "update": update_check.check(),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"version": "dev", "repo": "", "update": None, "error": str(exc)[:200]}
+
+
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 templates.env.globals["brand_label"] = labels.brand
 templates.env.globals["L"] = labels
 init_db()
@@ -245,6 +271,33 @@ def _active_counts(session):
     return counts
 
 
+def _seven_eleven_state() -> dict:
+    """Живые данные модуля 7-Eleven для карточки хаба (читаем его профиль)."""
+    import pathlib
+    if getattr(sys, "frozen", False):
+        base = os.environ.get("APPDATA") or str(pathlib.Path.home() / "AppData" / "Roaming")
+        seven_dir = pathlib.Path(base) / "WexFlow" / "seven11"
+    else:
+        seven_dir = pathlib.Path(r"C:\seven11-apply")
+    try:
+        d = json.loads((seven_dir / "profiles" / "me.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — нет профиля → пустое состояние
+        return {"stores": 0, "profile_ready": False, "name": ""}
+    loc = d.get("location", {}) or {}
+    sel = loc.get("selected_addresses") or loc.get("preferred_addresses") or []
+    p = d.get("personal", {}) or {}
+    ans = d.get("answers", {}) or {}
+    att = d.get("attachments", {}) or {}
+    ready = bool(
+        p.get("first_name") and p.get("last_name")
+        and "@" in str(p.get("email") or "")
+        and len(str(p.get("phone") or "")) >= 8
+        and str(att.get("cv_path") or "")
+        and len(str(ans.get("why_7eleven") or "").strip()) >= 10
+    )
+    return {"stores": len(sel), "profile_ready": ready, "name": str(p.get("first_name") or "")}
+
+
 @app.get("/hub", response_class=HTMLResponse)
 def hub(request: Request):
     with get_session() as s:
@@ -258,6 +311,22 @@ def hub(request: Request):
             or 0
         )
         applied_jobs = s.exec(select(func.count(Job.id)).where(Job.status == "applied")).one() or 0
+        last_applied = None
+        try:
+            last = s.exec(
+                select(Job).where(Job.status == "applied").order_by(Job.modified.desc())
+            ).first()
+            if last:
+                last_applied = {"title": last.title, "brand": last.brand}
+        except Exception:  # noqa: BLE001
+            last_applied = None
+
+    seven = _seven_eleven_state()
+    try:
+        name = (profile_store.load_profile().get("first_name") or "").strip() or seven["name"]
+    except Exception:  # noqa: BLE001
+        name = seven["name"]
+
     return templates.TemplateResponse(
         "hub.html",
         {
@@ -267,6 +336,9 @@ def hub(request: Request):
             "applied_jobs": applied_jobs,
             "data_age_min": _data_age_minutes(),
             "sync_running": _sync_state["running"],
+            "seven": seven,
+            "last_applied": last_applied,
+            "user_name": name,
         },
     )
 
@@ -576,7 +648,7 @@ def set_home(request: Request, address: str = Form(...)):
 @app.get("/api/apply-log")
 def apply_log():
     """Хвост лога последней подачи — показывается прямо на странице «Подать»."""
-    path = config.BASE_DIR / "apply_last.log"
+    path = config.DATA_DIR / "apply_last.log"
     if not path.exists():
         return JSONResponse({"ok": False, "lines": []})
     try:
@@ -789,6 +861,18 @@ def save_apply_files(
     return RedirectResponse(f"/job/{job_id}/apply", status_code=303)
 
 
+def _salling_apply_cmd(extra: list[str]) -> list[str]:
+    """Команда запуска подачи Salling.
+
+    dev: [python, -u, apply.py, ...]. Собранное приложение: exe запускает сам
+    себя как воркер [WexFlow.exe, --worker-salling-apply, ...] — Python/.venv
+    на чужом ПК нет.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--worker-salling-apply", *extra]
+    return [sys.executable, "-u", str(config.BASE_DIR / "apply.py"), *extra]
+
+
 @app.post("/job/{job_id}/apply/start")
 def start_apply(
     job_id: str,
@@ -805,12 +889,12 @@ def start_apply(
     profile = profile_store.load_profile()
     profile_store.save_profile(_update_profile_files(profile, cv_path, cover_letter_path, cv_file, cover_letter_file))
     # вывод apply.py пишем в лог, чтобы сбои не были «молчаливыми»
-    log = open(config.BASE_DIR / "apply_last.log", "w", encoding="utf-8")
+    log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"   # иначе print датских/русских символов падает (cp1251)
     env["PYTHONUTF8"] = "1"
     env["PYTHONUNBUFFERED"] = "1"        # чтобы лог писался сразу, а не после закрытия браузера
-    cmd = [sys.executable, "-u", str(config.BASE_DIR / "apply.py"), job_id, "--web"]
+    cmd = _salling_apply_cmd([job_id, "--web"])
     if mode == "submit":
         cmd.append("--submit")
     try:
@@ -837,10 +921,10 @@ def apply_batch(job_ids: list[str] = Form(default=[]), mode: str = Form("dry")):
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
-    cmd = [sys.executable, "-u", str(config.BASE_DIR / "apply.py")] + ids + ["--web"]
+    cmd = _salling_apply_cmd(ids + ["--web"])
     if mode == "submit":
         cmd.append("--submit")
-    log = open(config.BASE_DIR / "apply_last.log", "w", encoding="utf-8")
+    log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
     try:
         subprocess.Popen(
             cmd, cwd=str(config.BASE_DIR),

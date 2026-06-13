@@ -7,7 +7,7 @@ from datetime import datetime
 
 import config
 
-STATUS_PATH = config.BASE_DIR / "translator_install_status.json"
+STATUS_PATH = config.DATA_DIR / "translator_install_status.json"
 _lock = threading.Lock()
 
 

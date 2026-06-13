@@ -10,7 +10,7 @@ import httpx
 
 import config
 
-CACHE_PATH = config.BASE_DIR / "transit_cache.json"
+CACHE_PATH = config.DATA_DIR / "transit_cache.json"
 URL = "https://api.transitous.org/api/v1/plan"
 TRANSIT_MODES = {
     "BUS", "COACH", "TRAM", "SUBWAY", "METRO", "RAIL", "REGIONAL_RAIL",

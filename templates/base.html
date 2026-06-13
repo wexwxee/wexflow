@@ -15,12 +15,24 @@
     var m = document.cookie.match(/(?:^|;\s*)jobhub_theme=(dark|light)/);
     var t = (m && m[1]) || localStorage.getItem("jobhub-theme") || "dark";
     document.documentElement.dataset.theme = t;
+    var params = new URLSearchParams(location.search);
+    if (params.get("app_shell") === "edgeapp") {
+      document.documentElement.classList.add("edge-app-shell");
+    }
   })();
 </script>
-<link rel="stylesheet" href="/static/theme.css?v=20260612-rail">
+<link rel="stylesheet" href="/static/theme.css?v=20260614-app">
 {% block style %}{% endblock %}
 </head>
 <body>
+<div class="desktop-framebar" aria-label="Window controls">
+  <div class="desktop-traffic" role="group" aria-label="Window controls">
+    <button type="button" class="traffic-dot traffic-close" data-window-control="close" aria-label="Close"></button>
+    <button type="button" class="traffic-dot traffic-minimize" data-window-control="minimize" aria-label="Minimize"></button>
+    <button type="button" class="traffic-dot traffic-maximize" data-window-control="toggle_maximize" aria-label="Maximize"></button>
+  </div>
+  <div class="desktop-frame-title">WexFlow</div>
+</div>
 {% block body %}{% endblock %}
 <script>
   // переключатель темы — иконки sun/moon переключаются через CSS (html[data-theme])
@@ -66,6 +78,22 @@
     });
   })();
 </script>
+<script>
+  (function () {
+    document.querySelectorAll("[data-window-control]").forEach(function (button) {
+      button.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        var action = button.dataset.windowControl;
+        var api = window.pywebview && window.pywebview.api;
+        if (api && typeof api[action] === "function") {
+          api[action]();
+        }
+      });
+    });
+  })();
+</script>
+<script src="/static/window_chrome.js?v=20260614-drag-resize"></script>
 {% block script %}{% endblock %}
 </body>
 </html>

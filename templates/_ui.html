@@ -22,7 +22,7 @@
       <a class="wex-side-btn {{ 'active' if active == 'settings' }}" href="/settings" data-tip-title="Настройки" data-tip-body="Профиль кандидата, CV, письмо и логин Salling.">{{ ic.i('sliders', 18) }}<span>Настройки</span></a>
     </nav>
     <div class="wex-side-spacer"></div>
-    <a class="wex-side-btn" href="http://127.0.0.1:8080/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Перейти в отдельный модуль автоподачи 7-Eleven.">{{ ic.i('store', 18) }}<span>7-Eleven</span></a>
+    <a class="wex-side-btn" href="/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Перейти в отдельный модуль автоподачи 7-Eleven.">{{ ic.i('store', 18) }}<span>7-Eleven</span></a>
   </aside>
 {%- endmacro %}
 
@@ -40,7 +40,7 @@
 {% macro app_switch() -%}
   <div class="app-switch">
     <span class="cur">{{ ic.i('cart') }} Salling</span>
-    <a href="http://127.0.0.1:8080/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Переключает на отдельный локальный поиск вакансий 7-Eleven.">{{ ic.i('store') }} 7-Eleven</a>
+    <a href="/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Переключает на отдельный локальный поиск вакансий 7-Eleven.">{{ ic.i('store') }} 7-Eleven</a>
   </div>
 {%- endmacro %}
 

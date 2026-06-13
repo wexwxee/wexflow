@@ -70,7 +70,7 @@
     </div>
     <p style="margin-top:14px;">
       <a href="/job/{{ job.id }}/apply"><button class="primary">Подать →</button></a>
-      <a href="{{ maps_url }}" target="_blank" rel="noopener"><button class="secondary">{{ ic.i('map', 14) }} Маршрут в Google Maps</button></a>
+      <a href="{{ maps_url }}"><button class="secondary">{{ ic.i('map', 14) }} Маршрут в Google Maps</button></a>
     </p>
     {% if has_home and job.lat is not none %}
     <p>

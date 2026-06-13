@@ -26,9 +26,11 @@ _DROP_RESP = {"content-length", "content-encoding", "transfer-encoding", "connec
 
 
 @app.get("/__app/{which}")
-def switch(which: str):
+def switch(which: str, next: str = "/"):
     active = "7e" if which.lower().startswith("7") else "salling"
-    resp = RedirectResponse("/", status_code=303)
+    if not next.startswith("/") or next.startswith("//"):
+        next = "/"
+    resp = RedirectResponse(next, status_code=303)
     resp.set_cookie("hub_active", active, max_age=31536000, samesite="lax")
     return resp
 

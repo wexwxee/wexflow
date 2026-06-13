@@ -15,7 +15,7 @@ import httpx
 import config
 import labels
 
-CACHE_PATH = config.BASE_DIR / "geocache.json"
+CACHE_PATH = config.DATA_DIR / "geocache.json"
 
 
 def _load_cache() -> dict:

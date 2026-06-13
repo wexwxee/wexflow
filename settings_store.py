@@ -4,7 +4,7 @@ from pathlib import Path
 
 import config
 
-PATH = config.BASE_DIR / "settings.json"
+PATH = config.DATA_DIR / "settings.json"
 
 
 def load() -> dict:

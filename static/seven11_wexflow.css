@@ -1,0 +1,300 @@
+html[data-theme="dark"] {
+  --accent: #1ed760;
+  --accent-hover: #28c961;
+  --accent-soft: rgba(30, 215, 96, .13);
+  --green-soft: #112318;
+  --glow-1: rgba(0, 0, 0, 0);
+  --glow-2: rgba(0, 0, 0, 0);
+  --neon: #1ed760;
+  --neon-dim: rgba(30, 215, 96, .09);
+  --neon-glow: 0 0 0 rgba(0, 0, 0, 0);
+  --radius: 8px;
+  --grad: var(--accent);
+}
+
+body {
+  background: linear-gradient(180deg, #121313 0%, var(--bg) 42%, #0d0e0e 100%);
+}
+
+@media (min-width: 900px) {
+  body {
+    padding-left: 72px;
+  }
+}
+
+.wex-lite-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 60;
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 12px;
+  background: #0b0c0c;
+  border-right: 1px solid rgba(255, 255, 255, .08);
+}
+
+.wex-lite-logo,
+.wex-lite-btn {
+  width: 46px;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  text-decoration: none;
+  position: relative;
+  padding: 0;
+  cursor: pointer;
+}
+
+.wex-lite-logo:hover,
+.wex-lite-btn:hover {
+  color: var(--txt);
+  background: rgba(255, 255, 255, .06);
+  border-color: var(--line);
+}
+
+.wex-lite-logo img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.wex-lite-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wex-lite-btn span {
+  position: absolute;
+  left: 58px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  background: var(--menu-bg);
+  color: var(--txt);
+  border: 1px solid var(--glass-line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition: opacity .12s, transform .12s;
+}
+
+.wex-lite-btn:hover span {
+  opacity: 1;
+  transform: translate(2px, -50%);
+}
+
+.wex-lite-btn.active {
+  color: var(--txt-strong);
+  background: var(--chip-bg);
+}
+
+.wex-lite-btn.active::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: var(--accent);
+}
+
+.appbar {
+  background: rgba(16, 17, 17, .94);
+  border-bottom-color: rgba(255, 255, 255, .10);
+}
+
+.brand {
+  min-width: 250px;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #0b0c0c;
+  border: 1px solid rgba(255, 255, 255, .10);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.brand-mark img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.brand-text strong {
+  color: var(--txt-strong);
+  font-size: 16px;
+}
+
+.brand-text span {
+  color: var(--muted);
+}
+
+.card {
+  background: var(--card);
+  border-color: var(--glass-line);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.card::before {
+  content: none;
+}
+
+.card-ic,
+.pill.soft {
+  background: var(--ok-bg);
+  color: var(--ok-txt);
+}
+
+.step.active,
+.btn.primary {
+  background: var(--accent);
+  color: #06130b;
+  box-shadow: none;
+}
+
+.step.active .step-no {
+  background: rgba(0, 0, 0, .18);
+  color: #06130b;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: none;
+}
+
+.btn.ghost,
+.stepper,
+.run-pill,
+.app-switch,
+.theme-toggle {
+  background: var(--glass);
+  border-color: var(--glass-line);
+}
+
+input,
+select,
+textarea {
+  border-radius: 9px;
+}
+
+@media (max-width: 900px) {
+  body {
+    padding-left: 0;
+  }
+
+  .wex-lite-sidebar {
+    position: sticky;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, .08);
+  }
+
+  .wex-lite-nav {
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .wex-lite-logo,
+  .wex-lite-btn {
+    width: 38px;
+    min-height: 36px;
+  }
+
+  .wex-lite-btn span {
+    display: none;
+  }
+
+  .wex-lite-btn.active::before {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: -9px;
+    width: auto;
+    height: 3px;
+    border-radius: 4px 4px 0 0;
+  }
+
+  .appbar {
+    align-items: flex-start;
+    gap: 10px;
+    overflow: visible;
+    min-height: 176px;
+    padding: 12px 14px;
+  }
+
+  .brand {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .appbar-right {
+    order: 2;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .appbar-right > * {
+    flex: 0 0 auto;
+  }
+
+  .stepper {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    border-radius: 18px;
+  }
+
+  .step {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+  }
+
+  .stage {
+    padding: 28px 24px 150px;
+  }
+
+  .actionbar {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 10px 14px;
+  }
+
+  .actionbar-right {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .actionbar-right .btn {
+    flex: 1 1 120px;
+  }
+}

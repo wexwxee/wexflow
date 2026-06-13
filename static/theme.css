@@ -11,6 +11,7 @@
 
 /* ---------- переменные: тёмная тема (по умолчанию) ---------- */
 :root, html[data-theme="dark"] {
+  --desktop-frame-h: 34px;
   /* фон */
   --bg:       #101111;
   --bg-soft:  #141515;
@@ -91,11 +92,69 @@ html[data-theme="light"] {
 
 body {
   margin: 0;
+  padding-top: var(--desktop-frame-h);
   font-family: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--txt);
   font-size: 14px;
   transition: background-color .15s ease, color .15s ease;
+}
+
+.desktop-framebar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 1000;
+  height: var(--desktop-frame-h);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 13px;
+  background: #0b0c0c;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: drag;
+  cursor: default;
+}
+.desktop-traffic {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+.traffic-dot {
+  width: 13px;
+  height: 13px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .20);
+}
+.traffic-close { background: #ff5f57; }
+.traffic-minimize { background: #ffbd2e; }
+.traffic-maximize { background: #28c840; }
+.traffic-dot:hover { filter: brightness(1.08); }
+.traffic-dot:active { transform: scale(.92); }
+.desktop-frame-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+html[data-theme="light"] .desktop-framebar {
+  background: rgba(255, 255, 255, .92);
+  border-bottom-color: var(--line);
+}
+html.edge-app-shell {
+  --desktop-frame-h: 0px;
+}
+html.edge-app-shell body {
+  padding-top: 0;
+}
+html.edge-app-shell .desktop-framebar {
+  display: none;
 }
 
 /* радиальный градиент фона — только в тёмной теме */
@@ -145,7 +204,7 @@ a { color: var(--accent); text-decoration: none; }
 }
 .wex-sidebar {
   position: fixed;
-  inset: 0 auto 0 0;
+  inset: var(--desktop-frame-h) auto 0 0;
   z-index: 50;
   width: 84px;
   display: flex;
@@ -193,7 +252,14 @@ a { color: var(--accent); text-decoration: none; }
   color: var(--txt);
   background: rgba(255, 255, 255, .06);
   border-color: var(--line);
+  transform: translateY(-1px);
 }
+.wex-side-btn .ic {
+  transition: transform .18s cubic-bezier(.22,.61,.36,1);
+}
+.wex-side-btn:hover .ic { transform: scale(1.12); }
+.wex-side-logo .wex-mark { transition: transform .25s ease; }
+.wex-side-logo:hover .wex-mark { transform: rotate(-8deg) scale(1.06); }
 .wex-side-nav {
   display: flex;
   flex-direction: column;
@@ -215,8 +281,11 @@ a { color: var(--accent); text-decoration: none; }
 }
 .wex-side-btn.active {
   color: var(--accent);
-  background: var(--accent-soft);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 16%, transparent), var(--accent-soft));
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
 }
+.wex-side-btn.active .ic { transform: scale(1.06); }
 .wex-side-btn.active::before {
   content: "";
   position: absolute;
@@ -232,7 +301,7 @@ a { color: var(--accent); text-decoration: none; }
   flex: 1;
 }
 .wex-main {
-  min-height: 100vh;
+  min-height: calc(100vh - var(--desktop-frame-h));
   margin-left: 84px;
   display: flex;
   flex-direction: column;

@@ -3,11 +3,17 @@ import json
 import os
 from pathlib import Path
 
-BASE_DIR = Path(__file__).parent
-DB_PATH = BASE_DIR / "jobs.db"
-PROFILE_PATH = BASE_DIR / "profile.json"          # данные кандидата для предзаполнения
-BROWSER_PROFILE_DIR = BASE_DIR / "browser_profile"  # persistent context (логин SuccessFactors)
-SECRETS_PATH = BASE_DIR / "secrets.json"
+import paths
+
+# BASE_DIR — код и ресурсы (в сборке = распакованные данные PyInstaller).
+# DATA_DIR — пользовательские данные (в сборке = %AppData%\WexFlow\salling).
+# В обычном dev-запуске обе указывают на папку проекта — поведение прежнее.
+BASE_DIR = paths.RESOURCE_DIR
+DATA_DIR = paths.DATA_DIR
+DB_PATH = DATA_DIR / "jobs.db"
+PROFILE_PATH = DATA_DIR / "profile.json"          # данные кандидата для предзаполнения
+BROWSER_PROFILE_DIR = DATA_DIR / "browser_profile"  # persistent context (логин SuccessFactors)
+SECRETS_PATH = DATA_DIR / "secrets.json"
 
 
 def _secrets() -> dict:

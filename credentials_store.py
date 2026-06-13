@@ -14,7 +14,7 @@ import json
 
 import config
 
-PATH = config.BASE_DIR / "sf_credentials.json"
+PATH = config.DATA_DIR / "sf_credentials.json"
 
 
 # --- Windows DPAPI (без внешних зависимостей) ---

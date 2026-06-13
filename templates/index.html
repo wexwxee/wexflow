@@ -61,14 +61,16 @@
   .field.sel::after { content:"▾"; position:absolute; right:12px; bottom:10px; color:var(--muted); pointer-events:none; font-size:11px; }
   .field select option { background:var(--card); }
   .combo { position:relative; }
+  .combo.open { z-index:220; }
   .combo-btn { display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; cursor:pointer; }
   .combo-btn span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .combo-btn::after { content:"▾"; color:var(--muted); font-size:11px; flex:0 0 auto; }
   .combo-menu {
-     display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:30;
-     background:var(--menu-bg); border:1px solid var(--glass-line); border-radius:10px;
-     box-shadow:var(--shadow); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+     display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:220;
+     background:#191b1a; border:1px solid rgba(255,255,255,.16); border-radius:10px;
+     box-shadow:0 20px 44px rgba(0,0,0,.62), 0 0 0 1px rgba(255,255,255,.04);
      padding:5px; max-height:176px; overflow:auto; overscroll-behavior:contain; }
+  html[data-theme="light"] .combo-menu { background:#fff; border-color:var(--line-strong); }
   .combo.open .combo-menu { display:block; }
   .combo-option {
      width:100%; border:none; background:transparent; color:var(--txt); border-radius:7px;
@@ -227,21 +229,28 @@
   .selwrap:hover .selbox-ui { border-color:var(--accent); }
   .card.selected { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft), var(--shadow-sm); }
   /* плашка пакетной подачи */
-  .batchbar { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:50;
-    display:none; align-items:center; gap:14px; flex-wrap:wrap; justify-content:center;
-    max-width:calc(100vw - 24px);
-    background:rgba(8,12,10,.88); border:1px solid var(--glass-line);
-    backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
-    box-shadow:0 20px 50px rgba(0,0,0,.55), 0 0 0 1px var(--glass-line);
-    border-radius:16px; padding:12px 18px; }
-  html[data-theme="light"] .batchbar { background:rgba(255,255,255,.92); }
-  .batchbar.show { display:flex; }
-  .batchbar .binfo { display:flex; flex-direction:column; gap:2px; }
-  .batchbar .cnt { font-weight:700; font-family:"Space Grotesk",system-ui,sans-serif; }
-  .batchbar .files { font-size:11.5px; color:var(--muted); }
-  .batchbar .files a { margin-left:6px; }
-  .batchbar .submitbtn { background:var(--ok-bg); border:1px solid var(--ok-line); color:var(--ok-txt); font-weight:600; }
-  .batchbar .submitbtn:hover { border-color:var(--ok-txt); }
+  .batchbar { position:fixed; left:calc(84px + (100vw - 84px) / 2); transform:translateX(-50%); bottom:74px; z-index:900;
+    display:none; grid-template-columns:1fr; align-items:center; gap:12px;
+    width:min(620px, calc(100vw - 124px));
+    background:#09100d; border:1px solid rgba(255,255,255,.13);
+    box-shadow:0 24px 60px rgba(0,0,0,.58), 0 0 0 1px rgba(30,215,96,.08);
+    border-radius:18px; padding:14px 16px; }
+  html[data-theme="light"] .batchbar { background:#fff; border-color:var(--line-strong); box-shadow:0 20px 45px rgba(20,50,40,.18); }
+  .batchbar.show { display:grid; opacity:1 !important; animation:none !important; }
+  .batchbar .binfo { width:100%; min-width:0; display:flex; flex-direction:column; align-items:center; text-align:center; gap:5px; }
+  .batchbar .cnt { font-weight:800; font-family:"Space Grotesk",system-ui,sans-serif; color:var(--txt-strong); }
+  .batchbar .files { display:block; width:100%; max-width:100%; font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .batchbar .files a { margin-left:8px; font-weight:700; }
+  .batchbar .bactions { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
+  .batchbar button { min-height:34px; border-radius:9px; padding:8px 12px; }
+  .batchbar .primary { background:#21d86b; color:#05130a; border-color:#21d86b; font-weight:800; }
+  .batchbar .submitbtn { background:rgba(30,215,96,.12); border:1px solid rgba(30,215,96,.34); color:var(--ok-txt); font-weight:700; }
+  .batchbar .submitbtn:hover { border-color:var(--ok-txt); background:rgba(30,215,96,.18); }
+  @media (max-width:820px){
+    .batchbar { left:50%; width:calc(100vw - 24px); bottom:24px; }
+    .batchbar .bactions { justify-content:stretch; }
+    .batchbar .bactions button { flex:1 1 150px; }
+  }
   .notice-line { padding:8px 22px; font-size:13px; }
 </style>
 {% endblock %}
@@ -459,7 +468,7 @@
       <a href="/job/{{ j.id }}/apply"><button class="primary">Подать →</button></a>
       {% endif %}
       <a href="/job/{{ j.id }}"><button type="button" class="ghost">Подробнее</button></a>
-      <a href="{{ maps_urls[j.id] }}" target="_blank" rel="noopener"><button type="button" class="ghost">{{ ic.i('map', 13) }} Маршрут</button></a>
+      <a href="{{ maps_urls[j.id] }}"><button type="button" class="ghost">{{ ic.i('map', 13) }} Маршрут</button></a>
       {% if j.status != 'applied' %}
       <form method="post" action="/job/{{ j.id }}/status">
         <input type="hidden" name="status" value="applied">
@@ -500,11 +509,13 @@
     <span class="files">{{ ic.i('file', 12) }} CV: {{ apply_files.cv }} · {{ ic.i('edit', 12) }} Письмо: {{ apply_files.cover }}
       <a href="#" id="changefiles">изменить файлы</a></span>
   </div>
-  <button class="primary" type="submit" name="mode" value="dry"
-          data-tip-title="Без отправки" data-tip-body="Бот откроет форму, заполнит поля и прикрепит файлы, но не нажмёт Ansøg. Хорошо для проверки.">Запустить подготовку без отправки</button>
-  <button class="submitbtn" type="submit" name="mode" value="submit"
-          data-tip-title="Авто-отправка" data-tip-body="Бот заполнит форму, нажмёт Ansøg/Apply и подтвердит согласие, если сайт его покажет.">Авто-отправка: нажать Apply и подтверждение</button>
-  <button type="button" id="selclear">Сброс</button>
+  <div class="bactions">
+    <button class="primary" type="submit" name="mode" value="dry"
+            data-tip-title="Без отправки" data-tip-body="Бот откроет форму, заполнит поля и прикрепит файлы, но не нажмёт Ansøg. Хорошо для проверки.">Подготовить</button>
+    <button class="submitbtn" type="submit" name="mode" value="submit"
+            data-tip-title="Авто-отправка" data-tip-body="Бот заполнит форму, нажмёт Ansøg/Apply и подтвердит согласие, если сайт его покажет.">Авто-отправка</button>
+    <button type="button" id="selclear">Сброс</button>
+  </div>
 </form>
 
 <div id="undoToast" class="undo-toast">

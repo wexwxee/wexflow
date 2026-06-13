@@ -102,7 +102,7 @@
         <div class="file-picker">
           <label class="file-button" for="cv_file">Выбрать файл</label>
           <span class="file-name {{ 'saved' if file_info.cv_status=='ok' else ('missing' if file_info.cv_status=='missing' else '') }}" data-file-name="cv_file">{{ file_info.cv_label }}</span>
-          {% if file_info.cv_url %}<a class="file-open" href="{{ file_info.cv_url }}" target="_blank" rel="noopener" title="Открыть сохранённый CV">{{ ic.i('eye', 14) }} Открыть</a>{% endif %}
+          {% if file_info.cv_url %}<a class="file-open" href="{{ file_info.cv_url }}" title="Открыть сохранённый CV">{{ ic.i('eye', 14) }} Открыть</a>{% endif %}
           <input id="cv_file" type="file" name="cv_file" accept=".pdf,.doc,.docx">
         </div>
       </div>
@@ -112,7 +112,7 @@
         <div class="file-picker">
           <label class="file-button" for="cover_letter_file">Выбрать файл</label>
           <span class="file-name {{ 'saved' if file_info.cover_status=='ok' else ('missing' if file_info.cover_status=='missing' else '') }}" data-file-name="cover_letter_file">{{ file_info.cover_label }}</span>
-          {% if file_info.cover_url %}<a class="file-open" href="{{ file_info.cover_url }}" target="_blank" rel="noopener" title="Открыть сохранённое мотивационное письмо">{{ ic.i('eye', 14) }} Открыть</a>{% endif %}
+          {% if file_info.cover_url %}<a class="file-open" href="{{ file_info.cover_url }}" title="Открыть сохранённое мотивационное письмо">{{ ic.i('eye', 14) }} Открыть</a>{% endif %}
           <input id="cover_letter_file" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
         </div>
       </div>

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import config
 
-UPLOAD_DIR = config.BASE_DIR / "uploads"
+UPLOAD_DIR = config.DATA_DIR / "uploads"
 
 CITY_FIXES = {
     "k??benhavn": "København",

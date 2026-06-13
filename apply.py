@@ -723,7 +723,7 @@ def _save_proof(page, job):
     """Сохраняет скриншот результата подачи в logs/applied/ как доказательство."""
     try:
         from datetime import datetime
-        out = config.BASE_DIR / "logs" / "applied"
+        out = config.DATA_DIR / "logs" / "applied"
         out.mkdir(parents=True, exist_ok=True)
         rid = job.requisition_id or job.id
         name = f"{datetime.now():%Y%m%d_%H%M%S}_{rid}.png"
@@ -892,8 +892,8 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True, concurrency:
         ctx.close()
 
 
-if __name__ == "__main__":
-    args = sys.argv[1:]
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
     if not args:
         sys.exit("Использование: python apply.py <job_id> [<job_id> ...] [--submit] [--web] | python apply.py --login")
     web_mode = "--web" in args
@@ -905,3 +905,7 @@ if __name__ == "__main__":
         run_batch(ids, submit=submit, web_mode=web_mode)
     else:
         run(ids[0], web_mode=web_mode, submit=submit)
+
+
+if __name__ == "__main__":
+    main()

@@ -16,11 +16,9 @@ The app runs locally on your PC. Your profile, documents, credentials, and job s
 1. Open the latest release:
    [github.com/wexwxee/wexflow/releases/latest](https://github.com/wexwxee/wexflow/releases/latest)
 2. Download the file named like:
-   `WexFlow-1.0.10.zip`
-3. Extract the zip anywhere you want, for example:
-   `C:\Apps\WexFlow`
-4. Open the extracted folder and run:
-   `WexFlow.exe`
+   `WexFlow-Setup-1.0.14.exe`
+3. Run `WexFlow-Setup-1.0.14.exe`.
+4. The installer extracts WexFlow to your Windows user folder, creates a desktop shortcut, and starts the app.
 
 On first launch Windows may show a security warning because the app is not code-signed yet. Choose **More info** -> **Run anyway** if you trust this build.
 
@@ -28,7 +26,8 @@ On first launch Windows may show a security warning because the app is not code-
 
 - Windows 10 or Windows 11.
 - Internet connection.
-- Microsoft Edge WebView2 Runtime. It is already installed on most Windows PCs.
+- Microsoft Edge WebView2 Runtime. The setup file checks and installs it when needed.
+- .NET Framework 4.8. The setup file checks and installs it when needed.
 - For automatic applications, WexFlow may download a Playwright Chromium browser on first use. This is saved in your Windows user data folder.
 
 You do **not** need Python, Node.js, Git, or any developer tools to use the release version.
@@ -46,10 +45,9 @@ When an update is available:
 
 You can also update manually:
 
-1. Download the newest `WexFlow-*.zip` from [Releases](https://github.com/wexwxee/wexflow/releases).
+1. Download the newest `WexFlow-Setup-*.exe` from [Releases](https://github.com/wexwxee/wexflow/releases).
 2. Close WexFlow.
-3. Extract the new zip over the old WexFlow folder, or extract it to a fresh folder.
-4. Run `WexFlow.exe`.
+3. Run the setup file again.
 
 Your personal data is kept separately in `%AppData%\WexFlow`, so updating the app should not delete your profile or documents.
 
@@ -168,7 +166,7 @@ Hiring websites can change their forms at any time. If an application flow fails
 
 This repository contains the source code and build scripts.
 
-For normal users, use the zip from GitHub Releases. Do not clone the repository unless you want to develop or debug the app.
+For normal users, use `WexFlow-Setup-*.exe` from GitHub Releases. Do not clone the repository unless you want to develop or debug the app.
 
 Development build commands may use:
 
@@ -182,6 +180,7 @@ The distributable Windows app is produced with PyInstaller and packaged as:
 
 ```text
 dist\WexFlow-<version>.zip
+dist\WexFlow-Setup-<version>.exe
 ```
 
 ## Privacy And Safety

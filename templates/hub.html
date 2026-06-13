@@ -101,6 +101,19 @@
     border: 1px solid color-mix(in srgb, var(--module-accent) 34%, var(--glass-line));
     flex: 0 0 auto;
   }
+  .hub-module-icon.brand {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .hub-module-icon.brand img {
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+    display: block;
+  }
   .hub-stats {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -180,7 +193,185 @@
     background: var(--accent);
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
   }
+  .hub-version {
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: .04em;
+    opacity: .8;
+  }
+  .hub-update[hidden] { display: none; }
+  .hub-update {
+    justify-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 2px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--glass-line));
+    background: color-mix(in srgb, var(--accent) 12%, var(--card));
+    color: var(--txt-strong);
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 700;
+  }
+  .hub-update:hover { border-color: var(--accent); }
+  .hub-update-dot {
+    width: 7px; height: 7px; border-radius: 99px; background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .hub-update-cta { color: var(--accent); }
+
+  /* приветствие + подсказка «что дальше» */
+  .hub-greeting {
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    margin-top: -8px;
+  }
+  .hub-hello {
+    color: var(--txt-strong);
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .hub-hello:empty { display: none; }
+  .hub-date {
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    text-transform: capitalize;
+    margin-top: -2px;
+  }
+
+  /* анимированный «чил»-фон (aurora) */
+  .hub-aurora {
+    position: fixed;
+    inset: var(--desktop-frame-h, 0) 0 0 84px;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .hub-dots {
+    position: fixed;
+    inset: var(--desktop-frame-h, 0) 0 0 84px;
+    z-index: 0;
+    width: calc(100vw - 84px);
+    height: calc(100vh - var(--desktop-frame-h, 0px));
+    pointer-events: none;
+    opacity: .58;
+    mix-blend-mode: screen;
+  }
+  .hub-aurora i {
+    position: absolute;
+    width: 46vmax;
+    height: 46vmax;
+    border-radius: 50%;
+    filter: blur(80px);
+    mix-blend-mode: screen;
+    will-change: transform;
+  }
+  .hub-aurora i:nth-child(1) {
+    background: radial-gradient(circle, var(--accent), transparent 60%);
+    top: -12%; left: 6%; opacity: .30;
+    animation: auroraA 26s ease-in-out infinite;
+  }
+  .hub-aurora i:nth-child(2) {
+    background: radial-gradient(circle, #2f9bff, transparent 60%);
+    bottom: -18%; right: 4%; opacity: .20;
+    animation: auroraB 32s ease-in-out infinite;
+  }
+  .hub-aurora i:nth-child(3) {
+    background: radial-gradient(circle, #7c5cff, transparent 60%);
+    top: 28%; right: 24%; opacity: .16;
+    animation: auroraC 38s ease-in-out infinite;
+  }
+  @keyframes auroraA { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(9%,13%) scale(1.08); } }
+  @keyframes auroraB { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-11%,-9%) scale(1.12); } }
+  @keyframes auroraC { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-7%,11%) scale(1.06); } }
+  html[data-theme="light"] .hub-aurora i { opacity: .12; }
+  html[data-theme="light"] .hub-dots { opacity: .34; mix-blend-mode: multiply; }
+  .hub-screen { position: relative; z-index: 1; }
+
+  /* самолётик в шапке тихо парит */
+  .hub-brand-lockup .wex-mark { animation: planeFloat 4.5s ease-in-out infinite; }
+  @keyframes planeFloat { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-5px) rotate(-3deg); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hub-aurora i, .hub-brand-lockup .wex-mark { animation: none; }
+    .hub-dots { display: none; }
+  }
+  .hub-next {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 13px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--card));
+    border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--glass-line));
+    color: var(--txt);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .hub-next .ic { color: var(--accent); }
+
+  /* цвета статусов на карточке 7-Eleven */
+  .hub-stat b.ok { color: var(--accent); }
+  .hub-stat b.muted { color: var(--muted); }
+
+  /* полоса последней активности */
+  .hub-activity {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .hub-activity-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 13px;
+    border-radius: 10px;
+    border: 1px solid var(--glass-line);
+    background: var(--glass);
+    min-width: 0;
+  }
+  .hub-activity-ic {
+    flex: 0 0 auto;
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    display: grid; place-items: center;
+    background: var(--chip-bg, color-mix(in srgb, var(--accent) 12%, transparent));
+    color: var(--accent);
+  }
+  .hub-activity-item > div { display: grid; gap: 2px; min-width: 0; }
+  .hub-activity-k {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); white-space: nowrap;
+  }
+  .hub-activity-v {
+    font-size: 12.5px; font-weight: 600; color: var(--txt);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* мягкое появление по очереди */
+  @keyframes hubRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  .hub-greeting, .hub-module, .hub-quiet-row, .hub-activity {
+    animation: hubRise .5s cubic-bezier(.22,.61,.36,1) both;
+  }
+  .hub-greeting { animation-delay: .04s; }
+  .hub-module.salling { animation-delay: .10s; }
+  .hub-module.seven { animation-delay: .16s; }
+  .hub-quiet-row { animation-delay: .22s; }
+  .hub-activity { animation-delay: .28s; }
   @media (max-width: 780px) {
+    .hub-activity { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 780px) {
+    .hub-aurora,
+    .hub-dots {
+      left: 0;
+      width: 100vw;
+    }
     .hub-screen {
       align-items: start;
       padding-top: 28px;
@@ -195,11 +386,29 @@
 </style>
 
 {{ ui.shell_start('hub') }}
+<div class="hub-aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+<canvas class="hub-dots" id="hubDots" aria-hidden="true"></canvas>
 <section class="hub-screen">
   <div class="hub-stack">
     <div class="hub-brand-lockup">
       {{ ui.plane(34) }}
       <strong>WexFlow</strong>
+    </div>
+
+    <div class="hub-greeting">
+      <span class="hub-hello" id="hubHello" data-name="{{ user_name|e }}"></span>
+      <span class="hub-date" id="hubDate"></span>
+      {% set hint = None %}
+      {% if not seven.profile_ready %}
+        {% set hint = 'Заполни профиль 7-Eleven, чтобы запускать автоподачу' %}
+      {% elif seven.stores == 0 %}
+        {% set hint = 'Профиль 7-Eleven готов — выбери магазины и запускай' %}
+      {% elif active_jobs and not applied_jobs %}
+        {% set hint = 'Всё готово: ' ~ seven.stores ~ ' магазин(ов) 7-Eleven · ' ~ active_jobs ~ ' активных вакансий Salling' %}
+      {% else %}
+        {% set hint = 'Всё настроено — ' ~ seven.stores ~ ' магазин(ов) выбрано, можно подавать' %}
+      {% endif %}
+      <span class="hub-next">{{ ic.i('zap', 13) }} {{ hint }}</span>
     </div>
 
     <div class="hub-modules">
@@ -209,7 +418,7 @@
             <h2>Salling Jobs</h2>
             <p>Лента вакансий, фильтры, статусы, маршрут и пакетная подача.</p>
           </div>
-          <div class="hub-module-icon">{{ ic.i('cart', 20) }}</div>
+          <div class="hub-module-icon brand"><img src="/static/brand_salling.svg" alt="Salling Group"></div>
         </div>
         <div class="hub-stats">
           <div class="hub-stat"><b>{{ active_jobs }}</b><span>active</span></div>
@@ -228,16 +437,15 @@
             <h2>7-Eleven Apply Studio</h2>
             <p>Отдельный модуль для профиля, магазинов и запуска автоподачи.</p>
           </div>
-          <div class="hub-module-icon">{{ ic.i('store', 20) }}</div>
+          <div class="hub-module-icon brand"><img src="/static/brand_seven11.svg" alt="7-Eleven"></div>
         </div>
         <div class="hub-stats">
-          <div class="hub-stat"><b>3</b><span>steps</span></div>
-          <div class="hub-stat"><b>CV</b><span>profile</span></div>
-          <div class="hub-stat"><b>Run</b><span>apply</span></div>
+          <div class="hub-stat"><b>{{ seven.stores }}</b><span>магазинов</span></div>
+          <div class="hub-stat"><b class="{{ 'ok' if seven.profile_ready else 'muted' }}">{{ '✓' if seven.profile_ready else '—' }}</b><span>профиль</span></div>
+          <div class="hub-stat"><b class="{{ 'ok' if (seven.profile_ready and seven.stores) else 'muted' }}">{{ '✓' if (seven.profile_ready and seven.stores) else '—' }}</b><span>готов</span></div>
         </div>
         <div class="hub-module-actions">
-          <a class="hub-link primary" href="http://127.0.0.1:8080/__app/7eleven">{{ ic.i('store', 15) }} Открыть 7-Eleven</a>
-          <a class="hub-link" href="http://127.0.0.1:7111/">{{ ic.i('send', 15) }} Прямой запуск</a>
+          <a class="hub-link primary" href="/__app/7eleven">{{ ic.i('store', 15) }} Открыть 7-Eleven</a>
         </div>
       </section>
     </div>
@@ -246,8 +454,238 @@
       <span class="hub-status-dot"></span>
       <span>Единый рабочий центр для двух локальных модулей</span>
       {{ ui.freshness(data_age_min, sync_running) }}
+      <span class="hub-version" id="hubVersion" hidden></span>
+    </div>
+
+    <button class="hub-update" id="hubUpdate" type="button" hidden>
+      <span class="hub-update-dot"></span>
+      <span id="hubUpdateText">Доступно обновление</span>
+      <span class="hub-update-cta">Скачать →</span>
+    </button>
+
+    <div class="hub-activity">
+      <div class="hub-activity-item">
+        <span class="hub-activity-ic">{{ ic.i('check', 14) }}</span>
+        <div>
+          <span class="hub-activity-k">Последняя подача</span>
+          <span class="hub-activity-v">
+            {%- if last_applied -%}{{ last_applied.title|truncate(38, true) }}{%- else -%}пока ничего не подано{%- endif -%}
+          </span>
+        </div>
+      </div>
+      <div class="hub-activity-item">
+        <span class="hub-activity-ic">{{ ic.i('store', 14) }}</span>
+        <div>
+          <span class="hub-activity-k">7-Eleven</span>
+          <span class="hub-activity-v">{{ seven.stores }} магазин(ов) выбрано</span>
+        </div>
+      </div>
+      <div class="hub-activity-item">
+        <span class="hub-activity-ic">{{ ic.i('refresh', 14) }}</span>
+        <div>
+          <span class="hub-activity-k">База вакансий</span>
+          <span class="hub-activity-v">
+            {%- if data_age_min is none -%}нет данных
+            {%- elif data_age_min < 1 -%}обновлена только что
+            {%- elif data_age_min < 60 -%}{{ data_age_min }} мин назад
+            {%- else -%}{{ (data_age_min // 60) }} ч назад{%- endif -%}
+          </span>
+        </div>
+      </div>
     </div>
   </div>
 </section>
+
+<script>
+  // приветствие по времени суток + имя из профиля
+  (function () {
+    var el = document.getElementById("hubHello");
+    if (!el) return;
+    var name = (el.dataset.name || "").trim();
+    var h = new Date().getHours();
+    var part = h < 5 ? "Доброй ночи" : h < 12 ? "Доброе утро" : h < 18 ? "Добрый день" : "Добрый вечер";
+    el.textContent = name ? part + ", " + name : part;
+    var dt = document.getElementById("hubDate");
+    if (dt) {
+      try {
+        dt.textContent = new Date().toLocaleDateString("ru-RU",
+          { weekday: "long", day: "numeric", month: "long" });
+      } catch (e) {}
+    }
+  })();
+
+  // числа на карточках «накручиваются» от 0
+  (function () {
+    var nums = document.querySelectorAll(".hub-stat b");
+    nums.forEach(function (b) {
+      var target = parseInt((b.textContent || "").replace(/\D/g, ""), 10);
+      if (isNaN(target) || target <= 0) return;
+      var dur = 700, t0 = performance.now();
+      function step(now) {
+        var p = Math.min(1, (now - t0) / dur);
+        var eased = 1 - Math.pow(1 - p, 3);
+        b.textContent = Math.round(target * eased).toLocaleString("ru-RU");
+        if (p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    });
+  })();
+</script>
+
+<script>
+  (function () {
+    var canvas = document.getElementById("hubDots");
+    if (!canvas || !canvas.getContext) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    var ctx = canvas.getContext("2d", { alpha: true });
+    var points = [];
+    var w = 0;
+    var h = 0;
+    var dpr = 1;
+    var cursor = { x: 0, y: 0, active: false, strength: 0 };
+    var target = { x: 0, y: 0 };
+    var raf = 0;
+
+    function resize() {
+      var rect = canvas.getBoundingClientRect();
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      w = Math.max(1, rect.width);
+      h = Math.max(1, rect.height);
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      points = [];
+      var gap = w < 760 ? 30 : 34;
+      for (var y = -gap; y <= h + gap; y += gap) {
+        for (var x = -gap; x <= w + gap; x += gap) {
+          points.push({
+            x: x + ((Math.random() - .5) * 4),
+            y: y + ((Math.random() - .5) * 4),
+            phase: Math.random() * Math.PI * 2
+          });
+        }
+      }
+      target.x = cursor.x = w * .5;
+      target.y = cursor.y = h * .42;
+    }
+
+    function setPointer(ev) {
+      var rect = canvas.getBoundingClientRect();
+      target.x = ev.clientX - rect.left;
+      target.y = ev.clientY - rect.top;
+      cursor.active = target.x >= 0 && target.y >= 0 && target.x <= w && target.y <= h;
+    }
+
+    function leavePointer() {
+      cursor.active = false;
+    }
+
+    function colors() {
+      var light = document.documentElement.getAttribute("data-theme") === "light";
+      return light
+        ? { dot: "rgba(6, 20, 15, .18)", active: "rgba(0, 150, 95, .62)", line: "rgba(0, 150, 95, .10)" }
+        : { dot: "rgba(238, 246, 242, .15)", active: "rgba(35, 211, 119, .76)", line: "rgba(35, 211, 119, .12)" };
+    }
+
+    function draw(now) {
+      raf = requestAnimationFrame(draw);
+      if (document.hidden) return;
+
+      cursor.x += (target.x - cursor.x) * .09;
+      cursor.y += (target.y - cursor.y) * .09;
+      cursor.strength += ((cursor.active ? 1 : 0) - cursor.strength) * .08;
+
+      ctx.clearRect(0, 0, w, h);
+      var c = colors();
+      var influence = Math.min(190, Math.max(130, w * .16));
+
+      if (cursor.strength > .02) {
+        var glow = ctx.createRadialGradient(cursor.x, cursor.y, 0, cursor.x, cursor.y, influence);
+        glow.addColorStop(0, c.line);
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(cursor.x - influence, cursor.y - influence, influence * 2, influence * 2);
+      }
+
+      for (var i = 0; i < points.length; i += 1) {
+        var p = points[i];
+        var driftX = Math.sin(now * .00055 + p.phase) * 1.2;
+        var driftY = Math.cos(now * .00048 + p.phase) * 1.2;
+        var x = p.x + driftX;
+        var y = p.y + driftY;
+        var dx = cursor.x - x;
+        var dy = cursor.y - y;
+        var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        var pull = cursor.strength && dist < influence ? Math.pow(1 - dist / influence, 2) * cursor.strength : 0;
+        var px = x + dx * pull * .075;
+        var py = y + dy * pull * .075;
+        var r = 1 + pull * 2.1;
+
+        ctx.beginPath();
+        ctx.fillStyle = pull > .08 ? c.active : c.dot;
+        ctx.globalAlpha = Math.min(1, .68 + pull * .32);
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    resize();
+    window.addEventListener("resize", resize, { passive: true });
+    window.addEventListener("pointermove", setPointer, { passive: true });
+    window.addEventListener("pointerleave", leavePointer, { passive: true });
+    raf = requestAnimationFrame(draw);
+    window.addEventListener("beforeunload", function () { cancelAnimationFrame(raf); });
+  })();
+</script>
+
+<script>
+  // Версия и проверка обновлений берутся из НАДЁЖНОГО серверного эндпоинта
+  // /api/version (а не из pywebview-данных, которые могли отдавать устаревшее).
+  (function () {
+    function api() {
+      var p = window.pywebview;
+      return p && p.api ? p.api : null;
+    }
+    function show(info) {
+      if (!info) return;
+      var v = document.getElementById("hubVersion");
+      if (v && info.version) { v.textContent = "v" + info.version; v.hidden = false; }
+      var upd = info.update;
+      if (!upd || !upd.url) return;   // нет версии новее — баннер не показываем
+      var btn = document.getElementById("hubUpdate");
+      var t = document.getElementById("hubUpdateText");
+      if (t) t.textContent = "Доступно обновление " + (upd.version || "");
+      if (!btn) return;
+      btn.hidden = false;
+      btn.addEventListener("click", function () {
+        var a = api();
+        if (!a) return;
+        if (a.install_update) {
+          if (t) t.textContent = "Обновляется… приложение перезапустится";
+          var cta = document.querySelector(".hub-update-cta");
+          if (cta) cta.textContent = "";
+          btn.disabled = true;
+          a.install_update(upd.url).then(function (r) {
+            if (r && r.ok === false && a.open_external) {
+              if (t) t.textContent = "Скачивание в браузере…";
+              a.open_external(upd.url);
+            }
+          }).catch(function () {
+            if (a.open_external) a.open_external(upd.url);
+          });
+        } else if (a.open_external) {
+          a.open_external(upd.url);
+        }
+      });
+    }
+    fetch("/api/version", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(show)
+      .catch(function () {});
+  })();
+</script>
 {{ ui.shell_end() }}
 {% endblock %}
