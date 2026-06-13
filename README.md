@@ -1,83 +1,176 @@
-# Salling Jobs
+# WexFlow
 
-Личный локальный инструмент для вакансий Salling Group: собирает вакансии в SQLite,
-показывает фильтры на русском, считает расстояние от дома, переводит описания и
-помогает подготовить подачу заявки.
+WexFlow is a Windows desktop app for finding and applying to entry-level jobs in Denmark.
 
-## Быстрый запуск
+It combines two local tools in one app:
 
-Обычный способ:
+- **Salling Jobs**: job feed, filters, job states, routes, profile data, CV/cover letter handling, and assisted applications.
+- **7-Eleven Apply Studio**: profile, store selection, address/location tools, and assisted Typeform applications.
 
-```bat
-C:\saling\JobApplyHub.bat
-```
+The app runs locally on your PC. Your profile, documents, credentials, and job state are stored on your machine, not in this repository.
 
-Или двойной клик по ярлыку **Job Apply Hub** на рабочем столе.
+> WexFlow is an independent helper app. It is not affiliated with Salling Group, 7-Eleven, or their hiring platforms.
 
-Лаунчер поднимает:
+## Download
 
-- Salling Jobs: http://127.0.0.1:8000/
-- 7-Eleven Apply Studio: http://127.0.0.1:7111/
+1. Open the latest release:
+   [github.com/wexwxee/wexflow/releases/latest](https://github.com/wexwxee/wexflow/releases/latest)
+2. Download the file named like:
+   `WexFlow-1.0.10.zip`
+3. Extract the zip anywhere you want, for example:
+   `C:\Apps\WexFlow`
+4. Open the extracted folder and run:
+   `WexFlow.exe`
 
-Если что-то не открылось, смотри лог:
+On first launch Windows may show a security warning because the app is not code-signed yet. Choose **More info** -> **Run anyway** if you trust this build.
 
-```text
-C:\saling\hub_launcher.log
-```
+## Requirements
 
-## Ручной запуск Salling
+- Windows 10 or Windows 11.
+- Internet connection.
+- Microsoft Edge WebView2 Runtime. It is already installed on most Windows PCs.
+- For automatic applications, WexFlow may download a Playwright Chromium browser on first use. This is saved in your Windows user data folder.
 
-```powershell
-cd C:\saling
-.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8000
-```
+You do **not** need Python, Node.js, Git, or any developer tools to use the release version.
 
-Обновить вакансии вручную (при работающем приложении они и так
-обновляются автоматически каждые 30 минут):
+## Updating
 
-```powershell
-.venv\Scripts\python.exe scraper.py
-```
+WexFlow checks GitHub Releases for a newer version.
 
-## Что умеет дашборд
+When an update is available:
 
-- Фильтры понимают русский ввод: город, бренд, регион, категория, занятость, уровень.
-- Домашний адрес можно писать по-русски; адрес геокодируется и дальше работает сортировка по расстоянию.
-- На карточках есть маршрут в Google Maps от домашнего адреса к вакансии.
-- На странице вакансии можно перевести описание на русский кнопкой.
-- Поданные вакансии можно отмечать и смотреть отдельным списком.
+1. Open WexFlow.
+2. Use the update button/banner on the main screen.
+3. The app downloads the new zip.
+4. WexFlow closes, replaces its files, and opens again.
 
-## Подача заявки
+You can also update manually:
 
-На странице `Подать` можно сохранить:
+1. Download the newest `WexFlow-*.zip` from [Releases](https://github.com/wexwxee/wexflow/releases).
+2. Close WexFlow.
+3. Extract the new zip over the old WexFlow folder, or extract it to a fresh folder.
+4. Run `WexFlow.exe`.
 
-- email и пароль Salling Group;
-- путь к CV;
-- путь к мотивационному письму;
-- файлы через кастомные кнопки выбора.
+Your personal data is kept separately in `%AppData%\WexFlow`, so updating the app should not delete your profile or documents.
 
-Файлы сохраняются в `C:\saling\uploads`, а последние выбранные пути остаются в
-`C:\saling\profile.json`, поэтому их не нужно выбирать каждый раз.
+## First Setup
 
-Кнопка автоподачи открывает браузер, входит в аккаунт, прикрепляет файлы, нажимает
-`Apply` / `Ansøg` и подтверждает всплывающее согласие, если оно появится.
+After opening WexFlow:
 
-Если нужно только подготовить форму без отправки, используй кнопку
-`Только подготовить без отправки`.
+1. Go to **Settings**.
+2. Fill in your profile:
+   - name
+   - email
+   - Danish phone number
+   - address
+   - postal code
+   - city
+   - country
+3. Add your CV and optional cover letter.
+4. Save the profile.
+5. Open **Salling Jobs** or **7-Eleven Apply Studio**.
 
-## Данные и логи
+The app autosaves most profile changes, but important missing fields are still checked before running application flows.
 
-- `jobs.db` — локальная база вакансий.
-- `geocache.json` — кэш адресов и координат.
-- `profile.json` — сохранённые пути к файлам и профиль.
-- `sf_credentials.json` — локально сохранённый логин Salling.
-- `apply_last.log` — последний лог работы бота подачи.
-- `hub_launcher.log` — лог запуска общего Hub.
+## Salling Jobs
 
-## Установка зависимостей
+Salling Jobs helps you browse and manage vacancies from Salling Group brands.
 
-Зависимости живут в изолированном окружении `.venv` внутри проекта.
-Пересоздать его (например, после переустановки Python):
+Main features:
+
+- Filter jobs by search text, city, brand, region, category, job type, level, status, and radius.
+- Sort jobs by distance, date, title, or city.
+- Show routes from your home address to the job location.
+- Mark jobs as viewed, applied, hidden, interview, offer, or rejected.
+- Hide already-applied jobs or show them together with all jobs.
+- Use profile data and documents while preparing applications.
+
+Job cards use calm visual states:
+
+- new
+- viewed
+- applied
+- hidden
+- selected for batch action
+
+## 7-Eleven Apply Studio
+
+7-Eleven Apply Studio helps prepare applications for selected stores.
+
+Main features:
+
+- Fill and save the applicant profile.
+- Select stores across Denmark.
+- Search stores by city, address, region, or area.
+- Use your location or a custom starting address.
+- Sort stores by city or distance.
+- Choose transport mode for routes.
+- Prepare and run assisted Typeform applications.
+
+Each selected store gets its own application run.
+
+## Where Data Is Stored
+
+User data is stored locally on your PC.
+
+Common locations:
+
+- `%AppData%\WexFlow` - app user data and downloaded browser files.
+- WexFlow app folder - application files from the extracted zip.
+
+Depending on the version and migration state, local project files may include:
+
+- `jobs.db` - local job database.
+- `profile.json` / settings files - saved profile values.
+- `uploads` - selected CV and cover letter copies.
+- log files - last run and troubleshooting information.
+
+Do not share your local profile, credentials, documents, or logs publicly.
+
+## Troubleshooting
+
+### The app does not open
+
+Try this:
+
+1. Make sure the zip was extracted before running `WexFlow.exe`.
+2. Close all old WexFlow processes in Task Manager.
+3. Run `WexFlow.exe` again.
+4. If Windows blocks it, use **More info** -> **Run anyway**.
+
+### The screen is blank or old
+
+Close WexFlow completely and reopen it.
+
+WexFlow uses local background servers. If an old process is still running, the app may show an old cached interface. Newer versions try to clean these processes automatically at startup.
+
+### Location does not work
+
+Check Windows settings:
+
+1. Open Windows **Settings**.
+2. Go to **Privacy & security** -> **Location**.
+3. Enable location services.
+4. Reopen WexFlow and try again.
+
+You can always enter an address manually if Windows location is unavailable.
+
+### Auto-apply fails
+
+Hiring websites can change their forms at any time. If an application flow fails:
+
+1. Check that your profile fields are filled.
+2. Check that CV and cover letter paths are valid.
+3. Try a preparation/dry-run flow first if available.
+4. Review the final form before submitting.
+
+## Developer Notes
+
+This repository contains the source code and build scripts.
+
+For normal users, use the zip from GitHub Releases. Do not clone the repository unless you want to develop or debug the app.
+
+Development build commands may use:
 
 ```powershell
 cd C:\saling
@@ -85,19 +178,16 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Бот подачи использует установленный Google Chrome / Edge, отдельный
-браузер Playwright ставить не нужно.
+The distributable Windows app is produced with PyInstaller and packaged as:
 
-## Структура
+```text
+dist\WexFlow-<version>.zip
+```
 
-- `app.py` — веб-дашборд (FastAPI), `scraper.py` — сбор вакансий,
-  `apply.py` — бот подачи, `hub.py` — общий вход (порт 8080).
-- `scheduler.py` — НЕобязательный отдельный процесс: уведомления Windows
-  о новых вакансиях (само обновление встроено в app.py).
-- `tools/` — одноразовые скрипты разведки API и иконки (не нужны для работы).
+## Privacy And Safety
 
-## Ограничения
+WexFlow is designed as a local personal assistant.
 
-Это личный помощник. Сайты Salling/SAP могут менять форму подачи, поэтому
-автозаполнение работает best-effort: если сайт изменился, проверь `apply_last.log`
-и финальную форму в браузере перед отправкой.
+- Keep your documents and credentials private.
+- Check application forms before submitting.
+- Use the tool responsibly and follow the rules of the hiring websites you interact with.
