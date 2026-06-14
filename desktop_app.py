@@ -802,7 +802,8 @@ def start_servers():
     else:
         # dev — как раньше: внешние интерпретаторы
         if SEVEN_DIR.exists():
-            _ensure(SEVEN_PORT, [SEVEN_PY, "web_app.py"], SEVEN_DIR, "7-Eleven")
+            _ensure(SEVEN_PORT, [SEVEN_PY, "web_app.py", str(SEVEN_PORT), "--no-browser"],
+                    SEVEN_DIR, "7-Eleven")
         _ensure(SALLING_PORT, [PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1",
                                "--port", str(SALLING_PORT)], APP_ROOT, "Salling")
         _ensure(HUB_PORT, [PY, "-m", "uvicorn", "hub:app", "--host", "127.0.0.1",
