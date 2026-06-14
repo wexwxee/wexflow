@@ -219,11 +219,82 @@ class WindowControls:
     def __init__(self):
         self._maximized = False
         self._fullscreen = False
+        self._restore_rect = None
         self.update_info = None  # заполняется фоновой проверкой обновлений
 
     def _window(self):
         import webview
         return webview.windows[0] if webview.windows else None
+
+    def _native_hwnd(self, window) -> int | None:
+        native = getattr(window, "native", None)
+        handle = getattr(native, "Handle", None)
+        if handle is None:
+            return None
+        try:
+            return int(handle.ToInt64())
+        except Exception:  # noqa: BLE001
+            try:
+                return int(handle.ToInt32())
+            except Exception:  # noqa: BLE001
+                try:
+                    return int(handle)
+                except Exception:  # noqa: BLE001
+                    return None
+
+    def _native_window_rect(self, hwnd: int) -> tuple[int, int, int, int] | None:
+        import ctypes
+        from ctypes import wintypes
+
+        rect = wintypes.RECT()
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        if not user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
+            return None
+        return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
+
+    def _native_monitor_rect(self, hwnd: int) -> tuple[int, int, int, int] | None:
+        import ctypes
+        from ctypes import wintypes
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wintypes.DWORD),
+                ("rcMonitor", wintypes.RECT),
+                ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD),
+            ]
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+        user32.MonitorFromWindow.restype = wintypes.HMONITOR
+        user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
+        user32.GetMonitorInfoW.restype = wintypes.BOOL
+
+        monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), 2)  # nearest monitor
+        if not monitor:
+            return None
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(MONITORINFO)
+        if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            return None
+        r = info.rcMonitor
+        return int(r.left), int(r.top), int(r.right), int(r.bottom)
+
+    def _native_set_rect(self, hwnd: int, rect: tuple[int, int, int, int]) -> bool:
+        import ctypes
+        from ctypes import wintypes
+
+        left, top, right, bottom = rect
+        width = max(1, int(right - left))
+        height = max(1, int(bottom - top))
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.SetWindowPos.argtypes = [
+            wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, wintypes.UINT,
+        ]
+        user32.SetWindowPos.restype = wintypes.BOOL
+        flags = 0x0004 | 0x0200 | 0x0020 | 0x0040  # no z-order, no owner z-order, frame changed, show
+        return bool(user32.SetWindowPos(wintypes.HWND(hwnd), None, left, top, width, height, flags))
 
     def minimize(self):
         window = self._window()
@@ -233,16 +304,38 @@ class WindowControls:
 
     def toggle_maximize(self):
         window = self._window()
-        if window:
+        if not window:
+            return True
+        if os.name == "nt":
+            try:
+                hwnd = self._native_hwnd(window)
+                if hwnd:
+                    if self._fullscreen and self._restore_rect:
+                        if self._native_set_rect(hwnd, self._restore_rect):
+                            self._fullscreen = False
+                            self._maximized = False
+                            return True
+                    current = self._native_window_rect(hwnd)
+                    target = self._native_monitor_rect(hwnd)
+                    if current and target and self._native_set_rect(hwnd, target):
+                        self._restore_rect = current
+                        self._fullscreen = True
+                        self._maximized = True
+                        return True
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            if self._maximized:
+                window.restore()
+            else:
+                window.maximize()
+            self._maximized = not self._maximized
+        except Exception:  # noqa: BLE001
             try:
                 window.toggle_fullscreen()
                 self._fullscreen = not self._fullscreen
             except Exception:  # noqa: BLE001
-                if self._maximized:
-                    window.restore()
-                else:
-                    window.maximize()
-                self._maximized = not self._maximized
+                pass
         return True
 
     def get_location(self):

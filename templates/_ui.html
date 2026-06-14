@@ -67,8 +67,18 @@
       if (!overlay) return;
       function open() { overlay.hidden = false; document.body.classList.add("wn-open"); }
       function close() { overlay.hidden = true; document.body.classList.remove("wn-open"); }
-      document.querySelectorAll("[data-whatsnew-open]").forEach(function (b) {
-        b.addEventListener("click", function (e) { e.preventDefault(); open(); });
+      var cur = {{ (APP_VERSION or "") | tojson }};
+      var openButtons = document.querySelectorAll("[data-whatsnew-open]");
+      function markRead() {
+        try { if (cur) localStorage.setItem("wexflow_seen_version", cur); } catch (e) {}
+        openButtons.forEach(function (b) { b.classList.remove("has-news"); });
+      }
+      openButtons.forEach(function (b) {
+        b.addEventListener("click", function (e) {
+          e.preventDefault();
+          open();
+          markRead();
+        });
       });
       document.querySelectorAll("[data-whatsnew-close]").forEach(function (b) {
         b.addEventListener("click", close);
@@ -77,13 +87,15 @@
       document.addEventListener("keydown", function (e) {
         if (e.key === "Escape" && !overlay.hidden) close();
       });
-      // автопоказ после обновления: версия сменилась с прошлого запуска.
-      // localStorage переживает перезапуск с 1.0.20 (постоянное хранилище WebView2).
+      // После обновления больше не открываем окно автоматически: только ставим
+      // зелёную точку на кнопке «Что нового» в боковой панели.
       try {
-        var cur = {{ (APP_VERSION or "") | tojson }};
         var seen = localStorage.getItem("wexflow_seen_version");
-        if (cur && seen && seen !== cur) { open(); }
-        if (cur) localStorage.setItem("wexflow_seen_version", cur);
+        if (cur && seen && seen !== cur) {
+          openButtons.forEach(function (b) { b.classList.add("has-news"); });
+        } else if (cur && !seen) {
+          localStorage.setItem("wexflow_seen_version", cur);
+        }
       } catch (e) {}
     })();
   </script>

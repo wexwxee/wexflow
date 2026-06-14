@@ -369,6 +369,17 @@ a { color: var(--accent); text-decoration: none; }
   background: var(--accent);
   box-shadow: var(--neon-glow);
 }
+.wex-side-btn.has-news::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 9px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent), var(--neon-glow);
+}
 .wex-side-spacer {
   flex: 1;
 }
