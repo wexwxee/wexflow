@@ -3,6 +3,10 @@
 Качает последний релиз с GitHub и устанавливает надёжно:
 - ставит в C:\\Users\\Public\\WexFlow (ASCII-путь, без админа, обходит баг
   pythonnet с кириллическими путями вроде «Новая папка»);
+- ПЕРЕД установкой полностью удаляет старую папку приложения (версии не копятся);
+- настройки/данные пользователя в %AppData%\\WexFlow НЕ трогает (адрес, фильтры,
+  вход, уже скачанный браузер сохраняются);
+- после установки чистит временный zip из %TEMP% (чтобы не забивать память);
 - снимает mark-of-the-web, чтобы .NET загрузил неподписанный Python.Runtime.dll;
 - доустанавливает .NET Framework 4.8 + Edge WebView2 Runtime при необходимости;
 - делает ярлык на рабочем столе и запускает приложение.
@@ -10,11 +14,13 @@
 Установщик всегда ставит самую свежую версию, поэтому ОДИН и тот же файл
 никогда не устаревает.
 
-Окно установки — на tkinter (входит в стандартный Python, доп. зависимостей нет).
-Если графика почему-то не запустится — есть консольный фолбэк.
+Окно оформлено в стиле главного экрана WexFlow (тёмная карточка, логотип,
+шрифт Space Grotesk, неон-зелёный акцент, фирменные кнопки-точки). tkinter
+входит в стандартный Python; шрифт и логотип кладутся в exe через --add-data.
+Если графика не запустится — есть консольный фолбэк.
 
 Build:  PyInstaller --onefile --windowed --icon app.ico --name WexFlow-Setup
-        installer/installer.py
+        --add-data "installer/assets;assets" installer/installer.py
 """
 import json
 import os
@@ -34,15 +40,28 @@ APP_DIR = os.path.join(INSTALL_ROOT, "WexFlow")
 EXE = os.path.join(APP_DIR, "WexFlow.exe")
 PS_HIDE = 0x08000000  # CREATE_NO_WINDOW
 
-# Фирменные цвета (как в самом приложении: тёмная тема + неон-зелёный).
-C_BG = "#141515"
-C_CARD = "#1c1d1d"
-C_TRACK = "#282929"
-C_ACCENT = "#1ed760"
+# Фирменные цвета (как в главном экране: тёмная тема + неон-зелёный).
+C_WIN = "#0d0e0e"        # фон окна (низ градиента)
+C_GRAD_TOP = "#121313"   # верх градиента
+C_CARD = "#1c1d1d"       # карточка
+C_CARD_LINE = "#2b2c2c"  # рамка карточки
+C_TRACK = "#282929"      # дорожка прогресса
+C_ACCENT = "#1ed760"     # неон-зелёный
 C_ACCENT_DK = "#16a34a"
 C_TXT = "#f6f7f6"
+C_TXT2 = "#e6e8e6"
 C_MUTED = "#9ba19d"
 C_ERR = "#fca5a5"
+# фирменные «светофорные» точки окна
+C_DOT_MIN = "#f7c544"
+C_DOT_MAX = "#2dd4a8"
+C_DOT_CLOSE = "#ff6fae"
+
+
+def asset(name: str) -> str:
+    """Путь к ресурсу (assets/) и в dev, и в собранном exe."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, "assets", name)
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +89,7 @@ def ensure_dotnet48(report):
        f"Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=2088631' -OutFile '{dst}'")
     if os.path.exists(dst):
         subprocess.run([dst, "/q", "/norestart"], creationflags=PS_HIDE)
+        _rm(dst)
 
 
 def ensure_webview2(report):
@@ -88,6 +108,14 @@ def ensure_webview2(report):
        f"Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile '{dst}'")
     if os.path.exists(dst):
         subprocess.run([dst, "/silent", "/install"], creationflags=PS_HIDE)
+        _rm(dst)
+
+
+def _rm(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def latest_zip():
@@ -122,6 +150,7 @@ def do_install(report):
     urllib.request.urlretrieve(url, tmp_zip, reporthook=hook)
 
     report(0.78, f"Устанавливаю {tag or ''}…")
+    # Полностью убираем прошлую установку — версии не накапливаются.
     if os.path.exists(APP_DIR):
         shutil.rmtree(APP_DIR, ignore_errors=True)
     os.makedirs(INSTALL_ROOT, exist_ok=True)
@@ -138,104 +167,169 @@ def do_install(report):
        f"$s.TargetPath='{EXE}'; $s.WorkingDirectory='{APP_DIR}'; "
        f"$s.IconLocation='{EXE}'; $s.Save()")
 
+    _rm(tmp_zip)  # подчищаем временный архив, чтобы не забивать память
     report(1.0, "Готово!")
     return tag
 
 
 # ---------------------------------------------------------------------------
-# Графическое окно установки (tkinter).
+# Графическое окно установки (tkinter, стиль главного экрана WexFlow).
 # ---------------------------------------------------------------------------
+def _register_font():
+    """Подключаем Space Grotesk из ресурсов. True, если получилось."""
+    try:
+        import ctypes
+        path = asset("SpaceGrotesk-700.ttf")
+        if os.path.exists(path):
+            n = ctypes.windll.gdi32.AddFontResourceExW(ctypes.c_wchar_p(path), 0x10, 0)
+            return bool(n)
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def _round_rect(cv, x1, y1, x2, y2, r, **kw):
+    pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
+           x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+    return cv.create_polygon(pts, smooth=True, **kw)
+
+
 def gui_main():
     import tkinter as tk
     from tkinter import font as tkfont
 
     msgs: "queue.Queue" = queue.Queue()
+    W, H = 520, 430
 
     root = tk.Tk()
     root.title("Установка WexFlow")
-    root.overrideredirect(True)  # без стандартной рамки — чистое фирменное окно
-    root.configure(bg=C_BG)
-    W, H = 560, 380
+    root.overrideredirect(True)
+    root.configure(bg=C_WIN)
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-    x, y = (sw - W) // 2, (sh - H) // 3
-    root.geometry(f"{W}x{H}+{x}+{y}")
+    root.geometry(f"{W}x{H}+{(sw - W) // 2}+{(sh - H) // 3}")
     try:
         root.attributes("-topmost", True)
-        root.after(400, lambda: root.attributes("-topmost", False))
+        root.after(500, lambda: root.attributes("-topmost", False))
     except tk.TclError:
         pass
 
-    f_logo = tkfont.Font(family="Segoe UI Semibold", size=30)
-    f_sub = tkfont.Font(family="Segoe UI", size=11)
+    has_grotesk = _register_font()
+    head_family = "Space Grotesk" if has_grotesk else "Segoe UI Semibold"
+    f_logo = tkfont.Font(family=head_family, size=24, weight="bold")
+    f_sub = tkfont.Font(family="Segoe UI", size=10)
     f_status = tkfont.Font(family="Segoe UI", size=10)
-    f_pct = tkfont.Font(family="Segoe UI Semibold", size=10)
+    f_pct = tkfont.Font(family="Segoe UI Semibold", size=9)
     f_btn = tkfont.Font(family="Segoe UI Semibold", size=11)
-    f_close = tkfont.Font(family="Segoe UI", size=13)
 
-    # тонкая зелёная полоска сверху
-    tk.Frame(root, bg=C_ACCENT, height=3).pack(fill="x", side="top")
+    cv = tk.Canvas(root, width=W, height=H, bg=C_WIN, highlightthickness=0, bd=0)
+    cv.pack(fill="both", expand=True)
 
-    # верхняя строка с кнопкой закрытия
-    top = tk.Frame(root, bg=C_BG)
-    top.pack(fill="x")
-    close_btn = tk.Label(top, text="✕", bg=C_BG, fg=C_MUTED, font=f_close,
-                         cursor="hand2", padx=14, pady=8)
-    close_btn.pack(side="right")
-    close_btn.bind("<Enter>", lambda e: close_btn.config(fg=C_TXT))
-    close_btn.bind("<Leave>", lambda e: close_btn.config(fg=C_MUTED))
-    close_btn.bind("<Button-1>", lambda e: root.destroy())
+    # мягкий вертикальный градиент фона (как на главном экране)
+    tr, tg, tb = (18, 19, 19)
+    br, bg_, bb = (13, 14, 14)
+    for i in range(H):
+        t = i / H
+        col = f"#{int(tr + (br - tr) * t):02x}{int(tg + (bg_ - tg) * t):02x}{int(tb + (bb - tb) * t):02x}"
+        cv.create_line(0, i, W, i, fill=col)
 
-    # перетаскивание окна за верхнюю область
-    drag = {"x": 0, "y": 0}
-    def start_drag(e):
-        drag["x"], drag["y"] = e.x, e.y
-    def on_drag(e):
-        root.geometry(f"+{root.winfo_x() + e.x - drag['x']}+{root.winfo_y() + e.y - drag['y']}")
-    for w in (top,):
-        w.bind("<Button-1>", start_drag)
-        w.bind("<B1-Motion>", on_drag)
+    # карточка
+    _round_rect(cv, 28, 58, W - 28, H - 28, 20, fill=C_CARD, outline=C_CARD_LINE, width=1)
 
-    body = tk.Frame(root, bg=C_BG)
-    body.pack(fill="both", expand=True, padx=44)
+    cx = W // 2
 
-    tk.Frame(body, bg=C_BG, height=10).pack()
-    logo = tk.Label(body, text="WexFlow", bg=C_BG, fg=C_TXT, font=f_logo)
-    logo.pack(anchor="w")
-    # подчёркивание-акцент в слове
-    sub = tk.Label(body, text="Автоматическая подача заявок", bg=C_BG, fg=C_MUTED, font=f_sub)
-    sub.pack(anchor="w", pady=(2, 0))
+    # фирменные кнопки-точки (минимизировать / на весь экран / закрыть)
+    def dot(x, color, tag, r=6):
+        cv.create_oval(x - r, 84 - r, x + r, 84 + r, fill=color, outline="", tags=tag)
+    dot(W - 100, C_DOT_MIN, "min")
+    dot(W - 80, C_DOT_MAX, "max")
+    dot(W - 60, C_DOT_CLOSE, "close")
+    cv.tag_bind("close", "<Button-1>", lambda e: root.destroy())
+    cv.tag_bind("min", "<Button-1>", lambda e: _iconify(root))
+    for d in ("close", "min", "max"):
+        cv.tag_bind(d, "<Enter>", lambda e: cv.config(cursor="hand2"))
+        cv.tag_bind(d, "<Leave>", lambda e: cv.config(cursor=""))
 
-    tk.Frame(body, bg=C_BG, height=34).pack()
+    # логотип + заголовок
+    images = []
+    try:
+        logo = tk.PhotoImage(file=asset("wexflow_mark_52.png"))
+        images.append(logo)
+        cv.create_image(cx, 132, image=logo)
+    except tk.TclError:
+        pass
+    cv.create_text(cx, 184, text="WexFlow", font=f_logo, fill=C_TXT)
+    sub_id = cv.create_text(cx, 210, text="Автоматическая подача заявок",
+                            font=f_sub, fill=C_MUTED)
 
-    # статус-строка
-    status_var = tk.StringVar(value="Готов к установке")
-    status = tk.Label(body, textvariable=status_var, bg=C_BG, fg=C_TXT,
-                      font=f_status, anchor="w", justify="left", wraplength=W - 88)
-    status.pack(anchor="w", fill="x")
+    # статус
+    status_id = cv.create_text(cx, 258, text="Готов к установке", font=f_status,
+                               fill=C_TXT2, width=W - 120, justify="center")
 
-    tk.Frame(body, bg=C_BG, height=10).pack()
-
-    # кастомный прогресс-бар на canvas (надёжно зелёный, в отличие от ttk)
-    bar_w = W - 88
-    canvas = tk.Canvas(body, width=bar_w, height=8, bg=C_BG, highlightthickness=0)
-    canvas.pack(anchor="w")
-    canvas.create_rectangle(0, 0, bar_w, 8, fill=C_TRACK, outline="")
-    fill_id = canvas.create_rectangle(0, 0, 0, 8, fill=C_ACCENT, outline="")
-
-    pct_var = tk.StringVar(value="")
-    pct = tk.Label(body, textvariable=pct_var, bg=C_BG, fg=C_MUTED, font=f_pct)
-    pct.pack(anchor="e", pady=(6, 0))
-
-    # нижняя зона с кнопкой
-    btn_holder = tk.Frame(root, bg=C_BG)
-    btn_holder.pack(fill="x", side="bottom", pady=(0, 24))
-
-    state = {"phase": "idle"}  # idle | running | done | error
+    # прогресс-бар
+    bx1, bx2, by = 90, W - 90, 290
+    _round_rect(cv, bx1, by, bx2, by + 8, 4, fill=C_TRACK, outline="")
+    fill_state = {"id": None}
+    pct_id = cv.create_text(cx, 314, text="", font=f_pct, fill=C_MUTED)
 
     def set_progress(frac):
         frac = max(0.0, min(1.0, frac))
-        canvas.coords(fill_id, 0, 0, int(bar_w * frac), 8)
-        pct_var.set(f"{int(frac * 100)}%")
+        if fill_state["id"]:
+            cv.delete(fill_state["id"])
+            fill_state["id"] = None
+        w = (bx2 - bx1) * frac
+        if w > 0:
+            w = max(w, 8)
+            fill_state["id"] = _round_rect(cv, bx1, by, bx1 + w, by + 8, 4,
+                                           fill=C_ACCENT, outline="")
+        cv.itemconfig(pct_id, text=f"{int(frac * 100)}%" if frac > 0 else "")
+
+    # кнопка (rounded pill на canvas)
+    btn = {"rect": None, "text": None, "cmd": None, "enabled": True}
+    bx_1, bx_2, bty1, bty2 = cx - 92, cx + 92, 346, 384
+
+    def set_button(text, command, enabled=True):
+        if btn["rect"]:
+            cv.delete(btn["rect"])
+            cv.delete(btn["text"])
+        bg = C_ACCENT if enabled else C_TRACK
+        fg = "#062e14" if enabled else C_MUTED
+        btn["rect"] = _round_rect(cv, bx_1, bty1, bx_2, bty2, 10, fill=bg, outline="",
+                                  tags="btn")
+        btn["text"] = cv.create_text(cx, (bty1 + bty2) // 2, text=text, font=f_btn,
+                                     fill=fg, tags="btn")
+        btn["cmd"] = command
+        btn["enabled"] = enabled
+
+    def on_btn_enter(e):
+        if btn["enabled"]:
+            cv.itemconfig(btn["rect"], fill=C_ACCENT_DK)
+            cv.config(cursor="hand2")
+
+    def on_btn_leave(e):
+        if btn["enabled"]:
+            cv.itemconfig(btn["rect"], fill=C_ACCENT)
+        cv.config(cursor="")
+
+    def on_btn_click(e):
+        if btn["enabled"] and btn["cmd"]:
+            btn["cmd"]()
+
+    cv.tag_bind("btn", "<Enter>", on_btn_enter)
+    cv.tag_bind("btn", "<Leave>", on_btn_leave)
+    cv.tag_bind("btn", "<Button-1>", on_btn_click)
+
+    # перетаскивание окна за верхнюю полосу (где нет интерактивных элементов)
+    drag = {"x": 0, "y": 0}
+    def press(e):
+        drag["x"], drag["y"] = e.x, e.y
+    def move(e):
+        if e.y < 120:  # тянем только за «шапку», чтобы не мешать кнопке
+            root.geometry(f"+{root.winfo_x() + e.x - drag['x']}+{root.winfo_y() + e.y - drag['y']}")
+    cv.bind("<Button-1>", press)
+    cv.bind("<B1-Motion>", move)
+    root.bind("<Escape>", lambda e: root.destroy())
+
+    state = {"phase": "idle"}
 
     def worker():
         try:
@@ -248,7 +342,7 @@ def gui_main():
         if state["phase"] == "running":
             return
         state["phase"] = "running"
-        btn.config(text="Устанавливаю…", state="disabled", bg=C_TRACK, fg=C_MUTED)
+        set_button("Устанавливаю…", None, enabled=False)
         threading.Thread(target=worker, daemon=True).start()
 
     def launch_and_close():
@@ -258,21 +352,7 @@ def gui_main():
             pass
         root.destroy()
 
-    def make_button(text, command, enabled=True):
-        for c in btn_holder.winfo_children():
-            c.destroy()
-        bg = C_ACCENT if enabled else C_TRACK
-        fg = "#062e14" if enabled else C_MUTED
-        b = tk.Label(btn_holder, text=text, bg=bg, fg=fg, font=f_btn,
-                     padx=28, pady=11, cursor="hand2" if enabled else "arrow")
-        b.pack()
-        if enabled:
-            b.bind("<Enter>", lambda e: b.config(bg=C_ACCENT_DK))
-            b.bind("<Leave>", lambda e: b.config(bg=C_ACCENT))
-            b.bind("<Button-1>", lambda e: command())
-        return b
-
-    btn = make_button("Установить WexFlow", start_install)
+    set_button("Установить WexFlow", start_install)
 
     def poll():
         try:
@@ -281,29 +361,28 @@ def gui_main():
                 if kind == "progress":
                     fr, txt = rest
                     set_progress(fr)
-                    status_var.set(txt)
+                    cv.itemconfig(status_id, text=txt)
                 elif kind == "done":
                     tag = rest[0]
                     state["phase"] = "done"
                     set_progress(1.0)
-                    status_var.set(f"WexFlow {tag or ''} установлен. Ярлык на рабочем столе.")
-                    sub.config(text="Установка завершена", fg=C_ACCENT)
-                    make_button("Запустить WexFlow", launch_and_close)
-                    # авто-запуск приложения и закрытие установщика через 1.5 сек
-                    root.after(1500, lambda: launch_and_close()
+                    cv.itemconfig(sub_id, text="Установка завершена", fill=C_ACCENT)
+                    cv.itemconfig(status_id,
+                                  text=f"WexFlow {tag or ''} установлен.\nЯрлык на рабочем столе.")
+                    set_button("Запустить WexFlow", launch_and_close)
+                    root.after(1600, lambda: launch_and_close()
                               if state["phase"] == "done" else None)
                 elif kind == "error":
                     state["phase"] = "error"
-                    status_var.set("Не удалось установить:\n" + rest[0])
-                    status.config(fg=C_ERR)
-                    sub.config(text="Ошибка установки", fg=C_ERR)
-                    pct_var.set("")
-                    make_button("Закрыть", root.destroy)
+                    cv.itemconfig(sub_id, text="Ошибка установки", fill=C_ERR)
+                    cv.itemconfig(status_id, text=rest[0], fill=C_ERR)
+                    set_progress(0)
+                    set_button("Закрыть", root.destroy)
         except queue.Empty:
             pass
         root.after(80, poll)
 
-    # Самопроверка интерфейса: построить окно и закрыть, без реальной установки.
+    # Самопроверка: построить окно и закрыть, без реальной установки.
     _selftest = os.environ.get("WEXFLOW_SELFTEST")
     if _selftest:
         try:
@@ -318,6 +397,14 @@ def gui_main():
     except tk.TclError:
         pass
     root.mainloop()
+
+
+def _iconify(root):
+    try:
+        root.overrideredirect(False)
+        root.iconify()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ---------------------------------------------------------------------------
