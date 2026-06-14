@@ -239,6 +239,7 @@ def gui_main():
     cv.pack(fill="both", expand=True)
 
     cx = W // 2
+    is_update = os.path.exists(EXE)  # приложение уже установлено?
 
     # фирменные кнопки-точки (минимизировать / на весь экран / закрыть)
     def dot(x, color, tag, r=6):
@@ -261,12 +262,16 @@ def gui_main():
     except tk.TclError:
         pass
     cv.create_text(cx, 152, text="WexFlow", font=f_logo, fill=C_TXT)
-    sub_id = cv.create_text(cx, 178, text="Автоматическая подача заявок",
+    sub_id = cv.create_text(cx, 178,
+                            text="Обновление" if is_update else "Автоматическая подача заявок",
                             font=f_sub, fill=C_MUTED)
 
     # статус
-    status_id = cv.create_text(cx, 224, text="Готов к установке", font=f_status,
-                               fill=C_TXT2, width=W - 72, justify="center")
+    status_id = cv.create_text(
+        cx, 224,
+        text="Готов к обновлению — данные и заявки сохранятся"
+             if is_update else "Готов к установке",
+        font=f_status, fill=C_TXT2, width=W - 72, justify="center")
 
     # прогресс-бар
     bx1, bx2, by = 56, W - 56, 256
@@ -356,7 +361,7 @@ def gui_main():
             pass
         root.destroy()
 
-    set_button("Установить WexFlow", start_install)
+    set_button("Обновить WexFlow" if is_update else "Установить WexFlow", start_install)
 
     def poll():
         try:
@@ -370,9 +375,14 @@ def gui_main():
                     tag = rest[0]
                     state["phase"] = "done"
                     set_progress(1.0)
-                    cv.itemconfig(sub_id, text="Установка завершена", fill=C_ACCENT)
-                    cv.itemconfig(status_id,
-                                  text=f"WexFlow {tag or ''} установлен.\nЯрлык на рабочем столе.")
+                    cv.itemconfig(sub_id,
+                                  text="Обновление завершено" if is_update else "Установка завершена",
+                                  fill=C_ACCENT)
+                    cv.itemconfig(
+                        status_id,
+                        text=(f"WexFlow {tag or ''} обновлён.\nВаши данные и заявки на месте."
+                              if is_update else
+                              f"WexFlow {tag or ''} установлен.\nЯрлык на рабочем столе."))
                     set_button("Запустить WexFlow", launch_and_close)
                     root.after(1600, lambda: launch_and_close()
                               if state["phase"] == "done" else None)
