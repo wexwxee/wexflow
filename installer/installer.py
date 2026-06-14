@@ -194,17 +194,31 @@ def _round_rect(cv, x1, y1, x2, y2, r, **kw):
     return cv.create_polygon(pts, smooth=True, **kw)
 
 
+def _round_window(root, w, h, r=22):
+    """Скруглить углы самого окна (Win32), чтобы не было прямоугольной подложки."""
+    try:
+        import ctypes
+        root.update_idletasks()
+        hwnd = ctypes.windll.user32.GetAncestor(root.winfo_id(), 2)  # GA_ROOT
+        if not hwnd:
+            hwnd = root.winfo_id()
+        rgn = ctypes.windll.gdi32.CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2)
+        ctypes.windll.user32.SetWindowRgn(hwnd, rgn, True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def gui_main():
     import tkinter as tk
     from tkinter import font as tkfont
 
     msgs: "queue.Queue" = queue.Queue()
-    W, H = 520, 430
+    W, H = 440, 384
 
     root = tk.Tk()
     root.title("Установка WexFlow")
     root.overrideredirect(True)
-    root.configure(bg=C_WIN)
+    root.configure(bg=C_CARD)
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
     root.geometry(f"{W}x{H}+{(sw - W) // 2}+{(sh - H) // 3}")
     try:
@@ -221,28 +235,17 @@ def gui_main():
     f_pct = tkfont.Font(family="Segoe UI Semibold", size=9)
     f_btn = tkfont.Font(family="Segoe UI Semibold", size=11)
 
-    cv = tk.Canvas(root, width=W, height=H, bg=C_WIN, highlightthickness=0, bd=0)
+    cv = tk.Canvas(root, width=W, height=H, bg=C_CARD, highlightthickness=0, bd=0)
     cv.pack(fill="both", expand=True)
-
-    # мягкий вертикальный градиент фона (как на главном экране)
-    tr, tg, tb = (18, 19, 19)
-    br, bg_, bb = (13, 14, 14)
-    for i in range(H):
-        t = i / H
-        col = f"#{int(tr + (br - tr) * t):02x}{int(tg + (bg_ - tg) * t):02x}{int(tb + (bb - tb) * t):02x}"
-        cv.create_line(0, i, W, i, fill=col)
-
-    # карточка
-    _round_rect(cv, 28, 58, W - 28, H - 28, 20, fill=C_CARD, outline=C_CARD_LINE, width=1)
 
     cx = W // 2
 
     # фирменные кнопки-точки (минимизировать / на весь экран / закрыть)
     def dot(x, color, tag, r=6):
-        cv.create_oval(x - r, 84 - r, x + r, 84 + r, fill=color, outline="", tags=tag)
-    dot(W - 100, C_DOT_MIN, "min")
-    dot(W - 80, C_DOT_MAX, "max")
-    dot(W - 60, C_DOT_CLOSE, "close")
+        cv.create_oval(x - r, 30 - r, x + r, 30 + r, fill=color, outline="", tags=tag)
+    dot(W - 74, C_DOT_MIN, "min")
+    dot(W - 52, C_DOT_MAX, "max")
+    dot(W - 30, C_DOT_CLOSE, "close")
     cv.tag_bind("close", "<Button-1>", lambda e: root.destroy())
     cv.tag_bind("min", "<Button-1>", lambda e: _iconify(root))
     for d in ("close", "min", "max"):
@@ -254,22 +257,22 @@ def gui_main():
     try:
         logo = tk.PhotoImage(file=asset("wexflow_mark_52.png"))
         images.append(logo)
-        cv.create_image(cx, 132, image=logo)
+        cv.create_image(cx, 100, image=logo)
     except tk.TclError:
         pass
-    cv.create_text(cx, 184, text="WexFlow", font=f_logo, fill=C_TXT)
-    sub_id = cv.create_text(cx, 210, text="Автоматическая подача заявок",
+    cv.create_text(cx, 152, text="WexFlow", font=f_logo, fill=C_TXT)
+    sub_id = cv.create_text(cx, 178, text="Автоматическая подача заявок",
                             font=f_sub, fill=C_MUTED)
 
     # статус
-    status_id = cv.create_text(cx, 258, text="Готов к установке", font=f_status,
-                               fill=C_TXT2, width=W - 120, justify="center")
+    status_id = cv.create_text(cx, 224, text="Готов к установке", font=f_status,
+                               fill=C_TXT2, width=W - 72, justify="center")
 
     # прогресс-бар
-    bx1, bx2, by = 90, W - 90, 290
+    bx1, bx2, by = 56, W - 56, 256
     _round_rect(cv, bx1, by, bx2, by + 8, 4, fill=C_TRACK, outline="")
     fill_state = {"id": None}
-    pct_id = cv.create_text(cx, 314, text="", font=f_pct, fill=C_MUTED)
+    pct_id = cv.create_text(cx, 280, text="", font=f_pct, fill=C_MUTED)
 
     def set_progress(frac):
         frac = max(0.0, min(1.0, frac))
@@ -285,7 +288,7 @@ def gui_main():
 
     # кнопка (rounded pill на canvas)
     btn = {"rect": None, "text": None, "cmd": None, "enabled": True}
-    bx_1, bx_2, bty1, bty2 = cx - 92, cx + 92, 346, 384
+    bx_1, bx_2, bty1, bty2 = cx - 92, cx + 92, 308, 346
 
     def set_button(text, command, enabled=True):
         if btn["rect"]:
@@ -328,6 +331,7 @@ def gui_main():
     cv.bind("<Button-1>", press)
     cv.bind("<B1-Motion>", move)
     root.bind("<Escape>", lambda e: root.destroy())
+    root.after(40, lambda: _round_window(root, W, H))
 
     state = {"phase": "idle"}
 
