@@ -282,6 +282,12 @@ def localize_address(text: str) -> str:
     if not text or not text.strip():
         return ""
     out = text.strip()
+    # Локализуем (русский город -> датский) ТОЛЬКО если во вводе есть кириллица.
+    # Иначе латинское название улицы ломалось: подстрока города "lyngby" внутри
+    # "Lyngbyvej" подменялась на "Kgs. Lyngby" -> несуществующий адрес. Датские
+    # адреса (Lyngbyvej, Roskildevej, Frederiksberggade …) отдаём как есть.
+    if not re.search(r"[А-Яа-яЁё]", out):
+        return out
     folded = _fold(out)
     for alias, city in sorted(CITY_ALIASES.items(), key=lambda x: len(x[0]), reverse=True):
         a = _fold(alias)
