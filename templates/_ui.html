@@ -91,10 +91,9 @@
       // зелёную точку на кнопке «Что нового» в боковой панели.
       try {
         var seen = localStorage.getItem("wexflow_seen_version");
-        if (cur && seen && seen !== cur) {
+        // Users coming from versions before 1.0.21 do not have this key yet.
+        if (cur && seen !== cur) {
           openButtons.forEach(function (b) { b.classList.add("has-news"); });
-        } else if (cur && !seen) {
-          localStorage.setItem("wexflow_seen_version", cur);
         }
       } catch (e) {}
     })();
