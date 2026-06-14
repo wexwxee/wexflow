@@ -317,6 +317,7 @@
   /* цвета статусов на карточке 7-Eleven */
   .hub-stat b.ok { color: var(--accent); }
   .hub-stat b.muted { color: var(--muted); }
+  .hub-stat b svg { vertical-align: -3px; }
 
   /* полоса последней активности */
   .hub-activity {
@@ -441,8 +442,8 @@
         </div>
         <div class="hub-stats">
           <div class="hub-stat"><b>{{ seven.stores }}</b><span>магазинов</span></div>
-          <div class="hub-stat"><b class="{{ 'ok' if seven.profile_ready else 'muted' }}">{{ '✓' if seven.profile_ready else '—' }}</b><span>профиль</span></div>
-          <div class="hub-stat"><b class="{{ 'ok' if (seven.profile_ready and seven.stores) else 'muted' }}">{{ '✓' if (seven.profile_ready and seven.stores) else '—' }}</b><span>готов</span></div>
+          <div class="hub-stat"><b class="{{ 'ok' if seven.profile_ready else 'muted' }}">{{ ic.i('check', 19) if seven.profile_ready else '—' }}</b><span>профиль</span></div>
+          <div class="hub-stat"><b class="{{ 'ok' if (seven.profile_ready and seven.stores) else 'muted' }}">{{ ic.i('check', 19) if (seven.profile_ready and seven.stores) else '—' }}</b><span>готов</span></div>
         </div>
         <div class="hub-module-actions">
           <a class="hub-link primary" href="/__app/7eleven">{{ ic.i('store', 15) }} Открыть 7-Eleven</a>
