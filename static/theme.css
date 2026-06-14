@@ -113,15 +113,22 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, .08);
   user-select: none;
   -webkit-user-select: none;
-  -webkit-app-region: drag;
   cursor: default;
+}
+/* перетаскивание окна — слой на всю панель (кроме кнопок, они выше) */
+.desktop-drag {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
 }
 .desktop-traffic {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   flex: 0 0 auto;
-  -webkit-app-region: no-drag;
+  position: relative;
+  z-index: 2;
+  margin-left: auto;   /* кнопки управления — у правого края панели */
 }
 .traffic-dot {
   width: 13px;
@@ -132,9 +139,9 @@ body {
   cursor: pointer;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .20);
 }
-.traffic-close { background: #ff5f57; }
-.traffic-minimize { background: #ffbd2e; }
-.traffic-maximize { background: #28c840; }
+.traffic-minimize { background: #f7c544; }   /* жёлтая — свернуть */
+.traffic-maximize { background: #2dd4a8; }   /* бирюзово-зелёная — на весь экран */
+.traffic-close { background: #ff6fae; }      /* розовая — закрыть */
 .traffic-dot:hover { filter: brightness(1.08); }
 .traffic-dot:active { transform: scale(.92); }
 .desktop-frame-title {
