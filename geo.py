@@ -143,6 +143,70 @@ def geocode_address(text: str) -> tuple[float, float] | None:
     return None
 
 
+def suggest_addresses(text: str, limit: int = 8) -> list[dict]:
+    """Подсказки датских адресов для домашнего адреса пользователя."""
+    text = labels.localize_address(text)
+    if len(text.strip()) < 2:
+        return []
+
+    def push(items: list[dict], label: str, lat=None, lon=None):
+        label = (label or "").strip()
+        if not label:
+            return
+        key = label.lower()
+        if any(x["label"].lower() == key for x in items):
+            return
+        item = {"label": label, "value": label}
+        try:
+            if lat is not None and lon is not None:
+                item["lat"] = float(lat)
+                item["lon"] = float(lon)
+        except (TypeError, ValueError):
+            pass
+        items.append(item)
+
+    suggestions: list[dict] = []
+
+    # DAWA autocomplete возвращает реальные существующие датские адреса.
+    try:
+        r = httpx.get(
+            "https://api.dataforsyningen.dk/adresser/autocomplete",
+            params={"q": text, "per_side": limit},
+            timeout=8,
+        )
+        if r.status_code == 200:
+            for row in r.json() or []:
+                address = row.get("adresse") or {}
+                push(suggestions, row.get("tekst") or address.get("betegnelse"),
+                     address.get("y"), address.get("x"))
+                if len(suggestions) >= limit:
+                    return suggestions
+    except Exception:
+        pass
+
+    # Фолбэк на обычный поиск адресов, если autocomplete временно не ответил.
+    try:
+        r = httpx.get(
+            "https://api.dataforsyningen.dk/adresser",
+            params={"q": text, "struktur": "mini", "per_side": limit},
+            timeout=8,
+        )
+        if r.status_code == 200:
+            for address in r.json() or []:
+                label = address.get("betegnelse")
+                if not label:
+                    street = " ".join(p for p in [address.get("vejnavn"), address.get("husnr")] if p)
+                    city = " ".join(p for p in [address.get("postnr"), address.get("postnrnavn")] if p)
+                    label = ", ".join(p for p in [street, city] if p)
+                push(suggestions, label, address.get("y"), address.get("x"))
+                if len(suggestions) >= limit:
+                    break
+    except Exception:
+        pass
+
+    return suggestions
+
+
 def reverse_geocode(lat: float, lon: float) -> str | None:
     """Координаты -> ближайший датский адрес (для кнопки «определить местоположение»)."""
     try:

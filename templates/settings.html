@@ -40,9 +40,12 @@
     width:100%; display:block; text-align:left; border:none; background:transparent; color:var(--txt);
     border-radius:7px; padding:7px 9px; font-size:13px;
   }
+  .suggest-main { display:block; color:var(--txt-strong); font-weight:650; }
+  .suggest-sub { display:block; margin-top:2px; color:var(--muted); font-size:12px; font-weight:500; }
   .suggest-item:hover, .suggest-item.active { background:var(--chip-bg); }
   .suggest-empty, .suggest-meta { color:var(--muted); font-size:12px; padding:7px 9px; }
   .suggest-meta { border-bottom:1px solid var(--line); margin-bottom:4px; }
+  .address-field.suggest-open { margin-bottom:204px; }
   .file-card input[type="text"] { overflow:hidden; text-overflow:ellipsis; }
   .file-open {
     flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
@@ -140,25 +143,157 @@
   <!-- Дом -->
   <form class="panel" method="post" action="/set-home">
     <h2>{{ ic.i('home', 17) }} Домашний адрес</h2>
-    <p class="hint">Нужен для сортировки и фильтра вакансий по расстоянию. Можно по-русски (Копенгаген) или индекс.</p>
-    <div class="field"><input type="text" name="address" value="{{ home.address if home else '' }}" placeholder="улица, город / индекс"></div>
+    <p class="hint">Нужен для сортировки и фильтра вакансий по расстоянию. Начни вводить улицу, город или индекс — появятся реальные варианты из датской адресной базы.</p>
+    <div class="field address-field" data-address-suggest>
+      <input id="homeAddressInput" type="text" name="address" value="{{ home.address if home else '' }}" placeholder="например: Sonnerupvej 104 или København" autocomplete="off" spellcheck="false">
+      <div class="suggest-menu" id="homeAddressSuggest"></div>
+    </div>
     {% if home %}<p class="hint">Текущий: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %}</p>{% endif %}
     <div class="actions">
       <button class="secondary" type="submit">{{ 'Обновить дом' if home else 'Задать дом' }}</button>
-      <button class="secondary" type="button" id="geoHomeBtn" data-tip-title="Определить адрес" data-tip-body="Берёт ваше местоположение у Windows и сразу ставит дом — без ручного ввода.">{{ ic.i('pin', 15) }} Определить мой адрес</button>
+      <button class="secondary" type="button" id="geoHomeBtn" data-tip-title="Определить адрес" data-tip-body="Работает только в установленном WexFlow: Windows отдаёт координаты, приложение превращает их в ближайший датский адрес.">{{ ic.i('pin', 15) }} Определить мой адрес</button>
     </div>
     <p class="hint" id="geoHomeMsg" hidden></p>
   </form>
   <script>
     (function () {
+      var field = document.querySelector("[data-address-suggest]");
+      var input = document.getElementById("homeAddressInput");
+      var menu = document.getElementById("homeAddressSuggest");
       var btn = document.getElementById("geoHomeBtn");
       var msg = document.getElementById("geoHomeMsg");
+      var timer = null;
+      var controller = null;
+      var items = [];
+      var active = -1;
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function closeSuggest() {
+        if (field) field.classList.remove("suggest-open");
+        active = -1;
+      }
+
+      function renderSuggest(stateText) {
+        if (!field || !menu) return;
+        var meta = '<div class="suggest-meta">Адреса из датской базы DAWA</div>';
+        function keepVisible() {
+          var rect = menu.getBoundingClientRect();
+          if (rect.bottom > window.innerHeight - 18 || rect.top < 18) {
+            field.scrollIntoView({ block: "center", behavior: "smooth" });
+          }
+        }
+        if (stateText) {
+          menu.innerHTML = meta + '<div class="suggest-empty">' + escapeHtml(stateText) + '</div>';
+          field.classList.add("suggest-open");
+          requestAnimationFrame(keepVisible);
+          return;
+        }
+        if (!items.length) {
+          menu.innerHTML = meta + '<div class="suggest-empty">Ничего не найдено. Попробуй добавить номер дома, город или индекс.</div>';
+          field.classList.add("suggest-open");
+          requestAnimationFrame(keepVisible);
+          return;
+        }
+        menu.innerHTML = meta + items.map(function (item, i) {
+          var parts = String(item.label || "").split(",");
+          var main = parts.shift() || item.label;
+          var sub = parts.join(",").trim();
+          return '<button type="button" class="suggest-item' + (i === active ? ' active' : '') + '" data-index="' + i + '">'
+            + '<span class="suggest-main">' + escapeHtml(main) + '</span>'
+            + (sub ? '<span class="suggest-sub">' + escapeHtml(sub) + '</span>' : '')
+            + '</button>';
+        }).join("");
+        field.classList.add("suggest-open");
+        requestAnimationFrame(keepVisible);
+      }
+
+      function chooseSuggest(index) {
+        var item = items[index];
+        if (!item || !input) return;
+        input.value = item.value || item.label;
+        closeSuggest();
+        input.focus();
+      }
+
+      function loadSuggestions() {
+        if (!input) return;
+        var q = input.value.trim();
+        if (q.length < 2) {
+          items = [];
+          closeSuggest();
+          return;
+        }
+        if (controller) controller.abort();
+        controller = new AbortController();
+        renderSuggest("Ищу адреса...");
+        fetch("/api/address-suggestions?q=" + encodeURIComponent(q), {
+          credentials: "include",
+          signal: controller.signal
+        }).then(function (r) {
+          if (!r.ok) throw new Error("bad status");
+          return r.json();
+        }).then(function (data) {
+          items = (data && data.items) || [];
+          active = -1;
+          renderSuggest("");
+        }).catch(function (err) {
+          if (err && err.name === "AbortError") return;
+          items = [];
+          renderSuggest("Не удалось загрузить подсказки. Можно ввести адрес вручную.");
+        });
+      }
+
+      if (input && field && menu) {
+        input.addEventListener("input", function () {
+          clearTimeout(timer);
+          timer = setTimeout(loadSuggestions, 230);
+        });
+        input.addEventListener("focus", function () {
+          if (input.value.trim().length >= 2 && items.length) renderSuggest("");
+        });
+        input.addEventListener("keydown", function (event) {
+          if (!field.classList.contains("suggest-open")) return;
+          if (event.key === "Escape") { closeSuggest(); return; }
+          if (!items.length) return;
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            active = Math.min(items.length - 1, active + 1);
+            renderSuggest("");
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            active = Math.max(0, active - 1);
+            renderSuggest("");
+          }
+          if (event.key === "Enter" && active >= 0) {
+            event.preventDefault();
+            chooseSuggest(active);
+          }
+        });
+        menu.addEventListener("click", function (event) {
+          var button = event.target.closest(".suggest-item");
+          if (!button) return;
+          chooseSuggest(Number(button.dataset.index));
+        });
+        document.addEventListener("click", function (event) {
+          if (!field.contains(event.target)) closeSuggest();
+        });
+      }
+
       if (!btn) return;
       function show(t) { if (msg) { msg.hidden = false; msg.textContent = t; } }
       btn.addEventListener("click", function () {
         var api = window.pywebview && window.pywebview.api;
         if (!api || !api.get_location) {
-          show("Определение работает только в приложении WexFlow (не в браузере).");
+          show("Определение адреса работает только в установленном WexFlow. В обычном браузере Windows не отдаёт координаты приложению.");
           return;
         }
         btn.disabled = true;
@@ -166,8 +301,7 @@
         api.get_location().then(function (loc) {
           if (!loc || !loc.ok) {
             btn.disabled = false;
-            show("Не удалось определить. Включи геолокацию: Параметры Windows → "
-                 + "Конфиденциальность → Расположение → разреши приложениям доступ.");
+            show("Не удалось определить адрес. Открой Параметры Windows → Конфиденциальность и безопасность → Расположение: включи «Службы определения местоположения» и «Разрешить классическим приложениям доступ к расположению», затем нажми кнопку снова.");
             return;
           }
           var fd = new FormData();
@@ -182,7 +316,7 @@
             .catch(function () { btn.disabled = false; show("Ошибка сети при сохранении."); });
         }).catch(function () {
           btn.disabled = false;
-          show("Не удалось получить местоположение от Windows.");
+          show("Не удалось получить местоположение от Windows. Проверь: Параметры Windows → Конфиденциальность и безопасность → Расположение → включены службы геолокации и доступ для классических приложений.");
         });
       });
     })();

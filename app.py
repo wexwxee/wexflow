@@ -663,6 +663,12 @@ def set_home_coords(lat: float = Form(...), lon: float = Form(...)):
     return {"ok": True, "address": label}
 
 
+@app.get("/api/address-suggestions")
+def address_suggestions(q: str = ""):
+    """Живые подсказки домашнего адреса из датской адресной базы."""
+    return {"items": geo.suggest_addresses(q)}
+
+
 @app.get("/api/apply-log")
 def apply_log():
     """Хвост лога последней подачи — показывается прямо на странице «Подать»."""
