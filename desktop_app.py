@@ -355,8 +355,14 @@ if ($started -and -not $coord.IsUnknown) {
             work.mkdir(parents=True, exist_ok=True)
 
             zpath = work / "update.zip"
-            urllib.request.urlretrieve(url, zpath)
+            self._set_update_status("Скачиваю обновление…")
+            if not self._download(url, zpath):
+                # сеть/таймаут/антивирус — не вешаемся навсегда, а даём
+                # пользователю рабочий запасной путь (страница загрузки)
+                self._fallback_to_browser(url)
+                return
 
+            self._set_update_status("Распаковываю…")
             extracted = work / "new"
             with zipfile.ZipFile(zpath) as z:
                 z.extractall(extracted)
@@ -367,6 +373,7 @@ if ($started -and -not $coord.IsUnknown) {
                 found = list(extracted.glob("**/WexFlow.exe"))
                 if not found:
                     print("[WexFlow] в архиве нет WexFlow.exe")
+                    self._fallback_to_browser(url)
                     return
                 src = found[0].parent
 
@@ -376,6 +383,7 @@ if ($started -and -not $coord.IsUnknown) {
             vbs = work / "run_update_hidden.vbs"
             vbs.write_text(_hidden_updater_vbs(bat), encoding="ascii")
 
+            self._set_update_status("Устанавливаю, приложение перезапустится…")
             # запускаем апдейтер отдельным, не зависящим от нас процессом
             # (он сам убьёт все WexFlow.exe и подменит файлы)
             DETACHED = 0x00000008
@@ -397,6 +405,85 @@ if ($started -and -not $coord.IsUnknown) {
                 window.destroy()
         except Exception as exc:  # noqa: BLE001
             print(f"[WexFlow] обновление не удалось: {exc}")
+            self._fallback_to_browser(url)
+
+    def _download(self, url, dest, attempts=3):
+        """Скачать файл с таймаутом, прогрессом и повтором. True — успех.
+
+        Ключевое отличие от urllib.urlretrieve: на каждое чтение действует
+        таймаут (timeout=30), поэтому зависший канал больше НЕ вешает обновление
+        навсегда — попытка обрывается, делается повтор, а затем (если совсем не
+        вышло) уходим в браузерный фолбэк. Прогресс показываем в баннере.
+        """
+        for attempt in range(1, attempts + 1):
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "WexFlow-Updater"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    total = int(r.headers.get("Content-Length") or 0)
+                    done = 0
+                    last_pct = -1
+                    with open(dest, "wb") as f:
+                        while True:
+                            chunk = r.read(262144)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            done += len(chunk)
+                            if total:
+                                pct = done * 100 // total
+                                if pct >= last_pct + 5:
+                                    last_pct = pct
+                                    self._set_update_status(f"Скачиваю обновление… {pct}%")
+                if dest.exists() and dest.stat().st_size > 0:
+                    return True
+            except Exception as exc:  # noqa: BLE001 — нет сети/таймаут/обрыв
+                print(f"[WexFlow] загрузка обновления, попытка {attempt}/{attempts}: {exc}")
+                if attempt < attempts:
+                    self._set_update_status("Связь прервалась, пробую снова…")
+                    time.sleep(2)
+        return False
+
+    def _set_update_status(self, text):
+        """Показать текст в баннере обновления (из фонового потока, без падений)."""
+        window = self._window()
+        if not window:
+            return
+        try:
+            window.evaluate_js(
+                "(function(t){var e=document.getElementById('hubUpdateText');"
+                "if(e){e.textContent=t;}})(" + json.dumps(str(text)) + ")"
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _fallback_to_browser(self, url):
+        """Автообновление не удалось — открыть страницу загрузки в браузере.
+
+        Открываем именно страницу релизов (а не 70-МБ zip): там пользователь
+        возьмёт лёгкий WexFlow-Setup.exe. Кнопку возвращаем в кликабельное
+        состояние, чтобы можно было попробовать ещё раз.
+        """
+        target = url
+        try:
+            import version
+            repo = (getattr(version, "GITHUB_REPO", "") or "").strip()
+            if repo:
+                target = f"https://github.com/{repo}/releases/latest"
+        except Exception:  # noqa: BLE001
+            pass
+        self._set_update_status("Не вышло автоматически — открываю страницу загрузки")
+        self.open_external(target)
+        window = self._window()
+        if window:
+            try:
+                window.evaluate_js(
+                    "(function(){var b=document.getElementById('hubUpdate');"
+                    "if(b){b.disabled=false;}"
+                    "var c=document.querySelector('.hub-update-cta');"
+                    "if(c){c.textContent='Скачать \\u2192';}})()"
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
     def close(self):
         window = self._window()
