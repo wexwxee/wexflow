@@ -80,11 +80,15 @@ def geocode_dk_address(street: str, zip_code: str, cache: dict) -> tuple[float, 
 
 def geocode_address(text: str) -> tuple[float, float] | None:
     """Геокодирует свободный адрес пользователя.
-    Для датских адресов — точно через DAWA datavask, иначе Nominatim."""
+
+    Приоритет — Дания (приложение про датские вакансии): сначала точный разбор
+    через DAWA, затем щадящий поиск по части адреса, и только потом мировой
+    Nominatim. Это убирает «плохой поиск», когда из-за неполного адреса
+    («Sonnerupvej 104» без города) выбирался случайный объект в другой стране."""
     text = labels.localize_address(text)
     if not text:
         return None
-    # 1) DAWA datavask (точный разбор датского адреса)
+    # 1) DAWA datavask — точный разбор полного датского адреса
     try:
         r = httpx.get(
             "https://api.dataforsyningen.dk/datavask/adresser",
@@ -98,7 +102,32 @@ def geocode_address(text: str) -> tuple[float, float] | None:
                     return float(a["y"]), float(a["x"])
     except Exception:
         pass
-    # 2) Nominatim (любая страна / неполный адрес)
+    # 2) DAWA поиск по части адреса — щадящий, понимает неполный ввод (DK)
+    try:
+        r = httpx.get(
+            "https://api.dataforsyningen.dk/adresser",
+            params={"q": text, "struktur": "mini", "per_side": 1}, timeout=15,
+        )
+        if r.status_code == 200:
+            arr = r.json()
+            if arr and arr[0].get("x") and arr[0].get("y"):
+                return float(arr[0]["y"]), float(arr[0]["x"])
+    except Exception:
+        pass
+    # 3) Nominatim, но с привязкой к Дании
+    try:
+        r = httpx.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": text, "format": "json", "limit": 1, "countrycodes": "dk"},
+            headers={"User-Agent": "salling-jobs-personal/1.0"},
+            timeout=15,
+        )
+        arr = r.json()
+        if arr:
+            return float(arr[0]["lat"]), float(arr[0]["lon"])
+    except Exception:
+        pass
+    # 4) Nominatim без ограничения страны (если адрес реально не датский)
     try:
         r = httpx.get(
             "https://nominatim.openstreetmap.org/search",
@@ -109,6 +138,26 @@ def geocode_address(text: str) -> tuple[float, float] | None:
         arr = r.json()
         if arr:
             return float(arr[0]["lat"]), float(arr[0]["lon"])
+    except Exception:
+        pass
+    return None
+
+
+def reverse_geocode(lat: float, lon: float) -> str | None:
+    """Координаты -> ближайший датский адрес (для кнопки «определить местоположение»)."""
+    try:
+        r = httpx.get(
+            "https://api.dataforsyningen.dk/adgangsadresser/reverse",
+            params={"x": lon, "y": lat, "struktur": "mini"}, timeout=15,
+        )
+        if r.status_code == 200:
+            a = r.json()
+            label = a.get("betegnelse")
+            if label:
+                return label
+            parts = [a.get("vejnavn"), a.get("husnr"), a.get("postnr"), a.get("postnrnavn")]
+            joined = " ".join(p for p in parts if p)
+            return joined or None
     except Exception:
         pass
     return None

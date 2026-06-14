@@ -654,6 +654,15 @@ def set_home(request: Request, address: str = Form(...)):
     return RedirectResponse((ref + sep + "geoerror=1") if ref else "/?geoerror=1", status_code=303)
 
 
+@app.post("/set-home-coords")
+def set_home_coords(lat: float = Form(...), lon: float = Form(...)):
+    """Сохранить дом по координатам (из кнопки «определить местоположение»).
+    Координаты превращаем в читаемый датский адрес через reverse-геокод."""
+    label = geo.reverse_geocode(lat, lon) or f"Моё местоположение ({lat:.4f}, {lon:.4f})"
+    settings_store.set_home(label, lat, lon, label)
+    return {"ok": True, "address": label}
+
+
 @app.get("/api/apply-log")
 def apply_log():
     """Хвост лога последней подачи — показывается прямо на странице «Подать»."""

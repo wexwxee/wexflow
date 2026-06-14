@@ -94,6 +94,26 @@
     });
   })();
 </script>
+<script>
+  // Защита окна от «вылета» в системный браузер: внутренние ссылки (свой хост)
+  // всегда открываются внутри окна, а настоящие внешние (Google Maps и т.п.) —
+  // аккуратно в системном браузере, не утаскивая за собой само приложение.
+  (function () {
+    document.addEventListener("click", function (e) {
+      var a = e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a) return;
+      var href = a.getAttribute("href") || "";
+      if (!/^https?:\/\//i.test(href)) return;   // относительные пути — как есть
+      var u;
+      try { u = new URL(href, location.href); } catch (_) { return; }
+      if (u.host === location.host) return;       // свой хост — внутри окна
+      e.preventDefault();
+      var api = window.pywebview && window.pywebview.api;
+      if (api && api.open_external) api.open_external(href);
+      else window.open(href, "_blank");
+    }, true);
+  })();
+</script>
 <script src="/static/window_chrome.js?v=20260614-drag-resize"></script>
 {% block script %}{% endblock %}
 </body>

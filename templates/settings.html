@@ -143,8 +143,50 @@
     <p class="hint">Нужен для сортировки и фильтра вакансий по расстоянию. Можно по-русски (Копенгаген) или индекс.</p>
     <div class="field"><input type="text" name="address" value="{{ home.address if home else '' }}" placeholder="улица, город / индекс"></div>
     {% if home %}<p class="hint">Текущий: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %}</p>{% endif %}
-    <div class="actions"><button class="secondary" type="submit">{{ 'Обновить дом' if home else 'Задать дом' }}</button></div>
+    <div class="actions">
+      <button class="secondary" type="submit">{{ 'Обновить дом' if home else 'Задать дом' }}</button>
+      <button class="secondary" type="button" id="geoHomeBtn" data-tip-title="Определить адрес" data-tip-body="Берёт ваше местоположение у Windows и сразу ставит дом — без ручного ввода.">{{ ic.i('pin', 15) }} Определить мой адрес</button>
+    </div>
+    <p class="hint" id="geoHomeMsg" hidden></p>
   </form>
+  <script>
+    (function () {
+      var btn = document.getElementById("geoHomeBtn");
+      var msg = document.getElementById("geoHomeMsg");
+      if (!btn) return;
+      function show(t) { if (msg) { msg.hidden = false; msg.textContent = t; } }
+      btn.addEventListener("click", function () {
+        var api = window.pywebview && window.pywebview.api;
+        if (!api || !api.get_location) {
+          show("Определение работает только в приложении WexFlow (не в браузере).");
+          return;
+        }
+        btn.disabled = true;
+        show("Определяю местоположение…");
+        api.get_location().then(function (loc) {
+          if (!loc || !loc.ok) {
+            btn.disabled = false;
+            show("Не удалось определить. Включи геолокацию: Параметры Windows → "
+                 + "Конфиденциальность → Расположение → разреши приложениям доступ.");
+            return;
+          }
+          var fd = new FormData();
+          fd.append("lat", loc.lat);
+          fd.append("lon", loc.lng);
+          fetch("/set-home-coords", { method: "POST", body: fd, credentials: "include" })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d && d.ok) { show("Готово: " + d.address); location.reload(); }
+              else { btn.disabled = false; show("Не получилось сохранить адрес."); }
+            })
+            .catch(function () { btn.disabled = false; show("Ошибка сети при сохранении."); });
+        }).catch(function () {
+          btn.disabled = false;
+          show("Не удалось получить местоположение от Windows.");
+        });
+      });
+    })();
+  </script>
 
   <!-- Управление -->
   <div class="panel" style="border-color:var(--err-line);background:var(--err-bg);">
