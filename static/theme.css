@@ -507,14 +507,16 @@ button:focus-visible, a:focus-visible, .theme-toggle:focus-visible {
 ::selection { background: var(--accent); color: #fff; }
 html[data-theme="dark"] ::selection { color: #041a13; }
 
-/* скроллбары */
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--hover-line); border-radius: 999px;
-  border: 3px solid var(--bg); background-clip: padding-box;
+/* скролл работает, но визуальный ползунок не выбивается из нативного окна */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--muted); border: 3px solid var(--bg); background-clip: padding-box; }
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
 
 /* ---------- кнопки ---------- */
 button {
@@ -580,8 +582,39 @@ html[data-theme="light"] .glass {
 }
 
 /* ---------- уведомления ---------- */
-.ok  { background: var(--ok-bg);  color: var(--ok-txt);  border: 1px solid var(--ok-line);  border-radius: 10px; padding: 12px 14px; }
-.err { background: var(--err-bg); color: var(--err-txt); border: 1px solid var(--err-line); border-radius: 10px; padding: 12px 14px; }
+.ok,
+.err,
+.system-response {
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.ok,
+.system-response.ok {
+  background: var(--ok-bg);
+  color: var(--ok-txt);
+  border: 1px solid var(--ok-line);
+}
+.err,
+.system-response.err {
+  background: var(--err-bg);
+  color: var(--err-txt);
+  border: 1px solid var(--err-line);
+}
+.system-response-stack {
+  position: fixed;
+  top: calc(var(--desktop-frame-h) + 56px);
+  right: 16px;
+  z-index: 1200;
+  width: min(440px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.system-response {
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+  line-height: 1.45;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
 
 /* ---------- бейджи ---------- */
 .badge {

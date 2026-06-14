@@ -21,10 +21,19 @@
     }
   })();
 </script>
-<link rel="stylesheet" href="/static/theme.css?v=20260614-newsdot-fullscreen">
+<link rel="stylesheet" href="/static/theme.css?v=20260614-system-responses">
 {% block style %}{% endblock %}
 </head>
 <body>
+{% set _qp = request.query_params if request is defined else none %}
+{% set _notice = _qp.get('notice') if _qp else '' %}
+{% set _error = _qp.get('error') if _qp else '' %}
+{% if _notice or _error %}
+<div class="system-response-stack" role="status" aria-live="polite">
+  {% if _error %}<div class="system-response err">{{ _error }}</div>{% endif %}
+  {% if _notice %}<div class="system-response ok">{{ _notice }}</div>{% endif %}
+</div>
+{% endif %}
 <div class="desktop-framebar" aria-label="Window controls">
   <div class="desktop-drag pywebview-drag-region"></div>
   <div class="desktop-frame-title">WexFlow</div>

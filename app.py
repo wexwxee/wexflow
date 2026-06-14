@@ -11,7 +11,7 @@ import sys
 import threading
 from contextlib import asynccontextmanager
 from collections import Counter
-from urllib.parse import quote_plus
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -42,6 +42,32 @@ PROFILE_REQUIRED = [
     ("city", "Город"),
     ("country", "Страна"),
 ]
+
+
+def _url_with_system_response(url: str, notice: str = "", error: str = "") -> str:
+    """Append one short UI response to a local redirect target."""
+    target = url or "/"
+    parts = urlsplit(target)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query.pop("notice", None)
+    query.pop("error", None)
+    if notice:
+        query["notice"] = notice
+    if error:
+        query["error"] = error
+    return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", urlencode(query), parts.fragment))
+
+
+def _redirect_back(
+    request: Request,
+    fallback: str = "/",
+    notice: str = "",
+    error: str = "",
+) -> RedirectResponse:
+    return RedirectResponse(
+        _url_with_system_response(request.headers.get("referer") or fallback, notice, error),
+        status_code=303,
+    )
 
 # --- автообновление вакансий: каждые 30 минут + при старте, если данные устарели ---
 _sync_lock = threading.Lock()
@@ -607,6 +633,14 @@ def index(
 
 @app.post("/job/{job_id}/status")
 def set_status(job_id: str, request: Request, status: str = Form(...)):
+    status_labels = {
+        "applied": "Статус обновлён: вакансия отмечена как поданная.",
+        "hidden": "Вакансия скрыта. Её можно вернуть из статуса «Скрытые».",
+        "seen": "Статус сброшен: вакансия снова в просмотренных.",
+        "interview": "Статус обновлён: собеседование.",
+        "offer": "Статус обновлён: оффер.",
+        "rejected": "Статус обновлён: отказ.",
+    }
     with get_session() as s:
         job = s.get(Job, job_id)
         if job:
@@ -615,8 +649,9 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
                 job.applied_at = utcnow()
             s.add(job)
             s.commit()
-    ref = request.headers.get("referer")
-    return RedirectResponse(ref or "/", status_code=303)
+        else:
+            return _redirect_back(request, "/", error="Вакансия не найдена. Возможно, список обновился.")
+    return _redirect_back(request, "/", notice=status_labels.get(status, "Статус вакансии обновлён."))
 
 
 @app.post("/refresh")
@@ -624,22 +659,19 @@ def refresh(request: Request):
     # обновление уходит в фон: страница не виснет, индикатор в шапке показывает
     # «обновляется…», список сам перезагрузится по окончании
     threading.Thread(target=_sync_jobs, daemon=True).start()
-    ref = request.headers.get("referer")
-    return RedirectResponse(ref or "/", status_code=303)
+    return _redirect_back(request, "/", notice="Обновление вакансий запущено. Список сам перезагрузится, когда появятся свежие данные.")
 
 
 @app.post("/presets/save")
 def save_preset(request: Request, name: str = Form(...), query: str = Form("")):
     settings_store.add_preset(name, query)
-    ref = request.headers.get("referer")
-    return RedirectResponse(ref or "/", status_code=303)
+    return _redirect_back(request, "/", notice=f"Фильтр «{name.strip() or 'без названия'}» сохранён.")
 
 
 @app.post("/presets/delete")
 def delete_preset(request: Request, name: str = Form(...)):
     settings_store.delete_preset(name)
-    ref = request.headers.get("referer")
-    return RedirectResponse(ref or "/", status_code=303)
+    return _redirect_back(request, "/", notice=f"Фильтр «{name.strip() or 'без названия'}» удалён.")
 
 
 @app.post("/set-home")
@@ -649,9 +681,12 @@ def set_home(request: Request, address: str = Form(...)):
     ref = request.headers.get("referer")
     if coords:
         settings_store.set_home(address, coords[0], coords[1], lookup)
-        return RedirectResponse(ref or "/?sort=distance", status_code=303)
+        target = _url_with_system_response(ref or "/?sort=distance", notice="Домашний адрес сохранён. Теперь доступны сортировка и фильтр по расстоянию.")
+        return RedirectResponse(target, status_code=303)
     sep = "&" if (ref and "?" in ref) else "?"
-    return RedirectResponse((ref + sep + "geoerror=1") if ref else "/?geoerror=1", status_code=303)
+    target = (ref + sep + "geoerror=1") if ref else "/?geoerror=1"
+    target = _url_with_system_response(target, error="Не удалось распознать адрес. Попробуй улицу с номером дома, город или индекс.")
+    return RedirectResponse(target, status_code=303)
 
 
 @app.post("/set-home-coords")
@@ -686,12 +721,15 @@ def apply_log():
 def api_transit(job_id: str):
     home = settings_store.get_home()
     if not home:
-        return JSONResponse({"ok": False, "error": "дом не задан"})
+        return JSONResponse({"ok": False, "error": "домашний адрес не задан в настройках"})
     with get_session() as s:
         job = s.get(Job, job_id)
     if not job or job.lat is None or job.lon is None:
-        return JSONResponse({"ok": False, "error": "нет координат вакансии"})
-    return JSONResponse(transit.summary(home["lat"], home["lon"], job.lat, job.lon))
+        return JSONResponse({"ok": False, "error": "у вакансии нет координат для маршрута"})
+    try:
+        return JSONResponse(transit.summary(home["lat"], home["lon"], job.lat, job.lon))
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": f"маршрут сейчас не посчитался: {str(exc)[:90]}"})
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -834,7 +872,7 @@ def apply_prepare(request: Request, job_id: str, started: str = "", saved: str =
 @app.post("/credentials/save")
 def save_credentials(job_id: str = Form(""), sf_email: str = Form(""), sf_password: str = Form("")):
     credentials_store.save(sf_email, sf_password)
-    target = f"/job/{job_id}/apply?saved=1" if job_id else "/"
+    target = f"/job/{job_id}/apply?saved=login" if job_id else _url_with_system_response("/", notice="Логин Salling сохранён.")
     return RedirectResponse(target, status_code=303)
 
 
@@ -854,8 +892,7 @@ def reset_browser(request: Request, job_id: str = Form("")):
 @app.post("/credentials/clear")
 def clear_credentials(request: Request):
     credentials_store.clear()
-    ref = request.headers.get("referer")
-    return RedirectResponse(ref or "/settings", status_code=303)
+    return _redirect_back(request, "/settings", notice="Логин Salling очищен.")
 
 
 def _update_profile_files(profile: dict, cv_path: str, cover_letter_path: str, cv_file, cover_letter_file) -> dict:
@@ -882,7 +919,7 @@ def save_apply_files(
 ):
     profile = profile_store.load_profile()
     profile_store.save_profile(_update_profile_files(profile, cv_path, cover_letter_path, cv_file, cover_letter_file))
-    return RedirectResponse(f"/job/{job_id}/apply", status_code=303)
+    return RedirectResponse(f"/job/{job_id}/apply?saved=files", status_code=303)
 
 
 def _salling_apply_cmd(extra: list[str]) -> list[str]:
@@ -937,10 +974,10 @@ def start_apply(
 
 
 @app.post("/apply/batch")
-def apply_batch(job_ids: list[str] = Form(default=[]), mode: str = Form("dry")):
+def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: str = Form("dry")):
     ids = [j for j in job_ids if j]
     if not ids:
-        return RedirectResponse("/", status_code=303)
+        return _redirect_back(request, "/", error="Сначала выбери хотя бы одну вакансию для пакетной подачи.")
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
@@ -972,12 +1009,15 @@ def translate_job(job_id: str):
                 s.commit()
             except translator.TranslationError as e:
                 error = str(e)[:120]
-    target = f"/job/{job_id}" + (f"?trerror={quote_plus(error)}" if error else "")
+    target = f"/job/{job_id}?trerror={quote_plus(error)}" if error else _url_with_system_response(f"/job/{job_id}", notice="Перевод обновлён.")
     return RedirectResponse(target, status_code=303)
 
 
 @app.post("/translator/install")
 def install_translator(job_id: str = Form("")):
     translator_setup.start_install()
-    target = f"/job/{job_id}" if job_id else "/"
+    target = _url_with_system_response(
+        f"/job/{job_id}" if job_id else "/",
+        notice="Установка переводчика запущена в фоне.",
+    )
     return RedirectResponse(target, status_code=303)

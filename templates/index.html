@@ -16,6 +16,20 @@
     <p>Проверь интернет и попробуй снова. Если не помогает — антивирус или файрвол может блокировать запрос к Salling.</p>
     <form method="post" action="/refresh"><button class="primary" type="submit">{{ ic.i('refresh', 14) }} Попробовать снова</button></form>
     <code class="empty-err">{{ sync_error }}</code>
+  {% elif f.status == 'applied' %}
+    <div class="empty-ic applied">{{ ic.i('check', 24) }}</div>
+    {% if applied_count == 0 %}
+      <h3>Поданных вакансий пока нет</h3>
+      <p>Здесь появятся вакансии, где ты нажал «Подал» или запускал автоподачу. Сейчас архив поданных пустой.</p>
+      <a class="empty-btn" href="/?status=active">{{ ic.i('cart', 14) }} К активным вакансиям</a>
+    {% else %}
+      <h3>В поданных по фильтрам ничего нет</h3>
+      <p>Всего поданных вакансий: <b>{{ applied_count }}</b>, но текущие фильтры скрыли их. Открой все поданные или сбрось условия.</p>
+      <div class="empty-actions">
+        <a class="empty-btn" href="/?status=applied">{{ ic.i('check', 14) }} Все поданные</a>
+        <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
+      </div>
+    {% endif %}
   {% elif total_active == 0 %}
     <div class="empty-ic">{{ ic.i('cart', 24) }}</div>
     <h3>База вакансий пустая</h3>
@@ -26,6 +40,23 @@
       <li>Карточки появятся сами, счётчик «найдено» начнёт расти.</li>
     </ol>
     <form method="post" action="/refresh"><button class="primary" type="submit">{{ ic.i('refresh', 14) }} Загрузить вакансии</button></form>
+  {% elif f.status and f.status not in ['active', ''] %}
+    {% set status_empty = {
+      'new': 'новых вакансий',
+      'seen': 'просмотренных вакансий',
+      'interview': 'вакансий с собеседованием',
+      'offer': 'офферов',
+      'rejected': 'отказов',
+      'hidden': 'скрытых вакансий',
+      'closed': 'закрытых вакансий'
+    } %}
+    <div class="empty-ic">{{ ic.i('search', 24) }}</div>
+    <h3>Нет {{ status_empty.get(f.status, 'вакансий в этом статусе') }}</h3>
+    <p>Список работает правильно: в выбранном статусе ничего не найдено. Можно вернуться к активным вакансиям или сбросить фильтры.</p>
+    <div class="empty-actions">
+      <a class="empty-btn" href="/?status=active">{{ ic.i('cart', 14) }} Активные вакансии</a>
+      <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
+    </div>
   {% else %}
     <div class="empty-ic">{{ ic.i('search', 24) }}</div>
     <h3>По фильтрам ничего не найдено</h3>
@@ -55,6 +86,8 @@
     border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--glass-line));
   }
   .empty-ic.warn { background: var(--warn-bg); color: var(--warn-txt); border-color: var(--warn-line); }
+  .empty-ic.applied { background: rgba(167,139,250,.14); color: #c4b5fd; border-color: rgba(167,139,250,.38); }
+  html[data-theme="light"] .empty-ic.applied { background: #f1edff; color: #6d28d9; border-color: #d8ccff; }
   .empty-steps {
     text-align: left; margin: 4px 0 0; padding: 16px 20px 16px 38px; width: 100%;
     display: grid; gap: 9px; color: var(--txt); font-size: 13.5px; line-height: 1.45;
@@ -68,6 +101,7 @@
     text-decoration: none; cursor: pointer;
   }
   .empty-btn:hover { border-color: var(--hover-line); background: var(--menu-bg); }
+  .empty-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
   .empty-err {
     font-size: 11.5px; color: var(--muted); background: var(--bg-soft);
     border: 1px solid var(--glass-line); border-radius: 8px; padding: 6px 10px;
@@ -470,8 +504,15 @@
 </section>
 
 <div class="jobs-result-head">
-  <span class="muted">{{ 'Группировка по магазинам' if group else 'Карточки вакансий' }} · {{ total_filtered }} найдено</span>
-  <span class="muted">Новые, просмотренные и поданные различаются мягкой левой линией</span>
+  {% set result_title = 'Поданные вакансии' if f.status == 'applied' else ('Группировка по магазинам' if group else 'Карточки вакансий') %}
+  <span class="muted">{{ result_title }} · {{ total_filtered }} найдено</span>
+  <span class="muted">
+    {% if f.status == 'applied' %}
+      Здесь только вакансии, куда уже отмечена подача
+    {% else %}
+      Новые, просмотренные и поданные различаются мягкой левой линией
+    {% endif %}
+  </span>
 </div>
 
 {% set brand_colors = {
