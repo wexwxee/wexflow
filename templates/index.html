@@ -11,61 +11,75 @@
     <h3>Загружаю вакансии с Salling…</h3>
     <p>Это первый запуск — база наполняется. Обычно занимает до минуты. Можно подождать или нажать «Обновить».</p>
   {% elif sync_error %}
-    <div class="empty-ic warn">{{ ic.i('alert', 22) }}</div>
+    <div class="empty-ic warn">{{ ic.i('alert', 24) }}</div>
     <h3>Не удалось загрузить вакансии</h3>
-    <p>Проверь интернет и нажми «Обновить». Если не помогает — антивирус/файрвол может блокировать запрос к Salling.</p>
+    <p>Проверь интернет и попробуй снова. Если не помогает — антивирус или файрвол может блокировать запрос к Salling.</p>
+    <form method="post" action="/refresh"><button class="primary" type="submit">{{ ic.i('refresh', 14) }} Попробовать снова</button></form>
     <code class="empty-err">{{ sync_error }}</code>
   {% elif total_active == 0 %}
-    <div class="empty-ic">{{ ic.i('cart', 22) }}</div>
+    <div class="empty-ic">{{ ic.i('cart', 24) }}</div>
     <h3>База вакансий пустая</h3>
-    <p>Это нормально для нового устройства — список вакансий ещё не загружен.</p>
+    <p>Это нормально для нового устройства — список вакансий ещё не загружен. Сделай так:</p>
     <ol class="empty-steps">
-      <li>Нажми зелёную кнопку <b>«Обновить»</b> вверху справа.</li>
-      <li>Подожди <b>~1 минуту</b> (нужен интернет — качается ~2700 вакансий).</li>
+      <li>Нажми <b>«Загрузить вакансии»</b> ниже (или зелёную «Обновить» вверху).</li>
+      <li>Подожди <b>~1 минуту</b> — нужен интернет, качается ~2700 вакансий.</li>
       <li>Карточки появятся сами, счётчик «найдено» начнёт расти.</li>
     </ol>
+    <form method="post" action="/refresh"><button class="primary" type="submit">{{ ic.i('refresh', 14) }} Загрузить вакансии</button></form>
   {% else %}
-    <div class="empty-ic">{{ ic.i('search', 22) }}</div>
+    <div class="empty-ic">{{ ic.i('search', 24) }}</div>
     <h3>По фильтрам ничего не найдено</h3>
-    <p>Вакансии в базе есть ({{ total_active }} активных), но под текущие фильтры ничего не подошло. Нажми «Сброс» или смягчи условия.</p>
+    <p>В базе есть <b>{{ total_active }}</b> активных вакансий, но под текущие фильтры ничего не подошло. Сбрось фильтры или смягчи условия.</p>
+    <a class="empty-btn" href="/">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
   {% endif %}
 </div>
 {% endmacro %}
 
+{% block style %}
 <style>
+  /* пустое состояние списка (нет вакансий / нет совпадений / ошибка) —
+     стили живут ВНУТРИ block style, иначе Jinja не выводит их в дочернем шаблоне */
   .empty-state {
-    max-width: 520px; margin: 38px auto; text-align: center;
-    display: grid; gap: 12px; justify-items: center;
+    max-width: 540px; margin: 48px auto; padding: 34px 30px; text-align: center;
+    display: grid; gap: 14px; justify-items: center;
+    background: var(--glass); border: 1px solid var(--glass-line);
+    border-radius: 18px; box-shadow: var(--shadow-sm);
   }
-  .empty-state h3 { margin: 4px 0 0; font-size: 18px; color: var(--txt-strong); }
-  .empty-state p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+  .empty-state h3 { margin: 2px 0 0; font-size: 19px; font-weight: 700; color: var(--txt-strong); }
+  .empty-state p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .empty-state p b { color: var(--txt-strong); }
+  .empty-state form { margin: 2px 0 0; }
   .empty-ic {
-    width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center;
+    width: 60px; height: 60px; border-radius: 18px; display: grid; place-items: center;
     background: var(--accent-soft); color: var(--accent);
     border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--glass-line));
   }
-  .empty-ic.warn { background: var(--warn-bg, #3a2a12); color: var(--amber, #f0ad4e); }
+  .empty-ic.warn { background: var(--warn-bg); color: var(--warn-txt); border-color: var(--warn-line); }
   .empty-steps {
-    text-align: left; margin: 6px 0 0; padding: 14px 18px 14px 34px;
-    display: grid; gap: 8px; color: var(--txt); font-size: 13.5px; line-height: 1.4;
-    background: var(--glass); border: 1px solid var(--glass-line); border-radius: 12px;
+    text-align: left; margin: 4px 0 0; padding: 16px 20px 16px 38px; width: 100%;
+    display: grid; gap: 9px; color: var(--txt); font-size: 13.5px; line-height: 1.45;
+    background: var(--bg-soft); border: 1px solid var(--glass-line); border-radius: 12px;
   }
   .empty-steps b { color: var(--accent); }
+  .empty-btn {
+    display: inline-flex; align-items: center; gap: 7px; margin: 2px 0 0;
+    padding: 10px 18px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    color: var(--txt-strong); background: var(--chip-bg); border: 1px solid var(--line-strong);
+    text-decoration: none; cursor: pointer;
+  }
+  .empty-btn:hover { border-color: var(--hover-line); background: var(--menu-bg); }
   .empty-err {
-    font-size: 11.5px; color: var(--muted); background: var(--glass);
+    font-size: 11.5px; color: var(--muted); background: var(--bg-soft);
     border: 1px solid var(--glass-line); border-radius: 8px; padding: 6px 10px;
     max-width: 100%; overflow-wrap: anywhere;
   }
   .empty-spin {
-    width: 30px; height: 30px; border-radius: 50%;
+    width: 34px; height: 34px; border-radius: 50%;
     border: 3px solid var(--glass-line); border-top-color: var(--accent);
     animation: emptySpin .8s linear infinite;
   }
   @keyframes emptySpin { to { transform: rotate(360deg); } }
-</style>
 
-{% block style %}
-<style>
   .jobs-topbar .tablink { flex:0 0 auto; }
   .jobs-shell-band { background:rgba(255,255,255,.018); border-top:1px solid var(--glass-line); border-bottom:1px solid var(--glass-line); }
   .jobs-result-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 22px 0; }
