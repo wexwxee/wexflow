@@ -692,7 +692,11 @@ def run_window():
         shadow=True,
         background_color="#101111",
     )
-    native_window.events.shown += _install_native_frame_hit_test
+    # перетаскивание — через pywebview drag-region (класс .desktop-drag),
+    # ресайз — через window_chrome.js + resize_window. Нативный WndProc-хук на
+    # родительском окне для WebView2 не работает (хиты ловит дочернее окно),
+    # поэтому его не вешаем.
+    _ = native_window
     try:
         webview.start()
     except Exception as exc:  # noqa: BLE001
@@ -715,7 +719,22 @@ def run_window():
         stop_started()
 
 
+def _harden_stdio():
+    """В windowed-сборке sys.stdout/stderr могут быть None, а на не-UTF-8 локали
+    print датских/русских символов падает. Делаем потоки безопасными и UTF-8."""
+    for name in ("stdout", "stderr"):
+        st = getattr(sys, name, None)
+        try:
+            if st is None:
+                setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+            elif hasattr(st, "reconfigure"):
+                st.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def main():
+    _harden_stdio()
     args = sys.argv[1:]
     if args and args[0].startswith("--worker-"):
         run_worker(args[0], args[1:])

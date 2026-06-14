@@ -568,6 +568,7 @@ def index(
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
         "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
         "sync_running": _sync_state["running"],
+        "sync_error": _sync_state["last_error"],
         "home": home, "distances": distances, "geoerror": geoerror,
         "presets": settings_store.get_presets(),
         "batch": batch, "batch_mode": mode,
