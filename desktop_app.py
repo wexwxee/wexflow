@@ -784,8 +784,16 @@ def run_window():
     # родительском окне для WebView2 не работает (хиты ловит дочернее окно),
     # поэтому его не вешаем.
     _ = native_window
+    # Постоянное хранилище WebView2 (cookie/localStorage) в %AppData%\WexFlow —
+    # иначе по умолчанию private_mode=True держит всё в памяти и стирает при
+    # закрытии, и сохранённые фильтры/тема слетают после перезапуска.
+    storage = appdata_root() / "webview"
     try:
-        webview.start()
+        storage.mkdir(parents=True, exist_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        webview.start(private_mode=False, storage_path=str(storage))
     except Exception as exc:  # noqa: BLE001
         try:
             fallback_log = appdata_root() / "native_window_error.log"
