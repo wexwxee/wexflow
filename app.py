@@ -116,6 +116,14 @@ app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), nam
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 templates.env.globals["brand_label"] = labels.brand
 templates.env.globals["L"] = labels
+try:
+    import changelog as _changelog
+    import version as _version
+    templates.env.globals["CHANGELOG"] = _changelog.ENTRIES
+    templates.env.globals["APP_VERSION"] = _version.__version__
+except Exception:  # noqa: BLE001 — без журнала изменений окно просто не показывается
+    templates.env.globals["CHANGELOG"] = []
+    templates.env.globals["APP_VERSION"] = ""
 init_db()
 
 

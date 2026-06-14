@@ -20,6 +20,7 @@
       <a class="wex-side-btn {{ 'active' if active == 'jobs' }}" href="/" data-tip-title="Вакансии" data-tip-body="Лента вакансий Salling: фильтры, статусы и пакетная подача.">{{ ic.i('cart', 18) }}<span>Вакансии</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'applied' }}" href="/?status=applied&show_applied=1" data-tip-title="Поданные" data-tip-body="Вакансии, на которые заявка уже отправлена.">{{ ic.i('check', 18) }}<span>Поданные</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'settings' }}" href="/settings" data-tip-title="Настройки" data-tip-body="Профиль кандидата, CV, письмо и логин Salling.">{{ ic.i('sliders', 18) }}<span>Настройки</span></a>
+      <button type="button" class="wex-side-btn" data-whatsnew-open data-tip-title="Что нового" data-tip-body="Список обновлений WexFlow и что изменилось в каждой версии.">{{ ic.i('star', 18) }}<span>Что нового</span></button>
     </nav>
     <div class="wex-side-spacer"></div>
     <a class="wex-side-btn" href="/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Перейти в отдельный модуль автоподачи 7-Eleven.">{{ ic.i('store', 18) }}<span>7-Eleven</span></a>
@@ -35,6 +36,57 @@
 {% macro shell_end() -%}
     </main>
   </div>
+  {{ whatsnew() }}
+{%- endmacro %}
+
+{% macro whatsnew() -%}
+  <div class="wn-overlay" id="wnOverlay" hidden>
+    <div class="wn-modal" role="dialog" aria-modal="true" aria-label="Что нового">
+      <div class="wn-head">
+        <div class="wn-title">{{ ic.i('star', 18) }} Что нового</div>
+        <button type="button" class="wn-close" data-whatsnew-close aria-label="Закрыть">{{ ic.i('x', 16) }}</button>
+      </div>
+      <div class="wn-body">
+        {% for rel in (CHANGELOG or []) %}
+        <section class="wn-rel">
+          <div class="wn-rel-head">
+            <span class="wn-ver">v{{ rel.version }}</span>
+            {% if rel.date %}<span class="wn-date">{{ rel.date }}</span>{% endif %}
+          </div>
+          <ul class="wn-list">
+            {% for it in rel['items'] %}<li>{{ it }}</li>{% endfor %}
+          </ul>
+        </section>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var overlay = document.getElementById("wnOverlay");
+      if (!overlay) return;
+      function open() { overlay.hidden = false; document.body.classList.add("wn-open"); }
+      function close() { overlay.hidden = true; document.body.classList.remove("wn-open"); }
+      document.querySelectorAll("[data-whatsnew-open]").forEach(function (b) {
+        b.addEventListener("click", function (e) { e.preventDefault(); open(); });
+      });
+      document.querySelectorAll("[data-whatsnew-close]").forEach(function (b) {
+        b.addEventListener("click", close);
+      });
+      overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !overlay.hidden) close();
+      });
+      // автопоказ после обновления: версия сменилась с прошлого запуска.
+      // localStorage переживает перезапуск с 1.0.20 (постоянное хранилище WebView2).
+      try {
+        var cur = {{ (APP_VERSION or "") | tojson }};
+        var seen = localStorage.getItem("wexflow_seen_version");
+        if (cur && seen && seen !== cur) { open(); }
+        if (cur) localStorage.setItem("wexflow_seen_version", cur);
+      } catch (e) {}
+    })();
+  </script>
 {%- endmacro %}
 
 {% macro app_switch() -%}
