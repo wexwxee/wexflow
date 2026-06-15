@@ -31,6 +31,7 @@ import credentials_store
 import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
+import autopilot
 from apscheduler.schedulers.background import BackgroundScheduler
 
 PROFILE_REQUIRED = [
@@ -120,6 +121,7 @@ def _sync_jobs():
     try:
         scraper.sync()
         _sync_state["last_error"] = ""
+        autopilot.scan_and_notify()  # автопилот: уведомить о новых совпадениях
     except Exception as e:
         _sync_state["last_error"] = str(e)[:200]
         print(f"автообновление: ошибка — {e}")
@@ -401,6 +403,12 @@ def hub(request: Request):
     except Exception:  # noqa: BLE001
         name = seven["name"]
 
+    ap_rule = autopilot.get_rule()
+    ap = {
+        "enabled": bool(ap_rule.get("enabled")),
+        "count": autopilot.match_count() if ap_rule.get("enabled") else 0,
+    }
+
     return templates.TemplateResponse(
         "hub.html",
         {
@@ -413,6 +421,7 @@ def hub(request: Request):
             "seven": seven,
             "last_applied": last_applied,
             "user_name": name,
+            "autopilot": ap,
         },
     )
 
@@ -800,6 +809,8 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
         "creds": credentials_store.status(), "home": settings_store.get_home(),
         "saved": saved, "geoerror": geoerror, "missing_fields": missing_fields,
         "city_options": city_options, "country_options": country_options,
+        "autopilot": autopilot.get_rule(), "brands": labels.BRANDS,
+        "autopilot_count": autopilot.match_count(),
     })
 
 
@@ -826,6 +837,34 @@ def settings_save(
         return RedirectResponse(_url_with_system_response("/settings", error=file_error), status_code=303)
     profile_store.save_profile(profile)
     return RedirectResponse("/settings?saved=1", status_code=303)
+
+
+@app.post("/autopilot/save")
+def autopilot_save(
+    enabled: str = Form(""),
+    max_km: str = Form(""),
+    min_hours: str = Form(""),
+    keywords: str = Form(""),
+    brand: str = Form(""),
+):
+    def _num(v: str):
+        try:
+            f = max(0.0, float(v)) if v.strip() else 0.0
+        except ValueError:
+            f = 0.0
+        return int(f) if f == int(f) else f
+
+    autopilot.save_rule({
+        "enabled": bool(enabled),
+        "max_km": _num(max_km),
+        "min_hours": _num(min_hours),
+        "keywords": keywords.strip(),
+        "brand": brand.strip(),
+    })
+    # «с этого момента»: текущие совпадения считаем уже виденными, чтобы
+    # уведомлять только о НОВЫХ вакансиях, появившихся позже (без спама).
+    autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+    return RedirectResponse("/settings?saved=1#autopilot", status_code=303)
 
 
 @app.post("/settings/profile/autosave")

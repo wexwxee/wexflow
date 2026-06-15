@@ -467,6 +467,9 @@
       <span class="hub-status-dot"></span>
       <span>Единый рабочий центр для двух локальных модулей</span>
       {{ ui.freshness(data_age_min, sync_running) }}
+      {% if autopilot and autopilot.enabled %}
+      <a class="hub-next" href="/settings#autopilot" style="text-decoration:none;">{{ ic.i('zap', 13) }} Автопилот: подходит {{ autopilot.count }}</a>
+      {% endif %}
       <span class="hub-version" id="hubVersion" hidden></span>
     </div>
 

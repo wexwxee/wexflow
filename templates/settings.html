@@ -322,6 +322,49 @@
     })();
   </script>
 
+  <!-- Автопилот подбора (БЕТА) -->
+  <form id="autopilot" class="panel" method="post" action="/autopilot/save" style="margin-top:18px;">
+    <h2>{{ ic.i('zap', 17) }} Автопилот подбора
+      <span style="font-size:12px;border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:1px 8px;vertical-align:middle;">БЕТА</span>
+    </h2>
+    <p class="hint">Бот сам следит за новыми вакансиями по твоим правилам и присылает уведомление, когда появляется подходящая. Подаёт по-прежнему ты — автопилот только находит.</p>
+
+    <label class="lbl" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:16px;">
+      <input type="checkbox" name="enabled" value="1" {{ 'checked' if autopilot.enabled else '' }} style="width:18px;height:18px;">
+      <span>Включить автопилот {% if autopilot.enabled %}<span style="color:var(--ok-txt);">(сейчас включён)</span>{% endif %}</span>
+    </label>
+
+    <div class="grid2">
+      <div class="field">
+        <label class="lbl">Не дальше, км от дома</label>
+        <input type="number" name="max_km" min="0" step="1" value="{{ autopilot.max_km or '' }}" placeholder="напр. 5 (пусто = без ограничения)">
+      </div>
+      <div class="field">
+        <label class="lbl">Минимум часов в неделю</label>
+        <input type="number" name="min_hours" min="0" step="1" value="{{ autopilot.min_hours or '' }}" placeholder="напр. 10 (пусто = любые)">
+      </div>
+      <div class="field">
+        <label class="lbl">Ключевые слова (должность)</label>
+        <input type="text" name="keywords" value="{{ autopilot.keywords or '' }}" placeholder="напр. boutique assistant, kasse">
+      </div>
+      <div class="field">
+        <label class="lbl">Бренд</label>
+        <select name="brand">
+          <option value="">Все бренды</option>
+          {% for code, lbl in brands.items() %}
+            <option value="{{ code }}" {{ 'selected' if autopilot.brand == code else '' }}>{{ lbl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <p class="hint" style="margin-top:4px;">Сейчас под это правило подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
+
+    <div class="actions">
+      <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить автопилот</button>
+    </div>
+  </form>
+
   <!-- Управление -->
   <div class="panel" style="border-color:var(--err-line);background:var(--err-bg);">
     <h2>{{ ic.i('broom', 17) }} Управление</h2>
