@@ -56,6 +56,34 @@
   .settings-brand { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:18px 0 8px; }
   .settings-brand h1 { margin:0; }
   @media (max-width:640px){ .field.suggest-open { margin-bottom:166px; } }
+
+  /* --- Автопилот: тумблер + кастомный список --- */
+  .ap-toggle { display:inline-flex; align-items:center; gap:12px; cursor:pointer; margin-bottom:20px; user-select:none; }
+  .ap-toggle input { position:absolute; opacity:0; width:0; height:0; }
+  .ap-track { width:46px; height:27px; border-radius:999px; background:var(--line); border:1px solid var(--glass-line); position:relative; transition:background .15s; flex:0 0 auto; }
+  .ap-track::after { content:""; position:absolute; top:2px; left:2px; width:21px; height:21px; border-radius:50%; background:#fff; transition:transform .15s; box-shadow:0 1px 3px rgba(0,0,0,.4); }
+  .ap-toggle input:checked + .ap-track { background:var(--accent); }
+  .ap-toggle input:checked + .ap-track::after { transform:translateX(19px); }
+  .ap-toggle input:focus-visible + .ap-track { box-shadow:0 0 0 3px var(--accent-soft); }
+  .ap-toggle-label { font-weight:600; font-size:14px; }
+  .ap-field-wide { grid-column:1 / -1; }
+  .ap-hint { color:var(--muted); font-size:12px; margin-top:6px; line-height:1.4; }
+  .ap-select { position:relative; }
+  .ap-select-btn { width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:var(--glass); border:1px solid var(--glass-line); color:var(--txt); border-radius:8px;
+    padding:11px 12px; font-size:14px; cursor:pointer; text-align:left; }
+  .ap-select-btn:hover { border-color:var(--hover-line); }
+  .ap-select.open .ap-select-btn { border-color:var(--accent); }
+  .ap-select-arrow { color:var(--muted); font-size:11px; transition:transform .15s; }
+  .ap-select.open .ap-select-arrow { transform:rotate(180deg); }
+  .ap-menu { display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:35;
+    max-height:260px; overflow:auto; padding:5px; background:var(--menu-bg); border:1px solid var(--glass-line);
+    border-radius:10px; box-shadow:var(--shadow); }
+  .ap-select.open .ap-menu { display:block; }
+  .ap-opt { display:block; width:100%; text-align:left; border:none; background:transparent; color:var(--txt);
+    border-radius:7px; padding:9px 10px; font-size:14px; cursor:pointer; }
+  .ap-opt:hover, .ap-opt.active { background:var(--chip-bg); }
+  .ap-opt.sel { color:var(--accent); font-weight:650; }
 </style>
 {% endblock %}
 
@@ -329,36 +357,48 @@
     </h2>
     <p class="hint">Бот сам следит за новыми вакансиями по твоим правилам и присылает уведомление, когда появляется подходящая. Подаёт по-прежнему ты — автопилот только находит.</p>
 
-    <label class="lbl" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:16px;">
-      <input type="checkbox" name="enabled" value="1" {{ 'checked' if autopilot.enabled else '' }} style="width:18px;height:18px;">
-      <span>Включить автопилот {% if autopilot.enabled %}<span style="color:var(--ok-txt);">(сейчас включён)</span>{% endif %}</span>
+    <label class="ap-toggle">
+      <input type="checkbox" name="enabled" value="1" {{ 'checked' if autopilot.enabled else '' }}>
+      <span class="ap-track"></span>
+      <span class="ap-toggle-label">Включить автопилот {% if autopilot.enabled %}<span style="color:var(--ok-txt);">· включён</span>{% endif %}</span>
     </label>
 
     <div class="grid2">
       <div class="field">
-        <label class="lbl">Не дальше, км от дома</label>
-        <input type="number" name="max_km" min="0" step="1" value="{{ autopilot.max_km or '' }}" placeholder="напр. 5 (пусто = без ограничения)">
+        <label class="lbl">Не дальше от дома</label>
+        <input type="number" name="max_km" min="0" step="1" value="{{ autopilot.max_km or '' }}" placeholder="км, напр. 5">
+        <div class="ap-hint">Расстояние от твоего дома (адрес — в настройках выше). Пусто = без ограничения.</div>
       </div>
       <div class="field">
-        <label class="lbl">Минимум часов в неделю</label>
-        <input type="number" name="min_hours" min="0" step="1" value="{{ autopilot.min_hours or '' }}" placeholder="напр. 10 (пусто = любые)">
+        <label class="lbl">Часов в неделю, не меньше</label>
+        <input type="number" name="min_hours" min="0" step="1" value="{{ autopilot.min_hours or '' }}" placeholder="напр. 10">
+        <div class="ap-hint">Если в вакансии часы не указаны — она всё равно попадёт, чтобы ничего не упустить.</div>
       </div>
-      <div class="field">
-        <label class="lbl">Ключевые слова (должность)</label>
-        <input type="text" name="keywords" value="{{ autopilot.keywords or '' }}" placeholder="напр. boutique assistant, kasse">
+      <div class="field ap-field-wide">
+        <label class="lbl">Ключевые слова — кем хочешь работать</label>
+        <input type="text" name="keywords" value="{{ autopilot.keywords or '' }}" placeholder="напр. boutique assistant, kasse, lager">
+        <div class="ap-hint">Можно несколько через запятую — найдёт вакансии по любому из них. Русские слова бот сам переведёт на датский (kasse = касса и т.п.). Пусто = любые должности.</div>
       </div>
-      <div class="field">
+      <div class="field ap-field-wide">
         <label class="lbl">Бренд</label>
-        <select name="brand">
-          <option value="">Все бренды</option>
-          {% for code, lbl in brands.items() %}
-            <option value="{{ code }}" {{ 'selected' if autopilot.brand == code else '' }}>{{ lbl }}</option>
-          {% endfor %}
-        </select>
+        <div class="ap-select" id="apBrand">
+          <input type="hidden" name="brand" value="{{ autopilot.brand or '' }}">
+          <button type="button" class="ap-select-btn">
+            <span class="ap-select-text">{{ brands.get(autopilot.brand, 'Все бренды') if autopilot.brand else 'Все бренды' }}</span>
+            <span class="ap-select-arrow">▼</span>
+          </button>
+          <div class="ap-menu">
+            <button type="button" class="ap-opt {{ 'sel' if not autopilot.brand else '' }}" data-val="">Все бренды</button>
+            {% for code, lbl in brands.items() %}
+              <button type="button" class="ap-opt {{ 'sel' if autopilot.brand == code else '' }}" data-val="{{ code }}">{{ lbl }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="ap-hint">Оставь «Все бренды», если не важно, где именно работать.</div>
       </div>
     </div>
 
-    <p class="hint" style="margin-top:4px;">Сейчас под это правило подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
+    <p class="hint" style="margin-top:10px;">Сейчас под это правило подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
 
     <div class="actions">
       <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить автопилот</button>
@@ -383,6 +423,36 @@
 {% endblock %}
 
 {% block script %}
+<script>
+  // кастомный выпадающий список бренда (автопилот) — в тему приложения
+  (function () {
+    var root = document.getElementById('apBrand');
+    if (!root) return;
+    var btn = root.querySelector('.ap-select-btn');
+    var text = root.querySelector('.ap-select-text');
+    var hidden = root.querySelector('input[type=hidden]');
+    var opts = [].slice.call(root.querySelectorAll('.ap-opt'));
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      root.classList.toggle('open');
+    });
+    opts.forEach(function (o) {
+      o.addEventListener('click', function () {
+        hidden.value = o.dataset.val;
+        text.textContent = o.textContent;
+        opts.forEach(function (x) { x.classList.remove('sel'); });
+        o.classList.add('sel');
+        root.classList.remove('open');
+      });
+    });
+    document.addEventListener('click', function (e) {
+      if (!root.contains(e.target)) root.classList.remove('open');
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') root.classList.remove('open');
+    });
+  })();
+</script>
 <script>
   const profileForm = document.getElementById('profileForm');
   const autosaveStatus = document.getElementById('autosaveStatus');

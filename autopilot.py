@@ -53,9 +53,13 @@ def _keyword_match(job: Job, raw: str) -> bool:
     if not raw:
         return True
     import ru_search  # расширяем русский запрос датскими синонимами, как на главной
-    terms = ru_search.expand(raw)
-    hay = f"{job.title or ''} {job.description or ''} {job.city or ''}".lower()
-    return any((t or "").lower() in hay for t in terms)
+    hay = f"{job.title or ''} {job.description or ''} {job.city or ''} {job.street or ''}".lower()
+    # несколько фраз через запятую: совпало хоть одно — берём (чтобы не упустить)
+    for phrase in (p.strip() for p in raw.split(",") if p.strip()):
+        for term in ru_search.expand(phrase):
+            if (term or "").lower() in hay:
+                return True
+    return False
 
 
 def _job_hours(job: Job) -> float | None:
@@ -81,7 +85,9 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
         min_hours = 0
     if min_hours:
         jh = _job_hours(job)
-        if jh is None or jh < min_hours:
+        # часы не указаны в вакансии — НЕ отбрасываем (чтобы ничего не упустить),
+        # отсекаем только если точно знаем, что меньше минимума
+        if jh is not None and jh < min_hours:
             return False
     try:
         max_km = float(rule.get("max_km") or 0)
