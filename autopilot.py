@@ -29,6 +29,15 @@ DEFAULT_RULE = {
     "keywords": "",         # доп. слова через запятую (пусто = не учитывать)
     "brand": "",            # код бренда или пусто = все бренды
     "seen_ids": [],         # id вакансий, о которых уже уведомляли
+    "prepared_ids": [],     # id, которые уже готовили (фаза 2)
+    # --- фаза 3: автоотправка (по умолчанию ВЫКЛ, под замком) ---
+    "auto_submit": False,       # отправлять автоматически?
+    "daily_limit": 3,           # максимум автоотправок в день
+    "autosubmit_baseline": [],  # снимок совпадений на момент включения — их НЕ трогаем
+    "submitted_ids": [],        # id, которые автоотправка уже подала
+    "submit_day": "",           # день, за который считаем счётчик
+    "submit_count_today": 0,    # сколько отправлено сегодня
+    "submit_log": [],           # журнал автоотправок [{ts,title}]
 }
 
 # Поля, которые пользователь задаёт в интерфейсе (seen_ids/prepared_ids — служебные).
@@ -159,6 +168,80 @@ def mark_prepared(ids) -> None:
     prepared = set(get_rule().get("prepared_ids") or [])
     prepared.update(ids)
     save_rule({"prepared_ids": list(prepared)})
+
+
+# ── Фаза 3: автоотправка (под замком) ──────────────────────────────────
+def _today() -> str:
+    return _dt.date.today().isoformat()
+
+
+def submitted_today() -> int:
+    """Сколько автоотправок сделано сегодня (счётчик сбрасывается в новый день)."""
+    r = get_rule()
+    return int(r.get("submit_count_today") or 0) if r.get("submit_day") == _today() else 0
+
+
+def submit_log() -> list:
+    return get_rule().get("submit_log") or []
+
+
+def set_autosubmit_baseline() -> None:
+    """Запомнить текущие совпадения как «не трогать» — чтобы при включении
+    автоотправка не разослала разом весь существующий список, а ждала НОВЫЕ."""
+    save_rule({"autosubmit_baseline": [j.id for j in find_matches()]})
+
+
+def eligible_for_submit(limit_remaining: int) -> list[Job]:
+    """Свежие подходящие, которые можно автоотправить: появились ПОСЛЕ включения
+    (нет в baseline), ещё не отправляли и не поданы. Не больше limit_remaining."""
+    r = get_rule()
+    baseline = set(r.get("autosubmit_baseline") or [])
+    done = set(r.get("submitted_ids") or [])
+    todo = [j for j in find_matches() if j.id not in baseline and j.id not in done]
+    todo.sort(key=_seen_ts, reverse=True)
+    return todo[: max(0, int(limit_remaining))]
+
+
+def record_submitted(jobs) -> None:
+    r = get_rule()
+    day = _today()
+    count = int(r.get("submit_count_today") or 0) if r.get("submit_day") == day else 0
+    log = list(r.get("submit_log") or [])
+    done = set(r.get("submitted_ids") or [])
+    now = _dt.datetime.now().strftime("%d.%m %H:%M")
+    for j in jobs:
+        done.add(j.id)
+        log.insert(0, {"ts": now, "title": j.title})
+    save_rule({
+        "submit_day": day,
+        "submit_count_today": count + len(jobs),
+        "submit_log": log[:50],
+        "submitted_ids": list(done),
+    })
+
+
+def auto_submit_tick(launcher) -> None:
+    """Вызывается после скана базы. Если автоотправка включена и есть дневной
+    лимит — отправить до (лимит − сегодня) свежих подходящих. launcher(ids)
+    делает реальную отправку. Логика отделена от запуска, чтобы её можно было
+    проверить без настоящей подачи."""
+    try:
+        r = get_rule()
+        if not (r.get("enabled") and r.get("auto_submit")):
+            return
+        remaining = int(r.get("daily_limit") or 0) - submitted_today()
+        if remaining <= 0:
+            return
+        jobs = eligible_for_submit(remaining)
+        if not jobs:
+            return
+        launcher([j.id for j in jobs])
+        record_submitted(jobs)
+        import scheduler
+        scheduler.notify(f"Автопилот отправил заявки: {len(jobs)}",
+                         "; ".join(j.title for j in jobs[:5]))
+    except Exception as e:  # noqa: BLE001 — автоотправка не должна ронять обновление
+        print(f"автопилот: автоотправка — ошибка {e}")
 
 
 def scan_and_notify() -> None:

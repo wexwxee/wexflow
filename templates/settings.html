@@ -86,9 +86,18 @@
   .ap-opt:hover, .ap-opt.active { background:var(--chip-bg); }
   .ap-opt.sel { color:var(--accent); font-weight:650; }
   /* убираем системные стрелки у числовых полей автопилота */
-  #autopilot input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+  #autopilot input[type=number], #apAutoForm input[type=number] { -moz-appearance:textfield; appearance:textfield; }
   #autopilot input[type=number]::-webkit-outer-spin-button,
-  #autopilot input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  #autopilot input[type=number]::-webkit-inner-spin-button,
+  #apAutoForm input[type=number]::-webkit-outer-spin-button,
+  #apAutoForm input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  /* журнал автоотправок */
+  .ap-log { list-style:none; margin:8px 0 0; padding:0; max-height:200px; overflow:auto; }
+  .ap-log li { padding:7px 0; border-bottom:1px solid var(--glass-line); font-size:13px; }
+  .ap-log li:last-child { border-bottom:none; }
+  .ap-log-ts { color:var(--muted); font-size:12px; margin-right:8px; }
+  .ap-stop-btn { background:#e5484d; color:#fff; }
+  .ap-stop-btn:hover { background:#cf3a3f; }
   /* быстрые варианты-чипсы под полями */
   .ap-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
   .ap-chips-label { width:100%; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:1px; }
@@ -496,6 +505,55 @@
       {% if not autopilot_pending %}<span class="hint" style="margin:0;">Свежих для подготовки нет.</span>{% endif %}
     </div>
   </form>
+
+  <!-- Автоотправка (Фаза 3) — под замком -->
+  <form id="apAutoForm" class="panel" method="post" action="/autopilot/autosubmit"
+        style="margin-top:14px;border-color:var(--err-line);background:var(--err-bg);"
+        onsubmit="return apAutoConfirm(this)">
+    <h2>{{ ic.i('zap', 16) }} Автоотправка — ОПАСНО
+      <span style="font-size:12px;border:1px solid var(--err-txt);color:var(--err-txt);border-radius:999px;padding:1px 8px;vertical-align:middle;">БЕТА</span>
+    </h2>
+    <p class="hint">Бот будет <b>сам отправлять</b> заявки работодателю по подходящим вакансиям — без твоего участия. Это <b>необратимо</b>. Отправляются только <b>новые</b> вакансии, появившиеся <b>после включения</b>, и не больше дневного лимита. Уже поданные не трогаются. Включай, только если точно уверен.</p>
+
+    <label class="ap-toggle">
+      <input type="checkbox" name="auto_submit" value="1" id="apAutoSubmit" {{ 'checked' if autopilot.auto_submit else '' }}>
+      <span class="ap-track"></span>
+      <span class="ap-toggle-label">Отправлять автоматически {% if autopilot.auto_submit %}<span style="color:var(--err-txt);">· ВКЛЮЧЕНО</span>{% endif %}</span>
+    </label>
+
+    <div class="field" style="max-width:280px;">
+      <label class="lbl">Лимит автоотправок в день</label>
+      <input type="number" name="daily_limit" min="1" max="50" value="{{ autopilot.daily_limit or 3 }}">
+      <div class="ap-hint">Сколько максимум заявок бот отправит за день. Безопасно: 3–5.</div>
+    </div>
+
+    <p class="hint" style="margin-top:6px;">Сегодня отправлено автоматически: <b>{{ autopilot_submitted_today }}</b>{% if autopilot.auto_submit %} из {{ autopilot.daily_limit }}{% endif %}.</p>
+
+    <div class="actions">
+      <button class="secondary" type="submit">{{ ic.i('check', 13) }} Сохранить настройку автоотправки</button>
+    </div>
+  </form>
+
+  {% if autopilot.auto_submit %}
+  <form class="panel" method="post" action="/autopilot/stop" style="margin-top:14px;border-color:var(--err-line);">
+    <div class="actions" style="margin:0;align-items:center;">
+      <button class="primary ap-stop-btn" type="submit">⛔ СТОП — остановить автоотправку</button>
+      <span class="hint" style="margin:0;">Мгновенно выключает автоотправку.</span>
+    </div>
+  </form>
+  {% endif %}
+
+  {% if autopilot_submit_log %}
+  <div class="panel" style="margin-top:14px;">
+    <h2 style="font-size:15px;margin:0;">Журнал автоотправок</h2>
+    <p class="hint" style="margin:4px 0 0;">Что автопилот отправил сам.</p>
+    <ul class="ap-log">
+      {% for e in autopilot_submit_log[:15] %}
+        <li><span class="ap-log-ts">{{ e.ts }}</span>{{ e.title }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   {% endif %}
 
   <!-- Управление -->
@@ -592,6 +650,15 @@
       sync();
     });
   })();
+
+  // двойное подтверждение перед включением автоотправки (необратимо)
+  function apAutoConfirm(form) {
+    var cb = form.querySelector('#apAutoSubmit');
+    if (!cb || !cb.checked) return true;  // выключение — без вопросов
+    if (!confirm('ВНИМАНИЕ: бот будет САМ отправлять заявки работодателю — без твоего участия и без подтверждения каждой. Это необратимо. Включить автоотправку?')) return false;
+    if (!confirm('Точно-точно? Заявки уйдут под твоим именем автоматически (в пределах дневного лимита). Включаем?')) return false;
+    return true;
+  }
 </script>
 <script>
   const profileForm = document.getElementById('profileForm');

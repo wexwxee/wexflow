@@ -122,6 +122,9 @@ def _sync_jobs():
         scraper.sync()
         _sync_state["last_error"] = ""
         autopilot.scan_and_notify()  # автопилот: уведомить о новых совпадениях
+        # автоотправка (фаза 3, по умолчанию ВЫКЛ): отправляет ТОЛЬКО при явно
+        # включённом auto_submit, в пределах дневного лимита и только новые
+        autopilot.auto_submit_tick(lambda ids: _launch_salling_apply(ids, submit=True))
     except Exception as e:
         _sync_state["last_error"] = str(e)[:200]
         print(f"автообновление: ошибка — {e}")
@@ -813,6 +816,8 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
         "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
         "autopilot_count": autopilot.match_count(),
         "autopilot_pending": autopilot.pending_count(),
+        "autopilot_submitted_today": autopilot.submitted_today(),
+        "autopilot_submit_log": autopilot.submit_log(),
     })
 
 
@@ -892,6 +897,39 @@ def autopilot_prepare(request: Request):
         notice=f"Готовлю {len(ids)} вакансий — откроется браузер, бот заполнит анкеты "
                "и остановится. Проверь и нажми «Отправить» сам.",
     )
+
+
+@app.post("/autopilot/autosubmit")
+def autopilot_autosubmit(
+    request: Request,
+    auto_submit: str = Form(""),
+    daily_limit: str = Form(""),
+):
+    """Включение/настройка АВТООТПРАВКИ (фаза 3, под замком). По умолчанию ВЫКЛ.
+    Сама отправка идёт в фоне (auto_submit_tick), только новые вакансии и в
+    пределах дневного лимита."""
+    try:
+        limit = max(1, min(50, int(float(daily_limit)))) if daily_limit.strip() else 3
+    except ValueError:
+        limit = 3
+    on = bool(auto_submit)
+    was = bool(autopilot.get_rule().get("auto_submit"))
+    autopilot.save_rule({"auto_submit": on, "daily_limit": limit})
+    # при ВКЛЮЧЕНИИ фиксируем текущие совпадения как «не трогать» —
+    # автоотправка пойдёт только по вакансиям, появившимся ПОСЛЕ включения
+    if on and not was:
+        autopilot.set_autosubmit_baseline()
+    msg = (f"Автоотправка ВКЛЮЧЕНА (до {limit}/день, только новые вакансии). "
+           "Останови в любой момент кнопкой СТОП." if on
+           else "Автоотправка выключена.")
+    return _redirect_back(request, "/settings", notice=msg)
+
+
+@app.post("/autopilot/stop")
+def autopilot_stop(request: Request):
+    """Аварийная остановка автоотправки — мгновенно выключает."""
+    autopilot.save_rule({"auto_submit": False})
+    return _redirect_back(request, "/settings", notice="Автоотправка остановлена.")
 
 
 @app.post("/settings/profile/autosave")
