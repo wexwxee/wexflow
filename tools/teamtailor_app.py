@@ -12,6 +12,7 @@ import json
 import subprocess
 import sys
 import threading
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -53,11 +54,26 @@ def launch_filler(job_url: str):
     subprocess.Popen(cmd, **kw)
 
 
+def _loading_html() -> str:
+    return ("<!doctype html><meta charset='utf-8'><meta http-equiv='refresh' content='3'>"
+            "<title>WexFlow — подача (БЕТА)</title>"
+            "<body style='margin:0;font-family:Segoe UI,sans-serif;background:#0d0e0e;color:#e8eae8'>"
+            "<div style='max-width:700px;margin:18vh auto;text-align:center'>"
+            "<h1 style='color:#1ed760'>WexFlow — подача <span style='font-size:14px;"
+            "border:1px solid #6b66ff;color:#6b66ff;border-radius:999px;padding:2px 8px'>БЕТА</span></h1>"
+            "<p style='color:#8b908c'>Загружаю датские вакансии с платформ… (несколько секунд)</p></div></body>")
+
+
+CARD_CAP = 200  # столько карточек показываем (1000+ тормозят браузер); подача — по ссылке
+
 def page_html() -> str:
     with _LOCK:
         jobs = list(_JOBS)
+    if not jobs:
+        return _loading_html()
+    shown = jobs[:CARD_CAP]
     cards = []
-    for i, j in enumerate(jobs):
+    for i, j in enumerate(shown):
         loc = " · ".join(x for x in [j.city, j.zip] if x) or "локация в заголовке"
         date = (j.published or "")[:10]
         cards.append(f"""
@@ -99,14 +115,14 @@ def page_html() -> str:
     border:1px solid var(--neon);color:var(--txt);padding:12px 18px;border-radius:10px;
     opacity:0;transition:.2s;pointer-events:none}} #toast.show{{opacity:1}}
 </style></head><body><div class="wrap">
-  <h1>WexFlow — подача</h1>
+  <h1>WexFlow — подача <span style="font-size:14px;vertical-align:middle;border:1px solid var(--tt);color:var(--tt);border-radius:999px;padding:2px 9px">БЕТА</span></h1>
   <div class="sub">Заполняет форму и <b>останавливается</b> — согласие и «Отправить» жмёшь сам.
     Платформы: Teamtailor, Greenhouse, Ashby, Lever, Recruitee, Workable.</div>
   <div class="paste">
     <input id="link" type="text" placeholder="Вставь ссылку на вакансию (любая поддерживаемая платформа)…">
     <button id="go">Заполнить по ссылке →</button>
   </div>
-  <div class="hint">Ниже — витрина: <b>{len(jobs)}</b> датских вакансий от <b>{companies}</b> компаний (Teamtailor + Greenhouse + Ashby). Автозаполнение работает и для фирм, которых тут нет — по ссылке.</div>
+  <div class="hint">Витрина: <b>{len(jobs)}</b> датских вакансий от <b>{companies}</b> компаний (Teamtailor + Greenhouse + Ashby), показаны первые <b>{len(shown)}</b>. Автозаполнение работает и для фирм, которых тут нет — по ссылке.</div>
   <div class="grid">{''.join(cards)}</div>
 </div><div id="toast"></div><script>
   function toast(t){{var e=document.getElementById('toast');e.textContent=t;e.classList.add('show');
@@ -181,11 +197,21 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    print("Загружаю вакансии Teamtailor…")
-    refresh_jobs()
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"Открой: http://127.0.0.1:{PORT}")
-    srv.serve_forever()
+    url = f"http://127.0.0.1:{PORT}"
+    # вакансии грузим в фоне — сервер поднимается мгновенно, страница покажет «загрузка»
+    threading.Thread(target=refresh_jobs, daemon=True).start()
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        # порт занят — вероятно бета уже запущена; просто открываем её
+        webbrowser.open(url)
+        return
+    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    print(f"WexFlow — подача (БЕТА): {url}")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
