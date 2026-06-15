@@ -138,6 +138,53 @@
     letter-spacing: .08em;
     white-space: nowrap;
   }
+  /* карточка 7-Eleven: число магазинов + статус-чипы */
+  .hub-stats.seven-stats {
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 16px;
+  }
+  .hub-stat.big b { font-size: 30px; }
+  .hub-stat.big span { white-space: normal; }
+  .seven-checks {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+  }
+  .seven-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    border: 1px solid var(--glass-line);
+    background: var(--glass);
+    color: var(--muted);
+  }
+  .seven-chip .chk {
+    display: inline-grid;
+    place-items: center;
+    width: 17px;
+    height: 17px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+  .seven-chip.ok {
+    color: var(--txt-strong);
+    border-color: color-mix(in srgb, var(--module-accent) 38%, var(--glass-line));
+    background: color-mix(in srgb, var(--module-accent) 12%, transparent);
+  }
+  .seven-chip.ok .chk {
+    background: var(--module-accent);
+    color: #07100b;
+  }
+  .seven-chip.off .chk {
+    background: color-mix(in srgb, var(--muted) 26%, transparent);
+    color: var(--txt);
+  }
   .hub-module-actions {
     display: flex;
     flex-wrap: wrap;
@@ -440,10 +487,21 @@
           </div>
           <div class="hub-module-icon brand"><img src="/static/brand_seven11.svg" alt="7-Eleven"></div>
         </div>
-        <div class="hub-stats">
-          <div class="hub-stat"><b>{{ seven.stores }}</b><span>магазинов</span></div>
-          <div class="hub-stat"><b class="{{ 'ok' if seven.profile_ready else 'muted' }}">{{ ic.i('check', 19) if seven.profile_ready else '—' }}</b><span>профиль</span></div>
-          <div class="hub-stat"><b class="{{ 'ok' if (seven.profile_ready and seven.stores) else 'muted' }}">{{ ic.i('check', 19) if (seven.profile_ready and seven.stores) else '—' }}</b><span>готов</span></div>
+        <div class="hub-stats seven-stats">
+          <div class="hub-stat big">
+            <b>{{ seven.stores }}</b>
+            <span>{{ 'магазин' if seven.stores == 1 else ('магазина' if 2 <= seven.stores <= 4 else 'магазинов') }} выбрано</span>
+          </div>
+          <div class="seven-checks">
+            <span class="seven-chip {{ 'ok' if seven.profile_ready else 'off' }}">
+              <i class="chk">{{ ic.i('check', 13) if seven.profile_ready else ic.i('x', 13) }}</i>
+              Профиль {{ 'готов' if seven.profile_ready else 'не заполнен' }}
+            </span>
+            <span class="seven-chip {{ 'ok' if (seven.profile_ready and seven.stores) else 'off' }}">
+              <i class="chk">{{ ic.i('check', 13) if (seven.profile_ready and seven.stores) else ic.i('x', 13) }}</i>
+              {{ 'Готов к запуску' if (seven.profile_ready and seven.stores) else 'Выбери магазины' }}
+            </span>
+          </div>
         </div>
         <div class="hub-module-actions">
           <a class="hub-link primary" href="/__app/7eleven">{{ ic.i('store', 15) }} Открыть 7-Eleven</a>
