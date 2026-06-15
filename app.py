@@ -810,6 +810,7 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
         "saved": saved, "geoerror": geoerror, "missing_fields": missing_fields,
         "city_options": city_options, "country_options": country_options,
         "autopilot": autopilot.get_rule(), "brands": labels.BRANDS,
+        "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
         "autopilot_count": autopilot.match_count(),
         "autopilot_pending": autopilot.pending_count(),
     })
@@ -845,6 +846,9 @@ def autopilot_save(
     enabled: str = Form(""),
     max_km: str = Form(""),
     min_hours: str = Form(""),
+    category: str = Form(""),
+    employment_type: str = Form(""),
+    age: str = Form(""),
     keywords: str = Form(""),
     brand: str = Form(""),
 ):
@@ -859,6 +863,9 @@ def autopilot_save(
         "enabled": bool(enabled),
         "max_km": _num(max_km),
         "min_hours": _num(min_hours),
+        "category": category.strip(),
+        "employment_type": employment_type.strip(),
+        "age": age.strip(),
         "keywords": keywords.strip(),
         "brand": brand.strip(),
     })

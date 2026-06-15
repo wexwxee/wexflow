@@ -21,15 +21,19 @@ from db import Job, get_session, select
 # Значения по умолчанию правила. 0/пусто = «без ограничения».
 DEFAULT_RULE = {
     "enabled": False,
-    "max_km": 0,        # радиус от дома, км (0 = без ограничения)
-    "min_hours": 0,     # минимум часов в неделю (0 = любые)
-    "keywords": "",     # ключевые слова через запятую/пробел (пусто = любые)
-    "brand": "",        # код бренда или пусто = все бренды
-    "seen_ids": [],     # id вакансий, о которых уже уведомляли
+    "max_km": 0,            # радиус от дома, км (0 = без ограничения)
+    "min_hours": 0,         # минимум часов в неделю (0 = любые)
+    "category": "",         # код категории (как на главной) или пусто = все
+    "employment_type": "",  # fullTime / partTime или пусто = любая
+    "age": "",              # "" любой / "under18" до 18 / "adult" от 18
+    "keywords": "",         # доп. слова через запятую (пусто = не учитывать)
+    "brand": "",            # код бренда или пусто = все бренды
+    "seen_ids": [],         # id вакансий, о которых уже уведомляли
 }
 
-# Поля, которые пользователь задаёт в интерфейсе (seen_ids — служебное).
-_USER_FIELDS = ("enabled", "max_km", "min_hours", "keywords", "brand")
+# Поля, которые пользователь задаёт в интерфейсе (seen_ids/prepared_ids — служебные).
+_USER_FIELDS = ("enabled", "max_km", "min_hours", "category",
+                "employment_type", "age", "keywords", "brand")
 
 
 def get_rule() -> dict:
@@ -79,6 +83,18 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
         return False
     brand = labels.resolve(labels.BRANDS, rule.get("brand") or "")
     if brand and job.brand != brand:
+        return False
+    # категория, занятость, возраст — те же поля, что и реальные фильтры на главной
+    cat = rule.get("category") or ""
+    if cat and cat not in (job.categories or "").split(","):
+        return False
+    emp = rule.get("employment_type") or ""
+    if emp and job.employment_type != emp:
+        return False
+    age = rule.get("age") or ""
+    if age == "under18" and job.job_level != "employeeUnder18":
+        return False
+    if age == "adult" and job.job_level == "employeeUnder18":
         return False
     try:
         min_hours = float(rule.get("min_hours") or 0)
