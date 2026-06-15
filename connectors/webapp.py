@@ -8,12 +8,15 @@
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import sys
 import threading
 import webbrowser
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 import connectors  # регистрирует коннекторы
 from connectors.apply_dispatch import detect, platform_name
@@ -22,6 +25,13 @@ PORT = 8078
 HUB_BACK = "http://127.0.0.1:8080/hub"
 CARD_CAP = 200
 _DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+
+# --- простой парольный замок на бета-модуль ---
+# Пароль для входа в бету. В куки кладём не сам пароль, а его хэш-токен.
+BETA_PASSWORD = "123456"
+_COOKIE_NAME = "wexbeta"
+_AUTH_TOKEN = hashlib.sha256(("wexflow-beta-gate::" + BETA_PASSWORD).encode("utf-8")).hexdigest()
+_COOKIE_MAX_AGE = 43200  # 12 часов — потом попросит пароль снова
 
 _JOBS = []
 _LOCK = threading.Lock()
@@ -61,6 +71,39 @@ def _loading_html() -> str:
             "<h1 style='color:#1ed760'>WexFlow — подача <span style='font-size:14px;"
             "border:1px solid #6b66ff;color:#6b66ff;border-radius:999px;padding:2px 8px'>БЕТА</span></h1>"
             "<p style='color:#8b908c'>Загружаю датские вакансии с платформ… (несколько секунд)</p></div></body>")
+
+
+def _login_html(error: bool = False) -> str:
+    msg = ("<div style='color:#ff6b6b;font-size:12.5px;margin-top:10px'>"
+           "Неверный пароль. Попробуй ещё раз.</div>" if error else "")
+    return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WexFlow — подача (БЕТА)</title><style>
+  *{{box-sizing:border-box}} body{{margin:0;font-family:'Segoe UI',system-ui,sans-serif;
+    color:#e8eae8;min-height:100vh;display:grid;place-items:center;
+    background:radial-gradient(1200px 600px at 80% -10%,#16221b,#0d0e0e 55%)}}
+  .box{{width:min(360px,90vw);background:#1c1d1d;border:1px solid #2b2c2c;border-radius:16px;
+    padding:30px 26px;text-align:center}}
+  h1{{font-size:20px;margin:0 0 8px}}
+  .tag{{font-size:12px;border:1px solid #6b66ff;color:#6b66ff;border-radius:999px;
+    padding:2px 9px;vertical-align:middle}}
+  p{{color:#8b908c;font-size:13px;margin:0 0 18px;line-height:1.4}}
+  input{{width:100%;background:#141515;border:1px solid #2b2c2c;border-radius:10px;
+    padding:12px 14px;color:#e8eae8;font:16px 'Segoe UI';text-align:center;letter-spacing:3px}}
+  input:focus{{outline:none;border-color:#6b66ff}}
+  button{{width:100%;margin-top:14px;border:0;border-radius:10px;padding:12px;
+    font:600 15px 'Segoe UI';background:#6b66ff;color:#fff;cursor:pointer}}
+  button:hover{{filter:brightness(1.08)}}
+</style></head><body>
+  <form class="box" method="post" action="/login">
+    <h1>WexFlow — подача <span class="tag">БЕТА</span></h1>
+    <p>Модуль защищён паролем. Введи пароль, чтобы открыть.</p>
+    <input type="password" name="password" placeholder="Пароль" autofocus
+           autocomplete="current-password" inputmode="numeric">
+    {msg}
+    <button type="submit">Открыть →</button>
+  </form>
+</body></html>"""
 
 
 def page_html() -> str:
@@ -165,15 +208,49 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _authed(self) -> bool:
+        """Есть ли в куках действительный токен входа в бету."""
+        raw = self.headers.get("Cookie", "")
+        if not raw:
+            return False
+        try:
+            jar = SimpleCookie()
+            jar.load(raw)
+        except Exception:  # noqa: BLE001
+            return False
+        m = jar.get(_COOKIE_NAME)
+        return bool(m and m.value == _AUTH_TOKEN)
+
     def do_GET(self):
         if self.path.split("?", 1)[0] in ("/", "/index.html"):
-            self._send(200, page_html())
+            self._send(200, page_html() if self._authed() else _login_html())
         else:
             self._send(404, "not found")
 
     def do_POST(self):
-        if self.path not in ("/apply", "/apply-url"):
+        path = self.path.split("?", 1)[0]
+        if path == "/login":
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(n).decode("utf-8", "replace") if n else ""
+            pw = (parse_qs(raw).get("password", [""])[0]).strip()
+            if pw == BETA_PASSWORD:
+                self.send_response(303)
+                self.send_header("Location", "/")
+                self.send_header("Set-Cookie",
+                                 f"{_COOKIE_NAME}={_AUTH_TOKEN}; Path=/; "
+                                 f"Max-Age={_COOKIE_MAX_AGE}; HttpOnly; SameSite=Lax")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            else:
+                self._send(200, _login_html(error=True))
+            return
+        if path not in ("/apply", "/apply-url"):
             self._send(404, "not found")
+            return
+        if not self._authed():
+            self._send(200, json.dumps(
+                {"ok": False, "error": "нужно войти — обнови страницу и введи пароль"}
+            ), "application/json")
             return
         try:
             n = int(self.headers.get("Content-Length", 0))

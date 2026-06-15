@@ -717,6 +717,14 @@ def apply_log():
     return JSONResponse({"ok": True, "lines": lines[-120:]})
 
 
+@app.get("/api/sync-status")
+def api_sync_status():
+    """Идёт ли сейчас фоновое обновление вакансий. Главная опрашивает это
+    легко и перезагружается ОДИН раз, когда обновление закончилось — вместо
+    того чтобы перезагружать страницу по таймеру снова и снова."""
+    return JSONResponse({"running": _sync_state["running"]})
+
+
 @app.get("/api/transit/{job_id}")
 def api_transit(job_id: str):
     home = settings_store.get_home()

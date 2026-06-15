@@ -643,8 +643,22 @@
 {% block script %}
 {% if sync_running %}
 <script>
-  // идёт фоновое обновление вакансий — перезагрузим страницу, чтобы показать результат
-  setTimeout(() => location.reload(), 8000);
+  // Идёт фоновое обновление вакансий. Раньше страница перезагружалась по
+  // таймеру каждые 8 секунд — мигало без конца, пока шёл sync. Теперь тихо
+  // спрашиваем сервер раз в 6 секунд и перезагружаемся РОВНО ОДИН раз —
+  // когда обновление закончилось и есть что показать.
+  (function () {
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries++;
+      try {
+        const r = await fetch("/api/sync-status", { cache: "no-store" });
+        const d = await r.json();
+        if (!d.running) { clearInterval(poll); location.reload(); }
+      } catch (e) { /* сервер занят — попробуем в следующий раз */ }
+      if (tries > 60) clearInterval(poll); // страховка ~6 минут, не висим вечно
+    }, 6000);
+  })();
 </script>
 {% endif %}
 <script>

@@ -53,7 +53,12 @@
     <p>Вакансия не найдена.</p>
   {% else %}
     <h1>Подача заявки</h1>
-    {% if started %}<div class="ok">Открыл браузер подачи. Бот войдёт в аккаунт и заполнит форму — проверь и нажми Apply/Submit сам.</div>{% endif %}
+    {% if started %}
+    <div class="ok">Открыл браузер подачи. Бот войдёт в аккаунт и заполнит форму — проверь и нажми Apply/Submit сам.</div>
+    <div class="actions" style="margin:10px 0 4px;">
+      <a href="/"><button class="primary" type="button">← Назад к вакансиям</button></a>
+    </div>
+    {% endif %}
     {% if saved == 'files' %}
       <div class="ok">Файлы для подачи сохранены. Бот будет использовать обновлённые CV и мотивационное письмо.</div>
     {% elif saved %}
