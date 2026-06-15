@@ -56,6 +56,7 @@ if not SEVEN_PY.exists():
 SALLING_PORT = 8000
 HUB_PORT = 8080
 SEVEN_PORT = 7111
+BETA_PORT = 8078  # модуль «WexFlow — подача» (БЕТА), коннекторы ATS
 HUB_URL = f"http://127.0.0.1:{HUB_PORT}/__app/salling?next=/hub"
 CREATE_NO_WINDOW = 0x08000000  # фоновые серверы — без чёрных консолей
 
@@ -146,6 +147,16 @@ def run_worker(mode: str, rest: list) -> None:
         _add_seven_path()
         import web_app  # из seven11/ (изолированный sys.path)
         web_app.serve(int(rest[0]) if rest else SEVEN_PORT, open_browser=False)
+
+    elif mode == "--worker-beta-server":
+        # модуль подачи (БЕТА) — коннекторы ATS, отдельный сервер
+        from connectors.webapp import serve as beta_serve
+        beta_serve(int(rest[0]) if rest else BETA_PORT, open_browser=False)
+
+    elif mode == "--worker-connector-apply":
+        # ассистированная подача по ссылке (открывает видимый браузер, без отправки)
+        from connectors.apply_dispatch import run as connector_apply
+        connector_apply(rest[0], keep_open=True)
 
     elif mode == "--worker-salling-apply":
         import apply as salling_apply
@@ -765,7 +776,7 @@ def _free_our_ports():
         )
     except Exception:  # noqa: BLE001
         pass
-    our_ports = {SALLING_PORT, HUB_PORT, SEVEN_PORT}
+    our_ports = {SALLING_PORT, HUB_PORT, SEVEN_PORT, BETA_PORT}
     try:
         out = subprocess.check_output(
             ["netstat", "-ano", "-p", "tcp"],
@@ -808,6 +819,16 @@ def start_servers():
                                "--port", str(SALLING_PORT)], APP_ROOT, "Salling")
         _ensure(HUB_PORT, [PY, "-m", "uvicorn", "hub:app", "--host", "127.0.0.1",
                            "--port", str(HUB_PORT)], APP_ROOT, "Hub")
+
+    # БЕТА-модуль подачи (коннекторы ATS). Стартует ПОСЛЕ основных и полностью
+    # изолирован: любой его сбой НЕ влияет на Salling/7-Eleven/Hub.
+    try:
+        if is_frozen():
+            _ensure(BETA_PORT, _self_cmd("--worker-beta-server", str(BETA_PORT)), None, "Beta")
+        else:
+            _ensure(BETA_PORT, [PY, "-m", "connectors.webapp", str(BETA_PORT)], APP_ROOT, "Beta")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WexFlow] бета-модуль не запустился (не критично): {exc}")
 
 
 def wait_for_hub(timeout=60) -> bool:
@@ -926,7 +947,19 @@ def main():
     _harden_stdio()
     args = sys.argv[1:]
     if args and args[0].startswith("--worker-"):
-        run_worker(args[0], args[1:])
+        try:
+            run_worker(args[0], args[1:])
+        except SystemExit:
+            raise  # штатный выход (например, playwright CLI) — пропускаем
+        except Exception as exc:  # noqa: BLE001
+            # Воркеры запускаются скрыто, их вывод идёт в лог-файл и в живой
+            # лог на странице. Пишем понятную ошибку туда, а не показываем
+            # страшный системный диалог «Unhandled exception in script».
+            import traceback
+            print(f"\n[WexFlow] Не получилось выполнить задачу: {exc}\n")
+            traceback.print_exc()
+            sys.stdout.flush()
+            sys.exit(1)
         return
     run_window()
 

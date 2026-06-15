@@ -10,9 +10,20 @@ JobItem специально близок по полям к модели Sallin
 """
 from __future__ import annotations
 
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import Callable, Optional
+
+
+def catalog_path(filename: str) -> Path:
+    """Путь к JSON-каталогу коннектора. В сборке (PyInstaller) файлы лежат в
+    _MEIPASS/connectors/, в dev — рядом с модулем."""
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        return base / "connectors" / filename
+    return Path(__file__).resolve().parent / filename
 
 
 @dataclass

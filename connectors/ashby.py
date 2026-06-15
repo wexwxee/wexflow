@@ -11,9 +11,9 @@ from pathlib import Path
 
 import httpx
 
-from .base import Connector, JobItem, register, is_denmark, search_companies
+from .base import Connector, JobItem, register, is_denmark, search_companies, catalog_path
 
-CATALOG_PATH = Path(__file__).with_name("ashby_companies.json")
+CATALOG_PATH = catalog_path("ashby_companies.json")
 _H = {"User-Agent": "WexFlow/1.0 (+job-apply-hub)"}
 _TIMEOUT = 25.0
 

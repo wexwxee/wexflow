@@ -17,10 +17,10 @@ from pathlib import Path
 
 import httpx
 
-from .base import Connector, JobItem, register, search_companies
+from .base import Connector, JobItem, register, search_companies, catalog_path
 
-# Каталог-посев лежит рядом с кодом (read-only ресурс, попадёт в сборку).
-CATALOG_PATH = Path(__file__).with_name("teamtailor_companies.json")
+# Каталог-посев (read-only ресурс, попадёт в сборку через _MEIPASS).
+CATALOG_PATH = catalog_path("teamtailor_companies.json")
 
 _HEADERS = {"User-Agent": "WexFlow/1.0 (+job-apply-hub)"}
 _TIMEOUT = 20.0
