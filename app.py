@@ -43,6 +43,43 @@ PROFILE_REQUIRED = [
     ("country", "Страна"),
 ]
 
+SAFE_JOB_STATUSES = {"new", "seen", "applied", "hidden", "interview", "offer", "rejected", "closed"}
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _is_loopback_host(host: str) -> bool:
+    host = (host or "").strip().lower()
+    if host.startswith("[") and "]" in host:
+        host = host[1:host.index("]")]
+    else:
+        host = host.split(":", 1)[0]
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _is_loopback_url(value: str) -> bool:
+    try:
+        return _is_loopback_host(urlsplit(value).hostname or "")
+    except Exception:
+        return False
+
+
+def _allowed_local_write(request: Request) -> bool:
+    """Block cross-site form/fetch writes against the local desktop server."""
+    if request.method.upper() not in UNSAFE_METHODS:
+        return True
+    if not _is_loopback_host(request.headers.get("host", "")):
+        return False
+    origin = request.headers.get("origin", "")
+    if origin:
+        return _is_loopback_url(origin)
+    referer = request.headers.get("referer", "")
+    if referer:
+        return _is_loopback_url(referer)
+    fetch_site = (request.headers.get("sec-fetch-site") or "").lower()
+    if fetch_site in {"cross-site", "same-site"}:
+        return False
+    return True
+
 
 def _url_with_system_response(url: str, notice: str = "", error: str = "") -> str:
     """Append one short UI response to a local redirect target."""
@@ -116,6 +153,8 @@ app = FastAPI(title="Salling Jobs", lifespan=_lifespan)
 
 @app.middleware("http")
 async def _no_cache(request, call_next):
+    if not _allowed_local_write(request):
+        return JSONResponse({"ok": False, "error": "blocked cross-site request"}, status_code=403)
     # WebView2 кэширует страницы/скрипты агрессивно — для desktop-приложения это
     # вредно (после обновления показывает старый интерфейс). Запрещаем кэш.
     resp = await call_next(request)
@@ -633,6 +672,8 @@ def index(
 
 @app.post("/job/{job_id}/status")
 def set_status(job_id: str, request: Request, status: str = Form(...)):
+    if status not in SAFE_JOB_STATUSES:
+        return _redirect_back(request, "/", error="Неизвестный статус вакансии.")
     status_labels = {
         "applied": "Статус обновлён: вакансия отмечена как поданная.",
         "hidden": "Вакансия скрыта. Её можно вернуть из статуса «Скрытые».",
@@ -779,8 +820,10 @@ def settings_save(
     missing = _profile_missing(profile)
     if missing:
         return RedirectResponse("/settings?missing=" + quote_plus(",".join(missing)), status_code=303)
-    profile_store.save_profile(
-        _update_profile_files(profile, cv_path, cover_letter_path, cv_file, cover_letter_file))
+    profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
+    if file_error:
+        return RedirectResponse(_url_with_system_response("/settings", error=file_error), status_code=303)
+    profile_store.save_profile(profile)
     return RedirectResponse("/settings?saved=1", status_code=303)
 
 
@@ -917,6 +960,13 @@ def _update_profile_files(profile: dict, cv_path: str, cover_letter_path: str, c
     return profile
 
 
+def _profile_files_result(profile: dict, cv_path: str, cover_letter_path: str, cv_file, cover_letter_file) -> tuple[dict, str]:
+    try:
+        return _update_profile_files(profile, cv_path, cover_letter_path, cv_file, cover_letter_file), ""
+    except ValueError as exc:
+        return profile, str(exc)
+
+
 @app.post("/job/{job_id}/apply/save")
 def save_apply_files(
     job_id: str,
@@ -926,7 +976,13 @@ def save_apply_files(
     cover_letter_file: UploadFile | None = File(None),
 ):
     profile = profile_store.load_profile()
-    profile_store.save_profile(_update_profile_files(profile, cv_path, cover_letter_path, cv_file, cover_letter_file))
+    profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
+    if file_error:
+        return RedirectResponse(
+            _url_with_system_response(f"/job/{job_id}/apply", error=file_error),
+            status_code=303,
+        )
+    profile_store.save_profile(profile)
     return RedirectResponse(f"/job/{job_id}/apply?saved=files", status_code=303)
 
 
@@ -956,7 +1012,13 @@ def start_apply(
     if not job:
         return RedirectResponse("/", status_code=303)
     profile = profile_store.load_profile()
-    profile_store.save_profile(_update_profile_files(profile, cv_path, cover_letter_path, cv_file, cover_letter_file))
+    profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
+    if file_error:
+        return RedirectResponse(
+            _url_with_system_response(f"/job/{job_id}/apply", error=file_error),
+            status_code=303,
+        )
+    profile_store.save_profile(profile)
     # вывод apply.py пишем в лог, чтобы сбои не были «молчаливыми»
     log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
     env = dict(os.environ)

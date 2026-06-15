@@ -19,6 +19,7 @@ import os
 import sys
 import time
 import json
+import re
 import socket
 import subprocess
 import pathlib
@@ -119,6 +120,20 @@ def _hidden_updater_vbs(bat: pathlib.Path) -> str:
         'Set sh = CreateObject("WScript.Shell")\r\n'
         f'sh.Run Chr(34) & "{path}" & Chr(34), 0, False\r\n'
     )
+
+
+def _safe_extract_zip(zip_path: pathlib.Path, dest: pathlib.Path) -> None:
+    """Extract a release zip without allowing absolute or parent paths."""
+    root = dest.resolve()
+    with zipfile.ZipFile(zip_path) as z:
+        for info in z.infolist():
+            name = (info.filename or "").replace("\\", "/")
+            if not name or name.startswith("/") or "\x00" in name or re.match(r"^[a-zA-Z]:", name):
+                raise ValueError(f"bad zip entry: {info.filename!r}")
+            target = (dest / name).resolve()
+            if target != root and root not in target.parents:
+                raise ValueError(f"unsafe zip entry: {info.filename!r}")
+        z.extractall(dest)
 
 
 # ── режим ВОРКЕРА (frozen): exe выполняет одну задачу и выходит ─────────
@@ -468,8 +483,7 @@ if ($started -and -not $coord.IsUnknown) {
 
             self._set_update_status("Распаковываю…")
             extracted = work / "new"
-            with zipfile.ZipFile(zpath) as z:
-                z.extractall(extracted)
+            _safe_extract_zip(zpath, extracted)
 
             # внутри архива папка WexFlow/ (или exe лежит глубже — найдём)
             src = extracted / "WexFlow"
@@ -765,7 +779,6 @@ def _free_our_ports():
     """
     if not is_frozen():
         return
-    import re
     self_pid = os.getpid()
     # снять старые окна/воркеры WexFlow прошлого запуска (они не на портах)
     try:
@@ -795,13 +808,33 @@ def _free_our_ports():
             pids.add(int(m.group(1)))
     killed = False
     for pid in pids:
-        if pid and pid != self_pid:
+        if pid and pid != self_pid and _pid_looks_like_wexflow(pid):
             subprocess.run(["taskkill", "/F", "/PID", str(pid)],
                            creationflags=CREATE_NO_WINDOW,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             killed = True
     if killed:
         time.sleep(1.2)  # дать портам освободиться
+
+
+def _pid_looks_like_wexflow(pid: int) -> bool:
+    """Only kill stale WexFlow workers, never an unrelated dev server on the same port."""
+    try:
+        ps = (
+            "$p=Get-CimInstance Win32_Process -Filter \"ProcessId="
+            + str(int(pid))
+            + "\"; if($p){$p.Name; $p.ExecutablePath; $p.CommandLine}"
+        )
+        out = subprocess.check_output(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+            creationflags=CREATE_NO_WINDOW,
+            text=True,
+            errors="ignore",
+            timeout=3,
+        ).lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return "wexflow.exe" in out
 
 
 def start_servers():

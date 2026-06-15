@@ -33,6 +33,7 @@ import threading
 import time
 import urllib.request
 import zipfile
+from pathlib import Path
 
 REPO = "wexwxee/wexflow"
 INSTALL_ROOT = r"C:\Users\Public"
@@ -118,6 +119,59 @@ def _rm(path):
         pass
 
 
+def safe_extract_zip(zip_path: str, dest: str) -> None:
+    """Extract a release zip without allowing absolute or parent paths."""
+    root = Path(dest).resolve()
+    with zipfile.ZipFile(zip_path) as z:
+        for info in z.infolist():
+            name = (info.filename or "").replace("\\", "/")
+            if not name or name.startswith("/") or "\x00" in name:
+                raise RuntimeError(f"опасный путь в архиве: {info.filename!r}")
+            if len(name) > 1 and name[1] == ":":
+                raise RuntimeError(f"опасный путь в архиве: {info.filename!r}")
+            target = (Path(dest) / name).resolve()
+            if target != root and root not in target.parents:
+                raise RuntimeError(f"опасный путь в архиве: {info.filename!r}")
+        z.extractall(dest)
+
+
+def install_from_zip(tmp_zip: str) -> None:
+    work = os.path.join(tempfile.gettempdir(), f"wexflow_install_{os.getpid()}")
+    new_root = os.path.join(work, "new")
+    backup = APP_DIR + ".old"
+    if os.path.exists(work):
+        shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(new_root, exist_ok=True)
+    try:
+        safe_extract_zip(tmp_zip, new_root)
+        new_app = os.path.join(new_root, "WexFlow")
+        if not os.path.exists(os.path.join(new_app, "WexFlow.exe")):
+            found = []
+            for root, _dirs, files in os.walk(new_root):
+                if "WexFlow.exe" in files:
+                    found.append(root)
+            if not found:
+                raise RuntimeError("WexFlow.exe не найден после распаковки")
+            new_app = found[0]
+
+        if os.path.exists(backup):
+            shutil.rmtree(backup, ignore_errors=True)
+        if os.path.exists(APP_DIR):
+            os.rename(APP_DIR, backup)
+        try:
+            shutil.move(new_app, APP_DIR)
+        except Exception:
+            if os.path.exists(backup) and not os.path.exists(APP_DIR):
+                os.rename(backup, APP_DIR)
+            raise
+        if not os.path.exists(EXE):
+            raise RuntimeError("WexFlow.exe не найден после установки")
+        if os.path.exists(backup):
+            shutil.rmtree(backup, ignore_errors=True)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def latest_zip():
     req = urllib.request.Request(
         f"https://api.github.com/repos/{REPO}/releases/latest",
@@ -150,14 +204,8 @@ def do_install(report):
     urllib.request.urlretrieve(url, tmp_zip, reporthook=hook)
 
     report(0.78, f"Устанавливаю {tag or ''}…")
-    # Полностью убираем прошлую установку — версии не накапливаются.
-    if os.path.exists(APP_DIR):
-        shutil.rmtree(APP_DIR, ignore_errors=True)
     os.makedirs(INSTALL_ROOT, exist_ok=True)
-    with zipfile.ZipFile(tmp_zip) as z:
-        z.extractall(INSTALL_ROOT)  # архив содержит верхнюю папку WexFlow
-    if not os.path.exists(EXE):
-        raise RuntimeError("WexFlow.exe не найден после распаковки")
+    install_from_zip(tmp_zip)
 
     report(0.90, "Завершаю установку…")
     ps(f"Get-ChildItem -LiteralPath '{APP_DIR}' -Recurse -File | "

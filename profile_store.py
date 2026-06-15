@@ -1,10 +1,13 @@
 """Хранение данных для ассистированной подачи."""
 import json
+import uuid
 from pathlib import Path
 
 import config
 
 UPLOAD_DIR = config.DATA_DIR / "uploads"
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".doc", ".docx"}
 
 CITY_FIXES = {
     "k??benhavn": "København",
@@ -60,9 +63,24 @@ def save_upload(upload_file, prefix: str) -> str:
     """Сохраняет UploadFile в uploads/ и возвращает абсолютный путь."""
     UPLOAD_DIR.mkdir(exist_ok=True)
     safe_name = Path(upload_file.filename or "file.pdf").name
-    target = UPLOAD_DIR / f"{prefix}_{safe_name}"
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise ValueError("Можно загрузить только PDF, DOC или DOCX.")
+    target = UPLOAD_DIR / f"{prefix}_{uuid.uuid4().hex[:10]}_{safe_name}"
+    written = 0
     with target.open("wb") as f:
-        f.write(upload_file.file.read())
+        while True:
+            chunk = upload_file.file.read(1024 * 1024)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > MAX_UPLOAD_BYTES:
+                try:
+                    target.unlink()
+                except OSError:
+                    pass
+                raise ValueError("Файл слишком большой. Максимум 25 МБ.")
+            f.write(chunk)
     return str(target)
 
 

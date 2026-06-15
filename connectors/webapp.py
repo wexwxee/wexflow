@@ -16,7 +16,7 @@ import threading
 import webbrowser
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 import connectors  # регистрирует коннекторы
 from connectors.apply_dispatch import detect, platform_name
@@ -61,6 +61,30 @@ def launch_filler(job_url: str):
         kw["creationflags"] = _DETACHED
     import subprocess
     subprocess.Popen(cmd, **kw)
+
+
+def _is_loopback_host(host: str) -> bool:
+    host = (host or "").strip().lower()
+    if host.startswith("[") and "]" in host:
+        host = host[1:host.index("]")]
+    else:
+        host = host.split(":", 1)[0]
+    return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _is_loopback_url(value: str) -> bool:
+    try:
+        return _is_loopback_host(urlsplit(value).hostname or "")
+    except Exception:
+        return False
+
+
+def _safe_job_url(url: str) -> str:
+    url = (url or "").strip()
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("нужна обычная ссылка http/https на вакансию")
+    return url
 
 
 def _loading_html() -> str:
@@ -221,6 +245,18 @@ class Handler(BaseHTTPRequestHandler):
         m = jar.get(_COOKIE_NAME)
         return bool(m and m.value == _AUTH_TOKEN)
 
+    def _local_write_allowed(self) -> bool:
+        if not _is_loopback_host(self.headers.get("Host", "")):
+            return False
+        origin = self.headers.get("Origin", "")
+        if origin:
+            return _is_loopback_url(origin)
+        referer = self.headers.get("Referer", "")
+        if referer:
+            return _is_loopback_url(referer)
+        fetch_site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        return fetch_site not in {"cross-site", "same-site"}
+
     def do_GET(self):
         if self.path.split("?", 1)[0] in ("/", "/index.html"):
             self._send(200, page_html() if self._authed() else _login_html())
@@ -229,6 +265,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?", 1)[0]
+        if not self._local_write_allowed():
+            self._send(403, json.dumps({"ok": False, "error": "blocked cross-site request"}), "application/json")
+            return
         if path == "/login":
             n = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(n).decode("utf-8", "replace") if n else ""
@@ -257,9 +296,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
             if self.path == "/apply":
                 with _LOCK:
-                    url = _JOBS[int(body["i"])].url
+                    url = _safe_job_url(_JOBS[int(body["i"])].url)
             else:
-                url = (body.get("url") or "").strip()
+                url = _safe_job_url(body.get("url") or "")
                 if not url:
                     raise ValueError("пустая ссылка")
             key = detect(url)
