@@ -10,8 +10,9 @@ JobItem специально близок по полям к модели Sallin
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
-from typing import Optional
+from typing import Callable, Optional
 
 
 @dataclass
@@ -67,6 +68,28 @@ def all_connectors() -> list[Connector]:
 
 def get(key: str) -> Optional[Connector]:
     return _REGISTRY.get(key)
+
+
+def search_companies(companies: list[dict], fetch_one: Callable[[dict], list],
+                     workers: int = 12) -> list:
+    """Опросить компании ПАРАЛЛЕЛЬНО (фирм бывают десятки → быстро). Пропускает
+    enabled=false; упавшая компания не валит остальных. Используется коннекторами."""
+    todo = [c for c in companies if c.get("enabled", True)]
+
+    def _safe(c: dict) -> list:
+        try:
+            return fetch_one(c)
+        except Exception as e:
+            print(f"  пропуск {c.get('slug') or c.get('org') or c.get('token')}: {e}")
+            return []
+
+    out: list = []
+    if not todo:
+        return out
+    with ThreadPoolExecutor(max_workers=min(workers, len(todo))) as ex:
+        for items in ex.map(_safe, todo):
+            out.extend(items)
+    return out
 
 
 # Города/страна для фильтра «вакансия в Дании» (площадки бывают международные).

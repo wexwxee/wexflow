@@ -17,7 +17,7 @@ from pathlib import Path
 
 import httpx
 
-from .base import Connector, JobItem, register
+from .base import Connector, JobItem, register, search_companies
 
 # Каталог-посев лежит рядом с кодом (read-only ресурс, попадёт в сборку).
 CATALOG_PATH = Path(__file__).with_name("teamtailor_companies.json")
@@ -89,15 +89,7 @@ class TeamtailorConnector(Connector):
         return items
 
     def search(self) -> list[JobItem]:
-        jobs: list[JobItem] = []
-        for c in self.companies():
-            if not c.get("enabled", True):
-                continue
-            try:
-                jobs.extend(self.fetch_company(c))
-            except Exception as e:  # хрупкий сайт не должен ронять весь список
-                print(f"[teamtailor] пропуск {c.get('slug') or c.get('domain')}: {e}")
-        return jobs
+        return search_companies(self.companies(), self.fetch_company)
 
     def verify(self) -> list[dict]:
         """Проверить каталог: какие компании живы и сколько у них вакансий.

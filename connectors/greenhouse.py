@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 
-from .base import Connector, JobItem, register, is_denmark
+from .base import Connector, JobItem, register, is_denmark, search_companies
 
 CATALOG_PATH = Path(__file__).with_name("greenhouse_companies.json")
 _H = {"User-Agent": "WexFlow/1.0 (+job-apply-hub)"}
@@ -54,15 +54,7 @@ class GreenhouseConnector(Connector):
         return out
 
     def search(self) -> list[JobItem]:
-        jobs: list[JobItem] = []
-        for c in self.companies():
-            if not c.get("enabled", True):
-                continue
-            try:
-                jobs.extend(self.fetch_company(c))
-            except Exception as e:
-                print(f"[greenhouse] пропуск {c.get('token')}: {e}")
-        return jobs
+        return search_companies(self.companies(), self.fetch_company)
 
 
 register(GreenhouseConnector())
