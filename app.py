@@ -652,6 +652,8 @@ def index(
               "status": status, "sort": sort, "radius": radius, "group": group,
               "show_applied": show_applied}),
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
+        "autopilot": autopilot.get_rule(),
+        "autopilot_count": autopilot.match_count(),
         "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
         "sync_running": _sync_state["running"],
         "sync_error": _sync_state["last_error"],
@@ -818,6 +820,10 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
         "autopilot_pending": autopilot.pending_count(),
         "autopilot_submitted_today": autopilot.submitted_today(),
         "autopilot_submit_log": autopilot.submit_log(),
+        "autopilot_eligible": autopilot.eligible_count(),
+        "autopilot_scope_pool": autopilot.scope_all_pool(),
+        "autopilot_scope_guard": autopilot.SCOPE_ALL_GUARD,
+        "autopilot_max_per_scan": autopilot.MAX_PER_SCAN,
     })
 
 
@@ -851,6 +857,7 @@ def autopilot_save(
     enabled: str = Form(""),
     max_km: str = Form(""),
     min_hours: str = Form(""),
+    max_age_days: str = Form(""),
     category: str = Form(""),
     employment_type: str = Form(""),
     age: str = Form(""),
@@ -868,6 +875,7 @@ def autopilot_save(
         "enabled": bool(enabled),
         "max_km": _num(max_km),
         "min_hours": _num(min_hours),
+        "max_age_days": _num(max_age_days),
         "category": category.strip(),
         "employment_type": employment_type.strip(),
         "age": age.strip(),
@@ -904,24 +912,45 @@ def autopilot_autosubmit(
     request: Request,
     auto_submit: str = Form(""),
     daily_limit: str = Form(""),
+    submit_scope: str = Form("new"),
 ):
     """Включение/настройка АВТООТПРАВКИ (фаза 3, под замком). По умолчанию ВЫКЛ.
-    Сама отправка идёт в фоне (auto_submit_tick), только новые вакансии и в
-    пределах дневного лимита."""
+    Сама отправка идёт в фоне (auto_submit_tick), в пределах дневного лимита и
+    жёсткого потолка за скан. Охват: только новые (после включения) или все
+    подходящие — «все» разрешаем только если их немного (предохранитель)."""
     try:
         limit = max(1, min(50, int(float(daily_limit)))) if daily_limit.strip() else 3
     except ValueError:
         limit = 3
+    scope = "all" if submit_scope == "all" else "new"
     on = bool(auto_submit)
     was = bool(autopilot.get_rule().get("auto_submit"))
-    autopilot.save_rule({"auto_submit": on, "daily_limit": limit})
-    # при ВКЛЮЧЕНИИ фиксируем текущие совпадения как «не трогать» —
-    # автоотправка пойдёт только по вакансиям, появившимся ПОСЛЕ включения
-    if on and not was:
+
+    # ПРЕДОХРАНИТЕЛЬ: «все подходящие» + включение нельзя, если под правило
+    # сейчас попадает слишком много — иначе бот начнёт постепенно подавать на
+    # сотни вакансий. Заставляем сузить фильтры или взять «только новые».
+    if on and scope == "all":
+        pool = autopilot.scope_all_pool()
+        if pool > autopilot.SCOPE_ALL_GUARD:
+            autopilot.save_rule({"submit_scope": scope, "daily_limit": limit})
+            return _redirect_back(
+                request, "/settings",
+                error=f"Не включил: под правило подходит {pool} вакансий — это много "
+                      f"для охвата «все подходящие» (предел {autopilot.SCOPE_ALL_GUARD}). "
+                      "Сузь фильтры (категория/бренд/радиус/свежесть) или выбери «только новые».",
+            )
+
+    autopilot.save_rule({"auto_submit": on, "daily_limit": limit, "submit_scope": scope})
+    # при ВКЛЮЧЕНИИ с охватом «только новые» фиксируем текущие совпадения как
+    # «не трогать» — отправка пойдёт лишь по вакансиям, появившимся ПОСЛЕ включения
+    if on and not was and scope == "new":
         autopilot.set_autosubmit_baseline()
-    msg = (f"Автоотправка ВКЛЮЧЕНА (до {limit}/день, только новые вакансии). "
-           "Останови в любой момент кнопкой СТОП." if on
-           else "Автоотправка выключена.")
+    if on:
+        scope_txt = "все подходящие" if scope == "all" else "только новые после включения"
+        msg = (f"Автоотправка ВКЛЮЧЕНА (до {limit}/день, не больше {autopilot.MAX_PER_SCAN} за раз, "
+               f"охват: {scope_txt}). Останови в любой момент кнопкой СТОП.")
+    else:
+        msg = "Автоотправка выключена."
     return _redirect_back(request, "/settings", notice=msg)
 
 
@@ -930,6 +959,22 @@ def autopilot_stop(request: Request):
     """Аварийная остановка автоотправки — мгновенно выключает."""
     autopilot.save_rule({"auto_submit": False})
     return _redirect_back(request, "/settings", notice="Автоотправка остановлена.")
+
+
+@app.post("/autopilot/toggle")
+def autopilot_toggle(request: Request):
+    """Быстрый тумблер автопилота с главной: включает/выключает ТОЛЬКО поиск
+    (enabled). Опасную автоотправку отсюда не трогаем — она остаётся под замком
+    в настройках. При включении считаем текущие совпадения уже виденными."""
+    r = autopilot.get_rule()
+    now_on = not bool(r.get("enabled"))
+    autopilot.save_rule({"enabled": now_on})
+    if now_on:
+        autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+        msg = f"Автопилот включён — слежу за новыми вакансиями (подходит сейчас: {autopilot.match_count()})."
+    else:
+        msg = "Автопилот выключен."
+    return _redirect_back(request, "/", notice=msg)
 
 
 @app.post("/settings/profile/autosave")

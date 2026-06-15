@@ -23,6 +23,7 @@ DEFAULT_RULE = {
     "enabled": False,
     "max_km": 0,            # радиус от дома, км (0 = без ограничения)
     "min_hours": 0,         # минимум часов в неделю (0 = любые)
+    "max_age_days": 0,      # брать только вакансии не старше N дней (0 = любой возраст)
     "category": "",         # код категории (как на главной) или пусто = все
     "employment_type": "",  # fullTime / partTime или пусто = любая
     "age": "",              # "" любой / "under18" до 18 / "adult" от 18
@@ -33,7 +34,8 @@ DEFAULT_RULE = {
     # --- фаза 3: автоотправка (по умолчанию ВЫКЛ, под замком) ---
     "auto_submit": False,       # отправлять автоматически?
     "daily_limit": 3,           # максимум автоотправок в день
-    "autosubmit_baseline": [],  # снимок совпадений на момент включения — их НЕ трогаем
+    "submit_scope": "new",      # "new" = только появившиеся ПОСЛЕ включения; "all" = все подходящие
+    "autosubmit_baseline": [],  # снимок совпадений на момент включения — их НЕ трогаем (для scope=new)
     "submitted_ids": [],        # id, которые автоотправка уже подала
     "submit_day": "",           # день, за который считаем счётчик
     "submit_count_today": 0,    # сколько отправлено сегодня
@@ -41,8 +43,15 @@ DEFAULT_RULE = {
 }
 
 # Поля, которые пользователь задаёт в интерфейсе (seen_ids/prepared_ids — служебные).
-_USER_FIELDS = ("enabled", "max_km", "min_hours", "category",
+_USER_FIELDS = ("enabled", "max_km", "min_hours", "max_age_days", "category",
                 "employment_type", "age", "keywords", "brand")
+
+# ── Предохранители автоотправки (жёсткие, не настраиваются из интерфейса) ──
+MAX_PER_SCAN = 2          # максимум автоотправок за ОДИН фоновый скан — чтобы
+                          # даже при большом лимите ничего не «улетало пачкой»
+SCOPE_ALL_GUARD = 25      # нельзя включить охват «все подходящие», если под
+                          # правило сейчас попадает больше этого числа (защита
+                          # от «подалось на всё подряд» — заставляет сузить фильтры)
 
 
 def get_rule() -> dict:
@@ -76,6 +85,15 @@ def _keyword_match(job: Job, raw: str) -> bool:
     return False
 
 
+def _age_days(job: Job) -> float | None:
+    """Возраст вакансии в днях по first_seen (None — если даты нет)."""
+    t = job.first_seen
+    if t is None:
+        return None
+    t = t.replace(tzinfo=None) if getattr(t, "tzinfo", None) else t
+    return (_dt.datetime.now() - t).total_seconds() / 86400.0
+
+
 def _job_hours(job: Job) -> float | None:
     """Часы/неделю из job.hours — в БД это строка ('5', '37,5', '5 t/uge')."""
     raw = job.hours
@@ -105,6 +123,16 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
         return False
     if age == "adult" and job.job_level == "employeeUnder18":
         return False
+    # свежесть: берём только вакансии не старше N дней (если задано).
+    # дату не знаем — НЕ отбрасываем (чтобы ничего не упустить).
+    try:
+        max_age = float(rule.get("max_age_days") or 0)
+    except (TypeError, ValueError):
+        max_age = 0
+    if max_age:
+        ad = _age_days(job)
+        if ad is not None and ad > max_age:
+            return False
     try:
         min_hours = float(rule.get("min_hours") or 0)
     except (TypeError, ValueError):
@@ -191,15 +219,38 @@ def set_autosubmit_baseline() -> None:
     save_rule({"autosubmit_baseline": [j.id for j in find_matches()]})
 
 
-def eligible_for_submit(limit_remaining: int) -> list[Job]:
-    """Свежие подходящие, которые можно автоотправить: появились ПОСЛЕ включения
-    (нет в baseline), ещё не отправляли и не поданы. Не больше limit_remaining."""
-    r = get_rule()
-    baseline = set(r.get("autosubmit_baseline") or [])
-    done = set(r.get("submitted_ids") or [])
-    todo = [j for j in find_matches() if j.id not in baseline and j.id not in done]
+def _eligible_all(rule: dict) -> list[Job]:
+    """Подходящие, которые автоотправка ещё НЕ подавала, с учётом охвата:
+    - scope=new (по умолчанию): только появившиеся ПОСЛЕ включения (нет в baseline);
+    - scope=all: все подходящие сейчас (baseline игнорируется).
+    Уже отправленные ботом исключаются всегда. Свежие — первыми."""
+    done = set(rule.get("submitted_ids") or [])
+    if (rule.get("submit_scope") or "new") == "all":
+        todo = [j for j in find_matches() if j.id not in done]
+    else:
+        baseline = set(rule.get("autosubmit_baseline") or [])
+        todo = [j for j in find_matches() if j.id not in baseline and j.id not in done]
     todo.sort(key=_seen_ts, reverse=True)
+    return todo
+
+
+def eligible_for_submit(limit_remaining: int) -> list[Job]:
+    """Сколько реально отправим за этот скан: с учётом охвата и оставшегося лимита."""
+    todo = _eligible_all(get_rule())
     return todo[: max(0, int(limit_remaining))]
+
+
+def eligible_count() -> int:
+    """Сколько вакансий сейчас в очереди на автоотправку (для подписи в интерфейсе)."""
+    return len(_eligible_all(get_rule()))
+
+
+def scope_all_pool(rule: dict | None = None) -> int:
+    """Сколько подходящих (ещё не поданных ботом) попадёт под охват «все подходящие».
+    Нужно для предохранителя при включении — чтобы не разрешить массовую отправку."""
+    r = dict(rule) if rule else get_rule()
+    r = dict(r); r["submit_scope"] = "all"
+    return len(_eligible_all(r))
 
 
 def record_submitted(jobs) -> None:
@@ -230,6 +281,9 @@ def auto_submit_tick(launcher) -> None:
         if not (r.get("enabled") and r.get("auto_submit")):
             return
         remaining = int(r.get("daily_limit") or 0) - submitted_today()
+        # жёсткий потолок за один скан: даже при большом дневном лимите за раз
+        # отправляем не больше MAX_PER_SCAN — ничего не «улетает пачкой».
+        remaining = min(remaining, MAX_PER_SCAN)
         if remaining <= 0:
             return
         jobs = eligible_for_submit(remaining)

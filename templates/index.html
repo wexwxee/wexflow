@@ -116,6 +116,21 @@
 
   .jobs-topbar .tablink { flex:0 0 auto; }
   .jobs-shell-band { background:rgba(255,255,255,.018); border-top:1px solid var(--glass-line); border-bottom:1px solid var(--glass-line); }
+  /* ---- бар автопилота на главной ---- */
+  .ap-bar { display:flex; align-items:center; gap:12px; padding:10px 22px; font-size:13px;
+            color:var(--muted); background:var(--bg-soft); border-bottom:1px solid var(--glass-line); flex-wrap:wrap; }
+  .ap-bar.on { background:var(--ok-bg); color:var(--ok-txt); }
+  .ap-bar-ic { display:inline-flex; opacity:.85; }
+  .ap-bar-txt { flex:1 1 auto; min-width:200px; line-height:1.4; }
+  .ap-bar-txt b { color:var(--txt-strong); }
+  .ap-bar.on .ap-bar-txt b { color:var(--ok-txt); }
+  .ap-bar-cfg { flex:0 0 auto; color:var(--accent); text-decoration:none; display:inline-flex; align-items:center; gap:4px; }
+  .ap-bar-cfg:hover { text-decoration:underline; }
+  .ap-bar-btn { flex:0 0 auto; cursor:pointer; border:1px solid var(--accent); background:transparent; color:var(--accent);
+                border-radius:999px; padding:5px 14px; font-size:12px; font-weight:600; }
+  .ap-bar-btn:hover { background:var(--accent); color:#04210f; }
+  .ap-bar-btn.is-on { border-color:var(--err-line); color:var(--err-txt); }
+  .ap-bar-btn.is-on:hover { background:var(--err-txt); color:#fff; }
   .jobs-result-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 22px 0; }
   .jobs-result-head .muted { font-size:12px; }
   /* ---- панель фильтров ---- */
@@ -413,6 +428,23 @@
 {% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings">изменить</a></div>
 {% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
 {% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('send', 13) }} Запущена пакетная подача на {{ batch }} вакансий ({{ 'с авто-отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — открывается по 2 окна за раз.</div>{% endif %}
+
+<div class="ap-bar {{ 'on' if autopilot and autopilot.enabled else '' }}">
+  <span class="ap-bar-ic">{{ ic.i('zap', 15) }}</span>
+  <span class="ap-bar-txt">
+    {% if autopilot and autopilot.enabled %}
+      <b>Автопилот включён</b> — слежу за новыми вакансиями. Подходит сейчас: <b>{{ autopilot_count }}</b>{% if autopilot.auto_submit %} · <span style="color:var(--err-txt);">автоотправка ВКЛ</span>{% endif %}
+    {% else %}
+      <b>Автопилот выключен</b> — могу сам следить за новыми подходящими вакансиями и уведомлять.
+    {% endif %}
+  </span>
+  <a class="ap-bar-cfg" href="/settings#autopilot" data-tip-title="Настройки автопилота" data-tip-body="Правила подбора, свежесть, автоподготовка и автоотправка.">{{ ic.i('sliders', 13) }} Настроить</a>
+  <form method="post" action="/autopilot/toggle" style="margin:0;">
+    <button type="submit" class="ap-bar-btn {{ 'is-on' if autopilot and autopilot.enabled else '' }}">
+      {% if autopilot and autopilot.enabled %}Выключить{% else %}Включить{% endif %}
+    </button>
+  </form>
+</div>
 
 {% if presets %}
 <div class="presets">

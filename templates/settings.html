@@ -412,6 +412,19 @@
         <div class="ap-hint">Если в вакансии часы не указаны — она всё равно попадёт, чтобы ничего не упустить.</div>
       </div>
       <div class="field">
+        <label class="lbl">Свежесть — не старше</label>
+        <input type="number" name="max_age_days" min="0" step="1" value="{{ autopilot.max_age_days or '' }}" placeholder="дней, напр. 7">
+        <div class="ap-chips" data-chips-for="max_age_days">
+          <button type="button" class="ap-chip" data-val="1">1 день</button>
+          <button type="button" class="ap-chip" data-val="3">3 дня</button>
+          <button type="button" class="ap-chip" data-val="7">7 дней</button>
+          <button type="button" class="ap-chip" data-val="14">14 дней</button>
+          <button type="button" class="ap-chip" data-val="30">30 дней</button>
+          <button type="button" class="ap-chip" data-val="">любой возраст</button>
+        </div>
+        <div class="ap-hint">Брать только вакансии, появившиеся за последние N дней. Пусто = любой возраст. Если у вакансии нет даты — она всё равно попадёт.</div>
+      </div>
+      <div class="field">
         <label class="lbl">Должность (категория)</label>
         <div class="ap-select">
           <input type="hidden" name="category" value="{{ autopilot.category or '' }}">
@@ -513,7 +526,7 @@
     <h2>{{ ic.i('zap', 16) }} Автоотправка — ОПАСНО
       <span style="font-size:12px;border:1px solid var(--err-txt);color:var(--err-txt);border-radius:999px;padding:1px 8px;vertical-align:middle;">БЕТА</span>
     </h2>
-    <p class="hint">Бот будет <b>сам отправлять</b> заявки работодателю по подходящим вакансиям — без твоего участия. Это <b>необратимо</b>. Отправляются только <b>новые</b> вакансии, появившиеся <b>после включения</b>, и не больше дневного лимита. Уже поданные не трогаются. Включай, только если точно уверен.</p>
+    <p class="hint">Бот будет <b>сам отправлять</b> заявки работодателю по подходящим вакансиям — без твоего участия. Это <b>необратимо</b>. Защита: не больше дневного лимита и не больше <b>{{ autopilot_max_per_scan }} за один проход</b> (ничего не улетает пачкой). Уже поданные не трогаются. Включай, только если точно уверен.</p>
 
     <label class="ap-toggle">
       <input type="checkbox" name="auto_submit" value="1" id="apAutoSubmit" {{ 'checked' if autopilot.auto_submit else '' }}>
@@ -521,13 +534,32 @@
       <span class="ap-toggle-label">Отправлять автоматически {% if autopilot.auto_submit %}<span style="color:var(--err-txt);">· ВКЛЮЧЕНО</span>{% endif %}</span>
     </label>
 
-    <div class="field" style="max-width:280px;">
-      <label class="lbl">Лимит автоотправок в день</label>
-      <input type="number" name="daily_limit" min="1" max="50" value="{{ autopilot.daily_limit or 3 }}">
-      <div class="ap-hint">Сколько максимум заявок бот отправит за день. Безопасно: 3–5.</div>
+    <div class="grid2">
+      <div class="field">
+        <label class="lbl">Что отправлять (охват)</label>
+        <div class="ap-select">
+          <input type="hidden" name="submit_scope" id="apScope" value="{{ autopilot.submit_scope or 'new' }}">
+          {% set scope_lbl = {'new':'Только новые (после включения)','all':'Все подходящие сейчас'} %}
+          <button type="button" class="ap-select-btn">
+            <span class="ap-select-text">{{ scope_lbl.get(autopilot.submit_scope or 'new') }}</span>
+            <span class="ap-select-arrow">▼</span>
+          </button>
+          <div class="ap-menu">
+            <button type="button" class="ap-opt {{ 'sel' if (autopilot.submit_scope or 'new') == 'new' else '' }}" data-val="new">Только новые (после включения)</button>
+            <button type="button" class="ap-opt {{ 'sel' if autopilot.submit_scope == 'all' else '' }}" data-val="all">Все подходящие сейчас</button>
+          </div>
+        </div>
+        <div class="ap-hint">«Только новые» — самый безопасный: бот не трогает существующий список, шлёт лишь то, что появится после включения. «Все подходящие» можно включить, только если их немного (не больше {{ autopilot_scope_guard }}).</div>
+      </div>
+      <div class="field">
+        <label class="lbl">Лимит автоотправок в день</label>
+        <input type="number" name="daily_limit" min="1" max="50" value="{{ autopilot.daily_limit or 3 }}">
+        <div class="ap-hint">Сколько максимум заявок бот отправит за день. Безопасно: 3–5.</div>
+      </div>
     </div>
 
-    <p class="hint" style="margin-top:6px;">Сегодня отправлено автоматически: <b>{{ autopilot_submitted_today }}</b>{% if autopilot.auto_submit %} из {{ autopilot.daily_limit }}{% endif %}.</p>
+    <p class="hint" style="margin-top:6px;">Сейчас под охват «все подходящие» попало бы: <b>{{ autopilot_scope_pool }}</b> вакансий{% if autopilot_scope_pool > autopilot_scope_guard %} <span style="color:var(--err-txt);">— это больше предела {{ autopilot_scope_guard }}, охват «все» сейчас включить нельзя (сузь фильтры)</span>{% endif %}. В очереди на отправку: <b>{{ autopilot_eligible }}</b>.</p>
+    <p class="hint" style="margin-top:2px;">Сегодня отправлено автоматически: <b>{{ autopilot_submitted_today }}</b>{% if autopilot.auto_submit %} из {{ autopilot.daily_limit }}{% endif %}.</p>
 
     <div class="actions">
       <button class="secondary" type="submit">{{ ic.i('check', 13) }} Сохранить настройку автоотправки</button>
@@ -577,7 +609,7 @@
 <script>
   // кастомные выпадающие списки автопилота (должность/занятость/возраст/бренд) — в тему
   (function () {
-    var roots = [].slice.call(document.querySelectorAll('#autopilot .ap-select'));
+    var roots = [].slice.call(document.querySelectorAll('#autopilot .ap-select, #apAutoForm .ap-select'));
     function closeAll(except) {
       roots.forEach(function (r) { if (r !== except) r.classList.remove('open'); });
     }
@@ -655,7 +687,11 @@
   function apAutoConfirm(form) {
     var cb = form.querySelector('#apAutoSubmit');
     if (!cb || !cb.checked) return true;  // выключение — без вопросов
+    var scope = (form.querySelector('#apScope') || {}).value;
     if (!confirm('ВНИМАНИЕ: бот будет САМ отправлять заявки работодателю — без твоего участия и без подтверждения каждой. Это необратимо. Включить автоотправку?')) return false;
+    if (scope === 'all') {
+      if (!confirm('Охват «ВСЕ подходящие»: бот будет постепенно подавать на ВСЕ вакансии под твоё правило (а не только новые), по дневному лимиту. Уверен? Безопаснее «только новые».')) return false;
+    }
     if (!confirm('Точно-точно? Заявки уйдут под твоим именем автоматически (в пределах дневного лимита). Включаем?')) return false;
     return true;
   }
