@@ -59,6 +59,25 @@ def save_profile(data: dict):
     config.PROFILE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def validate_document_path(path: str) -> str:
+    """Validate a manually entered CV/cover-letter path and return a cleaned path."""
+    value = (path or "").strip().strip('"')
+    if not value:
+        return ""
+    candidate = Path(value).expanduser()
+    if candidate.suffix.lower() not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise ValueError("Можно выбрать только PDF, DOC или DOCX.")
+    try:
+        if candidate.exists():
+            if not candidate.is_file():
+                raise ValueError("Выбранный путь не является файлом.")
+            if candidate.stat().st_size > MAX_UPLOAD_BYTES:
+                raise ValueError("Файл слишком большой. Максимум 25 МБ.")
+    except OSError as exc:
+        raise ValueError(f"Не удалось проверить файл: {exc}") from exc
+    return str(candidate)
+
+
 def save_upload(upload_file, prefix: str) -> str:
     """Сохраняет UploadFile в uploads/ и возвращает абсолютный путь."""
     UPLOAD_DIR.mkdir(exist_ok=True)
@@ -94,4 +113,12 @@ def file_label(path: str) -> str:
 def file_status(path: str) -> str:
     if not path:
         return "empty"
-    return "ok" if Path(path).exists() else "missing"
+    try:
+        candidate = Path(validate_document_path(path))
+        if not candidate.exists() or not candidate.is_file():
+            return "missing"
+        if candidate.stat().st_size > MAX_UPLOAD_BYTES:
+            return "missing"
+    except (OSError, ValueError):
+        return "missing"
+    return "ok"

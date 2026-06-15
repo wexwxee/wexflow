@@ -25,6 +25,7 @@ import geo
 import settings_store
 import translator
 import translator_setup
+import html_sanitize
 import profile_store
 import credentials_store
 import transit
@@ -853,9 +854,12 @@ def settings_file(kind: str):
     }.get(kind)
     if not path or profile_store.file_status(path) != "ok":
         raise HTTPException(status_code=404, detail="file not found")
-    filename = profile_store.file_label(path)
-    media_type = "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream"
-    return FileResponse(path, media_type=media_type, filename=filename, content_disposition_type="inline")
+    clean_path = profile_store.validate_document_path(path)
+    filename = profile_store.file_label(clean_path)
+    is_pdf = filename.lower().endswith(".pdf")
+    media_type = "application/pdf" if is_pdf else "application/octet-stream"
+    disposition = "inline" if is_pdf else "attachment"
+    return FileResponse(clean_path, media_type=media_type, filename=filename, content_disposition_type=disposition)
 
 
 @app.get("/job/{job_id}", response_class=HTMLResponse)
@@ -881,6 +885,8 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             "has_home": bool(home),
             "maps_url": maps_url,
             "facts": facts,
+            "description_html": html_sanitize.sanitize_html(job.description if job else ""),
+            "description_ru_html": html_sanitize.sanitize_html(job.description_ru if job else ""),
             "translator_name": translator.provider_name(),
             "translator_install": translator_setup.status(),
             "trerror": trerror,
@@ -951,12 +957,12 @@ def _update_profile_files(profile: dict, cv_path: str, cover_letter_path: str, c
     if cv_file and cv_file.filename:
         profile["cv_path"] = profile_store.save_upload(cv_file, "cv")
     elif cv_path.strip():
-        profile["cv_path"] = cv_path.strip()
+        profile["cv_path"] = profile_store.validate_document_path(cv_path)
 
     if cover_letter_file and cover_letter_file.filename:
         profile["cover_letter_path"] = profile_store.save_upload(cover_letter_file, "cover_letter")
     elif cover_letter_path.strip():
-        profile["cover_letter_path"] = cover_letter_path.strip()
+        profile["cover_letter_path"] = profile_store.validate_document_path(cover_letter_path)
     return profile
 
 

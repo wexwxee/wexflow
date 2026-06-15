@@ -5,6 +5,7 @@
 
 Держи окно открытым (или поставь как задачу в Windows Task Scheduler на scraper.py).
 """
+import json
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -18,17 +19,30 @@ from db import get_session, Job, select, utcnow
 def notify(title: str, message: str):
     """Windows toast через PowerShell (без доп. зависимостей)."""
     try:
+        text = title if not message else f"{title} - {message[:180]}"
         ps = (
+            "$data = [Console]::In.ReadToEnd() | ConvertFrom-Json;"
             '[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,'
             'ContentType=WindowsRuntime] > $null;'
-            f'$t=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(0);'
-            f'$t.GetElementsByTagName("text")[0].AppendChild($t.CreateTextNode("{title}")) > $null;'
-            f'New-Object Windows.UI.Notifications.ToastNotification($t)'
+            '[Windows.Data.Xml.Dom.XmlDocument,Windows.Data.Xml.Dom.XmlDocument,'
+            'ContentType=WindowsRuntime] > $null;'
+            '$doc=New-Object Windows.Data.Xml.Dom.XmlDocument;'
+            '$doc.LoadXml("<toast><visual><binding template=""ToastGeneric""><text></text></binding></visual></toast>");'
+            '[void]$doc.GetElementsByTagName("text").Item(0).AppendChild($doc.CreateTextNode([string]$data.text));'
+            '$toast=[Windows.UI.Notifications.ToastNotification]::new($doc);'
+            '[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("WexFlow").Show($toast);'
         )
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps], timeout=10)
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            input=json.dumps({"text": text}),
+            text=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
     except Exception:
         pass
-    print(f"🔔 {title} — {message}")
+    print(f"[notify] {title} - {message}")
 
 
 def job_tick():

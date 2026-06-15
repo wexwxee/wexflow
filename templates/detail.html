@@ -93,7 +93,7 @@
     {% if trerror %}<div class="notice warn" style="margin-bottom:10px;">Перевод не получился: {{ trerror }}. Попробуй ещё раз чуть позже.</div>{% endif %}
     {% if job.description_ru %}
       {% if translator_name %}<p class="meta">Переведено через {{ translator_name }}.</p>{% endif %}
-      <div class="desc translation">{{ job.description_ru | safe }}</div>
+      <div class="desc translation">{{ description_ru_html | safe }}</div>
       <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
         <button class="secondary" type="submit" data-loading-text="Обновляю перевод...">Обновить перевод</button>
       </form>
@@ -104,7 +104,7 @@
     {% endif %}
 
     <h2 class="section-title">Оригинал</h2>
-    <div class="desc">{{ job.description | safe }}</div>
+    <div class="desc">{{ description_html | safe }}</div>
   {% endif %}
 </section>
 {{ ui.shell_end() }}
