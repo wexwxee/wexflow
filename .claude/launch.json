@@ -20,10 +20,28 @@
       "port": 7111
     },
     {
+      "name": "seven11-preview",
+      "runtimeExecutable": "C:\\seven11-apply\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["C:\\seven11-apply\\web_app.py", "7122"],
+      "port": 7122
+    },
+    {
       "name": "mockups",
       "runtimeExecutable": ".venv\\Scripts\\python.exe",
       "runtimeArgs": ["-m", "http.server", "8099", "--directory", "static/mockups"],
       "port": 8099
+    },
+    {
+      "name": "teamtailor-app",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["tools/teamtailor_app.py"],
+      "port": 8078
+    },
+    {
+      "name": "connectors-preview",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "http.server", "8077", "--directory", "design_drafts"],
+      "port": 8077
     },
     {
       "name": "hub",

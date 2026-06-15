@@ -1,0 +1,35 @@
+{
+  "_note": "Каталог Ashby-организаций с датскими вакансиями. org = api.ashbyhq.com/posting-api/job-board/{org}. Пополняется по одному; вакансии фильтруются на Данию автоматически.",
+  "companies": [
+    {
+      "org": "pleo",
+      "name": "Pleo",
+      "enabled": true
+    },
+    {
+      "org": "corti",
+      "name": "Corti",
+      "enabled": true
+    },
+    {
+      "org": "airapps",
+      "name": "airapps",
+      "enabled": true
+    },
+    {
+      "org": "anyone-ai",
+      "name": "anyone-ai",
+      "enabled": true
+    },
+    {
+      "org": "chainalysis-careers",
+      "name": "chainalysis-careers",
+      "enabled": true
+    },
+    {
+      "org": "agreena",
+      "name": "agreena",
+      "enabled": true
+    }
+  ]
+}

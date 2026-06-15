@@ -1,0 +1,270 @@
+{
+  "_note": "Каталог карьерных сайтов Teamtailor (Дания). Пополняется по одной, проверяется через `python -m connectors.teamtailor`. slug = поддомен slug.teamtailor.com; либо domain для своего домена. enabled=false временно отключает фирму, не удаляя.",
+  "companies": [
+    {
+      "slug": "biltemadanmark",
+      "name": "Biltema Danmark",
+      "enabled": true
+    },
+    {
+      "slug": "danskespil",
+      "name": "Danske Spil",
+      "enabled": true
+    },
+    {
+      "slug": "danskindustri",
+      "name": "Dansk Industri",
+      "enabled": true
+    },
+    {
+      "slug": "dfdsdenmark",
+      "name": "DFDS Denmark",
+      "enabled": true
+    },
+    {
+      "slug": "friluftsland",
+      "name": "Friluftsland",
+      "enabled": true
+    },
+    {
+      "slug": "giredk",
+      "name": "Gire Danmark",
+      "enabled": true
+    },
+    {
+      "slug": "gmlhr",
+      "name": "GML A/S",
+      "enabled": true
+    },
+    {
+      "slug": "hudsonnordicdenmark",
+      "name": "Hudson Nordic Denmark",
+      "enabled": true
+    },
+    {
+      "slug": "karnovgroupdenmark",
+      "name": "Karnov Group",
+      "enabled": true
+    },
+    {
+      "slug": "maersk",
+      "name": "Maersk",
+      "enabled": true
+    },
+    {
+      "slug": "matas",
+      "name": "Matas Group",
+      "enabled": true
+    },
+    {
+      "slug": "pinchonationdenmark",
+      "name": "Pincho Nation Denmark",
+      "enabled": true
+    },
+    {
+      "slug": "power",
+      "name": "Power Danmark",
+      "enabled": true
+    },
+    {
+      "slug": "templafy",
+      "name": "Templafy",
+      "enabled": true
+    },
+    {
+      "slug": "wspdenmark",
+      "name": "WSP Denmark",
+      "enabled": true
+    },
+    {
+      "slug": "3shape",
+      "name": "3shape",
+      "enabled": true
+    },
+    {
+      "slug": "anzet",
+      "name": "anzet",
+      "enabled": true
+    },
+    {
+      "slug": "alipes",
+      "name": "alipes",
+      "enabled": true
+    },
+    {
+      "slug": "anicuradk",
+      "name": "anicuradk",
+      "enabled": true
+    },
+    {
+      "slug": "accobatdk",
+      "name": "accobatdk",
+      "enabled": true
+    },
+    {
+      "slug": "accrease",
+      "name": "accrease",
+      "enabled": true
+    },
+    {
+      "slug": "again",
+      "name": "again",
+      "enabled": true
+    },
+    {
+      "slug": "aireancientbath",
+      "name": "aireancientbath",
+      "enabled": true
+    },
+    {
+      "slug": "anicuraglobal",
+      "name": "anicuraglobal",
+      "enabled": true
+    },
+    {
+      "slug": "aafdinair",
+      "name": "aafdinair",
+      "enabled": true
+    },
+    {
+      "slug": "allermediaas",
+      "name": "allermediaas",
+      "enabled": true
+    },
+    {
+      "slug": "ants",
+      "name": "ants",
+      "enabled": true
+    },
+    {
+      "slug": "aimexecutive",
+      "name": "aimexecutive",
+      "enabled": true
+    },
+    {
+      "slug": "seniorstyrken",
+      "name": "seniorstyrken",
+      "enabled": true
+    },
+    {
+      "slug": "vestjyskbank",
+      "name": "vestjyskbank",
+      "enabled": true
+    },
+    {
+      "slug": "ginatricotdanmark",
+      "name": "ginatricotdanmark",
+      "enabled": true
+    },
+    {
+      "slug": "colosseumklinikken",
+      "name": "colosseumklinikken",
+      "enabled": true
+    },
+    {
+      "slug": "mantruckbusdenmark",
+      "name": "mantruckbusdenmark",
+      "enabled": true
+    },
+    {
+      "slug": "everymatrix",
+      "name": "everymatrix",
+      "enabled": true
+    },
+    {
+      "slug": "greatnorthernas",
+      "name": "greatnorthernas",
+      "enabled": true
+    },
+    {
+      "slug": "glitter",
+      "name": "glitter",
+      "enabled": true
+    },
+    {
+      "slug": "demo-enterprise",
+      "name": "demo-enterprise",
+      "enabled": true
+    },
+    {
+      "slug": "bdo",
+      "name": "bdo",
+      "enabled": true
+    },
+    {
+      "slug": "prevas",
+      "name": "prevas",
+      "enabled": true
+    },
+    {
+      "slug": "eworgmbh",
+      "name": "eworgmbh",
+      "enabled": true
+    },
+    {
+      "slug": "livahealthcare",
+      "name": "livahealthcare",
+      "enabled": true
+    },
+    {
+      "slug": "panduro",
+      "name": "panduro",
+      "enabled": true
+    },
+    {
+      "slug": "intility",
+      "name": "intility",
+      "enabled": true
+    },
+    {
+      "slug": "leadtime",
+      "name": "leadtime",
+      "enabled": true
+    },
+    {
+      "slug": "mindworking",
+      "name": "mindworking",
+      "enabled": true
+    },
+    {
+      "slug": "hobbii",
+      "name": "hobbii",
+      "enabled": true
+    },
+    {
+      "slug": "sunclassairlines",
+      "name": "sunclassairlines",
+      "enabled": true
+    },
+    {
+      "slug": "nimblrab",
+      "name": "nimblrab",
+      "enabled": true
+    },
+    {
+      "slug": "vismadatalonogprolon",
+      "name": "vismadatalonogprolon",
+      "enabled": true
+    },
+    {
+      "slug": "mantle",
+      "name": "mantle",
+      "enabled": true
+    },
+    {
+      "slug": "ecoonline",
+      "name": "ecoonline",
+      "enabled": true
+    },
+    {
+      "slug": "sybo",
+      "name": "sybo",
+      "enabled": true
+    },
+    {
+      "slug": "sofigategroupoy",
+      "name": "sofigategroupoy",
+      "enabled": true
+    }
+  ]
+}

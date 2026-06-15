@@ -1,0 +1,25 @@
+{
+  "_note": "Каталог Greenhouse-бордов с датскими вакансиями. token = boards-api.greenhouse.io/v1/boards/{token}/jobs. Пополняется по одному; вакансии фильтруются на Данию автоматически.",
+  "companies": [
+    {
+      "token": "trustpilot",
+      "name": "Trustpilot",
+      "enabled": true
+    },
+    {
+      "token": "agency",
+      "name": "agency",
+      "enabled": true
+    },
+    {
+      "token": "abnormalsecurity",
+      "name": "abnormalsecurity",
+      "enabled": true
+    },
+    {
+      "token": "anaplan",
+      "name": "anaplan",
+      "enabled": true
+    }
+  ]
+}
