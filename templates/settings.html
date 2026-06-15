@@ -84,6 +84,17 @@
     border-radius:7px; padding:9px 10px; font-size:14px; cursor:pointer; }
   .ap-opt:hover, .ap-opt.active { background:var(--chip-bg); }
   .ap-opt.sel { color:var(--accent); font-weight:650; }
+  /* убираем системные стрелки у числовых полей автопилота */
+  #autopilot input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+  #autopilot input[type=number]::-webkit-outer-spin-button,
+  #autopilot input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  /* быстрые варианты-чипсы под полями */
+  .ap-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+  .ap-chips-label { width:100%; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:1px; }
+  .ap-chip { border:1px solid var(--glass-line); background:var(--glass); color:var(--muted);
+    border-radius:999px; padding:5px 12px; font-size:12.5px; cursor:pointer; transition:.12s; }
+  .ap-chip:hover { border-color:var(--hover-line); color:var(--txt); }
+  .ap-chip.active { background:var(--accent); color:#07100b; border-color:var(--accent); font-weight:650; }
 </style>
 {% endblock %}
 
@@ -367,16 +378,43 @@
       <div class="field">
         <label class="lbl">Не дальше от дома</label>
         <input type="number" name="max_km" min="0" step="1" value="{{ autopilot.max_km or '' }}" placeholder="км, напр. 5">
+        <div class="ap-chips" data-chips-for="max_km">
+          <button type="button" class="ap-chip" data-val="3">3 км</button>
+          <button type="button" class="ap-chip" data-val="5">5 км</button>
+          <button type="button" class="ap-chip" data-val="10">10 км</button>
+          <button type="button" class="ap-chip" data-val="15">15 км</button>
+          <button type="button" class="ap-chip" data-val="25">25 км</button>
+          <button type="button" class="ap-chip" data-val="">без ограничения</button>
+        </div>
         <div class="ap-hint">Расстояние от твоего дома (адрес — в настройках выше). Пусто = без ограничения.</div>
       </div>
       <div class="field">
         <label class="lbl">Часов в неделю, не меньше</label>
         <input type="number" name="min_hours" min="0" step="1" value="{{ autopilot.min_hours or '' }}" placeholder="напр. 10">
+        <div class="ap-chips" data-chips-for="min_hours">
+          <button type="button" class="ap-chip" data-val="8">8 ч</button>
+          <button type="button" class="ap-chip" data-val="10">10 ч</button>
+          <button type="button" class="ap-chip" data-val="15">15 ч</button>
+          <button type="button" class="ap-chip" data-val="20">20 ч</button>
+          <button type="button" class="ap-chip" data-val="30">30 ч</button>
+          <button type="button" class="ap-chip" data-val="">любые</button>
+        </div>
         <div class="ap-hint">Если в вакансии часы не указаны — она всё равно попадёт, чтобы ничего не упустить.</div>
       </div>
       <div class="field ap-field-wide">
         <label class="lbl">Ключевые слова — кем хочешь работать</label>
         <input type="text" name="keywords" value="{{ autopilot.keywords or '' }}" placeholder="напр. boutique assistant, kasse, lager">
+        <div class="ap-chips" data-chips-append="keywords">
+          <span class="ap-chips-label">Не знаешь, что писать? Нажми готовые:</span>
+          <button type="button" class="ap-chip" data-val="assistent">assistent (ассистент)</button>
+          <button type="button" class="ap-chip" data-val="kasse">kasse (касса)</button>
+          <button type="button" class="ap-chip" data-val="butik">butik (магазин)</button>
+          <button type="button" class="ap-chip" data-val="lager">lager (склад)</button>
+          <button type="button" class="ap-chip" data-val="rengøring">rengøring (уборка)</button>
+          <button type="button" class="ap-chip" data-val="chauffør">chauffør (водитель)</button>
+          <button type="button" class="ap-chip" data-val="bager">bager (пекарь)</button>
+          <button type="button" class="ap-chip" data-val="medarbejder">medarbejder (сотрудник)</button>
+        </div>
         <div class="ap-hint">Можно несколько через запятую — найдёт вакансии по любому из них. Русские слова бот сам переведёт на датский (kasse = касса и т.п.). Пусто = любые должности.</div>
       </div>
       <div class="field ap-field-wide">
@@ -450,6 +488,51 @@
     });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') root.classList.remove('open');
+    });
+  })();
+
+  // быстрые варианты-чипсы автопилота (вдруг не знаешь, что писать)
+  (function () {
+    function input(name) { return document.querySelector('#autopilot [name="' + name + '"]'); }
+    // одиночный выбор: км / часы — чип задаёт значение поля
+    document.querySelectorAll('#autopilot [data-chips-for]').forEach(function (box) {
+      var inp = input(box.dataset.chipsFor);
+      if (!inp) return;
+      function sync() {
+        box.querySelectorAll('.ap-chip').forEach(function (c) {
+          c.classList.toggle('active', (c.dataset.val || '') === (inp.value || ''));
+        });
+      }
+      box.querySelectorAll('.ap-chip').forEach(function (c) {
+        c.addEventListener('click', function () { inp.value = c.dataset.val; sync(); });
+      });
+      inp.addEventListener('input', sync);
+      sync();
+    });
+    // множественный выбор: ключевые слова — чип добавляет/убирает фразу
+    document.querySelectorAll('#autopilot [data-chips-append]').forEach(function (box) {
+      var inp = input(box.dataset.chipsAppend);
+      if (!inp) return;
+      function parts() {
+        return (inp.value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      }
+      function sync() {
+        var have = parts().map(function (s) { return s.toLowerCase(); });
+        box.querySelectorAll('.ap-chip').forEach(function (c) {
+          c.classList.toggle('active', have.indexOf((c.dataset.val || '').toLowerCase()) >= 0);
+        });
+      }
+      box.querySelectorAll('.ap-chip').forEach(function (c) {
+        c.addEventListener('click', function () {
+          var list = parts(), low = (c.dataset.val || '').toLowerCase();
+          var idx = list.map(function (s) { return s.toLowerCase(); }).indexOf(low);
+          if (idx >= 0) list.splice(idx, 1); else list.push(c.dataset.val);
+          inp.value = list.join(', ');
+          sync();
+        });
+      });
+      inp.addEventListener('input', sync);
+      sync();
     });
   })();
 </script>
