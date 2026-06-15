@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import datetime as _dt
 import re
 
 import geo
@@ -114,6 +115,34 @@ def find_matches() -> list[Job]:
 
 def match_count() -> int:
     return len(find_matches())
+
+
+def _seen_ts(job: Job):
+    """Дата «впервые увидели» как naive datetime для сортировки (свежие первыми)."""
+    t = job.first_seen
+    if t is None:
+        return _dt.datetime.min
+    return t.replace(tzinfo=None) if getattr(t, "tzinfo", None) else t
+
+
+def pending_prepare(limit: int = 5) -> list[Job]:
+    """Подходящие вакансии, которые ещё НЕ готовили (свежие первыми, не больше limit)."""
+    prepared = set(get_rule().get("prepared_ids") or [])
+    todo = [j for j in find_matches() if j.id not in prepared]
+    todo.sort(key=_seen_ts, reverse=True)
+    return todo[: max(1, int(limit))]
+
+
+def pending_count() -> int:
+    """Сколько подходящих ещё не готовили (для подписи на кнопке)."""
+    prepared = set(get_rule().get("prepared_ids") or [])
+    return sum(1 for j in find_matches() if j.id not in prepared)
+
+
+def mark_prepared(ids) -> None:
+    prepared = set(get_rule().get("prepared_ids") or [])
+    prepared.update(ids)
+    save_rule({"prepared_ids": list(prepared)})
 
 
 def scan_and_notify() -> None:

@@ -811,6 +811,7 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
         "city_options": city_options, "country_options": country_options,
         "autopilot": autopilot.get_rule(), "brands": labels.BRANDS,
         "autopilot_count": autopilot.match_count(),
+        "autopilot_pending": autopilot.pending_count(),
     })
 
 
@@ -865,6 +866,25 @@ def autopilot_save(
     # уведомлять только о НОВЫХ вакансиях, появившихся позже (без спама).
     autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
     return RedirectResponse("/settings?saved=1#autopilot", status_code=303)
+
+
+@app.post("/autopilot/prepare")
+def autopilot_prepare(request: Request):
+    """Автоподготовка (Фаза 2): открыть до 5 свежих подходящих вакансий, бот
+    заполнит анкеты и ОСТАНОВИТСЯ перед отправкой. Реальную отправку (--submit)
+    не запускаем НИКОГДА — её жмёт пользователь сам."""
+    jobs = autopilot.pending_prepare(limit=5)
+    if not jobs:
+        return _redirect_back(request, "/settings",
+                              notice="Новых подходящих для подготовки нет — свежие уже готовились.")
+    ids = [j.id for j in jobs]
+    _launch_salling_apply(ids, submit=False)
+    autopilot.mark_prepared(ids)
+    return _redirect_back(
+        request, "/settings",
+        notice=f"Готовлю {len(ids)} вакансий — откроется браузер, бот заполнит анкеты "
+               "и остановится. Проверь и нажми «Отправить» сам.",
+    )
 
 
 @app.post("/settings/profile/autosave")
@@ -1041,6 +1061,27 @@ def _salling_apply_cmd(extra: list[str]) -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, "--worker-salling-apply", *extra]
     return [sys.executable, "-u", str(config.BASE_DIR / "apply.py"), *extra]
+
+
+def _launch_salling_apply(ids: list[str], submit: bool = False) -> None:
+    """Запустить подачу Salling по списку id (фоновый процесс, лог в apply_last.log).
+    submit=False — режим подготовки: бот заполняет и останавливается перед отправкой."""
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
+    cmd = _salling_apply_cmd(list(ids) + ["--web"])
+    if submit:
+        cmd.append("--submit")
+    log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
+    try:
+        subprocess.Popen(
+            cmd, cwd=str(config.BASE_DIR),
+            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+    finally:
+        log.close()
 
 
 @app.post("/job/{job_id}/apply/start")
