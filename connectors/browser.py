@@ -39,6 +39,16 @@ def launch_browser(p):
             return ctx
         except Exception as e:
             last_err = e
+    msg = str(last_err)
+    if any(s in msg for s in (
+        "has been closed", "SingletonLock", "ProcessSingleton",
+        "being used by another", "DevToolsActivePort",
+    )):
+        raise RuntimeError(
+            "Похоже, браузер от прошлой подачи ещё открыт — из-за этого новый "
+            "не запускается. Закрой ВСЕ окна браузера, которые открыл бот, "
+            "и попробуй снова. Если браузер точно закрыт — подожди 5–10 секунд."
+        )
     raise RuntimeError(
         "Не удалось открыть браузер. Установи Google Chrome или Microsoft "
         f"Visual C++ Redistributable (x64). Последняя ошибка: {last_err}"
