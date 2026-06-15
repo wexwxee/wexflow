@@ -105,24 +105,31 @@ def _job_hours(job: Job) -> float | None:
     return float(m.group().replace(",", ".")) if m else None
 
 
+def _csv(rule: dict, key: str) -> list[str]:
+    """Значение фильтра как список кодов (мультивыбор через запятую). Пусто = []."""
+    return [x.strip() for x in str(rule.get(key) or "").split(",") if x.strip()]
+
+
 def _matches(job: Job, rule: dict, home: dict | None) -> bool:
     if job.status in ("closed", "hidden", "applied"):
         return False
-    brand = labels.resolve(labels.BRANDS, rule.get("brand") or "")
-    if brand and job.brand != brand:
+    # бренд/категория/занятость/возраст — мультивыбор: подходит по ЛЮБОМУ из выбранных.
+    brands = [labels.resolve(labels.BRANDS, b) or b for b in _csv(rule, "brand")]
+    if brands and job.brand not in brands:
         return False
-    # категория, занятость, возраст — те же поля, что и реальные фильтры на главной
-    cat = rule.get("category") or ""
-    if cat and cat not in (job.categories or "").split(","):
+    cats = _csv(rule, "category")  # те же коды, что и фильтры на главной
+    if cats and not (set(cats) & set((job.categories or "").split(","))):
         return False
-    emp = rule.get("employment_type") or ""
-    if emp and job.employment_type != emp:
+    emps = _csv(rule, "employment_type")
+    if emps and job.employment_type not in emps:
         return False
-    age = rule.get("age") or ""
-    if age == "under18" and job.job_level != "employeeUnder18":
-        return False
-    if age == "adult" and job.job_level == "employeeUnder18":
-        return False
+    ages = set(_csv(rule, "age"))
+    # оба варианта (или ни одного) = без ограничения по возрасту
+    if ages and ages != {"under18", "adult"}:
+        if "under18" in ages and job.job_level != "employeeUnder18":
+            return False
+        if "adult" in ages and job.job_level == "employeeUnder18":
+            return False
     # свежесть: берём только вакансии не старше N дней (если задано).
     # дату не знаем — НЕ отбрасываем (чтобы ничего не упустить).
     try:
