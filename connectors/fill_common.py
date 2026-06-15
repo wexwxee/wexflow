@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -69,13 +70,56 @@ def upload_cv(page, profile: dict) -> bool:
     return False
 
 
-def add_banner(page, questions: int, filled: list[str], platform: str = "") -> None:
+def attach_cover_letter(page, profile: dict) -> bool:
+    """Прикрепить сопроводительное ФАЙЛОМ, если на форме есть отдельный input
+    под него (по подписи cover/letter/motivation). К резюме не лезем."""
+    cl = (profile.get("cover_letter_path") or "").strip()
+    if not cl or not Path(cl).exists():
+        return False
+    try:
+        for fi in page.locator('input[type="file"]').all():
+            attrs = (fi.get_attribute("name") or "") + (fi.get_attribute("id") or "") + \
+                    (fi.get_attribute("aria-label") or "")
+            if re.search(r"cover|letter|motiv|ansøgning|følgebrev", attrs, re.I):
+                fi.set_input_files(cl)
+                print(f"  сопроводительное прикреплено: {Path(cl).name}")
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def missing_required(page) -> list[str]:
+    """Подписи обязательных, но пустых полей — чтобы человек знал, что дозаполнить."""
+    try:
+        return page.evaluate(
+            """() => {
+                const out=[];
+                document.querySelectorAll('input[required],textarea[required],select[required]').forEach(e=>{
+                    if(e.type==='hidden'||e.offsetParent===null) return;
+                    const v=(e.value||'').trim();
+                    if(v) return;
+                    let lab=e.getAttribute('aria-label')||e.placeholder||'';
+                    if(!lab && e.id){const l=document.querySelector(`label[for="${e.id}"]`); if(l) lab=l.innerText;}
+                    lab=(lab||e.name||'поле').trim().slice(0,40);
+                    if(lab && !out.includes(lab)) out.push(lab);
+                });
+                return out.slice(0,8);
+            }"""
+        )
+    except Exception:
+        return []
+
+
+def add_banner(page, questions: int, filled: list[str], platform: str = "",
+               missing: list[str] | None = None) -> None:
     """Жёлтая плашка сверху: что сделал бот и что нужно от человека."""
     tag = f"[{platform}] " if platform else ""
-    msg_q = f"Вопросов по вакансии: {questions} — ответь на них. " if questions else ""
+    msg_q = f"Вопросов по вакансии: {questions}. " if questions else ""
+    msg_m = ("Дозаполни: " + ", ".join(missing) + ". ") if missing else ""
     text = (
         f"WexFlow {tag}заполнил: " + (", ".join(filled) if filled else "—") + ". "
-        + msg_q
+        + msg_q + msg_m
         + "Поставь согласие и нажми «Отправить» САМ — бот этого не делает."
     )
     try:

@@ -7,13 +7,20 @@ placeholder, заполняет имя/email/телефон, грузит CV и 
 """
 from __future__ import annotations
 
-from connectors.fill_common import dismiss_cookies, upload_cv, add_banner
+from connectors.fill_common import (
+    dismiss_cookies, upload_cv, attach_cover_letter, add_banner, missing_required,
+)
 
 FIRST = ["first_name", "first-name", "firstname", "first", "fornavn", "given", "fornamn"]
 LAST = ["last_name", "last-name", "lastname", "last", "efternavn", "surname", "efternamn"]
 EMAIL = ["email", "e-mail", "mail"]
 PHONE = ["phone", "telefon", "mobil", "tlf", "tel"]
 FULL = ["full_name", "fullname", "full name", "name", "navn", "dit navn"]
+ADDRESS = ["address", "adresse", "street", "gade", "vej"]
+ZIP = ["zip", "postal", "postnr", "postnummer", "post code", "postcode"]
+CITY = ["city", "town", "by", "bopæl"]
+COUNTRY = ["country", "land"]
+LINKEDIN = ["linkedin"]
 
 
 def _fill_by_keywords(page, keywords, value) -> bool:
@@ -68,20 +75,29 @@ def prepare(page, url: str, profile: dict, platform: str = "") -> None:
     filled = []
     first = (profile.get("first_name") or "").strip()
     last = (profile.get("last_name") or "").strip()
-    if _fill_by_keywords(page, FIRST, first):
+    got_first = _fill_by_keywords(page, FIRST, first)
+    got_last = _fill_by_keywords(page, LAST, last)
+    if got_first:
         filled.append("first_name")
-    if _fill_by_keywords(page, LAST, last):
+    if got_last:
         filled.append("last_name")
-    if not filled and (first or last):  # форма с одним полем «Имя»
-        full = f"{first} {last}".strip()
-        if _fill_by_keywords(page, FULL, full):
+    if not (got_first or got_last) and (first or last):  # форма с одним полем «Имя»
+        if _fill_by_keywords(page, FULL, f"{first} {last}".strip()):
             filled.append("name")
     if _fill_email(page, (profile.get("email") or "").strip()):
         filled.append("email")
     if _fill_phone(page, (profile.get("phone") or "").strip()):
         filled.append("phone")
+    # дополнительные поля — заполняем, если форма их просит
+    for keys, key in ((ADDRESS, "address"), (ZIP, "zip"), (CITY, "city"),
+                      (COUNTRY, "country"), (LINKEDIN, "linkedin")):
+        if _fill_by_keywords(page, keys, (profile.get(key) or "").strip()):
+            filled.append(key)
 
     print(f"  заполнено полей: {filled or '—'}")
     upload_cv(page, profile)
-    add_banner(page, 0, filled, platform=platform or "форма")
+    attach_cover_letter(page, profile)
+    missing = missing_required(page)
+    add_banner(page, 0, filled, platform=platform or "форма", missing=missing)
+    print(f"  заполнено: {filled or '—'} | дозаполнить: {missing or '—'}")
     print("  ГОТОВО — НЕ отправляю. Проверь, заполни остальное и отправь сам.")

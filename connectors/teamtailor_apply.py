@@ -6,7 +6,9 @@ candidate[first_name/last_name/email/phone], грузит CV и ОСТАНАВЛ
 """
 from __future__ import annotations
 
-from connectors.fill_common import dismiss_cookies, upload_cv, add_banner
+from connectors.fill_common import (
+    dismiss_cookies, upload_cv, attach_cover_letter, add_banner, missing_required,
+)
 
 FIELD_MAP = {
     'input[name="candidate[first_name]"]': "first_name",
@@ -55,6 +57,9 @@ def prepare(page, job_url: str, profile: dict) -> None:
     filled = fill_fields(page, profile)
     print(f"  заполнено полей: {filled or '—'}")
     upload_cv(page, profile)
+    attach_cover_letter(page, profile)
     questions = count_questions(page)
-    add_banner(page, questions, filled, platform="Teamtailor")
+    missing = missing_required(page)
+    add_banner(page, questions, filled, platform="Teamtailor", missing=missing)
+    print(f"  вопросов вакансии: {questions} | дозаполнить: {missing or '—'}")
     print("  ГОТОВО — НЕ отправляю. Проверь, поставь согласие и отправь сам.")
