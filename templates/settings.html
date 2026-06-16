@@ -153,14 +153,14 @@
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
-    <a class="tablink" href="/account">← Профиль и подписка</a>
+    <a class="tablink" href="/account">← Общий профиль</a>
     <a class="tablink" href="/">К вакансиям</a>
     {{ ui.app_switch() }}
     {{ ui.theme_toggle() }}
   </div>
 </header>
 <section class="wex-workbench wex-narrow">
-  <p class="sub">Настройки модуля Salling. Профиль кандидата, документы и подписка — в общем разделе <a class="crosslink" href="/account">«Настройки»</a>.</p>
+  <p class="sub">Настройки модуля Salling. Общий профиль и личные данные — в разделе <a class="crosslink" href="/account">«Настройки»</a>.</p>
 
   <nav class="sec-nav">
     <a href="#login">{{ ic.i('unlock', 13) }} Логин Salling</a>
@@ -403,7 +403,7 @@
   <!-- Автопилот подбора -->
   <form id="autopilot" class="panel" method="post" action="/autopilot/save" style="margin-top:18px;">
     <h2>{{ ic.i('zap', 17) }} Автопилот подбора
-      <span class="tier-pill pro">Pro</span>
+      {% if show_billing() %}<span class="tier-pill pro">Pro</span>{% endif %}
     </h2>
     <p class="hint">WexFlow следит за новыми вакансиями по твоим правилам и присылает уведомление, когда появляется подходящая. Подачу по-прежнему подтверждаешь ты. Работает, пока приложение запущено.</p>
 
@@ -544,7 +544,7 @@
   <!-- Автоподготовка (Фаза 2) -->
   <form class="panel" method="post" action="/autopilot/prepare" style="margin-top:14px;"
         onsubmit="return confirm('Подготовить до 5 подходящих вакансий? WexFlow заполнит формы и остановится перед отправкой — отправляешь сам.')">
-    <h2>{{ ic.i('send', 16) }} Автоподготовка <span class="tier-pill pro">Pro</span></h2>
+    <h2>{{ ic.i('send', 16) }} Автоподготовка {% if show_billing() %}<span class="tier-pill pro">Pro</span>{% endif %}</h2>
     <p class="hint">WexFlow откроет до 5 свежих подходящих вакансий, войдёт в Salling, заполнит формы и <b>остановится перед отправкой</b>. Проверишь и нажмёшь «Отправить» сам — автопилот ничего не отправляет.</p>
     <div class="actions">
       <button class="primary" type="submit" {{ 'disabled' if not autopilot_pending else '' }}>
@@ -559,7 +559,7 @@
         style="margin-top:14px;border-color:var(--err-line);background:var(--err-bg);"
         onsubmit="return apAutoConfirm(this)">
     <h2>{{ ic.i('zap', 16) }} Автоотправка — ОПАСНО
-      <span class="tier-pill max">Max</span>
+      {% if show_billing() %}<span class="tier-pill max">Max</span>{% endif %}
     </h2>
     <p class="hint">Если включить автоотправку, WexFlow будет сам отправлять подходящие заявки по твоим правилам. Защита: дневной лимит и не больше <b>{{ autopilot_max_per_scan }} за один проход</b>. Уже поданные вакансии не трогаются.</p>
     <p class="hint" style="color:var(--err-txt);">Работает только пока приложение запущено, а вход в Salling активен.</p>

@@ -200,7 +200,7 @@
 <header class="wex-topbar">
   <div class="wex-title-stack">
     <h1>{{ ui.brand('Настройки') }}</h1>
-    <span class="wex-title-meta">Профиль, документы и подписка — общие для всего приложения</span>
+    <span class="wex-title-meta">Профиль и личные данные — общие для всего приложения{% if show_billing() %} · подписка{% endif %}</span>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
@@ -215,6 +215,7 @@
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
 
   <!-- Аккаунт (заготовка) -->
+  {% if show_billing() %}
   <div class="panel acct-card">
     <div class="acct-id">
       <span class="acct-avatar">{{ account.initial }}</span>
@@ -231,6 +232,7 @@
       <span class="acct-hint">Вход сохранит профиль, документы и подписку в облаке и синхронизирует их между устройствами.</span>
     </div>
   </div>
+  {% endif %}
 
   <!-- Общий профиль (личные данные) -->
   <form id="profileForm" class="panel" method="post" action="/account/save">
@@ -252,6 +254,7 @@
   </form>
 
   <!-- Подписка (заготовка) -->
+  {% if show_billing() %}
   <div class="panel sub-panel">
     <div class="sub-top">
       <div class="sub-top-text">
@@ -333,6 +336,7 @@
 
     <p class="plan-note">{{ ic.i('star', 12) }} Тарифы ещё не финализированы. Когда подключим оплату, здесь появятся реальные цены (€) и оформление помесячно/понедельно. Сейчас всё доступно бесплатно.</p>
   </div>
+  {% endif %}
 
   <!-- Переход к настройкам модулей -->
   <div class="panel">

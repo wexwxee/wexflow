@@ -252,6 +252,8 @@ templates.env.globals["L"] = labels
 # Текущий тариф доступен во всех шаблонах (бейдж в боковом меню и т.п.).
 templates.env.globals["current_plan"] = subscription.plan
 templates.env.globals["plan_label"] = lambda p=None: subscription.PLANS.get(p or subscription.plan(), subscription.PLANS["free"])["name"]
+# Флаг видимости витрины подписки/аккаунта (в публичном релизе скрыто).
+templates.env.globals["show_billing"] = lambda: subscription.SHOW_BILLING
 try:
     import changelog as _changelog
     import version as _version

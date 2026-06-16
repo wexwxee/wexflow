@@ -19,11 +19,13 @@
       <a class="wex-side-btn {{ 'active' if active == 'hub' }}" href="/hub" data-tip-title="Главная" data-tip-body="Стартовый экран WexFlow с быстрым входом в оба модуля.">{{ ic.i('home', 18) }}<span>Главная</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'jobs' }}" href="/" data-tip-title="Вакансии" data-tip-body="Лента вакансий Salling: фильтры, статусы и пакетная подача.">{{ ic.i('cart', 18) }}<span>Вакансии</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'applied' }}" href="/?status=applied" data-tip-title="Поданные" data-tip-body="Вакансии, на которые заявка уже отправлена.">{{ ic.i('check', 18) }}<span>Поданные</span></a>
-      <a class="wex-side-btn {{ 'active' if active == 'settings' }}" href="/account" data-tip-title="Настройки" data-tip-body="Профиль, документы и подписка — общие для всего приложения.">{{ ic.i('sliders', 18) }}<span>Настройки</span></a>
+      <a class="wex-side-btn {{ 'active' if active == 'settings' }}" href="/account" data-tip-title="Настройки" data-tip-body="Профиль и личные данные — общие для всего приложения.">{{ ic.i('sliders', 18) }}<span>Настройки</span></a>
       <button type="button" class="wex-side-btn" data-whatsnew-open data-tip-title="Что нового" data-tip-body="Список обновлений WexFlow и что изменилось в каждой версии.">{{ ic.i('star', 18) }}<span>Что нового</span></button>
     </nav>
     <div class="wex-side-spacer"></div>
+    {% if show_billing() %}
     <a class="wex-side-btn" href="/account#подписка" data-tip-title="Твой тариф" data-tip-body="Текущий тариф подписки. Нажми, чтобы посмотреть планы.">{{ ic.i('star', 18) }}<span>{{ plan_label() }}</span></a>
+    {% endif %}
     <a class="wex-side-btn" href="/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Перейти в отдельный модуль автоподачи 7-Eleven.">{{ ic.i('store', 18) }}<span>7-Eleven</span></a>
   </aside>
 {%- endmacro %}
