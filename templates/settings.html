@@ -109,6 +109,21 @@
     border-radius:999px; padding:5px 12px; font-size:12.5px; cursor:pointer; transition:.12s; }
   .ap-chip:hover { border-color:var(--hover-line); color:var(--txt); }
   .ap-chip.active { background:var(--accent); color:#07100b; border-color:var(--accent); font-weight:650; }
+  /* автоотправка: «на свой страх и риск» + раскрывающийся FAQ «что может произойти» */
+  .ap-risk { border:1px solid var(--err-line); background:color-mix(in srgb, var(--err-txt) 8%, transparent);
+    border-radius:9px; padding:11px 13px; margin:12px 0; font-size:13px; line-height:1.5; }
+  .ap-risk b { color:var(--err-txt); }
+  .ap-faq { border:1px solid var(--glass-line); border-radius:9px; background:var(--glass); margin:12px 0; overflow:hidden; }
+  .ap-faq > summary { cursor:pointer; padding:11px 13px; font-weight:650; font-size:13.5px; list-style:none;
+    display:flex; align-items:center; gap:8px; }
+  .ap-faq > summary::-webkit-details-marker { display:none; }
+  .ap-faq > summary::before { content:"▸"; color:var(--muted); transition:transform .15s; }
+  .ap-faq[open] > summary::before { transform:rotate(90deg); }
+  .ap-faq > summary:hover { color:var(--txt-strong); }
+  .ap-faq-body { padding:2px 14px 12px; }
+  .ap-faq-body dt { font-weight:650; font-size:13px; margin-top:11px; color:var(--txt-strong); }
+  .ap-faq-body dt:first-child { margin-top:4px; }
+  .ap-faq-body dd { margin:3px 0 0; padding:0; color:var(--muted); font-size:12.5px; line-height:1.5; }
 </style>
 {% endblock %}
 
@@ -536,7 +551,33 @@
     <h2>{{ ic.i('zap', 16) }} Автоотправка — ОПАСНО
       <span style="font-size:12px;border:1px solid var(--err-txt);color:var(--err-txt);border-radius:999px;padding:1px 8px;vertical-align:middle;">БЕТА</span>
     </h2>
-    <p class="hint">Бот будет <b>сам отправлять</b> заявки работодателю по подходящим вакансиям — без твоего участия. Это <b>необратимо</b>. Защита: не больше дневного лимита и не больше <b>{{ autopilot_max_per_scan }} за один проход</b> (ничего не улетает пачкой). Уже поданные не трогаются. Включай, только если точно уверен.</p>
+    <p class="hint">Включаешь поиск — и бот <b>сам отправляет</b> заявки работодателю, как только находит подходящую вакансию. Подаёт <b>самые свежие первыми</b>, работает в фоне <b>даже когда тебя нет за компьютером</b> — тебе не нужно ничего нажимать вручную. Защита: не больше дневного лимита и не больше <b>{{ autopilot_max_per_scan }} за один проход</b> (ничего не улетает пачкой). Уже поданные не трогаются.</p>
+
+    <div class="ap-risk">
+      ⚠ <b>На свой страх и риск.</b> Бот отправляет заявки от твоего имени без подтверждения и <b>без возможности отозвать</b> через приложение. Ты сам отвечаешь за то, что профиль, резюме и фильтры заполнены правильно и что ты действительно готов откликнуться на эти вакансии. Включая автоотправку, ты соглашаешься, что заявки могут уйти работодателю, пока тебя нет рядом.
+    </div>
+
+    <details class="ap-faq">
+      <summary>Что может произойти — прочитай перед включением</summary>
+      <div class="ap-faq-body">
+        <dl>
+          <dt>Заявка уйдёт, пока меня нет дома</dt>
+          <dd>Да, в этом и смысл. Бот проверяет базу примерно раз в 30 минут и подаёт сам. Передумать постфактум нельзя — поэтому есть дневной лимит и потолок {{ autopilot_max_per_scan }} за один проход.</dd>
+          <dt>Бот подаст «не туда» или заполнит анкету неидеально</dt>
+          <dd>Формы у работодателей иногда меняются. Бот заполняет по твоему профилю и грузит документы; если поле незнакомое — оставит как есть. Всё, что отправлено, видно в журнале автоотправок ниже — проверяй его.</dd>
+          <dt>Уйдёт с неверными данными или старым резюме</dt>
+          <dd>Бот берёт ровно то, что сейчас в «Профиле» и «Документах». Заявка уйдёт с этими данными как есть. Проверь профиль до включения.</dd>
+          <dt>Можно ли остановить</dt>
+          <dd>Да — кнопкой «СТОП» новые отправки прекращаются мгновенно. Но уже отправленные заявки вернуть нельзя.</dd>
+          <dt>Подаст дважды на одну вакансию</dt>
+          <dd>Нет. Уже поданные бот не трогает.</dd>
+          <dt>Слетела сессия Salling / нет входа</dt>
+          <dd>Тогда бот просто не сможет войти и ничего не подаст — это не опасно, заявка не уйдёт «вслепую». Зайди заново в настройках входа.</dd>
+          <dt>Охват «все подходящие»</dt>
+          <dd>Включить можно, только если их немного (предел {{ autopilot_scope_guard }}). Иначе — только «новые после включения». Это защита от рассылки на сотни вакансий.</dd>
+        </dl>
+      </div>
+    </details>
 
     <label class="ap-toggle">
       <input type="checkbox" name="auto_submit" value="1" id="apAutoSubmit" {{ 'checked' if autopilot.auto_submit else '' }}>
