@@ -10,8 +10,14 @@ import paths
 # В обычном dev-запуске обе указывают на папку проекта — поведение прежнее.
 BASE_DIR = paths.RESOURCE_DIR
 DATA_DIR = paths.DATA_DIR
+# SHARED_DIR — общие для всех модулей WexFlow данные (в сборке = %AppData%\WexFlow).
+# Здесь живут единый профиль кандидата и состояние подписки, чтобы Salling и
+# 7-Eleven могли использовать одни и те же данные. В dev совпадает с проектом.
+SHARED_DIR = paths.SHARED_DIR
 DB_PATH = DATA_DIR / "jobs.db"
-PROFILE_PATH = DATA_DIR / "profile.json"          # данные кандидата для предзаполнения
+PROFILE_PATH = DATA_DIR / "profile.json"          # старое местоположение профиля (для миграции)
+SHARED_PROFILE_PATH = SHARED_DIR / "profile.json"  # единый профиль кандидата (общий для модулей)
+LICENSE_PATH = SHARED_DIR / "license.json"         # состояние подписки (заготовка)
 BROWSER_PROFILE_DIR = DATA_DIR / "browser_profile"  # persistent context (логин SuccessFactors)
 SECRETS_PATH = DATA_DIR / "secrets.json"
 

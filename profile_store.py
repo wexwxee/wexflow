@@ -35,9 +35,28 @@ def clean_profile(data: dict) -> dict:
     return data
 
 
+def _migrate_legacy_profile() -> None:
+    """Один раз переносит старый модульный профиль в общий файл WexFlow.
+
+    Раньше профиль кандидата жил в DATA_DIR/profile.json (только Salling). Теперь
+    он общий (SHARED_PROFILE_PATH), чтобы оба модуля использовали одни данные.
+    Если общего файла ещё нет, а старый есть — копируем его содержимое.
+    """
+    shared = config.SHARED_PROFILE_PATH
+    legacy = config.PROFILE_PATH
+    if shared.exists() or not legacy.exists() or shared == legacy:
+        return
+    try:
+        shared.parent.mkdir(parents=True, exist_ok=True)
+        shared.write_text(legacy.read_text(encoding="utf-8"), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def load_profile() -> dict:
-    if config.PROFILE_PATH.exists():
-        return clean_profile(json.loads(config.PROFILE_PATH.read_text(encoding="utf-8")))
+    _migrate_legacy_profile()
+    if config.SHARED_PROFILE_PATH.exists():
+        return clean_profile(json.loads(config.SHARED_PROFILE_PATH.read_text(encoding="utf-8")))
     if (config.BASE_DIR / "profile.example.json").exists():
         data = json.loads((config.BASE_DIR / "profile.example.json").read_text(encoding="utf-8"))
         data["first_name"] = ""
@@ -56,7 +75,8 @@ def load_profile() -> dict:
 
 def save_profile(data: dict):
     data = clean_profile(data)
-    config.PROFILE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    config.SHARED_PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    config.SHARED_PROFILE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def validate_document_path(path: str) -> str:

@@ -29,6 +29,7 @@ import translator_setup
 import html_sanitize
 import profile_store
 import credentials_store
+import subscription
 import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
@@ -246,6 +247,9 @@ app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), nam
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 templates.env.globals["brand_label"] = labels.brand
 templates.env.globals["L"] = labels
+# Текущий тариф доступен во всех шаблонах (бейдж в боковом меню и т.п.).
+templates.env.globals["current_plan"] = subscription.plan
+templates.env.globals["plan_label"] = lambda p=None: subscription.PLANS.get(p or subscription.plan(), subscription.PLANS["free"])["name"]
 try:
     import changelog as _changelog
     import version as _version
@@ -319,6 +323,19 @@ def _profile_choices() -> tuple[list[str], list[str]]:
         pass
     countries = ["Danmark", "Sverige", "Norge", "Tyskland", "Polen"]
     return sorted(city_set, key=str.casefold), countries
+
+
+def _profile_file_info(profile: dict) -> dict:
+    cv_status = profile_store.file_status(profile.get("cv_path", ""))
+    cover_status = profile_store.file_status(profile.get("cover_letter_path", ""))
+    return {
+        "cv_label": profile_store.file_label(profile.get("cv_path", "")),
+        "cv_status": cv_status,
+        "cv_url": "/settings/file/cv" if cv_status == "ok" else "",
+        "cover_label": profile_store.file_label(profile.get("cover_letter_path", "")),
+        "cover_status": cover_status,
+        "cover_url": "/settings/file/cover" if cover_status == "ok" else "",
+    }
 
 
 def _text(html: str | None) -> str:
@@ -485,6 +502,7 @@ def hub(request: Request):
             "user_name": name,
             "autopilot": ap,
             "autopilot_status": _autopilot_status_payload(),
+            "subscription": subscription.status(),
         },
     )
 
@@ -945,24 +963,30 @@ def api_transit(job_id: str):
         return JSONResponse({"ok": False, "error": f"маршрут сейчас не посчитался: {str(exc)[:90]}"})
 
 
+@app.get("/account", response_class=HTMLResponse)
+def account_page(request: Request, saved: str = "", missing: str = ""):
+    """Общие настройки приложения: единый профиль, документы и подписка."""
+    profile = profile_store.load_profile()
+    city_options, country_options = _profile_choices()
+    missing_fields = [x for x in missing.split(",") if x]
+    return templates.TemplateResponse("account.html", {
+        "request": request, "profile": profile,
+        "file_info": _profile_file_info(profile),
+        "saved": saved, "missing_fields": missing_fields,
+        "city_options": city_options, "country_options": country_options,
+        "subscription": subscription.status(),
+    })
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     profile = profile_store.load_profile()
-    file_info = {
-        "cv_label": profile_store.file_label(profile.get("cv_path", "")),
-        "cv_status": profile_store.file_status(profile.get("cv_path", "")),
-        "cv_url": "/settings/file/cv" if profile_store.file_status(profile.get("cv_path", "")) == "ok" else "",
-        "cover_label": profile_store.file_label(profile.get("cover_letter_path", "")),
-        "cover_status": profile_store.file_status(profile.get("cover_letter_path", "")),
-        "cover_url": "/settings/file/cover" if profile_store.file_status(profile.get("cover_letter_path", "")) == "ok" else "",
-    }
-    city_options, country_options = _profile_choices()
-    missing_fields = [x for x in missing.split(",") if x]
     return templates.TemplateResponse("settings.html", {
-        "request": request, "profile": profile, "file_info": file_info,
+        "request": request,
+        "profile": profile, "file_info": _profile_file_info(profile),
         "creds": credentials_store.status(), "home": settings_store.get_home(),
-        "saved": saved, "geoerror": geoerror, "missing_fields": missing_fields,
-        "city_options": city_options, "country_options": country_options,
+        "saved": saved, "geoerror": geoerror,
+        "subscription": subscription.status(),
         "autopilot": autopilot.get_rule(), "brands": labels.BRANDS,
         "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
         "autopilot_count": autopilot.match_count(),
@@ -977,14 +1001,14 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
     })
 
 
-@app.post("/settings/save")
-def settings_save(
+@app.post("/account/save")
+@app.post("/settings/save")  # legacy-алиас: общий профиль теперь в «Общих настройках»
+def account_save(
     first_name: str = Form(""), last_name: str = Form(""), email: str = Form(""),
     phone: str = Form(""), address: str = Form(""), zipcode: str = Form(""),
     city: str = Form(""), country: str = Form(""), linkedin: str = Form(""),
-    cv_path: str = Form(""), cover_letter_path: str = Form(""),
-    cv_file: UploadFile | None = File(None), cover_letter_file: UploadFile | None = File(None),
 ):
+    """Общий профиль — только личные данные. Документы (CV/письмо) — в настройках фирмы."""
     profile = profile_store.load_profile()
     profile.update({
         "first_name": first_name.strip(), "last_name": last_name.strip(),
@@ -994,12 +1018,35 @@ def settings_save(
     })
     missing = _profile_missing(profile)
     if missing:
-        return RedirectResponse("/settings?missing=" + quote_plus(",".join(missing)), status_code=303)
+        return RedirectResponse("/account?missing=" + quote_plus(",".join(missing)), status_code=303)
+    profile_store.save_profile(profile)
+    return RedirectResponse("/account?saved=1", status_code=303)
+
+
+@app.post("/account/waitlist")
+async def account_waitlist(request: Request):
+    """Вейтлист интереса к платному тарифу (заготовка под будущую оплату)."""
+    form = await request.form()
+    email = str(form.get("email") or "").strip()
+    plan = str(form.get("plan") or "pro").strip()
+    if not email:
+        email = str(profile_store.load_profile().get("email") or "").strip()
+    ok = subscription.add_waitlist(email, plan)
+    return JSONResponse({"ok": ok, "email": email})
+
+
+@app.post("/settings/documents/save")
+def settings_documents_save(
+    cv_path: str = Form(""), cover_letter_path: str = Form(""),
+    cv_file: UploadFile | None = File(None), cover_letter_file: UploadFile | None = File(None),
+):
+    """Документы для Salling (CV/письмо). Профиль фирмы: бот грузит их в анкеты Salling."""
+    profile = profile_store.load_profile()
     profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
     if file_error:
         return RedirectResponse(_url_with_system_response("/settings", error=file_error), status_code=303)
     profile_store.save_profile(profile)
-    return RedirectResponse("/settings?saved=1", status_code=303)
+    return RedirectResponse("/settings?saved=1#documents", status_code=303)
 
 
 @app.post("/autopilot/save")

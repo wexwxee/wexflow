@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}WexFlow · Общие настройки{% endblock %}
+
+{% block style %}
+<style>
+  .sub { color:var(--muted); margin:0 0 18px; }
+  .panel { border-radius:8px; padding:20px; background:var(--card); border-color:var(--glass-line); margin-bottom:16px; }
+  .panel h2 { margin:0 0 4px; font-size:17px; }
+  .panel .hint { margin:0 0 14px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:640px){ .grid2 { grid-template-columns:1fr; } }
+  .field { margin-bottom:14px; position:relative; }
+  .field input.invalid { border-color:var(--err-line); box-shadow:0 0 0 3px rgba(252,165,165,.16); }
+  .field .req { color:var(--err-txt); font-size:12px; margin-top:6px; display:none; }
+  .field.missing .req { display:block; }
+  button { padding:10px 18px; font-size:14px; font-weight:600; }
+  .actions { margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .ok, .err { margin:10px 0; }
+  .autosave { color:var(--muted); font-size:13px; }
+  .autosave.saved { color:var(--ok-txt); }
+  .autosave.error { color:var(--err-txt); }
+  .suggest-menu {
+    display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:30;
+    max-height:156px; overflow:auto; padding:5px; background:var(--menu-bg);
+    border:1px solid var(--glass-line); border-radius:10px; box-shadow:var(--shadow);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    overscroll-behavior:contain;
+  }
+  .field.suggest-open { z-index:40; margin-bottom:176px; }
+  .field.suggest-open .suggest-menu { display:block; }
+  @media (max-width:640px){ .field.suggest-open { margin-bottom:166px; } }
+  .suggest-menu::-webkit-scrollbar { width:10px; }
+  .suggest-menu::-webkit-scrollbar-track { background:transparent; }
+  .suggest-menu::-webkit-scrollbar-thumb { background:var(--hover-line); border-radius:999px; border:3px solid var(--menu-bg); background-clip:padding-box; }
+  .suggest-item {
+    width:100%; display:block; text-align:left; border:none; background:transparent; color:var(--txt);
+    border-radius:7px; padding:7px 9px; font-size:13px;
+  }
+  .suggest-main { display:block; color:var(--txt-strong); font-weight:650; }
+  .suggest-sub { display:block; margin-top:2px; color:var(--muted); font-size:12px; font-weight:500; }
+  .suggest-item:hover, .suggest-item.active { background:var(--chip-bg); }
+  .suggest-empty, .suggest-meta { color:var(--muted); font-size:12px; padding:7px 9px; }
+  .suggest-meta { border-bottom:1px solid var(--line); margin-bottom:4px; }
+  .file-card input[type="text"] { overflow:hidden; text-overflow:ellipsis; }
+  .file-open {
+    flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
+    min-height:34px; padding:0 10px; border-radius:8px; border:1px solid var(--line);
+    color:var(--accent); background:var(--glass); font-size:13px; font-weight:700; text-decoration:none;
+  }
+  .file-open:hover { border-color:var(--accent); background:var(--accent-soft); }
+  .crosslink { display:inline-flex; align-items:center; gap:7px; color:var(--accent); text-decoration:none; font-weight:650; font-size:13.5px; }
+  .crosslink:hover { text-decoration:underline; }
+
+  /* ── Подписка ─────────────────────────────────────────────── */
+  .sub-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
+  .sub-top-text h2 { margin:0 0 4px; }
+  .bill-toggle { display:inline-flex; padding:3px; gap:2px; border-radius:999px; border:1px solid var(--glass-line); background:var(--glass); flex:0 0 auto; }
+  .bill-opt {
+    border:0; background:transparent; color:var(--muted); cursor:pointer;
+    font-size:13px; font-weight:700; padding:7px 16px; border-radius:999px; transition:.15s;
+  }
+  .bill-opt:hover { color:var(--txt); }
+  .bill-opt.active { background:var(--accent); color:#07100b; }
+
+  .sub-grid { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; margin:0 0 14px; align-items:stretch; }
+  @media (max-width:860px){ .sub-grid { grid-template-columns:1fr; } }
+  .plan {
+    --plan-accent:var(--accent);
+    position:relative; border:1px solid var(--glass-line); border-radius:14px;
+    padding:20px; background:var(--card); display:flex; flex-direction:column; gap:13px;
+    transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+  }
+  .plan:hover { transform:translateY(-3px); box-shadow:var(--shadow); border-color:color-mix(in srgb, var(--plan-accent) 40%, var(--glass-line)); }
+  .plan.pro { --plan-accent:#8b7bff; }
+  .plan.max { --plan-accent:#f5a623; }
+  .plan.reco {
+    border-color:color-mix(in srgb, var(--plan-accent) 60%, var(--glass-line));
+    box-shadow:0 10px 30px color-mix(in srgb, var(--plan-accent) 16%, transparent);
+    background:linear-gradient(180deg, color-mix(in srgb, var(--plan-accent) 9%, transparent), transparent 40%), var(--card);
+  }
+  .plan.current { border-color:color-mix(in srgb, var(--accent) 50%, var(--glass-line)); }
+  .plan-ribbon {
+    position:absolute; top:-11px; left:50%; transform:translateX(-50%);
+    display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+    font-size:11px; font-weight:800; letter-spacing:.03em; padding:4px 12px; border-radius:999px;
+    color:#0a0a12; background:var(--plan-accent); box-shadow:0 4px 12px color-mix(in srgb, var(--plan-accent) 40%, transparent);
+  }
+  .plan-head { display:flex; align-items:center; gap:11px; }
+  .plan-ic {
+    flex:0 0 auto; width:38px; height:38px; border-radius:10px; display:grid; place-items:center;
+    color:var(--plan-accent); background:color-mix(in srgb, var(--plan-accent) 15%, transparent);
+    border:1px solid color-mix(in srgb, var(--plan-accent) 32%, var(--glass-line));
+  }
+  .plan-title { display:grid; gap:1px; margin-right:auto; min-width:0; }
+  .plan-name { font-size:17px; font-weight:800; color:var(--txt-strong); line-height:1.1; }
+  .plan-tag { font-size:12px; font-weight:600; color:var(--muted); }
+  .plan-badge {
+    font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+    padding:3px 9px; border-radius:999px; border:1px solid var(--glass-line); color:var(--muted); background:var(--card);
+  }
+  .plan-badge.on { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 42%, var(--glass-line)); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .plan-price-row { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; padding-bottom:3px; border-bottom:1px solid var(--glass-line); }
+  .plan-price { font-size:23px; font-weight:800; color:var(--txt-strong); }
+  .plan-price-soon {
+    font-size:15px; font-weight:800; color:var(--plan-accent);
+    padding:3px 11px; border-radius:999px; background:color-mix(in srgb, var(--plan-accent) 13%, transparent);
+    border:1px solid color-mix(in srgb, var(--plan-accent) 32%, var(--glass-line));
+  }
+  .plan-per { font-size:12.5px; font-weight:600; color:var(--muted); }
+  .plan-summary { margin:0; color:var(--muted); font-size:12.5px; line-height:1.45; }
+  .plan-feats { list-style:none; margin:0; padding:0; display:grid; gap:9px; flex:1 1 auto; }
+  .plan-feats li { display:flex; align-items:flex-start; gap:9px; font-size:13.5px; color:var(--txt); line-height:1.4; }
+  .plan-feats .fic { flex:0 0 auto; margin-top:1px; color:var(--plan-accent); }
+  .plan-cta { margin-top:4px; display:grid; gap:6px; justify-items:center; }
+  .plan-cta button { width:100%; }
+  .plan-cta .primary { background:var(--plan-accent); border-color:var(--plan-accent); color:#0a0a12; }
+  .plan-cta button:disabled { opacity:.7; cursor:not-allowed; }
+  .plan-cta .ghost {
+    background:transparent; border:1px solid var(--glass-line); color:var(--muted); font-weight:700;
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  }
+  .plan-soon-hint { font-size:11px; color:var(--muted); }
+  .wl-btn {
+    background:transparent; border:0; cursor:pointer; padding:2px 4px;
+    color:var(--plan-accent); font-size:12px; font-weight:700;
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  .wl-btn:hover { text-decoration:underline; }
+  .wl-btn.done { color:var(--accent); cursor:default; text-decoration:none; }
+  .wl-btn:disabled { cursor:default; }
+  .plan-note { color:var(--muted); font-size:12px; margin:0; line-height:1.45; display:flex; align-items:flex-start; gap:7px; }
+  .plan-note svg { flex:0 0 auto; margin-top:2px; color:var(--accent); }
+
+  /* сравнение тарифов */
+  .cmp { margin:2px 0 14px; border:1px solid var(--glass-line); border-radius:11px; background:var(--glass); overflow:hidden; }
+  .cmp > summary {
+    cursor:pointer; padding:12px 16px; font-weight:700; font-size:13.5px; list-style:none;
+    display:flex; align-items:center; gap:8px; color:var(--txt);
+  }
+  .cmp > summary::-webkit-details-marker { display:none; }
+  .cmp > summary::after { content:"▸"; margin-left:auto; color:var(--muted); transition:transform .15s; }
+  .cmp[open] > summary::after { transform:rotate(90deg); }
+  .cmp > summary:hover { color:var(--txt-strong); }
+  .cmp-wrap { overflow-x:auto; }
+  .cmp-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .cmp-table th, .cmp-table td { padding:10px 14px; text-align:center; border-top:1px solid var(--glass-line); }
+  .cmp-table th:first-child, .cmp-table td:first-child { text-align:left; color:var(--txt); }
+  .cmp-table thead th { color:var(--muted); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .cmp-table thead th.pro { color:#8b7bff; }
+  .cmp-table thead th.max { color:#f5a623; }
+  .cmp-table .yes { color:var(--accent); display:inline-flex; }
+  .cmp-table .no { color:var(--muted); opacity:.6; }
+</style>
+{% endblock %}
+
+{% block body %}
+{{ ui.shell_start('settings') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Настройки') }}</h1>
+    <span class="wex-title-meta">Профиль, документы и подписка — общие для всего приложения</span>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    <a class="tablink" href="/hub">← на главную</a>
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+<section class="wex-workbench wex-narrow">
+  <p class="sub">Эти данные используются всеми модулями WexFlow (Salling и 7-Eleven). Заполни один раз.</p>
+
+  {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
+  {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
+
+  <!-- Общий профиль (личные данные) -->
+  <form id="profileForm" class="panel" method="post" action="/account/save">
+    <h2>Профиль кандидата</h2>
+    <p class="hint">Общие личные данные — используются всеми модулями. CV и письмо настраиваются отдельно в каждой фирме.</p>
+    <div class="grid2">
+      <div class="field"><label class="lbl">Имя</label><input type="text" name="first_name" value="{{ profile.first_name or '' }}" data-required="Имя" autocomplete="given-name"><div class="req">Заполни имя</div></div>
+      <div class="field"><label class="lbl">Фамилия</label><input type="text" name="last_name" value="{{ profile.last_name or '' }}" data-required="Фамилия" autocomplete="family-name"><div class="req">Заполни фамилию</div></div>
+      <div class="field"><label class="lbl">Email</label><input type="email" name="email" value="{{ profile.email or '' }}" data-required="Email" autocomplete="email"><div class="req">Заполни email</div></div>
+      <div class="field"><label class="lbl">Телефон</label><input type="tel" name="phone" value="{{ profile.phone or '' }}" data-required="Телефон" autocomplete="tel"><div class="req">Заполни телефон</div></div>
+      <div class="field"><label class="lbl">Адрес</label><input type="text" name="address" value="{{ profile.address or '' }}" data-required="Адрес" autocomplete="street-address"><div class="req">Заполни адрес</div></div>
+      <div class="field"><label class="lbl">Индекс</label><input type="text" name="zipcode" value="{{ profile.zip or '' }}" data-required="Индекс" autocomplete="postal-code"><div class="req">Заполни индекс</div></div>
+      <div class="field" data-suggest='{{ city_options|tojson }}' data-suggest-kind="city"><label class="lbl">Город</label><input type="text" name="city" value="{{ profile.city or '' }}" data-required="Город" autocomplete="off" placeholder="ищи город по всей Дании"><div class="req">Выбери или введи город</div><div class="suggest-menu"></div></div>
+      <div class="field" data-suggest='{{ country_options|tojson }}' data-suggest-kind="country"><label class="lbl">Страна</label><input type="text" name="country" value="{{ profile.country or '' }}" data-required="Страна" autocomplete="off" placeholder="например: Danmark"><div class="req">Выбери страну</div><div class="suggest-menu"></div></div>
+      <div class="field"><label class="lbl">LinkedIn (необязательно)</label><input type="text" name="linkedin" value="{{ profile.linkedin or '' }}"></div>
+    </div>
+
+    <div class="actions" style="margin-top:16px;"><button class="primary" type="submit">Сохранить профиль</button><span id="autosaveStatus" class="autosave">Автосохранение включено</span></div>
+  </form>
+
+  <!-- Подписка (заготовка) -->
+  <div class="panel sub-panel">
+    <div class="sub-top">
+      <div class="sub-top-text">
+        <h2>{{ ic.i('star', 17) }} Подписка</h2>
+        <p class="hint" style="margin:0;">Текущий тариф: <b>{{ subscription.current_name }}</b>. Оплата подключится позже — пока витрина.</p>
+      </div>
+      <div class="bill-toggle" id="billToggle" role="tablist" aria-label="Период оплаты">
+        <button type="button" class="bill-opt active" data-period="мес" role="tab">Месяц</button>
+        <button type="button" class="bill-opt" data-period="нед" role="tab">Неделя</button>
+      </div>
+    </div>
+
+    <div class="sub-grid">
+      {% for p in subscription.plans %}
+      <div class="plan {{ p.key }} {{ 'current' if p.is_current else '' }} {{ 'reco' if p.recommended else '' }}">
+        {% if p.recommended %}<span class="plan-ribbon">{{ ic.i('star', 11) }} Популярный</span>{% endif %}
+        <div class="plan-head">
+          <span class="plan-ic">{{ ic.i(p.icon, 18) }}</span>
+          <span class="plan-title">
+            <span class="plan-name">{{ p.name }}</span>
+            <span class="plan-tag">{{ p.tagline }}</span>
+          </span>
+          {% if p.is_current %}<span class="plan-badge on">Текущий</span>{% endif %}
+        </div>
+
+        <div class="plan-price-row">
+          {% if p.is_free %}
+            <span class="plan-price">Бесплатно</span><span class="plan-per">навсегда</span>
+          {% else %}
+            <span class="plan-price-soon">Цена скоро</span><span class="plan-per">/ <span class="bill-unit">мес</span> · €</span>
+          {% endif %}
+        </div>
+
+        <p class="plan-summary">{{ p.summary }}</p>
+
+        <ul class="plan-feats">
+          {% for f in p.features %}
+          <li><span class="fic">{{ ic.i('check', 14) }}</span>{{ f }}</li>
+          {% endfor %}
+        </ul>
+
+        <div class="plan-cta">
+          {% if p.is_current %}
+            <button class="ghost" type="button" disabled>{{ ic.i('check', 14) }} Ваш план</button>
+          {% else %}
+            <button class="primary" type="button" disabled>Выбрать {{ p.name }}</button>
+            <button class="wl-btn" type="button" data-plan="{{ p.key }}">{{ ic.i('star', 12) }} Уведомить о запуске</button>
+            <span class="plan-soon-hint">Скоро · 7 дней бесплатно</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <details class="cmp">
+      <summary>{{ ic.i('sliders', 14) }} Сравнить тарифы</summary>
+      <div class="cmp-wrap">
+        <table class="cmp-table">
+          <thead>
+            <tr>
+              <th>Функция</th>
+              <th>Free</th>
+              <th class="pro">Pro</th>
+              <th class="max">Max</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in subscription.comparison %}
+            <tr>
+              <td>{{ row.label }}</td>
+              <td>{% if row.free %}<span class="yes">{{ ic.i('check', 13) }}</span>{% else %}<span class="no">—</span>{% endif %}</td>
+              <td>{% if row.pro %}<span class="yes">{{ ic.i('check', 13) }}</span>{% else %}<span class="no">—</span>{% endif %}</td>
+              <td>{% if row.max %}<span class="yes">{{ ic.i('check', 13) }}</span>{% else %}<span class="no">—</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <p class="plan-note">{{ ic.i('star', 12) }} Тарифы ещё не финализированы. Когда подключим оплату, здесь появятся реальные цены (€) и оформление помесячно/понедельно. Сейчас всё доступно бесплатно.</p>
+  </div>
+
+  <!-- Переход к настройкам модулей -->
+  <div class="panel">
+    <h2>{{ ic.i('sliders', 17) }} Настройки модулей</h2>
+    <p class="hint">Параметры, которые относятся к конкретному модулю.</p>
+    <div class="actions">
+      <a class="crosslink" href="/settings">{{ ic.i('cart', 14) }} Настройки Salling →</a>
+      <a class="crosslink" href="/__app/7eleven">{{ ic.i('store', 14) }} Модуль 7-Eleven →</a>
+    </div>
+  </div>
+</section>
+{{ ui.shell_end() }}
+{% endblock %}
+
+{% block script %}
+<script>
+  const profileForm = document.getElementById('profileForm');
+  const autosaveStatus = document.getElementById('autosaveStatus');
+  const requiredInputs = [...document.querySelectorAll('#profileForm [data-required]')];
+  let saveTimer = null;
+
+  function normalizeProfileValue(input) {
+    const key = (input.name || '').toLowerCase();
+    const v = input.value.trim();
+    if (key === 'city') {
+      const folded = v.toLowerCase();
+      if (['k??benhavn', 'k?benhavn', 'kobenhavn', 'koebenhavn', 'copenhagen'].includes(folded)) input.value = 'København';
+    }
+    if (key === 'country') {
+      const folded = v.toLowerCase();
+      if (['denmark', 'dk', 'danish'].includes(folded)) input.value = 'Danmark';
+    }
+  }
+
+  function validateProfile(show = false) {
+    const missing = [];
+    requiredInputs.forEach((input) => {
+      normalizeProfileValue(input);
+      const bad = !input.value.trim();
+      input.classList.toggle('invalid', bad && show);
+      input.closest('.field')?.classList.toggle('missing', bad && show);
+      if (bad) missing.push(input.dataset.required);
+    });
+    return missing;
+  }
+
+  async function autosaveProfile() {
+    if (!profileForm) return;
+    requiredInputs.forEach(normalizeProfileValue);
+    autosaveStatus.textContent = 'Сохраняю...';
+    autosaveStatus.className = 'autosave';
+    const fd = new FormData();
+    ['first_name','last_name','email','phone','address','zipcode','city','country','linkedin'].forEach((name) => {
+      const input = profileForm.querySelector(`[name="${name}"]`);
+      if (input) fd.append(name, input.value || '');
+    });
+    try {
+      const res = await fetch('/settings/profile/autosave', { method:'POST', body:fd });
+      const data = await res.json();
+      if (!data.ok) throw new Error('save failed');
+      const missing = data.missing || [];
+      autosaveStatus.textContent = missing.length ? 'Сохранено, но нужно заполнить: ' + missing.join(', ') : 'Сохранено';
+      autosaveStatus.className = 'autosave saved';
+      validateProfile(false);
+    } catch (e) {
+      autosaveStatus.textContent = 'Не удалось автосохранить';
+      autosaveStatus.className = 'autosave error';
+    }
+  }
+
+  if (profileForm) {
+    profileForm.addEventListener('input', (event) => {
+      if (event.target.matches('input[type="file"]')) return;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(autosaveProfile, 550);
+    });
+    profileForm.addEventListener('submit', (event) => {
+      const missing = validateProfile(true);
+      if (missing.length) {
+        event.preventDefault();
+        autosaveStatus.textContent = 'Нужно заполнить: ' + missing.join(', ');
+        autosaveStatus.className = 'autosave error';
+        requiredInputs.find((input) => !input.value.trim())?.focus();
+      }
+    });
+    validateProfile(false);
+  }
+
+  document.querySelectorAll('[data-suggest]').forEach((field) => {
+    const input = field.querySelector('input');
+    const menu = field.querySelector('.suggest-menu');
+    const items = JSON.parse(field.dataset.suggest || '[]');
+    let active = -1;
+
+    function fold(value) {
+      return String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/ø/g, 'o')
+        .replace(/æ/g, 'ae')
+        .replace(/å/g, 'a');
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function render() {
+      const q = fold(input.value.trim());
+      const shown = items.filter((x) => !q || fold(x).includes(q)).slice(0, 60);
+      const meta = field.dataset.suggestKind === 'city'
+        ? '<div class="suggest-meta">Поиск по городам Дании</div>'
+        : '<div class="suggest-meta">Выбор страны</div>';
+      const body = shown.length
+        ? shown.map((item, i) => `<button type="button" class="suggest-item${i === active ? ' active' : ''}" data-value="${escapeHtml(item)}">${escapeHtml(item)}</button>`).join('')
+        : '<div class="suggest-empty">Ничего не найдено, можно ввести вручную</div>';
+      menu.innerHTML = meta + body;
+      field.classList.toggle('suggest-open', shown.length > 0);
+    }
+
+    input.addEventListener('focus', () => { active = -1; render(); });
+    input.addEventListener('input', () => { active = -1; render(); });
+    input.addEventListener('keydown', (event) => {
+      const buttons = [...menu.querySelectorAll('.suggest-item')];
+      if (!buttons.length) return;
+      if (event.key === 'ArrowDown') { event.preventDefault(); active = Math.min(buttons.length - 1, active + 1); render(); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); active = Math.max(0, active - 1); render(); }
+      if (event.key === 'Enter' && active >= 0) {
+        event.preventDefault();
+        input.value = buttons[active].dataset.value;
+        field.classList.remove('suggest-open');
+        input.dispatchEvent(new Event('input', { bubbles:true }));
+      }
+    });
+    menu.addEventListener('click', (event) => {
+      const btn = event.target.closest('.suggest-item');
+      if (!btn) return;
+      input.value = btn.dataset.value;
+      field.classList.remove('suggest-open');
+      input.dispatchEvent(new Event('input', { bubbles:true }));
+    });
+    document.addEventListener('click', (event) => {
+      if (!field.contains(event.target)) field.classList.remove('suggest-open');
+    });
+  });
+
+  // переключатель периода оплаты (заготовка): меняет подпись у цены
+  (function () {
+    var toggle = document.getElementById('billToggle');
+    if (!toggle) return;
+    var opts = [].slice.call(toggle.querySelectorAll('.bill-opt'));
+    var units = [].slice.call(document.querySelectorAll('.bill-unit'));
+    opts.forEach(function (b) {
+      b.addEventListener('click', function () {
+        opts.forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        var u = b.dataset.period || 'мес';
+        units.forEach(function (el) { el.textContent = u; });
+      });
+    });
+  })();
+
+  // вейтлист: «Уведомить о запуске» — шлём текущий e-mail профиля + тариф
+  (function () {
+    var btns = [].slice.call(document.querySelectorAll('.wl-btn'));
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (b.classList.contains('done')) return;
+        b.disabled = true;
+        var fd = new FormData();
+        fd.append('plan', b.dataset.plan || 'pro');
+        var em = document.querySelector('#profileForm [name="email"]');
+        if (em && em.value) fd.append('email', em.value);
+        fetch('/account/waitlist', { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d && d.ok) { b.classList.add('done'); b.innerHTML = '✓ Сообщим на ' + (d.email || 'твою почту'); }
+            else { b.disabled = false; b.textContent = 'Не вышло — проверь e-mail в профиле'; }
+          })
+          .catch(function () { b.disabled = false; });
+      });
+    });
+  })();
+</script>
+{% endblock %}

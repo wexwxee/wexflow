@@ -645,7 +645,7 @@
       {% if j.status == 'applied' %}
       <button type="button" class="ghost" disabled>{{ check(13) }} Уже подано</button>
       {% else %}
-      <a href="/job/{{ j.id }}/apply"><button class="primary">Подать →</button></a>
+      <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>
       {% endif %}
       <a href="/job/{{ j.id }}"><button type="button" class="ghost">Подробнее</button></a>
       <a href="{{ maps_urls[j.id] }}"><button type="button" class="ghost">{{ ic.i('map', 13) }} Маршрут</button></a>
