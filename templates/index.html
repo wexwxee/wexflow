@@ -424,7 +424,7 @@
 <svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><polyline points="20 6 9 17 4 12"/></svg>
 {%- endmacro %}
 
-{{ ui.shell_start('jobs') }}
+{{ ui.shell_start('applied' if f.status == 'applied' else 'jobs') }}
 
 <header class="wex-topbar jobs-topbar">
   <div class="wex-title-group">

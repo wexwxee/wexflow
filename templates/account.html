@@ -53,6 +53,45 @@
   .file-open:hover { border-color:var(--accent); background:var(--accent-soft); }
   .crosslink { display:inline-flex; align-items:center; gap:7px; color:var(--accent); text-decoration:none; font-weight:650; font-size:13.5px; }
   .crosslink:hover { text-decoration:underline; }
+  .back-btn {
+    display:inline-flex; align-items:center; gap:7px; min-height:38px; padding:0 15px;
+    border-radius:9px; border:1px solid var(--glass-line); background:var(--glass);
+    color:var(--txt); font-size:13.5px; font-weight:700; text-decoration:none;
+    transition:transform .14s ease, border-color .14s ease, background .14s ease;
+  }
+  .back-btn:hover { transform:translateY(-1px); border-color:var(--hover-line); color:var(--txt-strong); background:var(--card); }
+  .back-btn svg { color:var(--accent); flex:0 0 auto; }
+
+  /* ── Аккаунт ──────────────────────────────────────────────── */
+  .acct-card {
+    display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap;
+    background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 55%), var(--card);
+  }
+  .acct-id { display:flex; align-items:center; gap:14px; min-width:0; }
+  .acct-avatar {
+    flex:0 0 auto; width:52px; height:52px; border-radius:50%; display:grid; place-items:center;
+    font-size:22px; font-weight:800; color:#07100b;
+    background:linear-gradient(135deg, var(--accent), #2f9bff);
+    box-shadow:0 6px 16px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .acct-meta { display:grid; gap:3px; min-width:0; }
+  .acct-name { font-size:17px; font-weight:800; color:var(--txt-strong); line-height:1.15; }
+  .acct-line { display:inline-flex; align-items:center; gap:9px; flex-wrap:wrap; color:var(--muted); font-size:13px; }
+  .acct-plan {
+    display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:800;
+    padding:2px 9px; border-radius:999px; color:var(--accent);
+    border:1px solid color-mix(in srgb, var(--accent) 40%, var(--glass-line));
+    background:color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .acct-plan.pro { color:#8b7bff; border-color:color-mix(in srgb, #8b7bff 40%, var(--glass-line)); background:color-mix(in srgb, #8b7bff 12%, transparent); }
+  .acct-plan.max { color:#f5a623; border-color:color-mix(in srgb, #f5a623 40%, var(--glass-line)); background:color-mix(in srgb, #f5a623 12%, transparent); }
+  .acct-cta { display:grid; gap:6px; justify-items:end; text-align:right; max-width:340px; }
+  .acct-cta button:disabled { opacity:.8; cursor:not-allowed; }
+  .acct-hint { color:var(--muted); font-size:11.5px; line-height:1.4; }
+  @media (max-width:640px){
+    .acct-card { flex-direction:column; align-items:flex-start; }
+    .acct-cta { justify-items:start; text-align:left; max-width:none; }
+  }
 
   /* ── Подписка ─────────────────────────────────────────────── */
   .sub-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
@@ -165,7 +204,7 @@
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
-    <a class="tablink" href="/hub">← на главную</a>
+    <a class="back-btn" href="/hub">{{ ic.i('home', 15) }} На главную</a>
     {{ ui.theme_toggle() }}
   </div>
 </header>
@@ -174,6 +213,24 @@
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
+
+  <!-- Аккаунт (заготовка) -->
+  <div class="panel acct-card">
+    <div class="acct-id">
+      <span class="acct-avatar">{{ account.initial }}</span>
+      <div class="acct-meta">
+        <span class="acct-name">{{ account.display_name }}</span>
+        <span class="acct-line">
+          {% if account.email %}{{ account.email }}{% else %}e-mail не заполнен{% endif %}
+          <span class="acct-plan {{ subscription.plan }}">{{ ic.i('star', 11) }} {{ subscription.current_name }}</span>
+        </span>
+      </div>
+    </div>
+    <div class="acct-cta">
+      <button class="primary" type="button" disabled>{{ ic.i('unlock', 14) }} Войти в WexFlow — скоро</button>
+      <span class="acct-hint">Вход сохранит профиль, документы и подписку в облаке и синхронизирует их между устройствами.</span>
+    </div>
+  </div>
 
   <!-- Общий профиль (личные данные) -->
   <form id="profileForm" class="panel" method="post" action="/account/save">

@@ -30,6 +30,7 @@ import html_sanitize
 import profile_store
 import credentials_store
 import subscription
+import account as account_mod
 import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
@@ -975,6 +976,7 @@ def account_page(request: Request, saved: str = "", missing: str = ""):
         "saved": saved, "missing_fields": missing_fields,
         "city_options": city_options, "country_options": country_options,
         "subscription": subscription.status(),
+        "account": account_mod.status(profile),
     })
 
 
