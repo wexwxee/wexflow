@@ -15,7 +15,6 @@
     <h3>Не удалось загрузить вакансии</h3>
     <p>Проверь интернет и попробуй снова. Если не помогает — антивирус или файрвол может блокировать запрос к Salling.</p>
     <form method="post" action="/refresh"><button class="primary" type="submit">{{ ic.i('refresh', 14) }} Попробовать снова</button></form>
-    <code class="empty-err">{{ sync_error }}</code>
   {% elif f.status == 'applied' %}
     <div class="empty-ic applied">{{ ic.i('check', 24) }}</div>
     {% if applied_count == 0 %}
@@ -102,11 +101,6 @@
   }
   .empty-btn:hover { border-color: var(--hover-line); background: var(--menu-bg); }
   .empty-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
-  .empty-err {
-    font-size: 11.5px; color: var(--muted); background: var(--bg-soft);
-    border: 1px solid var(--glass-line); border-radius: 8px; padding: 6px 10px;
-    max-width: 100%; overflow-wrap: anywhere;
-  }
   .empty-spin {
     width: 34px; height: 34px; border-radius: 50%;
     border: 3px solid var(--glass-line); border-top-color: var(--accent);
@@ -691,9 +685,9 @@
   </div>
   <div class="bactions">
     <button class="primary" type="submit" name="mode" value="dry"
-            data-tip-title="Без отправки" data-tip-body="Бот откроет форму, заполнит поля и прикрепит файлы, но не нажмёт Ansøg. Хорошо для проверки.">Подготовить</button>
+            data-tip-title="Без отправки" data-tip-body="WexFlow откроет форму, заполнит поля и прикрепит файлы, но не отправит заявку. Хорошо для проверки.">Подготовить</button>
     <button class="submitbtn" type="submit" name="mode" value="submit"
-            data-tip-title="Авто-отправка" data-tip-body="Бот заполнит форму, нажмёт Ansøg/Apply и подтвердит согласие, если сайт его покажет.">Авто-отправка</button>
+            data-tip-title="Авто-отправка" data-tip-body="WexFlow заполнит форму, отправит заявку и подтвердит согласие, если сайт его покажет.">Авто-отправка</button>
     <button type="button" id="selclear">Сброс</button>
   </div>
 </form>

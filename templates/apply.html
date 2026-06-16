@@ -20,11 +20,11 @@
   .actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--glass-line); }
   .apply-brand { margin:18px 0 12px; }
-  /* живой лог бота — всегда тёмный «терминал» */
+  /* диагностика подачи — тёмный блок для редких случаев */
   .botlog { margin:10px 0 0; padding:14px; max-height:340px; overflow:auto;
     background:#06090a; color:#c8ded6; border-radius:10px; border:1px solid rgba(34,209,158,.15);
     font:12.5px/1.55 "Cascadia Code", Consolas, monospace; white-space:pre-wrap; word-break:break-word; }
-  .botlog:empty::before { content:"Лог пока пуст — запусти подачу."; color:#3d5e54; }
+  .botlog:empty::before { content:"Диагностика пока пустая."; color:#3d5e54; }
   .loghead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .loghead h2 { margin:0; }
   .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--neon);
@@ -54,17 +54,17 @@
   {% else %}
     <h1>Подача заявки</h1>
     {% if started %}
-    <div class="ok">Открыл браузер подачи. Бот войдёт в аккаунт и заполнит форму — проверь и нажми Apply/Submit сам.</div>
+    <div class="ok">WexFlow открыл форму подачи. Проверь заполненные поля и заверши заявку, когда всё готово.</div>
     <div class="actions" style="margin:10px 0 4px;">
       <a href="/"><button class="primary" type="button">← Назад к вакансиям</button></a>
     </div>
     {% endif %}
     {% if saved == 'files' %}
-      <div class="ok">Файлы для подачи сохранены. Бот будет использовать обновлённые CV и мотивационное письмо.</div>
+      <div class="ok">Файлы для подачи сохранены. WexFlow будет использовать обновлённые CV и мотивационное письмо.</div>
     {% elif saved %}
-      <div class="ok">Данные входа сохранены. Теперь бот сам введёт их и нажмёт Sign In.</div>
+      <div class="ok">Данные входа сохранены. WexFlow сможет использовать их на странице входа.</div>
     {% endif %}
-    {% if reset %}<div class="ok">Сессия браузера бота очищена. При следующем запуске бот войдёт заново под сохранёнными данными.</div>{% endif %}
+    {% if reset %}<div class="ok">Сохранённый вход очищен. При следующей подаче WexFlow войдёт заново с сохранёнными данными.</div>{% endif %}
 
     <div class="glass panel">
       <h2 style="margin-top:0;">{{ job.title }}</h2>
@@ -76,7 +76,6 @@
       </div>
       <div class="meta">
         Адрес: {{ job.street or '' }}{% if job.zip %}, {{ job.zip }}{% endif %} {{ job.city or '' }}{% if job.country %}, {{ job.country }}{% endif %}<br>
-        Requisition: {{ job.requisition_id or job.id }}<br>
         {% if job.start_date %}Старт: {{ job.start_date }}<br>{% endif %}
         <a href="{{ maps_url }}">Маршрут в Google Maps</a>
       </div>
@@ -85,8 +84,7 @@
     <form class="glass panel" method="post" action="/credentials/save">
       <input type="hidden" name="job_id" value="{{ job.id }}">
       <h2 style="margin-top:0;">Аккаунт Salling Group</h2>
-      <p class="hint" style="margin-top:0;">Бот сам введёт эти данные на странице входа Salling и нажмёт <b>Sign In</b>.
-         Хранятся локально на твоём компьютере; пароль — в зашифрованном виде (Windows DPAPI), никуда не отправляется.</p>
+      <p class="hint" style="margin-top:0;">WexFlow использует эти данные только для входа в Salling. Они хранятся локально на твоём компьютере и никуда не отправляются.</p>
       <div class="cred-fields">
         <div class="field">
           <label>Email</label>
@@ -110,9 +108,9 @@
 
     <form class="glass panel" method="post" action="/apply/reset-browser" style="padding:14px 18px;">
       <input type="hidden" name="job_id" value="{{ job.id }}">
-      <span class="hint" style="margin-top:0;">Бот заходит под чужим/старым аккаунтом? Сбрось сессию браузера — войдёт заново под сохранёнными данными.</span>
+      <span class="hint" style="margin-top:0;">Открылся старый или чужой аккаунт? Сбрось сохранённый вход — при следующей подаче WexFlow войдёт заново.</span>
       <div class="actions" style="margin-top:10px;">
-        <button class="secondary" type="submit">{{ ic.i('unlock', 13) }} Выйти из аккаунта в браузере бота</button>
+        <button class="secondary" type="submit">{{ ic.i('unlock', 13) }} Сбросить вход Salling</button>
       </div>
     </form>
 
@@ -132,7 +130,7 @@
         <div class="file-card">
           <label>Мотивационное письмо</label>
           <input type="text" name="cover_letter_path" value="{{ profile.cover_letter_path or '' }}" placeholder="Вставь путь к письму или выбери файл ниже">
-          <div class="hint">Этот файл софт попробует загрузить в поле Attach coverletter.</div>
+          <div class="hint">WexFlow попробует приложить этот файл как мотивационное письмо.</div>
           <div class="file-picker">
             <label class="file-button" for="cover_letter_file">Выбрать файл</label>
             <span class="file-name {{ 'saved' if file_info.cover_status == 'ok' else ('missing' if file_info.cover_status == 'missing' else '') }}" data-file-name="cover_letter_file">{{ file_info.cover_label }}</span>
@@ -140,9 +138,9 @@
           </div>
         </div>
       </div>
-      <p class="meta">При автоподаче софт откроет форму этой вакансии, попробует войти, загрузить сохранённые файлы, нажать Apply/Ansøg и подтвердить всплывающее согласие, если оно появится.</p>
+      <p class="meta">WexFlow откроет форму этой вакансии, попробует войти, приложить сохранённые файлы и продолжить подачу. Перед отправкой проверь данные на странице работодателя.</p>
       <div class="actions">
-        <button class="primary large" type="submit" name="mode" value="submit" formaction="/job/{{ job.id }}/apply/start">{{ ic.i('send', 14) }} Запустить автоподачу</button>
+        <button class="primary large" type="submit" name="mode" value="submit" formaction="/job/{{ job.id }}/apply/start">{{ ic.i('send', 14) }} Запустить подачу</button>
         <button class="secondary" type="submit" name="mode" value="dry" formaction="/job/{{ job.id }}/apply/start">Только подготовить без отправки</button>
         <button class="secondary" type="submit" formaction="/job/{{ job.id }}/apply/save">Сохранить файлы</button>
         <a href="{{ job.application_link }}">
@@ -153,15 +151,15 @@
 
     <div class="glass panel" id="botlogPanel" {% if not started %}hidden{% endif %}>
       <div class="loghead">
-        <h2>Ход подачи</h2>
+        <h2>Диагностика подачи</h2>
         <span class="pulse" id="logPulse" hidden></span>
-        <span class="hint" style="margin:0;">лог бота, обновляется сам · файл apply_last.log</span>
+        <span class="hint" style="margin:0;">Открой, если нужно понять, где остановилась подача.</span>
         <button type="button" class="ghost" id="logRefresh" style="margin-left:auto;padding:6px 12px;font-size:12px;">{{ ic.i('refresh', 12) }} Обновить</button>
       </div>
       <pre class="botlog" id="botlog"></pre>
     </div>
     {% if not started %}
-    <p><a href="#" id="showLog" class="hint">показать лог последней подачи</a></p>
+    <p><a href="#" id="showLog" class="hint">показать диагностику последней подачи</a></p>
     {% endif %}
   {% endif %}
 </section>
@@ -196,7 +194,7 @@
     });
   });
 
-  // --- живой лог бота ---
+  // --- диагностика подачи ---
   const logPanel = document.getElementById("botlogPanel");
   const logEl = document.getElementById("botlog");
   const logPulse = document.getElementById("logPulse");
@@ -215,7 +213,7 @@
       } else {
         idleTicks++;
       }
-      // лог не растёт 60 секунд — перестаём опрашивать (бот закончил)
+      // диагностика не меняется 60 секунд — перестаём опрашивать
       if (idleTicks > 30 && logTimer) { clearInterval(logTimer); logTimer = null; logPulse.hidden = true; }
     } catch (e) { /* сервер перезапускается — просто попробуем позже */ }
   }

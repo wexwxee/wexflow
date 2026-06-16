@@ -94,7 +94,7 @@ def validate_document_path(path: str) -> str:
             if candidate.stat().st_size > MAX_UPLOAD_BYTES:
                 raise ValueError("Файл слишком большой. Максимум 25 МБ.")
     except OSError as exc:
-        raise ValueError(f"Не удалось проверить файл: {exc}") from exc
+        raise ValueError("Не удалось проверить файл. Попробуй выбрать его заново.") from exc
     return str(candidate)
 
 

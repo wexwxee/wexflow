@@ -90,7 +90,7 @@
       </div>
     {% endif %}
     <h2 class="section-title">Русский перевод</h2>
-    {% if trerror %}<div class="notice warn" style="margin-bottom:10px;">Перевод не получился: {{ trerror }}. Попробуй ещё раз чуть позже.</div>{% endif %}
+    {% if trerror %}<div class="notice warn" style="margin-bottom:10px;">Перевод сейчас недоступен. Попробуй ещё раз чуть позже.</div>{% endif %}
     {% if job.description_ru %}
       {% if translator_name %}<p class="meta">Переведено через {{ translator_name }}.</p>{% endif %}
       <div class="desc translation">{{ description_ru_html | safe }}</div>
@@ -122,9 +122,9 @@
       if (d.ok) {
         out.textContent = `≈ ${d.minutes} мин на транспорте, пересадок: ${d.transfers}` + (d.modes && d.modes.length ? ` (${d.modes.join(", ")})` : "");
       } else {
-        out.textContent = "не удалось: " + (d.error || "нет данных");
+        out.textContent = d.error || "Маршрут сейчас не посчитался.";
       }
-    } catch (e) { out.textContent = "ошибка запроса"; }
+    } catch (e) { out.textContent = "Маршрут сейчас не посчитался."; }
     tb.classList.remove("loading"); tb.textContent = "Обновить время в пути"; tb.disabled = false;
   });
   document.querySelectorAll(".translate-form").forEach((f) => f.addEventListener("submit", () => {

@@ -241,7 +241,8 @@ def api_version():
             "update": update_check.check(),
         }
     except Exception as exc:  # noqa: BLE001
-        return {"version": "dev", "repo": "", "update": None, "error": str(exc)[:200]}
+        print(f"версия: не удалось проверить обновления — {exc}")
+        return {"version": "dev", "repo": "", "update": None, "error": "version unavailable"}
 
 
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
@@ -378,7 +379,6 @@ def _job_facts(job: Job, distance: float | None) -> list[dict]:
         cat_labels = [labels.CATEGORY.get(c, c) for c in job.categories.split(",") if c]
         if cat_labels:
             facts.append({"label": "Категория", "value": ", ".join(cat_labels[:3]), "kind": "category"})
-    facts.append({"label": "ID (requisition)", "value": str(job.requisition_id or job.id), "kind": "muted"})
 
     body = _text(job.description)
     signals = []
@@ -506,6 +506,11 @@ def hub(request: Request):
             "subscription": subscription.status(),
         },
     )
+
+
+@app.get("/apply-by-link")
+def apply_by_link():
+    return RedirectResponse("http://127.0.0.1:8078/", status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -848,7 +853,8 @@ def apply_log():
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError as e:
-        return JSONResponse({"ok": False, "error": str(e)[:120], "lines": []})
+        print(f"диагностика подачи: не удалось прочитать лог — {e}")
+        return JSONResponse({"ok": False, "error": "diagnostics unavailable", "lines": []})
     return JSONResponse({"ok": True, "lines": lines[-120:]})
 
 
@@ -960,8 +966,8 @@ def api_transit(job_id: str):
         return JSONResponse({"ok": False, "error": "у вакансии нет координат для маршрута"})
     try:
         return JSONResponse(transit.summary(home["lat"], home["lon"], job.lat, job.lon))
-    except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"ok": False, "error": f"маршрут сейчас не посчитался: {str(exc)[:90]}"})
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "error": "маршрут сейчас не посчитался"})
 
 
 @app.get("/account", response_class=HTMLResponse)
@@ -1042,7 +1048,7 @@ def settings_documents_save(
     cv_path: str = Form(""), cover_letter_path: str = Form(""),
     cv_file: UploadFile | None = File(None), cover_letter_file: UploadFile | None = File(None),
 ):
-    """Документы для Salling (CV/письмо). Профиль фирмы: бот грузит их в анкеты Salling."""
+    """Документы для Salling (CV/письмо). WexFlow использует их в анкетах Salling."""
     profile = profile_store.load_profile()
     profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
     if file_error:
@@ -1101,8 +1107,8 @@ def autopilot_save(
 
 @app.post("/autopilot/prepare")
 def autopilot_prepare(request: Request):
-    """Автоподготовка (Фаза 2): открыть до 5 свежих подходящих вакансий, бот
-    заполнит анкеты и ОСТАНОВИТСЯ перед отправкой. Реальную отправку (--submit)
+    """Автоподготовка (Фаза 2): открыть до 5 свежих подходящих вакансий,
+    заполнить анкеты и ОСТАНОВИТЬСЯ перед отправкой. Реальную отправку (--submit)
     не запускаем НИКОГДА — её жмёт пользователь сам."""
     jobs = autopilot.pending_prepare(limit=5)
     if not jobs:
@@ -1113,8 +1119,8 @@ def autopilot_prepare(request: Request):
     autopilot.mark_prepared(ids)
     return _redirect_back(
         request, "/settings",
-        notice=f"Готовлю {len(ids)} вакансий — откроется браузер, бот заполнит анкеты "
-               "и остановится. Проверь и нажми «Отправить» сам.",
+        notice=f"Готовлю {len(ids)} вакансий — WexFlow заполнит формы "
+               "и остановится перед отправкой. Проверь и нажми «Отправить» сам.",
     )
 
 
@@ -1138,7 +1144,7 @@ def autopilot_autosubmit(
     was = bool(autopilot.get_rule().get("auto_submit"))
 
     # ПРЕДОХРАНИТЕЛЬ: «все подходящие» + включение нельзя, если под правило
-    # сейчас попадает слишком много — иначе бот начнёт постепенно подавать на
+    # сейчас попадает слишком много — иначе автоотправка начнёт постепенно подавать на
     # сотни вакансий. Заставляем сузить фильтры или взять «только новые».
     if on and scope == "all":
         pool = autopilot.scope_all_pool()
@@ -1221,7 +1227,7 @@ def settings_file(kind: str):
         "cover": profile.get("cover_letter_path", ""),
     }.get(kind)
     if not path or profile_store.file_status(path) != "ok":
-        raise HTTPException(status_code=404, detail="file not found")
+        raise HTTPException(status_code=404, detail="Файл не найден")
     clean_path = profile_store.validate_document_path(path)
     filename = profile_store.file_label(clean_path)
     is_pdf = filename.lower().endswith(".pdf")
@@ -1303,7 +1309,7 @@ def save_credentials(job_id: str = Form(""), sf_email: str = Form(""), sf_passwo
 
 @app.post("/apply/reset-browser")
 def reset_browser(request: Request, job_id: str = Form("")):
-    """Удаляет сохранённую сессию браузера бота — чтобы выйти из чужого/старого
+    """Удаляет сохранённую сессию подачи — чтобы выйти из чужого/старого
     аккаунта Salling и войти заново под сохранёнными email/паролем."""
     import shutil
     shutil.rmtree(config.BROWSER_PROFILE_DIR, ignore_errors=True)
@@ -1373,8 +1379,8 @@ def _salling_apply_cmd(extra: list[str]) -> list[str]:
 
 
 def _launch_salling_apply(ids: list[str], submit: bool = False) -> None:
-    """Запустить подачу Salling по списку id (фоновый процесс, лог в apply_last.log).
-    submit=False — режим подготовки: бот заполняет и останавливается перед отправкой."""
+    """Запустить подачу Salling по списку id с диагностикой фонового процесса.
+    submit=False — режим подготовки: WexFlow заполняет и останавливается перед отправкой."""
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
@@ -1419,7 +1425,7 @@ def start_apply(
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"   # иначе print датских/русских символов падает (cp1251)
     env["PYTHONUTF8"] = "1"
-    env["PYTHONUNBUFFERED"] = "1"        # чтобы лог писался сразу, а не после закрытия браузера
+    env["PYTHONUNBUFFERED"] = "1"        # чтобы диагностика писалась сразу
     cmd = _salling_apply_cmd([job_id, "--web"])
     if mode == "submit":
         cmd.append("--submit")
@@ -1473,7 +1479,8 @@ def translate_job(job_id: str):
                 s.add(job)
                 s.commit()
             except translator.TranslationError as e:
-                error = str(e)[:120]
+                print(f"перевод: ошибка — {e}")
+                error = "Переводчик сейчас недоступен"
     target = f"/job/{job_id}?trerror={quote_plus(error)}" if error else _url_with_system_response(f"/job/{job_id}", notice="Перевод обновлён.")
     return RedirectResponse(target, status_code=303)
 

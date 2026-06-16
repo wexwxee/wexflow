@@ -95,9 +95,16 @@ async def proxy(path: str, request: Request):
                 content=body, headers=headers,
             )
     except Exception as e:
-        which = "7-Eleven (порт 7111)" if active == "7e" else "Salling (порт 8000)"
+        which = "7-Eleven" if active == "7e" else "Salling"
+        print(f"[hub] {which} недоступен: {e}")
         return Response(
-            content=f"<h2>Сервис {which} недоступен.</h2><p>{e}</p>".encode("utf-8"),
+            content=(
+                "<!doctype html><meta charset='utf-8'>"
+                "<body style='font-family:Segoe UI,system-ui,sans-serif;margin:40px;color:#17201b'>"
+                f"<h2>{which} сейчас не открылся</h2>"
+                "<p>Перезапусти WexFlow или попробуй открыть раздел ещё раз через несколько секунд.</p>"
+                "</body>"
+            ).encode("utf-8"),
             status_code=502, media_type="text/html; charset=utf-8",
         )
     resp_headers = [(k, v) for k, v in r.headers.items() if k.lower() not in _DROP_RESP]

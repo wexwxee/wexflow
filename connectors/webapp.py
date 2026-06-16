@@ -1,4 +1,4 @@
-"""Веб-модуль «WexFlow — подача» (БЕТА): витрина датских вакансий + подача.
+"""Веб-модуль «WexFlow — подача по ссылке»: витрина датских вакансий + подача.
 
 Внутри пакета connectors, чтобы попасть в сборку. Показывает вакансии всех
 коннекторов и по клику открывает форму подачи (заполняет и ОСТАНАВЛИВАЕТСЯ —
@@ -26,8 +26,8 @@ HUB_BACK = "http://127.0.0.1:8080/hub"
 CARD_CAP = 200
 _DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
 
-# --- простой парольный замок на бета-модуль ---
-# Пароль для входа в бету. В куки кладём не сам пароль, а его хэш-токен.
+# --- простой парольный замок на модуль подачи ---
+# Пароль для входа в модуль. В куки кладём не сам пароль, а его хэш-токен.
 BETA_PASSWORD = "123456"
 _COOKIE_NAME = "wexbeta"
 _AUTH_TOKEN = hashlib.sha256(("wexflow-beta-gate::" + BETA_PASSWORD).encode("utf-8")).hexdigest()
@@ -47,11 +47,11 @@ def refresh_jobs():
     jobs.sort(key=lambda j: (j.source, j.company, j.title))
     with _LOCK:
         _JOBS[:] = jobs
-    print(f"  бета: загружено вакансий {len(jobs)}")
+    print(f"  подача по ссылке: загружено вакансий {len(jobs)}")
 
 
 def launch_filler(job_url: str):
-    """Открыть видимое окно браузера на форме подачи отдельным процессом."""
+    """Открыть видимое окно формы подачи отдельным процессом."""
     if getattr(sys, "frozen", False):
         cmd = [sys.executable, "--worker-connector-apply", job_url]
     else:
@@ -89,12 +89,11 @@ def _safe_job_url(url: str) -> str:
 
 def _loading_html() -> str:
     return ("<!doctype html><meta charset='utf-8'><meta http-equiv='refresh' content='3'>"
-            "<title>WexFlow — подача (БЕТА)</title>"
+            "<title>WexFlow — подача по ссылке</title>"
             "<body style='margin:0;font-family:Segoe UI,sans-serif;background:#0d0e0e;color:#e8eae8'>"
             "<div style='max-width:700px;margin:18vh auto;text-align:center'>"
-            "<h1 style='color:#1ed760'>WexFlow — подача <span style='font-size:14px;"
-            "border:1px solid #6b66ff;color:#6b66ff;border-radius:999px;padding:2px 8px'>БЕТА</span></h1>"
-            "<p style='color:#8b908c'>Загружаю датские вакансии с платформ… (несколько секунд)</p></div></body>")
+            "<h1 style='color:#1ed760'>Подача по ссылке</h1>"
+            "<p style='color:#8b908c'>Загружаю вакансии… (несколько секунд)</p></div></body>")
 
 
 def _login_html(error: bool = False) -> str:
@@ -102,15 +101,13 @@ def _login_html(error: bool = False) -> str:
            "Неверный пароль. Попробуй ещё раз.</div>" if error else "")
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WexFlow — подача (БЕТА)</title><style>
+<title>WexFlow — подача по ссылке</title><style>
   *{{box-sizing:border-box}} body{{margin:0;font-family:'Segoe UI',system-ui,sans-serif;
     color:#e8eae8;min-height:100vh;display:grid;place-items:center;
     background:radial-gradient(1200px 600px at 80% -10%,#16221b,#0d0e0e 55%)}}
   .box{{width:min(360px,90vw);background:#1c1d1d;border:1px solid #2b2c2c;border-radius:16px;
     padding:30px 26px;text-align:center}}
   h1{{font-size:20px;margin:0 0 8px}}
-  .tag{{font-size:12px;border:1px solid #6b66ff;color:#6b66ff;border-radius:999px;
-    padding:2px 9px;vertical-align:middle}}
   p{{color:#8b908c;font-size:13px;margin:0 0 18px;line-height:1.4}}
   input{{width:100%;background:#141515;border:1px solid #2b2c2c;border-radius:10px;
     padding:12px 14px;color:#e8eae8;font:16px 'Segoe UI';text-align:center;letter-spacing:3px}}
@@ -120,7 +117,7 @@ def _login_html(error: bool = False) -> str:
   button:hover{{filter:brightness(1.08)}}
 </style></head><body>
   <form class="box" method="post" action="/login">
-    <h1>WexFlow — подача <span class="tag">БЕТА</span></h1>
+    <h1>Подача по ссылке</h1>
     <p>Модуль защищён паролем. Введи пароль, чтобы открыть.</p>
     <input type="password" name="password" placeholder="Пароль" autofocus
            autocomplete="current-password" inputmode="numeric">
@@ -182,24 +179,24 @@ def page_html() -> str:
     opacity:0;transition:.2s;pointer-events:none}} #toast.show{{opacity:1}}
 </style></head><body><div class="wrap">
   <a class="back" href="{HUB_BACK}">← В WexFlow</a>
-  <h1>WexFlow — подача <span style="font-size:14px;vertical-align:middle;border:1px solid var(--tt);color:var(--tt);border-radius:999px;padding:2px 9px">БЕТА</span></h1>
+  <h1>Подача по ссылке</h1>
   <div class="sub">Заполняет форму и <b>останавливается</b> — согласие и «Отправить» жмёшь сам.
-    Платформы: Teamtailor, Greenhouse, Ashby, Lever, Recruitee, Workable.</div>
+    Работает с популярными карьерными сайтами.</div>
   <div class="paste">
     <input id="link" type="text" placeholder="Вставь ссылку на вакансию (любая поддерживаемая платформа)…">
     <button id="go">Заполнить по ссылке →</button>
   </div>
-  <div class="hint">Витрина: <b>{len(jobs)}</b> датских вакансий от <b>{companies}</b> компаний (Teamtailor + Greenhouse + Ashby), показаны первые <b>{len(shown)}</b>. Автозаполнение работает и для фирм, которых тут нет — по ссылке.</div>
+  <div class="hint">Найдено <b>{len(jobs)}</b> датских вакансий от <b>{companies}</b> компаний, показаны первые <b>{len(shown)}</b>. Можно также вставить ссылку на вакансию выше.</div>
   <div class="grid">{''.join(cards)}</div>
 </div><div id="toast"></div><script>
   function toast(t){{var e=document.getElementById('toast');e.textContent=t;e.classList.add('show');
     setTimeout(function(){{e.classList.remove('show')}},3500);}}
   document.querySelectorAll('.apply').forEach(function(b){{
     b.addEventListener('click', function(){{
-      b.disabled=true; var old=b.textContent; b.textContent='Открываю браузер…';
+      b.disabled=true; var old=b.textContent; b.textContent='Открываю форму…';
       fetch('/apply',{{method:'POST',headers:{{'Content-Type':'application/json'}},
         body:JSON.stringify({{i:+b.dataset.i}})}})
-        .then(r=>r.json()).then(d=>{{ toast(d.ok?'Окно открыто — проверь и отправь сам':'Ошибка: '+(d.error||''));
+        .then(r=>r.json()).then(d=>{{ toast(d.ok?'Окно открыто — проверь и отправь сам':'Не удалось открыть форму');
           setTimeout(function(){{b.disabled=false;b.textContent=old;}},2500); }})
         .catch(e=>{{toast('Ошибка запуска');b.disabled=false;b.textContent=old;}});
     }});
@@ -210,8 +207,8 @@ def page_html() -> str:
     go.disabled=true; var old=go.textContent; go.textContent='Открываю…';
     fetch('/apply-url',{{method:'POST',headers:{{'Content-Type':'application/json'}},
       body:JSON.stringify({{url:u}})}}).then(r=>r.json()).then(d=>{{
-        toast(d.ok ? ('Платформа: '+d.platform+' — окно открыто, проверь и отправь сам')
-                   : ('Ошибка: '+(d.error||'')));
+        toast(d.ok ? ('Окно открыто — проверь и отправь сам')
+                   : 'Не удалось открыть форму');
         go.disabled=false; go.textContent=old;
       }}).catch(e=>{{toast('Ошибка запуска');go.disabled=false;go.textContent=old;}});
   }}
@@ -307,7 +304,8 @@ class Handler(BaseHTTPRequestHandler):
                 {"ok": True, "platform": platform_name(key) if key else "универсально"}
             ), "application/json")
         except Exception as e:  # noqa: BLE001
-            self._send(200, json.dumps({"ok": False, "error": str(e)}), "application/json")
+            print(f"  ошибка запуска подачи: {e}")
+            self._send(200, json.dumps({"ok": False, "error": "Не удалось открыть форму"}), "application/json")
 
 
 def serve(port: int = PORT, open_browser: bool = False):
@@ -321,7 +319,7 @@ def serve(port: int = PORT, open_browser: bool = False):
         return
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    print(f"WexFlow — подача (БЕТА): {url}")
+    print(f"WexFlow — подача по ссылке: {url}")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

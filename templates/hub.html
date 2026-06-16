@@ -585,15 +585,15 @@
         </div>
       </section>
 
-      <section class="hub-module beta" style="--module-accent:#6b66ff">
+      <section class="hub-module apply-link" style="--module-accent:#6b66ff">
         <div class="hub-module-head">
           <div class="hub-module-title">
-            <h2>WexFlow — подача <span style="font-size:12px;border:1px solid #6b66ff;color:#6b66ff;border-radius:999px;padding:1px 8px;vertical-align:middle">БЕТА</span></h2>
-            <p>Автозаполнение заявок на Teamtailor, Greenhouse, Ashby и других. Заполняет форму и останавливается — отправляешь сам.</p>
+            <h2>Подача по ссылке</h2>
+            <p>Помогает заполнить форму на карьерном сайте и останавливается перед отправкой — финальное решение за тобой.</p>
           </div>
         </div>
         <div class="hub-module-actions">
-          <a class="hub-link primary" href="http://127.0.0.1:8078/">Открыть подачу →</a>
+          <a class="hub-link primary" href="/apply-by-link">Открыть подачу →</a>
         </div>
       </section>
     </div>
@@ -941,7 +941,7 @@
           btn.disabled = true;
           a.install_update(upd.url).then(function (r) {
             if (r && r.ok === false && a.open_external) {
-              if (t) t.textContent = "Скачивание в браузере…";
+              if (t) t.textContent = "Открываю страницу загрузки…";
               a.open_external(upd.url);
             }
           }).catch(function () {
