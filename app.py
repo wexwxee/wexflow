@@ -114,6 +114,31 @@ _sync_lock = threading.Lock()
 _sync_state = {"running": False, "last_error": "", "last_scan": 0.0}
 _scheduler = None  # BackgroundScheduler; нужен, чтобы знать время следующей проверки
 
+# частота фонового скана вакансий: автопилот включён — проверяем часто (почти в
+# реальном времени, чтобы ловить новые вакансии сразу), выключен — редко (только
+# чтобы база не устаревала). Источник — лёгкий Algolia API, частый опрос допустим.
+AUTOPILOT_SCAN_MIN = 3
+IDLE_SCAN_MIN = 30
+
+
+def _scan_interval_min() -> int:
+    """Текущий интервал скана в минутах по состоянию автопилота."""
+    try:
+        return AUTOPILOT_SCAN_MIN if autopilot.get_rule().get("enabled") else IDLE_SCAN_MIN
+    except Exception:  # noqa: BLE001
+        return IDLE_SCAN_MIN
+
+
+def _reschedule_autopilot_scan() -> None:
+    """Подстроить частоту фонового скана под состояние автопилота. Вызывается
+    при каждом включении/выключении автопилота или автоотправки."""
+    if _scheduler is None:
+        return
+    try:
+        _scheduler.reschedule_job("auto_sync", trigger="interval", minutes=_scan_interval_min())
+    except Exception as e:  # noqa: BLE001
+        print(f"автопилот: не удалось перенастроить интервал скана — {e}")
+
 
 def _sync_jobs():
     """Обновляет базу вакансий. Не запускается параллельно сам с собой."""
@@ -150,7 +175,7 @@ def _autopilot_status_payload() -> dict:
         if age is not None:
             last = time.time() - age * 60
     st["last_scan"] = last
-    st["every_min"] = 30
+    st["every_min"] = _scan_interval_min()
     nxt = 0.0
     try:
         if _scheduler is not None:
@@ -177,9 +202,10 @@ def _data_age_minutes() -> int | None:
 async def _lifespan(app):
     global _scheduler
     sched = BackgroundScheduler(daemon=True)
-    sched.add_job(_sync_jobs, "interval", minutes=30, id="auto_sync")
+    sched.add_job(_sync_jobs, "interval", minutes=IDLE_SCAN_MIN, id="auto_sync")
     sched.start()
     _scheduler = sched
+    _reschedule_autopilot_scan()  # подстроить интервал под текущее состояние автопилота
     age = _data_age_minutes()
     if age is None or age >= 30:  # данные устарели — обновить сразу, в фоне
         threading.Thread(target=_sync_jobs, daemon=True).start()
@@ -843,6 +869,7 @@ def api_autopilot_toggle():
         autopilot.log_event("info", "Автопилот включён")
     else:
         autopilot.log_event("info", "Автопилот поставлен на паузу")
+    _reschedule_autopilot_scan()  # подстроить частоту фонового скана
     return JSONResponse({"ok": True, "enabled": new_enabled})
 
 
@@ -946,6 +973,7 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
         "autopilot_scope_pool": autopilot.scope_all_pool(),
         "autopilot_scope_guard": autopilot.SCOPE_ALL_GUARD,
         "autopilot_max_per_scan": autopilot.MAX_PER_SCAN,
+        "autopilot_scan_min": AUTOPILOT_SCAN_MIN,
     })
 
 
@@ -1018,6 +1046,7 @@ def autopilot_save(
     # «с этого момента»: текущие совпадения считаем уже виденными, чтобы
     # уведомлять только о НОВЫХ вакансиях, появившихся позже (без спама).
     autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+    _reschedule_autopilot_scan()  # вкл/выкл автопилота → подстроить частоту скана
     return RedirectResponse("/settings?saved=1#autopilot", status_code=303)
 
 
@@ -1073,11 +1102,18 @@ def autopilot_autosubmit(
                       "Сузь фильтры (категория/бренд/радиус/свежесть) или выбери «только новые».",
             )
 
-    autopilot.save_rule({"auto_submit": on, "daily_limit": limit, "submit_scope": scope})
+    patch = {"auto_submit": on, "daily_limit": limit, "submit_scope": scope}
+    if on:
+        patch["enabled"] = True  # один тумблер: автоотправка сама включает автопилот
+    autopilot.save_rule(patch)
     # при ВКЛЮЧЕНИИ с охватом «только новые» фиксируем текущие совпадения как
     # «не трогать» — отправка пойдёт лишь по вакансиям, появившимся ПОСЛЕ включения
     if on and not was and scope == "new":
         autopilot.set_autosubmit_baseline()
+    if on:
+        # автопилот стал активен → перейти на частый фоновый скан
+        autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+    _reschedule_autopilot_scan()
     if on:
         scope_txt = "все подходящие" if scope == "all" else "только новые после включения"
         msg = (f"Автоотправка ВКЛЮЧЕНА (до {limit}/день, не больше {autopilot.MAX_PER_SCAN} за раз, "
@@ -1107,6 +1143,7 @@ def autopilot_toggle(request: Request):
         msg = f"Автопилот включён — слежу за новыми вакансиями (подходит сейчас: {autopilot.match_count()})."
     else:
         msg = "Автопилот выключен."
+    _reschedule_autopilot_scan()  # подстроить частоту фонового скана
     return _redirect_back(request, "/", notice=msg)
 
 
