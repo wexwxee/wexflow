@@ -852,6 +852,18 @@ def _autopilot_rule_summary(rule: dict) -> list[dict]:
         parts = [p.strip() for p in str(raw or "").split(",") if p.strip()]
         return ", ".join(mapping.get(p, p) for p in parts)
 
+    def _nums(raw):
+        out_n: list[float] = []
+        for p in str(raw or "").split(","):
+            p = p.strip()
+            try:
+                f = float(p)
+            except ValueError:
+                continue
+            if f > 0:
+                out_n.append(int(f) if f == int(f) else f)
+        return out_n
+
     out: list[dict] = []
     if rule.get("brand"):
         out.append({"label": "Бренд", "value": _csv(rule["brand"], labels.BRANDS)})
@@ -859,17 +871,19 @@ def _autopilot_rule_summary(rule: dict) -> list[dict]:
         out.append({"label": "Категория", "value": _csv(rule["category"], labels.CATEGORY)})
     if rule.get("employment_type"):
         out.append({"label": "Занятость", "value": _csv(rule["employment_type"], labels.EMPLOYMENT)})
-    age = rule.get("age")
-    if age:
-        out.append({"label": "Возраст", "value": {"under18": "до 18 лет", "adult": "от 18 лет"}.get(age, age)})
+    if rule.get("age"):
+        out.append({"label": "Возраст", "value": _csv(rule["age"], {"under18": "до 18 лет", "adult": "от 18 лет"})})
     if rule.get("keywords"):
         out.append({"label": "Ключевые слова", "value": rule["keywords"]})
-    if rule.get("max_km"):
-        out.append({"label": "Радиус от дома", "value": f"до {rule['max_km']} км"})
-    if rule.get("min_hours"):
-        out.append({"label": "Часы в неделю", "value": f"от {rule['min_hours']} ч"})
-    if rule.get("max_age_days"):
-        out.append({"label": "Свежесть", "value": f"не старше {rule['max_age_days']} дн."})
+    km = _nums(rule.get("max_km"))
+    if km:
+        out.append({"label": "Радиус от дома", "value": f"до {max(km)} км"})
+    mh = _nums(rule.get("min_hours"))
+    if mh:
+        out.append({"label": "Часы в неделю", "value": f"от {min(mh)} ч"})
+    ag = _nums(rule.get("max_age_days"))
+    if ag:
+        out.append({"label": "Свежесть", "value": f"не старше {max(ag)} дн."})
     return out
 
 
@@ -972,18 +986,29 @@ def autopilot_save(
     keywords: str = Form(""),
     brand: str = Form(""),
 ):
-    def _num(v: str):
-        try:
-            f = max(0.0, float(v)) if v.strip() else 0.0
-        except ValueError:
-            f = 0.0
-        return int(f) if f == int(f) else f
+    def _num_csv(v: str) -> str:
+        """Несколько порогов через запятую → нормализованный CSV (дубли/пустые/≤0 убраны)."""
+        out: list[str] = []
+        for p in str(v or "").split(","):
+            p = p.strip()
+            if not p:
+                continue
+            try:
+                f = max(0.0, float(p.replace(",", ".")))
+            except ValueError:
+                continue
+            if f <= 0:
+                continue
+            s = str(int(f) if f == int(f) else f)
+            if s not in out:
+                out.append(s)
+        return ",".join(out)
 
     autopilot.save_rule({
         "enabled": bool(enabled),
-        "max_km": _num(max_km),
-        "min_hours": _num(min_hours),
-        "max_age_days": _num(max_age_days),
+        "max_km": _num_csv(max_km),
+        "min_hours": _num_csv(min_hours),
+        "max_age_days": _num_csv(max_age_days),
         "category": category.strip(),
         "employment_type": employment_type.strip(),
         "age": age.strip(),

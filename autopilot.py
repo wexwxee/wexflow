@@ -162,6 +162,19 @@ def _csv(rule: dict, key: str) -> list[str]:
     return [x.strip() for x in str(rule.get(key) or "").split(",") if x.strip()]
 
 
+def _nums(rule: dict, key: str) -> list[float]:
+    """Числовой порог-мультивыбор через запятую → список значений > 0. Пусто = []."""
+    out: list[float] = []
+    for x in _csv(rule, key):
+        try:
+            f = float(x)
+        except ValueError:
+            continue
+        if f > 0:
+            out.append(f)
+    return out
+
+
 def _matches(job: Job, rule: dict, home: dict | None) -> bool:
     if job.status in ("closed", "hidden", "applied"):
         return False
@@ -182,31 +195,27 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
             return False
         if "adult" in ages and job.job_level == "employeeUnder18":
             return False
+    # пороги км/часы/свежесть — мультивыбор через запятую: берём самый МЯГКИЙ
+    # (наибольший радиус, наибольший срок, наименьшие часы). Пусто = без ограничения.
     # свежесть: берём только вакансии не старше N дней (если задано).
     # дату не знаем — НЕ отбрасываем (чтобы ничего не упустить).
-    try:
-        max_age = float(rule.get("max_age_days") or 0)
-    except (TypeError, ValueError):
-        max_age = 0
-    if max_age:
+    age_limits = _nums(rule, "max_age_days")
+    if age_limits:
+        max_age = max(age_limits)
         ad = _age_days(job)
         if ad is not None and ad > max_age:
             return False
-    try:
-        min_hours = float(rule.get("min_hours") or 0)
-    except (TypeError, ValueError):
-        min_hours = 0
-    if min_hours:
+    hour_limits = _nums(rule, "min_hours")
+    if hour_limits:
+        min_hours = min(hour_limits)
         jh = _job_hours(job)
         # часы не указаны в вакансии — НЕ отбрасываем (чтобы ничего не упустить),
         # отсекаем только если точно знаем, что меньше минимума
         if jh is not None and jh < min_hours:
             return False
-    try:
-        max_km = float(rule.get("max_km") or 0)
-    except (TypeError, ValueError):
-        max_km = 0
-    if max_km and home:
+    km_limits = _nums(rule, "max_km")
+    if km_limits and home:
+        max_km = max(km_limits)
         if job.lat is None or job.lon is None:
             return False
         if geo.haversine_km(home["lat"], home["lon"], job.lat, job.lon) > max_km:

@@ -391,8 +391,9 @@
     <div class="grid2">
       <div class="field">
         <label class="lbl">Не дальше от дома</label>
-        <input type="number" name="max_km" min="0" step="1" value="{{ autopilot.max_km or '' }}" placeholder="км, напр. 5">
-        <div class="ap-chips" data-chips-for="max_km">
+        <input type="hidden" name="max_km" value="{{ autopilot.max_km or '' }}">
+        <input type="number" min="0" step="1" data-chips-custom="max_km" placeholder="своё число, напр. 7">
+        <div class="ap-chips" data-chips-for="max_km" data-chips-unit=" км">
           <button type="button" class="ap-chip" data-val="3">3 км</button>
           <button type="button" class="ap-chip" data-val="5">5 км</button>
           <button type="button" class="ap-chip" data-val="10">10 км</button>
@@ -400,12 +401,13 @@
           <button type="button" class="ap-chip" data-val="25">25 км</button>
           <button type="button" class="ap-chip" data-val="">без ограничения</button>
         </div>
-        <div class="ap-hint">Расстояние от твоего дома (адрес — в настройках выше). Пусто = без ограничения.</div>
+        <div class="ap-hint">Можно отметить несколько — бот возьмёт самый дальний из выбранных. Своё число добавляется чипом. Пусто = без ограничения.</div>
       </div>
       <div class="field">
         <label class="lbl">Часов в неделю, не меньше</label>
-        <input type="number" name="min_hours" min="0" step="1" value="{{ autopilot.min_hours or '' }}" placeholder="напр. 10">
-        <div class="ap-chips" data-chips-for="min_hours">
+        <input type="hidden" name="min_hours" value="{{ autopilot.min_hours or '' }}">
+        <input type="number" min="0" step="1" data-chips-custom="min_hours" placeholder="своё число, напр. 12">
+        <div class="ap-chips" data-chips-for="min_hours" data-chips-unit=" ч">
           <button type="button" class="ap-chip" data-val="8">8 ч</button>
           <button type="button" class="ap-chip" data-val="10">10 ч</button>
           <button type="button" class="ap-chip" data-val="15">15 ч</button>
@@ -413,12 +415,13 @@
           <button type="button" class="ap-chip" data-val="30">30 ч</button>
           <button type="button" class="ap-chip" data-val="">любые</button>
         </div>
-        <div class="ap-hint">Если в вакансии часы не указаны — она всё равно попадёт, чтобы ничего не упустить.</div>
+        <div class="ap-hint">Можно отметить несколько — бот возьмёт самый мягкий порог (наименьшие часы). Если часы в вакансии не указаны — она всё равно попадёт.</div>
       </div>
       <div class="field">
         <label class="lbl">Свежесть — не старше</label>
-        <input type="number" name="max_age_days" min="0" step="1" value="{{ autopilot.max_age_days or '' }}" placeholder="дней, напр. 7">
-        <div class="ap-chips" data-chips-for="max_age_days">
+        <input type="hidden" name="max_age_days" value="{{ autopilot.max_age_days or '' }}">
+        <input type="number" min="0" step="1" data-chips-custom="max_age_days" placeholder="своё число, напр. 10">
+        <div class="ap-chips" data-chips-for="max_age_days" data-chips-unit=" дн">
           <button type="button" class="ap-chip" data-val="1">1 день</button>
           <button type="button" class="ap-chip" data-val="3">3 дня</button>
           <button type="button" class="ap-chip" data-val="7">7 дней</button>
@@ -426,7 +429,7 @@
           <button type="button" class="ap-chip" data-val="30">30 дней</button>
           <button type="button" class="ap-chip" data-val="">любой возраст</button>
         </div>
-        <div class="ap-hint">Брать только вакансии, появившиеся за последние N дней. Пусто = любой возраст. Если у вакансии нет даты — она всё равно попадёт.</div>
+        <div class="ap-hint">Можно отметить несколько — бот возьмёт самый широкий срок (наибольшее число дней). Если у вакансии нет даты — она всё равно попадёт.</div>
       </div>
       <div class="field">
         <label class="lbl">Должность (категория)</label>
@@ -681,19 +684,65 @@
   // быстрые варианты-чипсы автопилота (вдруг не знаешь, что писать)
   (function () {
     function input(name) { return document.querySelector('#autopilot [name="' + name + '"]'); }
-    // одиночный выбор: км / часы — чип задаёт значение поля
+    // множественный выбор: км / часы / свежесть — храним список значений через
+    // запятую в скрытом поле, бот возьмёт самый мягкий порог. Чипы и «своё число».
     document.querySelectorAll('#autopilot [data-chips-for]').forEach(function (box) {
-      var inp = input(box.dataset.chipsFor);
-      if (!inp) return;
-      function sync() {
-        box.querySelectorAll('.ap-chip').forEach(function (c) {
-          c.classList.toggle('active', (c.dataset.val || '') === (inp.value || ''));
+      var key = box.dataset.chipsFor;
+      var unit = box.dataset.chipsUnit || '';
+      var hidden = input(key);                                  // скрытое CSV-поле
+      var custom = document.querySelector('#autopilot [data-chips-custom="' + key + '"]');
+      var clearChip = box.querySelector('.ap-chip[data-val=""]');
+      if (!hidden) return;
+
+      function getSet() {
+        return (hidden.value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      }
+      function setSet(arr) {
+        var uniq = arr.filter(function (v, i) { return arr.indexOf(v) === i; });
+        hidden.value = uniq.join(',');
+      }
+      function bindChip(c) {
+        c.addEventListener('click', function () {
+          var v = c.dataset.val, set = getSet(), i = set.indexOf(v);
+          if (v === '') set = [];                 // «без ограничения / любые» — сбрасывает
+          else if (i >= 0) set.splice(i, 1);      // повторный клик снимает
+          else set.push(v);
+          setSet(set); sync();
         });
       }
-      box.querySelectorAll('.ap-chip').forEach(function (c) {
-        c.addEventListener('click', function () { inp.value = c.dataset.val; sync(); });
-      });
-      inp.addEventListener('input', sync);
+      function ensureChip(val) {                  // чип для кастомного значения
+        if (box.querySelector('.ap-chip[data-val="' + val + '"]')) return;
+        var c = document.createElement('button');
+        c.type = 'button'; c.className = 'ap-chip'; c.dataset.val = val; c.dataset.custom = '1';
+        c.textContent = val + unit;
+        box.insertBefore(c, clearChip || null);
+        bindChip(c);
+      }
+      function sync() {
+        var set = getSet();
+        box.querySelectorAll('.ap-chip').forEach(function (c) {
+          var v = c.dataset.val;
+          var on = v === '' ? set.length === 0 : set.indexOf(v) >= 0;
+          c.classList.toggle('active', on);
+          if (c.dataset.custom && !on) c.remove();   // снятый кастомный чип убираем
+        });
+      }
+      getSet().forEach(ensureChip);               // восстановить кастомные чипы из сохранённого
+      box.querySelectorAll('.ap-chip').forEach(bindChip);
+      if (custom) {
+        var commit = function () {
+          var raw = (custom.value || '').trim();
+          if (!raw) return;
+          var n = parseFloat(raw.replace(',', '.'));
+          if (isNaN(n) || n <= 0) { custom.value = ''; return; }
+          var v = String(n === Math.floor(n) ? Math.floor(n) : n);
+          ensureChip(v);
+          var set = getSet(); if (set.indexOf(v) < 0) set.push(v);
+          setSet(set); custom.value = ''; sync();
+        };
+        custom.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+        custom.addEventListener('blur', commit);
+      }
       sync();
     });
     // множественный выбор: ключевые слова — чип добавляет/убирает фразу
