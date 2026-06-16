@@ -91,7 +91,7 @@ def status() -> dict:
         "submitted_total": submitted_total(),
         "daily_limit": int(r.get("daily_limit") or 0),
         "submit_scope": r.get("submit_scope") or "new",
-        "events": event_log()[:30],
+        "events": event_log()[:50],
     }
 
 # Поля, которые пользователь задаёт в интерфейсе (seen_ids/prepared_ids — служебные).

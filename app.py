@@ -831,6 +831,64 @@ def api_autopilot_scan_now():
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/autopilot/toggle")
+def api_autopilot_toggle():
+    """Пауза/возобновление автопилота (кнопка на странице /autopilot)."""
+    new_enabled = not bool(autopilot.get_rule().get("enabled"))
+    autopilot.save_rule({"enabled": new_enabled})
+    if new_enabled:
+        # как при сохранении правила: текущие совпадения считаем «виденными»,
+        # чтобы реагировать только на НОВЫЕ вакансии позже (без спама)
+        autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+        autopilot.log_event("info", "Автопилот включён")
+    else:
+        autopilot.log_event("info", "Автопилот поставлен на паузу")
+    return JSONResponse({"ok": True, "enabled": new_enabled})
+
+
+def _autopilot_rule_summary(rule: dict) -> list[dict]:
+    """Человеко-читаемая сводка «что ищет автопилот» для страницы /autopilot."""
+    def _csv(raw, mapping):
+        parts = [p.strip() for p in str(raw or "").split(",") if p.strip()]
+        return ", ".join(mapping.get(p, p) for p in parts)
+
+    out: list[dict] = []
+    if rule.get("brand"):
+        out.append({"label": "Бренд", "value": _csv(rule["brand"], labels.BRANDS)})
+    if rule.get("category"):
+        out.append({"label": "Категория", "value": _csv(rule["category"], labels.CATEGORY)})
+    if rule.get("employment_type"):
+        out.append({"label": "Занятость", "value": _csv(rule["employment_type"], labels.EMPLOYMENT)})
+    age = rule.get("age")
+    if age:
+        out.append({"label": "Возраст", "value": {"under18": "до 18 лет", "adult": "от 18 лет"}.get(age, age)})
+    if rule.get("keywords"):
+        out.append({"label": "Ключевые слова", "value": rule["keywords"]})
+    if rule.get("max_km"):
+        out.append({"label": "Радиус от дома", "value": f"до {rule['max_km']} км"})
+    if rule.get("min_hours"):
+        out.append({"label": "Часы в неделю", "value": f"от {rule['min_hours']} ч"})
+    if rule.get("max_age_days"):
+        out.append({"label": "Свежесть", "value": f"не старше {rule['max_age_days']} дн."})
+    return out
+
+
+@app.get("/autopilot", response_class=HTMLResponse)
+def autopilot_page(request: Request):
+    rule = autopilot.get_rule()
+    return templates.TemplateResponse(
+        "autopilot.html",
+        {
+            "request": request,
+            "status": _autopilot_status_payload(),
+            "events": autopilot.event_log(),
+            "rule_summary": _autopilot_rule_summary(rule),
+            "enabled": bool(rule.get("enabled")),
+            "auto_submit": bool(rule.get("auto_submit")),
+        },
+    )
+
+
 @app.get("/api/transit/{job_id}")
 def api_transit(job_id: str):
     home = settings_store.get_home()

@@ -617,8 +617,9 @@
         <div class="ap-empty">Событий пока нет — появятся после первой проверки.</div>
       </div>
       <div class="ap-actions">
+        <a class="hub-link" href="/autopilot">{{ ic.i('zap', 14) }} Открыть автопилот</a>
         <button class="hub-link" id="apScanNow" type="button">{{ ic.i('refresh', 14) }} Проверить сейчас</button>
-        <a class="hub-link" href="/settings#autopilot">{{ ic.i('sliders', 14) }} Настройки автопилота</a>
+        <a class="hub-link" href="/settings#autopilot">{{ ic.i('sliders', 14) }} Настройки</a>
       </div>
     </section>
     <script>window.__apInit = {{ autopilot_status | tojson }};</script>
