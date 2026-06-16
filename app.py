@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from contextlib import asynccontextmanager
 from collections import Counter
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
@@ -110,7 +111,8 @@ def _redirect_back(
 
 # --- автообновление вакансий: каждые 30 минут + при старте, если данные устарели ---
 _sync_lock = threading.Lock()
-_sync_state = {"running": False, "last_error": ""}
+_sync_state = {"running": False, "last_error": "", "last_scan": 0.0}
+_scheduler = None  # BackgroundScheduler; нужен, чтобы знать время следующей проверки
 
 
 def _sync_jobs():
@@ -129,8 +131,37 @@ def _sync_jobs():
         _sync_state["last_error"] = str(e)[:200]
         print(f"автообновление: ошибка — {e}")
     finally:
+        _sync_state["last_scan"] = time.time()  # отметка «когда последний раз проверяли»
         _sync_state["running"] = False
         _sync_lock.release()
+
+
+def _autopilot_status_payload() -> dict:
+    """Полная сводка для живого монитора автопилота (главная опрашивает её)."""
+    st = autopilot.status()
+    st["running"] = _sync_state["running"]
+    st["error"] = _sync_state.get("last_error") or ""
+    # время последней проверки. После перезапуска процесса счётчик в памяти
+    # сбрасывается — тогда берём момент последнего обновления базы (last_seen),
+    # чтобы монитор не врал «ещё не проверял», когда данные на самом деле свежие.
+    last = _sync_state.get("last_scan") or 0.0
+    if not last:
+        age = _data_age_minutes()
+        if age is not None:
+            last = time.time() - age * 60
+    st["last_scan"] = last
+    st["every_min"] = 30
+    nxt = 0.0
+    try:
+        if _scheduler is not None:
+            job = _scheduler.get_job("auto_sync")
+            if job and job.next_run_time:
+                nxt = job.next_run_time.timestamp()
+    except Exception:  # noqa: BLE001
+        nxt = 0.0
+    st["next_scan"] = nxt
+    st["now"] = time.time()  # серверное «сейчас» — фронт считает дельты от него
+    return st
 
 
 def _data_age_minutes() -> int | None:
@@ -144,9 +175,11 @@ def _data_age_minutes() -> int | None:
 
 @asynccontextmanager
 async def _lifespan(app):
+    global _scheduler
     sched = BackgroundScheduler(daemon=True)
     sched.add_job(_sync_jobs, "interval", minutes=30, id="auto_sync")
     sched.start()
+    _scheduler = sched
     age = _data_age_minutes()
     if age is None or age >= 30:  # данные устарели — обновить сразу, в фоне
         threading.Thread(target=_sync_jobs, daemon=True).start()
@@ -425,6 +458,7 @@ def hub(request: Request):
             "last_applied": last_applied,
             "user_name": name,
             "autopilot": ap,
+            "autopilot_status": _autopilot_status_payload(),
         },
     )
 
@@ -779,6 +813,22 @@ def api_sync_status():
     легко и перезагружается ОДИН раз, когда обновление закончилось — вместо
     того чтобы перезагружать страницу по таймеру снова и снова."""
     return JSONResponse({"running": _sync_state["running"]})
+
+
+@app.get("/api/autopilot/status")
+def api_autopilot_status():
+    """Живой статус автопилота для монитора на главной: работает ли, когда
+    проверял / следующая проверка, счётчики (нашёл/подготовил/подал) и лента событий."""
+    return JSONResponse(_autopilot_status_payload())
+
+
+@app.post("/api/autopilot/scan-now")
+def api_autopilot_scan_now():
+    """Запустить проверку вручную («Проверить сейчас») — тот же фоновый скан."""
+    if _sync_state["running"]:
+        return JSONResponse({"ok": False, "error": "уже идёт проверка"})
+    threading.Thread(target=_sync_jobs, daemon=True).start()
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/transit/{job_id}")

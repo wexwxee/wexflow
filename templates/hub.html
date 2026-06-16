@@ -221,6 +221,83 @@
     border-color: var(--module-accent);
     box-shadow: 0 8px 22px color-mix(in srgb, var(--module-accent) 32%, transparent);
   }
+  /* ── живой монитор автопилота ─────────────────────────────── */
+  .hub-autopilot {
+    --ap-accent: #f5a623;
+    position: relative;
+    border: 1px solid var(--glass-line);
+    border-radius: 12px;
+    background:
+      linear-gradient(135deg, color-mix(in srgb, var(--ap-accent) 9%, transparent), transparent 55%),
+      var(--card);
+    box-shadow: var(--shadow-sm);
+    padding: 18px 20px;
+    display: grid;
+    gap: 15px;
+    overflow: hidden;
+  }
+  .hub-autopilot::before {
+    content: ""; position: absolute; inset: 0 auto 0 0; width: 4px;
+    background: var(--ap-accent); opacity: .85;
+  }
+  .ap-head { display: flex; align-items: center; gap: 13px; }
+  .ap-ic {
+    width: 38px; height: 38px; border-radius: 10px; flex: 0 0 auto;
+    display: grid; place-items: center; color: var(--ap-accent);
+    background: color-mix(in srgb, var(--ap-accent) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ap-accent) 30%, var(--glass-line));
+  }
+  .ap-head-text { display: grid; gap: 3px; min-width: 0; flex: 1; }
+  .ap-head-text h2 { margin: 0; font-size: 17px; }
+  .ap-head-text p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+  .ap-badge {
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 800;
+    border: 1px solid var(--glass-line); background: var(--glass); color: var(--muted);
+  }
+  .ap-badge .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .ap-badge.on {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--glass-line));
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  .ap-badge.run {
+    color: var(--ap-accent);
+    border-color: color-mix(in srgb, var(--ap-accent) 40%, var(--glass-line));
+    background: color-mix(in srgb, var(--ap-accent) 13%, transparent);
+  }
+  .ap-badge.run .dot { animation: ap-pulse 1.2s ease-out infinite; }
+  @keyframes ap-pulse {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ap-accent) 55%, transparent); }
+    70%  { box-shadow: 0 0 0 7px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  .ap-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .ap-stat {
+    background: var(--glass); border: 1px solid var(--glass-line);
+    border-radius: 10px; padding: 11px 12px; display: grid; gap: 3px; min-width: 0;
+  }
+  .ap-stat b {
+    font-size: 21px; line-height: 1; color: var(--txt-strong);
+    font-family: "Space Grotesk", system-ui, sans-serif;
+  }
+  .ap-stat span {
+    font-size: 10.5px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+  }
+  .ap-timeline { display: grid; gap: 6px; max-height: 168px; overflow: auto; }
+  .ap-ev { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--txt); }
+  .ap-ev .ev-dot { width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; background: var(--muted); }
+  .ap-ev.scan .ev-dot { background: #38b6ff; }
+  .ap-ev.submit .ev-dot { background: var(--accent); }
+  .ap-ev.prepare .ev-dot { background: var(--ap-accent); }
+  .ap-ev .ev-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ap-ev .ev-time { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .ap-empty { color: var(--muted); font-size: 12.5px; padding: 6px 0; }
+  .ap-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .ap-actions .hub-link { min-height: 36px; }
+  @media (max-width: 560px) { .ap-stats { grid-template-columns: repeat(2, 1fr); } }
+
   .hub-quiet-row {
     display: flex;
     justify-content: center;
@@ -521,13 +598,35 @@
       </section>
     </div>
 
+    <section class="hub-autopilot" id="apMonitor">
+      <div class="ap-head">
+        <span class="ap-ic">{{ ic.i('zap', 18) }}</span>
+        <div class="ap-head-text">
+          <h2>Автопилот</h2>
+          <p id="apStatusLine">Загружаю статус…</p>
+        </div>
+        <span class="ap-badge" id="apBadge"><span class="dot"></span> …</span>
+      </div>
+      <div class="ap-stats">
+        <div class="ap-stat"><b id="apFound">0</b><span>нашёл подходящих</span></div>
+        <div class="ap-stat"><b id="apPrepared">0</b><span>подготовил</span></div>
+        <div class="ap-stat"><b id="apSubToday">0</b><span>подал сегодня</span></div>
+        <div class="ap-stat"><b id="apSubTotal">0</b><span>подал всего</span></div>
+      </div>
+      <div class="ap-timeline" id="apTimeline">
+        <div class="ap-empty">Событий пока нет — появятся после первой проверки.</div>
+      </div>
+      <div class="ap-actions">
+        <button class="hub-link" id="apScanNow" type="button">{{ ic.i('refresh', 14) }} Проверить сейчас</button>
+        <a class="hub-link" href="/settings#autopilot">{{ ic.i('sliders', 14) }} Настройки автопилота</a>
+      </div>
+    </section>
+    <script>window.__apInit = {{ autopilot_status | tojson }};</script>
+
     <div class="hub-quiet-row">
       <span class="hub-status-dot"></span>
       <span>Единый рабочий центр для двух локальных модулей</span>
       {{ ui.freshness(data_age_min, sync_running) }}
-      {% if autopilot and autopilot.enabled %}
-      <a class="hub-next" href="/settings#autopilot" style="text-decoration:none;">{{ ic.i('zap', 13) }} Автопилот: подходит {{ autopilot.count }}</a>
-      {% endif %}
       <span class="hub-version" id="hubVersion" hidden></span>
     </div>
 
@@ -603,6 +702,103 @@
       }
       requestAnimationFrame(step);
     });
+  })();
+</script>
+
+<script>
+  // ── живой монитор автопилота: гидратация из SSR + опрос /api/autopilot/status
+  (function () {
+    var timer = null, fast = false;
+    function escAp(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, function (m) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m];
+      });
+    }
+    function rel(past, now) {
+      if (!past) return "";
+      var s = Math.max(0, now - past);
+      if (s < 45) return "только что";
+      var m = Math.round(s / 60);
+      if (m < 60) return m + " мин назад";
+      var h = Math.round(m / 60);
+      if (h < 24) return h + " ч назад";
+      return Math.round(h / 24) + " дн назад";
+    }
+    function future(t, now) {
+      if (!t) return "";
+      var m = Math.round((t - now) / 60);
+      if (m <= 0) return "вот-вот";
+      if (m < 60) return "через ~" + m + " мин";
+      return "через ~" + Math.round(m / 60) + " ч";
+    }
+    function clock(epoch) {
+      try { return new Date(epoch * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); }
+      catch (e) { return ""; }
+    }
+    function render(d) {
+      if (!d) return;
+      var now = d.now || (Date.now() / 1000);
+      var badge = document.getElementById("apBadge");
+      var line = document.getElementById("apStatusLine");
+      if (d.running) { badge.className = "ap-badge run"; badge.innerHTML = '<span class="dot"></span> Проверяет…'; }
+      else if (d.enabled) { badge.className = "ap-badge on"; badge.innerHTML = '<span class="dot"></span> Работает'; }
+      else { badge.className = "ap-badge"; badge.innerHTML = '<span class="dot"></span> Пауза'; }
+
+      if (d.running) {
+        line.textContent = "Идёт проверка базы вакансий…";
+      } else if (!d.enabled) {
+        line.textContent = "На паузе — включи автопилот в настройках, чтобы он искал сам.";
+      } else if (d.last_scan) {
+        var t = "Последняя проверка: " + clock(d.last_scan) + " (" + rel(d.last_scan, now) + ")";
+        if (d.next_scan) t += " · следующая " + future(d.next_scan, now);
+        t += " · каждые " + (d.every_min || 30) + " мин";
+        line.textContent = t;
+      } else {
+        line.textContent = "Ещё не проверял — запустится автоматически.";
+      }
+
+      document.getElementById("apFound").textContent = d.found || 0;
+      document.getElementById("apPrepared").textContent = d.prepared || 0;
+      document.getElementById("apSubToday").textContent =
+        (d.submitted_today || 0) + (d.daily_limit ? " / " + d.daily_limit : "");
+      document.getElementById("apSubTotal").textContent = d.submitted_total || 0;
+
+      var tl = document.getElementById("apTimeline");
+      var evs = d.events || [];
+      if (!evs.length) {
+        tl.innerHTML = '<div class="ap-empty">Событий пока нет — появятся после первой проверки.</div>';
+      } else {
+        tl.innerHTML = evs.slice(0, 8).map(function (e) {
+          var ep = Date.parse(e.ts) / 1000;
+          var kind = e.kind || "info";
+          return '<div class="ap-ev ' + kind + '"><span class="ev-dot"></span>' +
+            '<span class="ev-text">' + escAp(e.text || "") + '</span>' +
+            '<span class="ev-time">' + rel(ep, now) + '</span></div>';
+        }).join("");
+      }
+
+      if (!!d.running !== fast) { fast = !!d.running; schedule(); }
+    }
+    function poll() {
+      fetch("/api/autopilot/status").then(function (r) { return r.json(); }).then(render).catch(function () {});
+    }
+    function schedule() {
+      if (timer) clearInterval(timer);
+      timer = setInterval(poll, fast ? 2500 : 9000);
+    }
+    var btn = document.getElementById("apScanNow");
+    if (btn) {
+      btn.addEventListener("click", function () {
+        btn.disabled = true;
+        fetch("/api/autopilot/scan-now", { method: "POST" })
+          .then(function (r) { return r.json(); })
+          .then(function () { fast = true; schedule(); poll(); setTimeout(function () { btn.disabled = false; }, 2500); })
+          .catch(function () { btn.disabled = false; });
+      });
+    }
+    render(window.__apInit || null);
+    schedule();
+    setTimeout(poll, 600);
   })();
 </script>
 

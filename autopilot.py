@@ -40,7 +40,59 @@ DEFAULT_RULE = {
     "submit_day": "",           # день, за который считаем счётчик
     "submit_count_today": 0,    # сколько отправлено сегодня
     "submit_log": [],           # журнал автоотправок [{ts,title}]
+    "submitted_total": 0,       # сколько автопилот подал всего (за всё время)
+    "event_log": [],            # лента событий автопилота [{ts,kind,text}] (для монитора)
 }
+
+# Сколько событий держим в ленте монитора (старые отбрасываем).
+EVENT_LOG_MAX = 80
+
+
+def log_event(kind: str, text: str) -> None:
+    """Дописать событие в ленту автопилота (для живого монитора на главной).
+
+    kind: scan | submit | prepare | info — для иконки/цвета в интерфейсе.
+    ts — ISO, чтобы фронт сам отформатировал «N мин назад».
+    """
+    try:
+        r = get_rule()
+        log = list(r.get("event_log") or [])
+        log.insert(0, {"ts": _dt.datetime.now().isoformat(timespec="seconds"), "kind": kind, "text": text})
+        save_rule({"event_log": log[:EVENT_LOG_MAX]})
+    except Exception:  # noqa: BLE001 — лента не должна ронять скан
+        pass
+
+
+def event_log() -> list:
+    return get_rule().get("event_log") or []
+
+
+def submitted_total() -> int:
+    return int(get_rule().get("submitted_total") or 0)
+
+
+def status() -> dict:
+    """Сводка для живого монитора автопилота на главной (без полей,
+    зависящих от процесса сервера — running/last_scan/next_scan их добавляет app.py).
+
+    find_matches() зовём один раз и считаем всё от него (дешевле, чем
+    match_count + pending_count по отдельности)."""
+    r = get_rule()
+    matches = find_matches()
+    match_ids = {j.id for j in matches}
+    prepared_ids = set(r.get("prepared_ids") or [])
+    return {
+        "enabled": bool(r.get("enabled")),
+        "auto_submit": bool(r.get("auto_submit")),
+        "found": len(matches),
+        "prepared": len(match_ids & prepared_ids),   # из найденных уже подготовлено
+        "pending": len(match_ids - prepared_ids),    # ждут подготовки
+        "submitted_today": submitted_today(),
+        "submitted_total": submitted_total(),
+        "daily_limit": int(r.get("daily_limit") or 0),
+        "submit_scope": r.get("submit_scope") or "new",
+        "events": event_log()[:30],
+    }
 
 # Поля, которые пользователь задаёт в интерфейсе (seen_ids/prepared_ids — служебные).
 _USER_FIELDS = ("enabled", "max_km", "min_hours", "max_age_days", "category",
@@ -200,9 +252,12 @@ def pending_count() -> int:
 
 
 def mark_prepared(ids) -> None:
+    ids = list(ids)
     prepared = set(get_rule().get("prepared_ids") or [])
     prepared.update(ids)
     save_rule({"prepared_ids": list(prepared)})
+    if ids:
+        log_event("prepare", f"Подготовил анкет: {len(ids)}")
 
 
 # ── Фаза 3: автоотправка (под замком) ──────────────────────────────────
@@ -270,12 +325,16 @@ def record_submitted(jobs) -> None:
     for j in jobs:
         done.add(j.id)
         log.insert(0, {"ts": now, "title": j.title})
+    total = int(r.get("submitted_total") or 0) + len(jobs)
     save_rule({
         "submit_day": day,
         "submit_count_today": count + len(jobs),
         "submit_log": log[:50],
         "submitted_ids": list(done),
+        "submitted_total": total,
     })
+    titles = "; ".join(j.title for j in jobs[:5])
+    log_event("submit", f"Подал заявок: {len(jobs)} — {titles}")
 
 
 def auto_submit_tick(launcher) -> None:
@@ -317,6 +376,8 @@ def scan_and_notify() -> None:
         seen = set(rule.get("seen_ids") or [])
         fresh = [j for j in matches if j.id not in seen]
         save_rule({"seen_ids": ids})  # помним текущий набор, чистим устаревшее
+        log_event("scan", f"Проверил базу: подходящих {len(matches)}"
+                  + (f", из них новых {len(fresh)}" if fresh else ""))
         if fresh:
             import scheduler
             titles = "; ".join(j.title for j in fresh[:5])
