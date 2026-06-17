@@ -153,16 +153,17 @@
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
-    <a class="tablink" href="/account">← Общий профиль</a>
+    <a class="tablink" href="/hub">← На главную</a>
     <a class="tablink" href="/">К вакансиям</a>
     {{ ui.app_switch() }}
     {{ ui.theme_toggle() }}
   </div>
 </header>
 <section class="wex-workbench wex-narrow">
-  <p class="sub">Настройки модуля Salling. Общий профиль и личные данные — в разделе <a class="crosslink" href="/account">«Настройки»</a>.</p>
+  <p class="sub">Настройки Salling: профиль, логин, документы, дом и автопилот.</p>
 
   <nav class="sec-nav">
+    <a href="#profile">{{ ic.i('sliders', 13) }} Профиль</a>
     <a href="#login">{{ ic.i('unlock', 13) }} Логин Salling</a>
     <a href="#documents">{{ ic.i('file', 13) }} Документы</a>
     <a href="#home">{{ ic.i('home', 13) }} Дом</a>
@@ -170,7 +171,20 @@
   </nav>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
+  {% if missing_fields %}<div class="err">Нужно заполнить в профиле: {{ missing_fields|join(', ') }}.</div>{% endif %}
   {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее (улица, город или индекс).</div>{% endif %}
+
+  <!-- Профиль кандидата живёт в Аккаунте (общий, заполняется один раз) -->
+  <div class="panel" id="profile">
+    <h2>{{ ic.i('sliders', 17) }} Профиль кандидата</h2>
+    <p class="hint">Личные данные общие для всех фирм — задаются один раз в Аккаунте. При подаче WexFlow сам подставит нужные поля в анкету Salling.</p>
+    {% if profile.first_name or profile.email %}
+    <p class="hint" style="margin:0 0 12px;">Сейчас: <b>{{ profile.first_name }} {{ profile.last_name }}</b>{% if profile.email %} · {{ profile.email }}{% endif %}{% if profile.phone %} · {{ profile.phone }}{% endif %}</p>
+    {% else %}
+    <p class="hint" style="margin:0 0 12px;color:var(--err-txt);">Профиль ещё не заполнен — без него подача не сработает.</p>
+    {% endif %}
+    <div class="actions"><a class="crosslink" href="/account#profile">Изменить в Аккаунте →</a></div>
+  </div>
 
   <!-- Аккаунт Salling -->
   <form id="login" class="panel" method="post" action="/credentials/save">
@@ -192,7 +206,7 @@
   <!-- Документы для Salling -->
   <form id="documents" class="panel" method="post" action="/settings/documents/save" enctype="multipart/form-data">
     <h2>{{ ic.i('file', 17) }} Документы для Salling</h2>
-    <p class="hint">CV и письмо для подачи в Salling. Личные данные (имя, контакты) — в общем <a class="crosslink" href="/account">профиле</a>. CV можно оставить пустым, если сайт уже помнит резюме.</p>
+    <p class="hint">CV и письмо для подачи в Salling. Личные данные (имя, контакты) — в <a class="crosslink" href="/account#profile">Аккаунте</a>. CV можно оставить пустым, если сайт уже помнит резюме.</p>
     <div class="grid2">
       <div class="file-card">
         <label class="lbl">CV / резюме</label>
@@ -838,7 +852,7 @@
   }
 </script>
 <script>
-  // Профиль/документы переехали в «Общие настройки» (/account) — их JS живёт там.
+  // Профиль кандидата редактируется в Аккаунте (/account). Здесь — только сводка.
   document.querySelectorAll('[data-suggest]').forEach((field) => {
     const input = field.querySelector('input');
     const menu = field.querySelector('.suggest-menu');

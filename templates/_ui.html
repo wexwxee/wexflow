@@ -19,10 +19,11 @@
       <a class="wex-side-btn {{ 'active' if active == 'hub' }}" href="/hub" data-tip-title="Главная" data-tip-body="Стартовый экран WexFlow с быстрым входом в оба модуля.">{{ ic.i('home', 18) }}<span>Главная</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'jobs' }}" href="/" data-tip-title="Вакансии" data-tip-body="Лента вакансий Salling: фильтры, статусы и пакетная подача.">{{ ic.i('cart', 18) }}<span>Вакансии</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'applied' }}" href="/?status=applied" data-tip-title="Поданные" data-tip-body="Вакансии, на которые заявка уже отправлена.">{{ ic.i('check', 18) }}<span>Поданные</span></a>
-      <a class="wex-side-btn {{ 'active' if active == 'settings' }}" href="/account" data-tip-title="Настройки" data-tip-body="Профиль и личные данные — общие для всего приложения.">{{ ic.i('sliders', 18) }}<span>Настройки</span></a>
+      <a class="wex-side-btn {{ 'active' if active == 'settings' }}" href="/settings" data-tip-title="Настройки" data-tip-body="Настройки Salling: профиль кандидата, логин, документы, дом и автопилот.">{{ ic.i('sliders', 18) }}<span>Настройки</span></a>
       <button type="button" class="wex-side-btn" data-whatsnew-open data-tip-title="Что нового" data-tip-body="Список обновлений WexFlow и что изменилось в каждой версии.">{{ ic.i('star', 18) }}<span>Что нового</span></button>
     </nav>
     <div class="wex-side-spacer"></div>
+    <a class="wex-side-btn {{ 'active' if active == 'account' }}" href="/account" data-tip-title="Аккаунт" data-tip-body="Общие настройки: профиль кандидата, подписка и параметры приложения — не привязаны к фирме.">{{ ic.i('user', 18) }}<span>Аккаунт</span></a>
     {% if show_billing() %}
     <a class="wex-side-btn" href="/account#подписка" data-tip-title="Твой тариф" data-tip-body="Текущий тариф подписки. Нажми, чтобы посмотреть планы.">{{ ic.i('star', 18) }}<span>{{ plan_label() }}</span></a>
     {% endif %}

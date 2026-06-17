@@ -2,7 +2,7 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}WexFlow · Общие настройки{% endblock %}
+{% block title %}WexFlow · Аккаунт{% endblock %}
 
 {% block style %}
 <style>
@@ -196,11 +196,11 @@
 {% endblock %}
 
 {% block body %}
-{{ ui.shell_start('settings') }}
+{{ ui.shell_start('account') }}
 <header class="wex-topbar">
   <div class="wex-title-stack">
-    <h1>{{ ui.brand('Настройки') }}</h1>
-    <span class="wex-title-meta">Профиль и личные данные — общие для всего приложения{% if show_billing() %} · подписка{% endif %}</span>
+    <h1>{{ ui.brand('Аккаунт') }}</h1>
+    <span class="wex-title-meta">Профиль кандидата — общий для всех фирм{% if show_billing() %} · подписка{% endif %}</span>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
@@ -209,7 +209,7 @@
   </div>
 </header>
 <section class="wex-workbench wex-narrow">
-  <p class="sub">Эти данные используются всеми модулями WexFlow (Salling и 7-Eleven). Заполни один раз.</p>
+  <p class="sub">Аккаунт WexFlow: профиль кандидата — один на все фирмы (Salling, 7-Eleven и будущие). Заполни один раз, бот подставит нужные данные при подаче.</p>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
@@ -234,7 +234,7 @@
   </div>
   {% endif %}
 
-  <!-- Общий профиль (личные данные) -->
+  <!-- Профиль кандидата (общий для всех фирм; сохраняется автоматически) -->
   <form id="profileForm" class="panel" method="post" action="/account/save">
     <h2>Профиль кандидата</h2>
     <p class="hint">Общие личные данные — используются всеми модулями. CV и письмо настраиваются отдельно в каждой фирме.</p>
