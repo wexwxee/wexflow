@@ -30,13 +30,20 @@ for _stream in (sys.stdout, sys.stderr):
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 import config
+import profile_store
 from db import Job, get_session
 
 
 def load_profile() -> dict:
-    if not config.PROFILE_PATH.exists():
-        sys.exit("Нет profile.json — скопируй profile.example.json в profile.json и заполни.")
-    return json.loads(config.PROFILE_PATH.read_text(encoding="utf-8"))
+    """Профиль кандидата берём из ОБЩЕГО хранилища WexFlow (profile_store) —
+    того же места, куда его сохраняет приложение.
+
+    Раньше читали config.PROFILE_PATH (старый модульный путь). В собранном
+    приложении общий и модульный пути не совпадают: приложение писало профиль
+    в общий файл, а подача искала его в модульном, не находила и молча падала
+    здесь (sys.exit) ещё до открытия браузера — со стороны это выглядело как
+    «отправка пошла, но ничего не происходит»."""
+    return profile_store.load_profile()
 
 
 def _mask_email(email: str) -> str:
