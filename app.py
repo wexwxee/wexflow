@@ -1211,6 +1211,7 @@ def account_page(request: Request, saved: str = "", missing: str = ""):
         "city_options": city_options, "country_options": country_options,
         "subscription": subscription.status(),
         "account": account_mod.status(profile),
+        "account_tg_id": account_mod.load().get("tg_id") or "",
         "cloud_login_url": cloud_auth.login_url(),
     })
 
@@ -1339,6 +1340,7 @@ def account_login_poll():
             _sync_profile_with_cloud()
         return JSONResponse({
             "signed_in": True,
+            "tg_id": acc.get("tg_id") or "",
             "name": acc.get("tg_name") or "",
             "username": acc.get("username") or "",
             "plan": acc.get("plan") or "free",
@@ -1351,6 +1353,23 @@ def account_logout():
     """Выйти из аккаунта (локально). Облачная сессия остаётся — можно войти снова."""
     account_mod.sign_out()
     return RedirectResponse("/account", status_code=303)
+
+
+@app.post("/account/rebind/start")
+def account_rebind_start():
+    """Шаг 1 перепривязки: облако шлёт код подтверждения в текущий (старый) Telegram."""
+    if not account_mod.is_signed_in():
+        return JSONResponse({"ok": False, "error": "Сначала войди в аккаунт"}, status_code=401)
+    return JSONResponse(cloud_auth.rebind_start())
+
+
+@app.post("/account/rebind/confirm")
+def account_rebind_confirm(code: str = Form("")):
+    """Шаг 2: проверяем код. При успехе возвращаем ссылку входа НОВЫМ аккаунтом."""
+    code = (code or "").strip()
+    if not code:
+        return JSONResponse({"ok": False, "error": "Введи код"}, status_code=400)
+    return JSONResponse(cloud_auth.rebind_confirm(code))
 
 
 @app.post("/settings/documents/save")

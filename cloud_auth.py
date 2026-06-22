@@ -97,6 +97,40 @@ def pull_profile(timeout: int = 10) -> dict | None:
     return None
 
 
+def _post_json(path: str, payload: dict, timeout: int = 10) -> dict:
+    """POST JSON на облако и вернуть разобранный ответ (или {ok:False,error}).
+
+    Сетевые ошибки не роняют вызывающего — превращаются в {"ok": False, ...}.
+    """
+    url = f"{CLOUD_BASE}{path}"
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=data, headers={"content-type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:  # 4xx/5xx с телом-ошибкой
+        try:
+            return json.loads(e.read().decode("utf-8"))
+        except (ValueError, OSError):
+            return {"ok": False, "error": f"HTTP {e.code}"}
+    except (urllib.error.URLError, OSError, ValueError):
+        return {"ok": False, "error": "Нет связи с облаком"}
+
+
+def rebind_start(timeout: int = 10) -> dict:
+    """Шаг 1 перепривязки: попросить облако прислать код в СТАРЫЙ Telegram."""
+    return _post_json("/api/rebind", {"action": "start", "device": device_id()}, timeout)
+
+
+def rebind_confirm(code: str, timeout: int = 10) -> dict:
+    """Шаг 2: проверить код. При успехе вернёт {ok, loginUrl} — ссылку входа новым аккаунтом."""
+    return _post_json(
+        "/api/rebind", {"action": "confirm", "device": device_id(), "code": code}, timeout
+    )
+
+
 def offer(text: str, job_id: str, timeout: int = 15) -> dict | None:
     """Отправить карточку вакансии через облако — бот пришлёт её пользователю с
     кнопками ✅/❌. text — уже собранная карточка (с переводом)."""

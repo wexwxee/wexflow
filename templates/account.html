@@ -265,8 +265,11 @@
     </div>
     <div class="acct-cta">
       {% if account.signed_in %}
-      <form method="post" action="/account/logout" style="margin:0;"><button class="ghost" type="submit">{{ ic.i('unlock', 14) }} Выйти</button></form>
-      <span class="acct-hint">Ты вошёл через Telegram. Тариф и доступ берутся из облака автоматически.</span>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+        <button class="ghost" type="button" id="rebindOpen" data-tg-id="{{ account_tg_id }}">{{ ic.i('send', 14) }} Перепривязать Telegram</button>
+        <form method="post" action="/account/logout" style="margin:0;"><button class="ghost" type="submit">{{ ic.i('unlock', 14) }} Выйти</button></form>
+      </div>
+      <span class="acct-hint">Ты вошёл через Telegram. Тариф и доступ берутся из облака автоматически.<br>«Перепривязать» — перенести аккаунт и данные на другой Telegram.</span>
       {% else %}
       <a class="tg-login-btn" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">
         <span class="tg-login-ic">{{ ic.i('send', 15) }}</span>
@@ -292,6 +295,129 @@
       if (timer) return;
       timer = setInterval(poll, 3000);
       setTimeout(poll, 1500);
+    });
+  })();
+  </script>
+
+  <!-- Перепривязка аккаунта на другой Telegram -->
+  <style>
+    .rb-overlay { position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.55); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); padding:20px; }
+    .rb-overlay[hidden] { display:none; }
+    .rb-sheet { position:relative; width:100%; max-width:420px; background:var(--card);
+      border:1px solid var(--glass-line); border-radius:14px; padding:24px; box-shadow:var(--shadow); }
+    .rb-close { position:absolute; top:8px; right:12px; background:transparent; border:0; color:var(--muted);
+      font-size:24px; line-height:1; cursor:pointer; padding:4px 8px; }
+    .rb-close:hover { color:var(--txt-strong); }
+    .rb-title { margin:0 0 12px; font-size:17px; color:var(--txt-strong); }
+    .rb-text { color:var(--muted); font-size:13.5px; line-height:1.5; margin:0 0 14px; }
+    .rb-input { width:100%; margin:0 0 12px; padding:11px 13px; border-radius:10px; border:1px solid var(--glass-line);
+      background:var(--glass); color:var(--txt); font-size:20px; letter-spacing:.3em; text-align:center; }
+    .rb-input:focus { outline:none; border-color:var(--accent); }
+    .rb-btn { width:100%; }
+    .rb-msg { margin:12px 0 0; font-size:13px; }
+    .rb-msg.err { color:var(--err-txt); }
+    .rb-msg.ok { color:var(--ok-txt); }
+    .rb-step[hidden] { display:none; }
+    .rb-wait { margin:12px 0 0; color:var(--accent); }
+  </style>
+  <div id="rebindOverlay" class="rb-overlay" hidden>
+    <div class="rb-sheet">
+      <button class="rb-close" id="rbClose" type="button" aria-label="Закрыть">&times;</button>
+      <h3 class="rb-title">{{ ic.i('send', 16) }} Перепривязка аккаунта</h3>
+
+      <div class="rb-step" data-step="1">
+        <p class="rb-text">Перенесём твой тариф и профиль на другой Telegram.<br>
+          Сначала подтвердим, что это ты — пришлём код в твой <b>текущий</b> Telegram.</p>
+        <button class="primary rb-btn" type="button" id="rbSend">Отправить код в Telegram</button>
+      </div>
+
+      <div class="rb-step" data-step="2" hidden>
+        <p class="rb-text">Код отправлен в твой Telegram (текущий аккаунт). Введи его:</p>
+        <input id="rbCode" class="rb-input" inputmode="numeric" maxlength="6" placeholder="• • • • • •">
+        <button class="primary rb-btn" type="button" id="rbConfirm">Подтвердить</button>
+      </div>
+
+      <div class="rb-step" data-step="3" hidden>
+        <p class="rb-text">Код верный ✓<br>Теперь войди в <b>новый</b> Telegram-аккаунт — на него переедут данные.</p>
+        <button class="primary rb-btn" type="button" id="rbLogin">Войти в новый аккаунт</button>
+        <p class="rb-text rb-wait" hidden>Ждём входа в новый аккаунт… после подтверждения страница обновится сама.</p>
+      </div>
+
+      <p class="rb-msg" id="rbMsg" hidden></p>
+    </div>
+  </div>
+  <script>
+  (function () {
+    var open = document.getElementById('rebindOpen');
+    if (!open) return;                 // не вошли — перепривязывать нечего
+    var ov = document.getElementById('rebindOverlay');
+    var msg = document.getElementById('rbMsg');
+    var baseline = open.getAttribute('data-tg-id') || '';
+    var loginUrl = null, pollTimer = null;
+
+    function show(step) {
+      [].forEach.call(ov.querySelectorAll('.rb-step'), function (s) {
+        s.hidden = (s.dataset.step !== String(step));
+      });
+    }
+    function setMsg(text, kind) {
+      if (!text) { msg.hidden = true; return; }
+      msg.hidden = false; msg.textContent = text; msg.className = 'rb-msg ' + (kind || '');
+    }
+    function close() { ov.hidden = true; if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+    open.addEventListener('click', function () { ov.hidden = false; show(1); setMsg(''); });
+    document.getElementById('rbClose').addEventListener('click', close);
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+
+    document.getElementById('rbSend').addEventListener('click', function () {
+      var b = this; b.disabled = true; setMsg('Отправляю код…');
+      fetch('/account/rebind/start', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          b.disabled = false;
+          if (d && d.ok) { setMsg(''); show(2); var c = document.getElementById('rbCode'); if (c) c.focus(); }
+          else if (d && d.needsBotStart) {
+            setMsg(d.error || 'Сначала открой бота в Telegram, затем повтори', 'err');
+            if (d.botUrl) window.open(d.botUrl, '_blank', 'noopener');
+          } else { setMsg((d && d.error) || 'Не удалось отправить код', 'err'); }
+        })
+        .catch(function () { b.disabled = false; setMsg('Нет связи с облаком', 'err'); });
+    });
+
+    document.getElementById('rbConfirm').addEventListener('click', function () {
+      var code = (document.getElementById('rbCode').value || '').trim();
+      if (!code) { setMsg('Введи код', 'err'); return; }
+      var b = this; b.disabled = true; setMsg('Проверяю…');
+      var fd = new FormData(); fd.append('code', code);
+      fetch('/account/rebind/confirm', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          b.disabled = false;
+          if (d && d.ok && d.loginUrl) { setMsg(''); loginUrl = d.loginUrl; show(3); }
+          else { setMsg((d && d.error) || 'Неверный код', 'err'); }
+        })
+        .catch(function () { b.disabled = false; setMsg('Нет связи с облаком', 'err'); });
+    });
+
+    document.getElementById('rbLogin').addEventListener('click', function () {
+      if (!loginUrl) { setMsg('Ссылка входа потерялась — начни заново', 'err'); return; }
+      window.open(loginUrl, '_blank', 'noopener');
+      var wait = ov.querySelector('.rb-wait'); if (wait) wait.hidden = false;
+      this.disabled = true;
+      if (pollTimer) return;
+      pollTimer = setInterval(function () {
+        fetch('/account/login/poll', { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            // ждём, пока облако переключит сессию на НОВЫЙ аккаунт (tg_id сменится)
+            if (d && d.signed_in && d.tg_id && d.tg_id !== baseline) {
+              clearInterval(pollTimer); pollTimer = null; location.reload();
+            }
+          })
+          .catch(function () {});
+      }, 3000);
     });
   })();
   </script>
