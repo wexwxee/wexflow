@@ -269,7 +269,7 @@
         <button class="ghost" type="button" id="rebindOpen" data-tg-id="{{ account_tg_id }}">{{ ic.i('send', 14) }} Перепривязать Telegram</button>
         <form method="post" action="/account/logout" style="margin:0;"><button class="ghost" type="submit">{{ ic.i('unlock', 14) }} Выйти</button></form>
       </div>
-      <span class="acct-hint">Ты вошёл через Telegram. Тариф и доступ берутся из облака автоматически.<br>«Перепривязать» — перенести аккаунт и данные на другой Telegram.</span>
+      <span class="acct-hint">«Перепривязать» — перенести тариф и данные на другой Telegram-аккаунт.</span>
       {% else %}
       <a class="tg-login-btn" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">
         <span class="tg-login-ic">{{ ic.i('send', 15) }}</span>
