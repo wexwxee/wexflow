@@ -36,6 +36,8 @@ DEFAULT_RULE = {
     "exclude_brands": "",   # НЕ предлагать эти бренды (CSV кодов)
     "exclude_cities": "",   # НЕ предлагать эти города (CSV названий)
     "exclude_keywords": "", # НЕ предлагать, если слово есть в названии/описании (CSV)
+    # --- несколько профилей подбора (если пусто — синтезируется один из полей выше) ---
+    "profiles": [],         # [{id,name,enabled, ...те же поля-фильтры...}]
     # --- расписание активности (когда автопилот шлёт карточки/подаёт) ---
     "active_from": 0,       # с какого часа (0-23). from==to или 0..24 = круглосуточно
     "active_to": 24,        # по какой час (1-24)
@@ -247,9 +249,9 @@ def _nums(rule: dict, key: str) -> list[float]:
     return out
 
 
-def _matches(job: Job, rule: dict, home: dict | None) -> bool:
-    if job.status in ("closed", "hidden", "applied"):
-        return False
+def _profile_matches(job: Job, rule: dict, home: dict | None) -> bool:
+    """Подходит ли вакансия под ОДИН профиль (набор фильтров). `rule` здесь —
+    это профиль (или легаси-правило целиком: поля те же)."""
     # бренд/категория/занятость/возраст — мультивыбор: подходит по ЛЮБОМУ из выбранных.
     brands = [labels.resolve(labels.BRANDS, b) or b for b in _csv(rule, "brand")]
     if brands and job.brand not in brands:
@@ -318,6 +320,35 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
         if geo.haversine_km(home["lat"], home["lon"], job.lat, job.lon) > max_km:
             return False
     return _keyword_match(job, rule.get("keywords"))
+
+
+# ── Несколько правил (профили подбора) ─────────────────────────────────
+# Поля фильтра, из которых состоит один профиль.
+_FILTER_FIELDS = ("max_km", "min_hours", "max_hours", "max_age_days", "category",
+                  "employment_type", "age", "keywords", "brand", "cities", "regions",
+                  "exclude_brands", "exclude_cities", "exclude_keywords")
+
+
+def get_profiles(rule: dict | None = None) -> list[dict]:
+    """Список профилей подбора. Если их ещё нет — синтезируем ОДИН из легаси-полей
+    верхнего уровня (миграция-на-чтение), чтобы старая настройка продолжала работать."""
+    r = rule or get_rule()
+    profs = r.get("profiles")
+    if profs:
+        return profs
+    legacy = {k: r.get(k, DEFAULT_RULE.get(k)) for k in _FILTER_FIELDS}
+    legacy.update({"id": "default", "name": "Правило 1", "enabled": True})
+    return [legacy]
+
+
+def _matches(job: Job, rule: dict, home: dict | None) -> bool:
+    """Вакансия подходит, если совпала хотя бы с ОДНИМ включённым профилем."""
+    if job.status in ("closed", "hidden", "applied"):
+        return False
+    profs = [p for p in get_profiles(rule) if p.get("enabled", True)]
+    if not profs:
+        return False
+    return any(_profile_matches(job, p, home) for p in profs)
 
 
 def find_matches() -> list[Job]:
