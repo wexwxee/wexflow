@@ -1165,6 +1165,14 @@ def api_transit(job_id: str):
 @app.get("/account", response_class=HTMLResponse)
 def account_page(request: Request, saved: str = "", missing: str = ""):
     """Общие настройки приложения: единый профиль, документы и подписка."""
+    # если уже вошли — освежим тариф/имя из облака (подхватит выданный Pro/Max)
+    if account_mod.is_signed_in():
+        try:
+            u = cloud_auth.fetch_session()
+            if u:
+                account_mod.apply_session(u)
+        except Exception:  # noqa: BLE001 — обновление не должно мешать открытию страницы
+            pass
     profile = profile_store.load_profile()
     city_options, country_options = _profile_choices()
     missing_fields = [x for x in missing.split(",") if x]
