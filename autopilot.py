@@ -588,19 +588,20 @@ def tg_decide(job_id: str, approve: bool, launcher) -> str:
     pend = [p for p in (r.get("tg_pending") or []) if p.get("job_id") != job_id]
     save_rule({"tg_pending": pend})  # убрать из ожидающих в любом случае
     job = _get_job(job_id)
-    title = job.title if job else "вакансия"
+    title = (job.title if job else "вакансия")
+    t = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     if not approve:
         skipped = set(r.get("tg_skipped") or []); skipped.add(job_id)
         save_rule({"tg_skipped": list(skipped)[-1000:]})
         log_event("info", f"TG: пропущено — {title}")
-        return f"❌ Пропущено: {title}"
+        return f"❌ <b>Пропущено</b>\n{t}"
     if job_id in set(r.get("submitted_ids") or []):
-        return f"Уже подавалось ранее: {title}"
+        return f"ℹ️ <b>Уже подавалось ранее</b>\n{t}"
     if not job:
-        return "Вакансия больше недоступна."
+        return "⚠️ Вакансия больше недоступна."
     launcher([job_id])
     record_submitted([job])
-    return f"✅ Подаю заявку: {title}"
+    return f"✅ <b>Отправляю заявку…</b>\n{t}\n\nWexFlow заполнит форму и подаст за тебя."
 
 
 def auto_submit_tick(launcher) -> None:
