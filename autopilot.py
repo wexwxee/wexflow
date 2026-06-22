@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
+import uuid
 
 import geo
 import labels
@@ -339,6 +340,79 @@ def get_profiles(rule: dict | None = None) -> list[dict]:
     legacy = {k: r.get(k, DEFAULT_RULE.get(k)) for k in _FILTER_FIELDS}
     legacy.update({"id": "default", "name": "Правило 1", "enabled": True})
     return [legacy]
+
+
+def _new_profile(name: str = "Новое правило") -> dict:
+    p = {k: DEFAULT_RULE.get(k) for k in _FILTER_FIELDS}
+    p.update({"id": uuid.uuid4().hex[:8], "name": name, "enabled": True})
+    return p
+
+
+def ensure_profiles() -> list[dict]:
+    """Гарантирует, что профили реально лежат в хранилище (а не только синтезируются).
+    При первом вызове переносит легаси-поля в profiles[0]."""
+    r = get_rule()
+    if not r.get("profiles"):
+        save_rule({"profiles": get_profiles(r)})
+    return get_rule().get("profiles") or []
+
+
+def get_profile(pid: str) -> dict:
+    profs = ensure_profiles()
+    for p in profs:
+        if p.get("id") == pid:
+            return p
+    return profs[0] if profs else _new_profile("Правило 1")
+
+
+def add_profile(name: str = "Новое правило") -> str:
+    profs = list(ensure_profiles())
+    p = _new_profile(name)
+    profs.append(p)
+    save_rule({"profiles": profs})
+    return p["id"]
+
+
+def delete_profile(pid: str) -> None:
+    profs = [p for p in ensure_profiles() if p.get("id") != pid]
+    if not profs:                       # хотя бы одно правило всегда остаётся
+        profs = [_new_profile("Правило 1")]
+    save_rule({"profiles": profs})
+
+
+def rename_profile(pid: str, name: str) -> None:
+    profs = ensure_profiles()
+    for p in profs:
+        if p.get("id") == pid:
+            p["name"] = (name or "").strip() or p.get("name") or "Правило"
+    save_rule({"profiles": profs})
+
+
+def toggle_profile(pid: str) -> None:
+    profs = ensure_profiles()
+    for p in profs:
+        if p.get("id") == pid:
+            p["enabled"] = not p.get("enabled", True)
+    save_rule({"profiles": profs})
+
+
+def save_profile_filters(pid: str, fields: dict) -> None:
+    """Записать поля-фильтры в выбранный профиль (создаёт профили при необходимости)."""
+    profs = ensure_profiles()
+    target = next((p for p in profs if p.get("id") == pid), None) or (profs[0] if profs else None)
+    if target is None:
+        target = _new_profile("Правило 1")
+        profs.append(target)
+    target.update({k: fields.get(k, target.get(k, DEFAULT_RULE.get(k))) for k in _FILTER_FIELDS})
+    save_rule({"profiles": profs})
+
+
+def profile_match_count(p: dict) -> int:
+    """Сколько активных вакансий подходит под ОДИН профиль (для подписи)."""
+    home = settings_store.get_home()
+    with get_session() as s:
+        jobs = list(s.exec(select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))).all())
+    return sum(1 for j in jobs if _profile_matches(j, p, home))
 
 
 def _matches(job: Job, rule: dict, home: dict | None) -> bool:

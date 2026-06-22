@@ -155,6 +155,21 @@
   .ap-mode-opt.on { border-color:var(--accent); color:var(--accent);
     background:color-mix(in srgb, var(--accent) 12%, transparent); }
   .ap-mode-opt.busy { opacity:.55; pointer-events:none; }
+  /* профили подбора (несколько правил) */
+  .ap-profiles-wrap { margin:6px 0 10px; padding-bottom:10px; border-bottom:1px dashed var(--glass-line); }
+  .ap-profiles { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; }
+  .ap-prof { display:inline-flex; align-items:center; padding:6px 12px; border-radius:999px;
+    border:1px solid var(--glass-line); background:var(--glass); color:var(--muted);
+    font-size:12.5px; font-weight:650; cursor:pointer; text-decoration:none; }
+  .ap-prof:hover { border-color:var(--hover-line); color:var(--txt); }
+  .ap-prof.on { border-color:var(--accent); color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .ap-prof.off { opacity:.5; }
+  .ap-prof.add { border-style:dashed; color:var(--muted); }
+  .ap-prof-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .ap-prof-bar button { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt);
+    border-radius:8px; padding:6px 11px; font-size:12.5px; font-weight:650; cursor:pointer; }
+  .ap-prof-bar button:hover { border-color:var(--hover-line); color:var(--txt-strong); }
+  .ap-prof-bar input[type=text] { padding:6px 10px; border-radius:8px; }
 </style>
 {% endblock %}
 
@@ -429,6 +444,12 @@
     })();
   </script>
 
+  <!-- хелпер-формы управления профилями (вне основной формы; кнопки ссылаются через form=) -->
+  <form id="profAddForm" method="post" action="/autopilot/profile/add" style="display:none;"></form>
+  <form id="profRenameForm" method="post" action="/autopilot/profile/rename" style="display:none;"><input type="hidden" name="profile_id" value="{{ autopilot_profile.id }}"></form>
+  <form id="profToggleForm" method="post" action="/autopilot/profile/toggle" style="display:none;"><input type="hidden" name="profile_id" value="{{ autopilot_profile.id }}"></form>
+  <form id="profDeleteForm" method="post" action="/autopilot/profile/delete" style="display:none;"><input type="hidden" name="profile_id" value="{{ autopilot_profile.id }}"></form>
+
   <!-- Автопилот подбора -->
   <form id="autopilot" class="panel" method="post" action="/autopilot/save" style="margin-top:18px;">
     <h2>{{ ic.i('zap', 17) }} Автопилот подбора
@@ -472,6 +493,31 @@
       });
     })();
     </script>
+
+    <!-- Профили подбора: наборы фильтров под цель (объединяются) -->
+    <input type="hidden" name="profile_id" value="{{ autopilot_profile.id }}">
+    <div class="ap-profiles-wrap">
+      <label class="lbl" style="display:block;">Правила подбора
+        <span class="hint" style="font-weight:400;">— наборы фильтров под разные цели; вакансия подходит, если совпала с любым включённым</span>
+      </label>
+      <div class="ap-profiles">
+        {% for p in autopilot_profiles %}
+        <a class="ap-prof {{ 'on' if p.id == autopilot_profile.id else '' }} {{ 'off' if not p.enabled else '' }}"
+           href="?profile={{ p.id }}#autopilot">{{ p.name }}{% if not p.enabled %} · выкл{% endif %}</a>
+        {% endfor %}
+        <button class="ap-prof add" type="submit" form="profAddForm">+ правило</button>
+      </div>
+      <div class="ap-prof-bar">
+        <input type="text" form="profRenameForm" name="name" value="{{ autopilot_profile.name }}" maxlength="40" style="max-width:200px;">
+        <button type="submit" form="profRenameForm">Переименовать</button>
+        <button type="submit" form="profToggleForm">{{ 'Выключить' if autopilot_profile.enabled else 'Включить' }}</button>
+        {% if autopilot_profiles|length > 1 %}
+        <button type="submit" form="profDeleteForm" style="color:var(--err-txt);"
+                onclick="return confirm('Удалить правило «{{ autopilot_profile.name }}»?')">Удалить</button>
+        {% endif %}
+        <span class="hint" style="margin:0;">Под это правило подходит: <b>{{ autopilot_profile_count }}</b></span>
+      </div>
+    </div>
 
     <div class="grid2">
       <div class="field">

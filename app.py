@@ -1079,7 +1079,28 @@ def _autopilot_rule_summary(rule: dict) -> list[dict]:
     ag = _nums(rule.get("max_age_days"))
     if ag:
         out.append({"label": "Свежесть", "value": f"не старше {max(ag)} дн."})
+    if rule.get("max_hours"):
+        mxh = _nums(rule.get("max_hours"))
+        if mxh:
+            out.append({"label": "Часов не больше", "value": f"до {max(mxh)} ч"})
+    if rule.get("cities"):
+        out.append({"label": "Город", "value": rule["cities"]})
+    if rule.get("regions"):
+        out.append({"label": "Регион", "value": rule["regions"]})
     return out
+
+
+def _autopilot_profiles_summary(profiles: list[dict]) -> list[dict]:
+    """Сводка «что ищет автопилот» по профилям: строка на профиль."""
+    rows: list[dict] = []
+    for p in profiles:
+        parts = [f"{r['label'].lower()}: {r['value']}" for r in _autopilot_rule_summary(p)]
+        exclude = [p.get("exclude_brands"), p.get("exclude_cities"), p.get("exclude_keywords")]
+        if any(exclude):
+            parts.append("есть исключения")
+        name = (p.get("name") or "Правило") + ("" if p.get("enabled", True) else " · выкл")
+        rows.append({"label": name, "value": "; ".join(parts) or "без ограничений"})
+    return rows
 
 
 @app.get("/autopilot", response_class=HTMLResponse)
@@ -1091,7 +1112,7 @@ def autopilot_page(request: Request):
             "request": request,
             "status": _autopilot_status_payload(),
             "events": autopilot.event_log(),
-            "rule_summary": _autopilot_rule_summary(rule),
+            "rule_summary": _autopilot_profiles_summary(autopilot.get_profiles(rule)),
             "enabled": bool(rule.get("enabled")),
             "auto_submit": bool(rule.get("auto_submit")),
         },
@@ -1150,16 +1171,27 @@ def _autopilot_geo_options():
 def settings_page(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     profile = profile_store.load_profile()
     ap_cities, ap_regions = _autopilot_geo_options()
+    # профили подбора: выбранный профиль (?profile=id) редактируется формой ниже.
+    ap_profiles = autopilot.ensure_profiles()
+    sel_id = request.query_params.get("profile") or ""
+    sel_profile = next((p for p in ap_profiles if p.get("id") == sel_id), ap_profiles[0])
+    # «вид» правила для формы = глобальные поля + фильтры ВЫБРАННОГО профиля,
+    # чтобы шаблон фильтров не переписывать (он читает autopilot.<поле>).
+    ap_view = dict(autopilot.get_rule())
+    for k in autopilot._FILTER_FIELDS:
+        ap_view[k] = sel_profile.get(k, autopilot.DEFAULT_RULE.get(k))
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "profile": profile, "file_info": _profile_file_info(profile),
         "creds": credentials_store.status(), "home": settings_store.get_home(),
         "saved": saved, "geoerror": geoerror,
         "subscription": subscription.status(),
-        "autopilot": autopilot.get_rule(), "brands": labels.BRANDS,
+        "autopilot": ap_view, "brands": labels.BRANDS,
         "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
         "autopilot_cities": ap_cities, "autopilot_regions": ap_regions,
         "autopilot_mode": autopilot.get_mode(),
+        "autopilot_profiles": ap_profiles, "autopilot_profile": sel_profile,
+        "autopilot_profile_count": autopilot.profile_match_count(sel_profile),
         "autopilot_count": autopilot.match_count(),
         "autopilot_pending": autopilot.pending_count(),
         "autopilot_submitted_today": autopilot.submitted_today(),
@@ -1223,6 +1255,7 @@ def settings_documents_save(
 @app.post("/autopilot/save")
 def autopilot_save(
     enabled: str = Form(""),
+    profile_id: str = Form(""),
     max_km: str = Form(""),
     min_hours: str = Form(""),
     max_hours: str = Form(""),
@@ -1264,10 +1297,8 @@ def autopilot_save(
         except (ValueError, TypeError):
             return default
 
-    # режим (enabled/auto_submit/tg_approval) теперь управляется отдельным
-    # селектором «Режим работы» (/api/autopilot/mode), поэтому сохранение
-    # ФИЛЬТРОВ его НЕ трогает — иначе правка фильтров сбрасывала бы режим.
-    autopilot.save_rule({
+    # ФИЛЬТРЫ пишем в выбранный профиль (режим/лимиты/расписание — глобальные).
+    autopilot.save_profile_filters(profile_id, {
         "max_km": _num_csv(max_km),
         "min_hours": _num_csv(min_hours),
         "max_hours": _num_csv(max_hours),
@@ -1282,14 +1313,37 @@ def autopilot_save(
         "exclude_brands": exclude_brands.strip(),
         "exclude_cities": exclude_cities.strip(),
         "exclude_keywords": exclude_keywords.strip(),
-        "active_from": _hour(active_from, 0),
-        "active_to": _hour(active_to, 24),
     })
-    # «с этого момента»: текущие совпадения считаем уже виденными, чтобы
-    # уведомлять только о НОВЫХ вакансиях, появившихся позже (без спама).
+    autopilot.save_rule({"active_from": _hour(active_from, 0), "active_to": _hour(active_to, 24)})
+    # «с этого момента»: текущие совпадения считаем уже виденными (без спама о старых).
     autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
-    _reschedule_autopilot_scan()  # вкл/выкл автопилота → подстроить частоту скана
-    return RedirectResponse("/settings?saved=1#autopilot", status_code=303)
+    _reschedule_autopilot_scan()
+    dest = f"/settings?saved=1&profile={profile_id}#autopilot" if profile_id else "/settings?saved=1#autopilot"
+    return RedirectResponse(dest, status_code=303)
+
+
+@app.post("/autopilot/profile/add")
+def autopilot_profile_add(name: str = Form("Новое правило")):
+    pid = autopilot.add_profile((name or "").strip() or "Новое правило")
+    return RedirectResponse(f"/settings?profile={pid}#autopilot", status_code=303)
+
+
+@app.post("/autopilot/profile/delete")
+def autopilot_profile_delete(profile_id: str = Form("")):
+    autopilot.delete_profile(profile_id)
+    return RedirectResponse("/settings#autopilot", status_code=303)
+
+
+@app.post("/autopilot/profile/rename")
+def autopilot_profile_rename(profile_id: str = Form(""), name: str = Form("")):
+    autopilot.rename_profile(profile_id, name)
+    return RedirectResponse(f"/settings?profile={profile_id}#autopilot", status_code=303)
+
+
+@app.post("/autopilot/profile/toggle")
+def autopilot_profile_toggle(profile_id: str = Form("")):
+    autopilot.toggle_profile(profile_id)
+    return RedirectResponse(f"/settings?profile={profile_id}#autopilot", status_code=303)
 
 
 @app.post("/autopilot/prepare")
