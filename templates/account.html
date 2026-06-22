@@ -85,12 +85,45 @@
   }
   .acct-plan.pro { color:#8b7bff; border-color:color-mix(in srgb, #8b7bff 40%, var(--glass-line)); background:color-mix(in srgb, #8b7bff 12%, transparent); }
   .acct-plan.max { color:#f5a623; border-color:color-mix(in srgb, #f5a623 40%, var(--glass-line)); background:color-mix(in srgb, #f5a623 12%, transparent); }
-  .acct-cta { display:grid; gap:6px; justify-items:end; text-align:right; max-width:340px; }
+  .acct-cta { display:grid; gap:8px; justify-items:end; text-align:right; max-width:360px; }
   .acct-cta button:disabled { opacity:.8; cursor:not-allowed; }
   .acct-hint { color:var(--muted); font-size:11.5px; line-height:1.4; }
+  .tg-login-btn {
+    position:relative; isolation:isolate; overflow:hidden;
+    display:inline-flex; align-items:center; justify-content:center; gap:10px;
+    min-height:44px; max-width:100%; padding:0 18px; border-radius:8px;
+    border:1px solid color-mix(in srgb, #2aabee 68%, var(--glass-line));
+    background:linear-gradient(135deg, #2aabee 0%, #21d86b 100%);
+    color:#04130c; text-decoration:none; font-size:14px; font-weight:850; line-height:1;
+    box-shadow:0 12px 28px rgba(42,171,238,.18), inset 0 1px 0 rgba(255,255,255,.35);
+    transition:transform .15s ease, box-shadow .15s ease, filter .15s ease, border-color .15s ease;
+  }
+  .tg-login-btn::before {
+    content:""; position:absolute; inset:0; z-index:-1;
+    background:linear-gradient(110deg, transparent 0 18%, rgba(255,255,255,.28) 42%, transparent 62% 100%);
+    transform:translateX(-110%); transition:transform .45s ease;
+  }
+  .tg-login-btn:hover {
+    transform:translateY(-1px); color:#03110b; filter:saturate(1.08);
+    border-color:color-mix(in srgb, #21d86b 70%, #2aabee);
+    box-shadow:0 16px 34px rgba(42,171,238,.24), inset 0 1px 0 rgba(255,255,255,.42);
+  }
+  .tg-login-btn:hover::before { transform:translateX(110%); }
+  .tg-login-btn:active { transform:translateY(0); }
+  .tg-login-btn .tg-login-ic {
+    width:24px; height:24px; border-radius:7px; display:grid; place-items:center;
+    background:rgba(255,255,255,.22); box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);
+    flex:0 0 auto;
+  }
+  .tg-login-btn .tg-login-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tg-login-btn svg { stroke-width:2.25; }
   @media (max-width:640px){
     .acct-card { flex-direction:column; align-items:flex-start; }
     .acct-cta { justify-items:start; text-align:left; max-width:none; }
+  }
+  @media (max-width:420px){
+    .tg-login-btn { width:100%; padding:0 14px; }
+    .tg-login-btn .tg-login-text { white-space:normal; line-height:1.2; }
   }
 
   /* ── Подписка ─────────────────────────────────────────────── */
@@ -235,7 +268,10 @@
       <form method="post" action="/account/logout" style="margin:0;"><button class="ghost" type="submit">{{ ic.i('unlock', 14) }} Выйти</button></form>
       <span class="acct-hint">Ты вошёл через Telegram. Тариф и доступ берутся из облака автоматически.</span>
       {% else %}
-      <a class="primary" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">{{ ic.i('unlock', 14) }} Войти через Telegram</a>
+      <a class="tg-login-btn" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">
+        <span class="tg-login-ic">{{ ic.i('send', 15) }}</span>
+        <span class="tg-login-text">Войти через Telegram</span>
+      </a>
       <span class="acct-hint">Откроется страница входа Telegram. После подтверждения вернись сюда — приложение само тебя узнает.</span>
       {% endif %}
     </div>
