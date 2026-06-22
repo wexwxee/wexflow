@@ -35,6 +35,8 @@ import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
 import autopilot
+import tg
+import telegram_store
 from apscheduler.schedulers.background import BackgroundScheduler
 
 PROFILE_REQUIRED = [
@@ -154,6 +156,7 @@ def _sync_jobs():
         # автоотправка (фаза 3, по умолчанию ВЫКЛ): отправляет ТОЛЬКО при явно
         # включённом auto_submit, в пределах дневного лимита и только новые
         autopilot.auto_submit_tick(lambda ids: _launch_salling_apply(ids, submit=True))
+        _tg_offer_tick()  # режим «по разрешению»: спросить в Telegram про новые подходящие
     except Exception as e:
         _sync_state["last_error"] = str(e)[:200]
         print(f"автообновление: ошибка — {e}")
@@ -200,6 +203,120 @@ def _data_age_minutes() -> int | None:
     return max(0, int((utcnow() - last).total_seconds() // 60))
 
 
+# ── Telegram: фоновый слушатель (long polling) ──────────────────────────
+# Один поток на всё приложение: ловит /start (привязка chat_id) и нажатия
+# кнопок ✅/❌ под карточками вакансий. Вся работа с Telegram — в модуле tg;
+# когда дойдём до облака, переносить в облако нужно будет только его.
+_tg_thread = None
+_tg_stop = threading.Event()
+
+
+def _tg_handle_decision(cb: dict, data: str, token: str) -> None:
+    """Нажата кнопка под карточкой вакансии (формат data: 'ap_yes:<id>' / 'ap_no:<id>').
+    Реальная подача по ✅ подключается в режиме «по разрешению» (следующий шаг)."""
+    msg = cb.get("message") or {}
+    chat = (msg.get("chat") or {}).get("id")
+    mid = msg.get("message_id")
+    if not (chat and mid and ":" in data):
+        return
+    action, job_id = data.split(":", 1)
+    result = autopilot.tg_decide(job_id, approve=(action == "ap_yes"),
+                                 launcher=lambda ids: _launch_salling_apply(ids, submit=True))
+    tg.edit_message(token, chat, mid, result or "Готово.")
+
+
+def _tg_handle_update(u: dict) -> None:
+    try:
+        token = telegram_store.get_token()
+        if not token:
+            return
+        # 1) обычное сообщение → привязка: запоминаем chat_id отправителя
+        msg = u.get("message")
+        if msg and msg.get("chat"):
+            chat = msg["chat"]
+            if not telegram_store.get_chat():
+                name = " ".join(x for x in (chat.get("first_name"), chat.get("last_name")) if x)
+                telegram_store.set_chat(chat["id"], name or chat.get("username", ""))
+                tg.send_message(token, chat["id"],
+                                "✅ Готово! Telegram привязан к WexFlow.\n"
+                                "Сюда будут приходить вакансии на подтверждение.")
+            return
+        # 2) нажатие кнопки ✅/❌ под карточкой вакансии
+        cb = u.get("callback_query")
+        if cb:
+            data = cb.get("data") or ""
+            if data == "ap_demo":  # кнопки в примере-«проверочном» ничего не делают
+                tg.answer_callback(token, cb["id"], "Это пример — реальная заявка не отправляется.")
+                return
+            tg.answer_callback(token, cb["id"])
+            _tg_handle_decision(cb, data, token)
+    except Exception as e:  # noqa: BLE001 — слушатель не должен падать
+        print(f"telegram: ошибка обработки апдейта — {e}")
+
+
+def _tg_poller_loop() -> None:
+    offset = 0
+    while not _tg_stop.is_set():
+        token = telegram_store.get_token()
+        if not token:
+            _tg_stop.wait(5)  # Telegram не настроен — тихо ждём
+            continue
+        r = tg.get_updates(token, offset=offset, timeout=25)
+        if not r.get("ok"):
+            _tg_stop.wait(3)
+            continue
+        for u in r.get("updates", []):
+            offset = u.get("update_id", offset) + 1
+            _tg_handle_update(u)
+
+
+def _ensure_tg_poller() -> None:
+    """Запустить слушатель Telegram, если он ещё не работает."""
+    global _tg_thread
+    if _tg_thread and _tg_thread.is_alive():
+        return
+    _tg_stop.clear()
+    _tg_thread = threading.Thread(target=_tg_poller_loop, daemon=True, name="tg-poller")
+    _tg_thread.start()
+
+
+TG_MAX_PER_SCAN = 3  # не больше карточек на подтверждение за один фоновый скан
+
+
+def _tg_card(job) -> str:
+    """Текст карточки вакансии для Telegram (HTML)."""
+    def e(s):
+        return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    brand = labels.brand(job.brand) if job.brand else ""
+    head = " · ".join(e(p) for p in (brand, job.city) if p)
+    hours = f"\n🕒 {e(job.hours)}" if job.hours else ""
+    link = f'\n<a href="{e(job.application_link)}">Открыть вакансию</a>' if job.application_link else ""
+    return (f"🔎 <b>{e(job.title)}</b>\n{head}{hours}{link}\n\n"
+            "Подать заявку от твоего имени?")
+
+
+def _tg_offer_tick() -> None:
+    """После скана: если включён режим «по разрешению» и Telegram привязан —
+    отправить карточки НОВЫХ подходящих вакансий с кнопками ✅/❌."""
+    try:
+        if not autopilot.get_rule().get("tg_approval"):
+            return
+        if not autopilot.within_schedule():
+            return  # вне рабочих часов автопилота — карточки не шлём
+        if not telegram_store.is_ready():
+            return
+        token = telegram_store.get_token()
+        chat = telegram_store.get_chat()
+        for job in autopilot.tg_eligible(limit=TG_MAX_PER_SCAN):
+            buttons = [[("✅ Подать", f"ap_yes:{job.id}"), ("❌ Пропустить", f"ap_no:{job.id}")]]
+            r = tg.send_message(token, chat, _tg_card(job), buttons=buttons)
+            if r.get("ok"):
+                autopilot.tg_pending_add(job.id, r.get("message_id"))
+                autopilot.log_event("info", f"TG: спросил разрешение — {job.title}")
+    except Exception as e:  # noqa: BLE001 — не должно ронять фоновый скан
+        print(f"telegram: ошибка отправки карточек — {e}")
+
+
 @asynccontextmanager
 async def _lifespan(app):
     global _scheduler
@@ -208,10 +325,12 @@ async def _lifespan(app):
     sched.start()
     _scheduler = sched
     _reschedule_autopilot_scan()  # подстроить интервал под текущее состояние автопилота
+    _ensure_tg_poller()           # слушатель Telegram (привязка + кнопки ✅/❌)
     age = _data_age_minutes()
     if age is None or age >= 30:  # данные устарели — обновить сразу, в фоне
         threading.Thread(target=_sync_jobs, daemon=True).start()
     yield
+    _tg_stop.set()
     sched.shutdown(wait=False)
 
 
@@ -900,6 +1019,28 @@ def api_autopilot_toggle():
     return JSONResponse({"ok": True, "enabled": new_enabled})
 
 
+@app.post("/api/autopilot/mode")
+async def api_autopilot_mode(request: Request):
+    """Единый режим работы: off | notify | telegram | auto."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    mode = body.get("mode")
+    if mode == "telegram" and not telegram_store.is_ready():
+        return {"ok": False, "error": "Сначала привяжи Telegram ниже."}
+    if mode not in autopilot.MODES:
+        return {"ok": False, "error": "Неизвестный режим."}
+    new_mode = autopilot.set_mode(mode)
+    if new_mode != "off":
+        # охват «только новые»: текущие совпадения — baseline, чтобы не завалить бэклогом
+        if (autopilot.get_rule().get("submit_scope") or "new") != "all":
+            autopilot.set_autosubmit_baseline()
+        autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+    _reschedule_autopilot_scan()
+    return {"ok": True, "mode": new_mode}
+
+
 def _autopilot_rule_summary(rule: dict) -> list[dict]:
     """Человеко-читаемая сводка «что ищет автопилот» для страницы /autopilot."""
     def _csv(raw, mapping):
@@ -957,6 +1098,12 @@ def autopilot_page(request: Request):
     )
 
 
+@app.get("/autopilot/mini", response_class=HTMLResponse)
+def autopilot_mini(request: Request):
+    """Компактный монитор автопилота для отдельного мини-окна (живая статистика)."""
+    return templates.TemplateResponse("autopilot_mini.html", {"request": request})
+
+
 @app.get("/api/transit/{job_id}")
 def api_transit(job_id: str):
     home = settings_store.get_home()
@@ -988,9 +1135,21 @@ def account_page(request: Request, saved: str = "", missing: str = ""):
     })
 
 
+def _autopilot_geo_options():
+    """Списки городов и регионов из активных вакансий — для подсказок/выбора в настройках."""
+    with get_session() as s:
+        rows = s.exec(
+            select(Job.city, Job.region).where(Job.status.not_in(["closed", "hidden", "applied"]))
+        ).all()
+    cities = sorted({(c or "").strip() for c, _ in rows if c and c.strip()})
+    regions = sorted({(r or "").strip() for _, r in rows if r and r.strip()})
+    return cities, regions
+
+
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     profile = profile_store.load_profile()
+    ap_cities, ap_regions = _autopilot_geo_options()
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "profile": profile, "file_info": _profile_file_info(profile),
@@ -999,6 +1158,8 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
         "subscription": subscription.status(),
         "autopilot": autopilot.get_rule(), "brands": labels.BRANDS,
         "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
+        "autopilot_cities": ap_cities, "autopilot_regions": ap_regions,
+        "autopilot_mode": autopilot.get_mode(),
         "autopilot_count": autopilot.match_count(),
         "autopilot_pending": autopilot.pending_count(),
         "autopilot_submitted_today": autopilot.submitted_today(),
@@ -1064,12 +1225,20 @@ def autopilot_save(
     enabled: str = Form(""),
     max_km: str = Form(""),
     min_hours: str = Form(""),
+    max_hours: str = Form(""),
     max_age_days: str = Form(""),
     category: str = Form(""),
     employment_type: str = Form(""),
     age: str = Form(""),
     keywords: str = Form(""),
     brand: str = Form(""),
+    cities: str = Form(""),
+    regions: str = Form(""),
+    exclude_brands: str = Form(""),
+    exclude_cities: str = Form(""),
+    exclude_keywords: str = Form(""),
+    active_from: str = Form(""),
+    active_to: str = Form(""),
 ):
     def _num_csv(v: str) -> str:
         """Несколько порогов через запятую → нормализованный CSV (дубли/пустые/≤0 убраны)."""
@@ -1089,16 +1258,32 @@ def autopilot_save(
                 out.append(s)
         return ",".join(out)
 
+    def _hour(v: str, default: int) -> int:
+        try:
+            return max(0, min(24, int(float(v))))
+        except (ValueError, TypeError):
+            return default
+
+    # режим (enabled/auto_submit/tg_approval) теперь управляется отдельным
+    # селектором «Режим работы» (/api/autopilot/mode), поэтому сохранение
+    # ФИЛЬТРОВ его НЕ трогает — иначе правка фильтров сбрасывала бы режим.
     autopilot.save_rule({
-        "enabled": bool(enabled),
         "max_km": _num_csv(max_km),
         "min_hours": _num_csv(min_hours),
+        "max_hours": _num_csv(max_hours),
         "max_age_days": _num_csv(max_age_days),
         "category": category.strip(),
         "employment_type": employment_type.strip(),
         "age": age.strip(),
         "keywords": keywords.strip(),
         "brand": brand.strip(),
+        "cities": cities.strip(),
+        "regions": regions.strip(),
+        "exclude_brands": exclude_brands.strip(),
+        "exclude_cities": exclude_cities.strip(),
+        "exclude_keywords": exclude_keywords.strip(),
+        "active_from": _hour(active_from, 0),
+        "active_to": _hour(active_to, 24),
     })
     # «с этого момента»: текущие совпадения считаем уже виденными, чтобы
     # уведомлять только о НОВЫХ вакансиях, появившихся позже (без спама).
@@ -1129,55 +1314,37 @@ def autopilot_prepare(request: Request):
 @app.post("/autopilot/autosubmit")
 def autopilot_autosubmit(
     request: Request,
-    auto_submit: str = Form(""),
     daily_limit: str = Form(""),
     submit_scope: str = Form("new"),
 ):
-    """Включение/настройка АВТООТПРАВКИ (фаза 3, под замком). По умолчанию ВЫКЛ.
-    Сама отправка идёт в фоне (auto_submit_tick), в пределах дневного лимита и
-    жёсткого потолка за скан. Охват: только новые (после включения) или все
-    подходящие — «все» разрешаем только если их немного (предохранитель)."""
+    """Настройки автоотправки (дневной лимит + охват). Включение/выключение режима
+    делается селектором «Режим работы» (/api/autopilot/mode) — здесь режим
+    (enabled/auto_submit) НЕ трогаем, чтобы сохранение настроек его не сбрасывало."""
     try:
         limit = max(1, min(50, int(float(daily_limit)))) if daily_limit.strip() else 3
     except ValueError:
         limit = 3
     scope = "all" if submit_scope == "all" else "new"
-    on = bool(auto_submit)
-    was = bool(autopilot.get_rule().get("auto_submit"))
+    was_scope = autopilot.get_rule().get("submit_scope") or "new"
 
     # ПРЕДОХРАНИТЕЛЬ: «все подходящие» + включение нельзя, если под правило
     # сейчас попадает слишком много — иначе автоотправка начнёт постепенно подавать на
     # сотни вакансий. Заставляем сузить фильтры или взять «только новые».
-    if on and scope == "all":
+    if scope == "all":
         pool = autopilot.scope_all_pool()
         if pool > autopilot.SCOPE_ALL_GUARD:
-            autopilot.save_rule({"submit_scope": scope, "daily_limit": limit})
+            autopilot.save_rule({"daily_limit": limit})  # лимит сохраним, охват — нет
             return _redirect_back(
                 request, "/settings",
-                error=f"Не включил: под правило подходит {pool} вакансий — это много "
-                      f"для охвата «все подходящие» (предел {autopilot.SCOPE_ALL_GUARD}). "
-                      "Сузь фильтры (категория/бренд/радиус/свежесть) или выбери «только новые».",
+                error=f"Охват «все подходящие» сейчас нельзя: под правило подходит {pool} "
+                      f"(предел {autopilot.SCOPE_ALL_GUARD}). Сузь фильтры или оставь «только новые».",
             )
 
-    patch = {"auto_submit": on, "daily_limit": limit, "submit_scope": scope}
-    if on:
-        patch["enabled"] = True  # один тумблер: автоотправка сама включает автопилот
-    autopilot.save_rule(patch)
-    # при ВКЛЮЧЕНИИ с охватом «только новые» фиксируем текущие совпадения как
-    # «не трогать» — отправка пойдёт лишь по вакансиям, появившимся ПОСЛЕ включения
-    if on and not was and scope == "new":
+    autopilot.save_rule({"daily_limit": limit, "submit_scope": scope})
+    # переключение на «только новые» — обновить baseline (слать лишь новые после этого)
+    if scope == "new" and was_scope != "new":
         autopilot.set_autosubmit_baseline()
-    if on:
-        # автопилот стал активен → перейти на частый фоновый скан
-        autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
-    _reschedule_autopilot_scan()
-    if on:
-        scope_txt = "все подходящие" if scope == "all" else "только новые после включения"
-        msg = (f"Автоотправка ВКЛЮЧЕНА (до {limit}/день, не больше {autopilot.MAX_PER_SCAN} за раз, "
-               f"охват: {scope_txt}). Останови в любой момент кнопкой СТОП.")
-    else:
-        msg = "Автоотправка выключена."
-    return _redirect_back(request, "/settings", notice=msg)
+    return _redirect_back(request, "/settings", notice="Настройки автоотправки сохранены.")
 
 
 @app.post("/autopilot/stop")
@@ -1201,7 +1368,97 @@ def autopilot_toggle(request: Request):
     else:
         msg = "Автопилот выключен."
     _reschedule_autopilot_scan()  # подстроить частоту фонового скана
+    if now_on:
+        # маркер apwin=1 → base.html сам откроет мини-окно автопилота
+        url = _url_with_system_response(request.headers.get("referer") or "/", msg, "")
+        return RedirectResponse(url + ("&" if "?" in url else "?") + "apwin=1", status_code=303)
     return _redirect_back(request, "/", notice=msg)
+
+
+# ── Telegram: привязка бота (режим «по разрешению») ─────────────────────
+@app.get("/api/telegram/status")
+def telegram_status():
+    st = telegram_store.status()
+    st["approval"] = bool(autopilot.get_rule().get("tg_approval"))
+    return st
+
+
+@app.post("/api/telegram/approval")
+async def telegram_approval(request: Request):
+    """Включить/выключить режим «спрашивать в Telegram перед подачей»."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    on = bool(body.get("on"))
+    if on and not telegram_store.is_ready():
+        return {"ok": False, "error": "Сначала привяжи Telegram."}
+    patch = {"tg_approval": on}
+    if on:
+        patch["enabled"] = True  # режиму нужен работающий поиск
+    autopilot.save_rule(patch)
+    if on:
+        # спрашивать только про НОВЫЕ вакансии (текущие фиксируем как baseline),
+        # если охват «только новые» — чтобы не завалить бэклогом
+        if (autopilot.get_rule().get("submit_scope") or "new") != "all":
+            autopilot.set_autosubmit_baseline()
+        autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+    _reschedule_autopilot_scan()
+    return {"ok": True, "on": on}
+
+
+@app.post("/api/telegram/save-token")
+async def telegram_save_token(request: Request):
+    """Проверить токен через getMe и сохранить (шифрованно). Запускает слушатель."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    token = (body.get("token") or "").strip()
+    if not token:
+        return {"ok": False, "error": "Вставь токен бота от @BotFather."}
+    me = tg.get_me(token)
+    if not me.get("ok"):
+        return {"ok": False, "error": f"Токен не подошёл: {me.get('error')}"}
+    telegram_store.save_token(token, me.get("username", ""))
+    _ensure_tg_poller()
+    return {"ok": True, "username": me.get("username", "")}
+
+
+@app.post("/api/telegram/test")
+def telegram_test():
+    """Проверочное сообщение = РЕАЛЬНЫЙ вид карточки вакансии с кнопками
+    (на примере подходящей вакансии). Кнопки в примере ничего не отправляют."""
+    token = telegram_store.get_token()
+    chat = telegram_store.get_chat()
+    if not (token and chat):
+        return {"ok": False, "error": "Сначала привяжи Telegram (нажми «Старт» в боте)."}
+    sample = None
+    try:
+        matches = autopilot.find_matches()
+        sample = matches[0] if matches else None
+    except Exception:  # noqa: BLE001
+        sample = None
+    if sample is None:
+        with get_session() as s:
+            sample = s.exec(
+                select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))
+            ).first()
+    if sample is None:
+        r = tg.send_message(token, chat, "🔔 WexFlow на связи. Подходящих вакансий для примера сейчас нет.")
+        return {"ok": bool(r.get("ok")), "error": r.get("error", "")}
+    text = ("🔔 <b>Пример сообщения автопилота</b>\n"
+            "Вот так будет приходить вакансия на подтверждение:\n\n" + _tg_card(sample))
+    buttons = [[("✅ Подать", "ap_demo"), ("❌ Пропустить", "ap_demo")]]
+    r = tg.send_message(token, chat, text, buttons=buttons)
+    return {"ok": bool(r.get("ok")), "error": r.get("error", "")}
+
+
+@app.post("/api/telegram/unlink")
+def telegram_unlink():
+    """Отвязать: забыть токен и chat_id (бот при этом не удаляется)."""
+    telegram_store.clear()
+    return {"ok": True}
 
 
 @app.post("/settings/profile/autosave")

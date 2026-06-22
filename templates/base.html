@@ -124,6 +124,25 @@
   })();
 </script>
 <script src="/static/window_chrome.js?v=20260614-drag-resize"></script>
+<script>
+  // Открыть мини-окно автопилота: в приложении — отдельным окном (pywebview),
+  // в браузере (dev) — обычным всплывающим окном.
+  window.openAutopilotMonitor = function () {
+    try {
+      var api = window.pywebview && window.pywebview.api;
+      if (api && api.open_autopilot_monitor) { api.open_autopilot_monitor(); return; }
+    } catch (e) {}
+    window.open("/autopilot/mini", "wf_autopilot", "width=470,height=660");
+  };
+  // авто-открытие сразу после включения автопилота с главной (?apwin=1)
+  (function () {
+    try {
+      if (new URLSearchParams(location.search).get("apwin") === "1") {
+        window.openAutopilotMonitor();
+      }
+    } catch (e) {}
+  })();
+</script>
 {% block script %}{% endblock %}
 </body>
 </html>

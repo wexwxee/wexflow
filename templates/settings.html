@@ -141,6 +141,20 @@
   .ap-faq-body dt { font-weight:650; font-size:13px; margin-top:11px; color:var(--txt-strong); }
   .ap-faq-body dt:first-child { margin-top:4px; }
   .ap-faq-body dd { margin:3px 0 0; padding:0; color:var(--muted); font-size:12.5px; line-height:1.5; }
+  /* исключения «не предлагать» */
+  .ap-exclude { margin-top:14px; border:1px dashed var(--glass-line); border-radius:11px; padding:12px 14px 4px; }
+  .ap-exclude-head { font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.05em; margin-bottom:10px; display:flex; align-items:center; gap:7px; }
+  /* единый селектор режима работы */
+  .ap-mode { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 6px; }
+  .ap-mode-opt { flex:1 1 130px; display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:11px 10px; border:1px solid var(--glass-line); border-radius:11px; background:var(--glass);
+    color:var(--muted); font-size:18px; font-weight:650; cursor:pointer; transition:.14s; }
+  .ap-mode-opt span { font-size:12.5px; }
+  .ap-mode-opt:hover { border-color:var(--hover-line); color:var(--txt); }
+  .ap-mode-opt.on { border-color:var(--accent); color:var(--accent);
+    background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .ap-mode-opt.busy { opacity:.55; pointer-events:none; }
 </style>
 {% endblock %}
 
@@ -168,6 +182,7 @@
     <a href="#documents">{{ ic.i('file', 13) }} Документы</a>
     <a href="#home">{{ ic.i('home', 13) }} Дом</a>
     <a href="#autopilot">{{ ic.i('zap', 13) }} Автопилот</a>
+    <a href="#tg">{{ ic.i('send', 13) }} Telegram</a>
   </nav>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
@@ -421,11 +436,42 @@
     </h2>
     <p class="hint">WexFlow следит за новыми вакансиями по твоим правилам и присылает уведомление, когда появляется подходящая. Подачу по-прежнему подтверждаешь ты. Работает, пока приложение запущено.</p>
 
-    <label class="ap-toggle">
-      <input type="checkbox" name="enabled" value="1" {{ 'checked' if autopilot.enabled else '' }}>
-      <span class="ap-track"></span>
-      <span class="ap-toggle-label">Включить автопилот {% if autopilot.enabled %}<span style="color:var(--ok-txt);">· включён</span>{% endif %}</span>
-    </label>
+    <div class="ap-risk">
+      ⚠ <b>Про автоотправку.</b> Поиск и подготовка вакансий — безопасны, ничего не отправляют сами. Но если ниже включить <b>автоотправку</b>, WexFlow будет сам отправлять заявки от твоего имени <b>без подтверждения и без возможности отозвать</b>. Включай её только когда профиль, документы и фильтры точно верны — <b>на свой страх и риск</b>.
+    </div>
+
+    <label class="lbl" style="margin-bottom:6px;display:block;">Режим работы</label>
+    <div class="ap-mode" id="apMode">
+      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='off' else '' }}" data-mode="off">⏸<span>Выключен</span></button>
+      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='notify' else '' }}" data-mode="notify">🔔<span>Уведомлять</span></button>
+      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='telegram' else '' }}" data-mode="telegram">💬<span>Спрашивать в Telegram</span></button>
+      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='auto' else '' }}" data-mode="auto">⚡<span>Автоотправка</span></button>
+    </div>
+    <div class="ap-hint" id="apModeHint" style="margin-bottom:4px;"></div>
+    <div class="ap-hint" style="margin-bottom:2px;">Главный переключатель. Ниже — фильтры (что искать), а детали выбранного режима (привязка Telegram, лимиты автоотправки) — в блоках ниже на странице.</div>
+    <script>
+    (function(){
+      var box=document.getElementById('apMode'); if(!box) return;
+      var hint=document.getElementById('apModeHint');
+      var texts={
+        off:'Автопилот выключен — не ищет и ничего не делает.',
+        notify:'Ищет подходящие и присылает уведомление. Подаёшь сам.',
+        telegram:'Нашёл вакансию — пришлёт в Telegram карточку с кнопками. Заявка уходит только после твоего «✅ Подать».',
+        auto:'Сам отправляет подходящие по правилам (с лимитами). Без подтверждения — на свой страх и риск.'};
+      function setHint(m){ if(hint) hint.textContent=texts[m]||''; }
+      var cur=box.querySelector('.ap-mode-opt.on'); setHint(cur?cur.dataset.mode:'off');
+      box.querySelectorAll('.ap-mode-opt').forEach(function(b){
+        b.addEventListener('click',function(){
+          var m=b.dataset.mode;
+          b.classList.add('busy');
+          fetch('/api/autopilot/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})})
+            .then(function(r){return r.json();})
+            .then(function(d){ if(d.ok){ location.reload(); } else { b.classList.remove('busy'); setHint(m); if(hint){hint.textContent=d.error||'Не вышло.';} } })
+            .catch(function(){ b.classList.remove('busy'); });
+        });
+      });
+    })();
+    </script>
 
     <div class="grid2">
       <div class="field">
@@ -540,11 +586,99 @@
         </div>
         <div class="ap-hint">Можно выбрать несколько брендов сразу. Пусто = все бренды.</div>
       </div>
+      <div class="field">
+        <label class="lbl">Часов в неделю, не больше</label>
+        <input type="hidden" name="max_hours" value="{{ autopilot.max_hours or '' }}">
+        <input type="number" min="0" step="1" data-chips-custom="max_hours" placeholder="своё число, напр. 20">
+        <div class="ap-chips" data-chips-for="max_hours" data-chips-unit=" ч">
+          <button type="button" class="ap-chip" data-val="10">10 ч</button>
+          <button type="button" class="ap-chip" data-val="15">15 ч</button>
+          <button type="button" class="ap-chip" data-val="20">20 ч</button>
+          <button type="button" class="ap-chip" data-val="30">30 ч</button>
+          <button type="button" class="ap-chip" data-val="">без ограничения</button>
+        </div>
+        <div class="ap-hint">Верхняя граница — для подработки. Часы не указаны в вакансии — она всё равно попадёт. Пусто = без ограничения.</div>
+      </div>
+      <div class="field">
+        <label class="lbl">Регион</label>
+        {% set sel_region = autopilot.regions.split(',') if autopilot.regions else [] %}
+        <div class="ap-select" data-multi data-empty="Любой регион">
+          <input type="hidden" name="regions" value="{{ autopilot.regions or '' }}">
+          <button type="button" class="ap-select-btn">
+            <span class="ap-select-text">Любой регион</span>
+            <span class="ap-select-arrow">▼</span>
+          </button>
+          <div class="ap-menu">
+            <button type="button" class="ap-opt {{ 'sel' if not sel_region else '' }}" data-val="">Любой регион</button>
+            {% for r in autopilot_regions %}
+              <button type="button" class="ap-opt {{ 'sel' if r in sel_region else '' }}" data-val="{{ r }}">{{ r|capitalize }}</button>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="ap-hint">Можно выбрать несколько. Пусто = любой регион.</div>
+      </div>
+      <div class="field ap-field-wide">
+        <label class="lbl">Город (необязательно)</label>
+        <input type="text" name="cities" value="{{ autopilot.cities or '' }}" list="apCityList" placeholder="напр. København, Aarhus">
+        <div class="ap-hint">Несколько через запятую — найдёт по любому. Достаточно части названия: «København» захватит все районы. Пусто = любой город.</div>
+      </div>
       <div class="field ap-field-wide">
         <label class="lbl">Ещё слова в названии (необязательно)</label>
         <input type="text" name="keywords" value="{{ autopilot.keywords or '' }}" placeholder="напр. weekend, student, ungarbejder">
         <div class="ap-hint">Дополнительно к выбору выше. Несколько через запятую — найдёт по любому. Русские слова WexFlow переведёт на датский. Пусто = не учитывать.</div>
       </div>
+    </div>
+
+    <datalist id="apCityList">
+      {% for c in autopilot_cities %}<option value="{{ c }}"></option>{% endfor %}
+    </datalist>
+
+    <!-- Исключения: «не предлагать» -->
+    <div class="ap-exclude">
+      <div class="ap-exclude-head">{{ ic.i('x', 13) }} Исключения — что НЕ предлагать</div>
+      <div class="grid2">
+        <div class="field">
+          <label class="lbl">Не предлагать бренды</label>
+          {% set sel_exbrand = autopilot.exclude_brands.split(',') if autopilot.exclude_brands else [] %}
+          <div class="ap-select" data-multi data-empty="Ничего не исключать">
+            <input type="hidden" name="exclude_brands" value="{{ autopilot.exclude_brands or '' }}">
+            <button type="button" class="ap-select-btn">
+              <span class="ap-select-text">Ничего не исключать</span>
+              <span class="ap-select-arrow">▼</span>
+            </button>
+            <div class="ap-menu">
+              <button type="button" class="ap-opt {{ 'sel' if not sel_exbrand else '' }}" data-val="">Ничего не исключать</button>
+              {% for code, lbl in brands.items() %}
+                <button type="button" class="ap-opt {{ 'sel' if code in sel_exbrand else '' }}" data-val="{{ code }}">{{ lbl }}</button>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl">Не предлагать города</label>
+          <input type="text" name="exclude_cities" value="{{ autopilot.exclude_cities or '' }}" list="apCityList" placeholder="напр. Aalborg, Esbjerg">
+          <div class="ap-hint">Через запятую. Часть названия тоже работает.</div>
+        </div>
+        <div class="field ap-field-wide">
+          <label class="lbl">Не предлагать, если в названии есть слова</label>
+          <input type="text" name="exclude_keywords" value="{{ autopilot.exclude_keywords or '' }}" placeholder="напр. nat, weekend, leder">
+          <div class="ap-hint">Если хоть одно слово встретится в названии или описании — вакансия не попадёт. Через запятую.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="field ap-field-wide" style="margin-top:12px;">
+      <label class="lbl">Часы активности</label>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span class="hint" style="margin:0;">с</span>
+        <input type="number" name="active_from" min="0" max="24" style="width:90px;"
+               value="{{ autopilot.active_from if autopilot.active_from is not none else 0 }}">
+        <span class="hint" style="margin:0;">до</span>
+        <input type="number" name="active_to" min="0" max="24" style="width:90px;"
+               value="{{ autopilot.active_to if autopilot.active_to is not none else 24 }}">
+        <span class="hint" style="margin:0;">ч</span>
+      </div>
+      <div class="ap-hint">Карточки в Telegram и автоподача — только в эти часы (поиск идёт всегда). 0 и 24 (или одинаковые) = круглосуточно.</div>
     </div>
 
     <p class="hint" style="margin-top:10px;">Сейчас под это правило подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
@@ -553,6 +687,82 @@
       <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить автопилот</button>
     </div>
   </form>
+
+  <!-- Telegram: подтверждение подачи (режим «по разрешению») -->
+  <style>
+    #tg .tg-sec { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt);
+      border-radius:9px; padding:9px 14px; font-weight:650; font-size:13.5px; cursor:pointer; }
+    #tg .tg-sec:hover { border-color:var(--hover-line); color:var(--txt-strong); }
+    #tg .actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }
+  </style>
+  <section id="tg" class="panel" style="margin-top:14px;">
+    <h2>{{ ic.i('send', 16) }} Telegram — подтверждение подачи</h2>
+    <p class="hint">Привяжи Telegram-бота — и автопилот будет спрашивать разрешение перед каждой подачей: бот пришлёт карточку вакансии с кнопками «✅ Подать» / «❌ Пропустить». Заявка уходит только после твоего «да». Работает, пока приложение открыто.</p>
+    <div id="tgState"><p class="hint">Загружаю…</p></div>
+  </section>
+  <script>
+  (function(){
+    var box = document.getElementById('tgState');
+    if(!box) return;
+    var pollTimer = null;
+    function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
+    function api(path, opts){ return fetch(path, opts).then(function(r){return r.json();}); }
+    function stopPoll(){ if(pollTimer){clearInterval(pollTimer);pollTimer=null;} }
+
+    function render(st){
+      stopPoll();
+      if(!st.has_token){
+        box.innerHTML =
+          '<div class="field ap-field-wide"><label class="lbl">Токен бота (от @BotFather)</label>'+
+          '<input type="text" id="tgToken" placeholder="напр. 1234567890:AAH...">'+
+          '<div class="ap-hint">В Telegram открой @BotFather → команда /newbot (или возьми готового бота) → скопируй токен и вставь сюда. Токен сохранится зашифрованно.</div></div>'+
+          '<div class="actions"><button class="primary" type="button" id="tgSave">Сохранить токен</button>'+
+          '<span class="hint" id="tgErr" style="margin:0;color:var(--err-txt);"></span></div>';
+        document.getElementById('tgSave').addEventListener('click', saveToken);
+        return;
+      }
+      if(!st.linked){
+        var uname = st.username ? ('@'+esc(st.username)) : 'бот';
+        var link = st.username ? ('https://t.me/'+encodeURIComponent(st.username)) : '#';
+        box.innerHTML =
+          '<p class="hint">Бот <b>'+uname+'</b> подключён. Осталось привязать твой аккаунт:</p>'+
+          '<div class="actions"><a class="primary" href="'+link+'" target="_blank" rel="noopener">Открыть бота и нажать «Старт»</a>'+
+          '<span class="hint" style="margin:0;">⏳ Жду, пока нажмёшь «Старт» в боте…</span></div>'+
+          '<div class="actions"><button type="button" class="tg-sec" id="tgReset">Сменить токен</button></div>';
+        document.getElementById('tgReset').addEventListener('click', unlink);
+        pollTimer = setInterval(function(){ api('/api/telegram/status').then(function(s){ if(s.linked){ render(s); } }); }, 2000);
+        return;
+      }
+      box.innerHTML =
+        '<p class="hint">✅ Привязан'+(st.name?': <b>'+esc(st.name)+'</b>':'')+(st.username?' · бот @'+esc(st.username):'')+'</p>'+
+        '<div class="ap-hint">'+(st.approval
+            ? '✅ Режим «Спрашивать в Telegram» включён вверху — бот присылает карточки сюда.'
+            : 'Чтобы бот спрашивал перед каждой подачей, выбери вверху страницы режим «💬 Спрашивать в Telegram».')+'</div>'+
+        '<div class="actions"><button type="button" class="primary" id="tgTest">Отправить проверочное</button>'+
+        '<button type="button" class="tg-sec" id="tgUnlink">Отвязать</button>'+
+        '<span class="hint" id="tgMsg" style="margin:0;"></span></div>';
+      document.getElementById('tgTest').addEventListener('click', testMsg);
+      document.getElementById('tgUnlink').addEventListener('click', unlink);
+    }
+
+    function saveToken(){
+      var t = (document.getElementById('tgToken').value||'').trim();
+      var err = document.getElementById('tgErr'), btn = document.getElementById('tgSave');
+      if(!t){ err.textContent='Вставь токен.'; return; }
+      btn.disabled=true; err.textContent='Проверяю токен…';
+      api('/api/telegram/save-token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})})
+        .then(function(r){ btn.disabled=false; if(r.ok){ load(); } else { err.textContent=r.error||'Не вышло.'; } })
+        .catch(function(){ btn.disabled=false; err.textContent='Ошибка сети.'; });
+    }
+    function testMsg(){
+      var m=document.getElementById('tgMsg'); m.textContent='Отправляю…';
+      api('/api/telegram/test',{method:'POST'}).then(function(r){ m.textContent = r.ok?'Отправлено — проверь Telegram ✅':('Не вышло: '+(r.error||'')); });
+    }
+    function unlink(){ api('/api/telegram/unlink',{method:'POST'}).then(load); }
+    function load(){ api('/api/telegram/status').then(render).catch(function(){ box.innerHTML='<p class="hint">Не удалось загрузить статус.</p>'; }); }
+    load();
+  })();
+  </script>
 
   {% if autopilot.enabled %}
   <!-- Автоподготовка (Фаза 2) -->
@@ -567,15 +777,16 @@
       {% if not autopilot_pending %}<span class="hint" style="margin:0;">Свежих для подготовки нет.</span>{% endif %}
     </div>
   </form>
+  {% endif %}
 
-  <!-- Автоотправка (Фаза 3) — под замком -->
+  {% if autopilot.auto_submit %}
+  <!-- Автоотправка: только настройки. Вкл/выкл — селектором «Режим работы» выше. -->
   <form id="apAutoForm" class="panel" method="post" action="/autopilot/autosubmit"
-        style="margin-top:14px;border-color:var(--err-line);background:var(--err-bg);"
-        onsubmit="return apAutoConfirm(this)">
-    <h2>{{ ic.i('zap', 16) }} Автоотправка — ОПАСНО
+        style="margin-top:14px;border-color:var(--err-line);background:var(--err-bg);">
+    <h2>{{ ic.i('zap', 16) }} Настройки автоотправки
       {% if show_billing() %}<span class="tier-pill max">Max</span>{% endif %}
     </h2>
-    <p class="hint">Если включить автоотправку, WexFlow будет сам отправлять подходящие заявки по твоим правилам. Защита: дневной лимит и не больше <b>{{ autopilot_max_per_scan }} за один проход</b>. Уже поданные вакансии не трогаются.</p>
+    <p class="hint">Режим «⚡ Автоотправка» включён вверху — WexFlow сам отправляет подходящие по твоим правилам. Защита: дневной лимит и не больше <b>{{ autopilot_max_per_scan }} за один проход</b>. Уже поданные вакансии не трогаются.</p>
     <p class="hint" style="color:var(--err-txt);">Работает только пока приложение запущено, а вход в Salling активен.</p>
 
     <div class="ap-risk">
@@ -603,12 +814,6 @@
         </dl>
       </div>
     </details>
-
-    <label class="ap-toggle">
-      <input type="checkbox" name="auto_submit" value="1" id="apAutoSubmit" {{ 'checked' if autopilot.auto_submit else '' }}>
-      <span class="ap-track"></span>
-      <span class="ap-toggle-label">Включить автопилот с автоотправкой {% if autopilot.auto_submit %}<span style="color:var(--err-txt);">· ВКЛЮЧЕНО</span>{% endif %}</span>
-    </label>
 
     <div class="grid2">
       <div class="field">

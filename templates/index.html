@@ -465,6 +465,9 @@
       <b>Автопилот выключен</b> — могу сам следить за новыми подходящими вакансиями и уведомлять.
     {% endif %}
   </span>
+  {% if autopilot and autopilot.enabled %}
+  <a class="ap-bar-cfg" href="#" onclick="openAutopilotMonitor();return false;" data-tip-title="Окно автопилота" data-tip-body="Живая статистика автопилота в отдельном окне.">{{ ic.i('zap', 13) }} Окно</a>
+  {% endif %}
   <a class="ap-bar-cfg" href="/settings#autopilot" data-tip-title="Настройки автопилота" data-tip-body="Правила подбора, свежесть, автоподготовка и автоотправка.">{{ ic.i('sliders', 13) }} Настроить</a>
   <form method="post" action="/autopilot/toggle" style="margin:0;">
     <button type="submit" class="ap-bar-btn {{ 'is-on' if autopilot and autopilot.enabled else '' }}">

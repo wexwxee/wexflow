@@ -62,6 +62,7 @@ HUB_URL = f"http://127.0.0.1:{HUB_PORT}/__app/salling?next=/hub"
 CREATE_NO_WINDOW = 0x08000000  # фоновые серверы — без чёрных консолей
 
 _started = []  # дочерние процессы, которые запустило именно это приложение
+_autopilot_win = None  # мини-окно автопилота (чтобы не открывать дубликаты)
 
 
 # ── общие хелперы окружения ────────────────────────────────────────────
@@ -445,6 +446,28 @@ if ($started -and -not $coord.IsUnknown) {
         except Exception:  # noqa: BLE001
             ver = "dev"
         return {"version": ver, "update": self.update_info}
+
+    def open_autopilot_monitor(self):
+        """Открыть мини-окно автопилота (живой монитор) отдельным небольшим окном.
+
+        Если оно уже открыто — ничего не делаем (не плодим копии). Окно обычное,
+        с рамкой ОС: его легко двигать и закрывать, и не нужна своя «шапка».
+        """
+        global _autopilot_win
+        try:
+            import webview
+            if _autopilot_win is not None and _autopilot_win in webview.windows:
+                return True  # уже открыто
+            url = f"http://127.0.0.1:{HUB_PORT}/autopilot/mini"
+            _autopilot_win = webview.create_window(
+                "Автопилот — WexFlow", url,
+                width=470, height=660, min_size=(380, 480),
+                resizable=True, background_color="#0e0f10",
+            )
+            return True
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WexFlow] не удалось открыть окно автопилота: {exc}")
+            return False
 
     def open_external(self, url):
         """Открыть ссылку в системном браузере (а не внутри окна приложения)."""

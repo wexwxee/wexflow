@@ -1,6 +1,7 @@
 # локальные данные и секреты — НЕ коммитить
 profile.json
 sf_credentials.json
+telegram.json
 secrets.json
 settings.json
 jobs.db

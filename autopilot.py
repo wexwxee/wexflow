@@ -29,6 +29,16 @@ DEFAULT_RULE = {
     "age": "",              # "" любой / "under18" до 18 / "adult" от 18
     "keywords": "",         # доп. слова через запятую (пусто = не учитывать)
     "brand": "",            # код бренда или пусто = все бренды
+    # --- точное нацеливание места и исключения ---
+    "cities": "",           # конкретные города (CSV точных названий). Пусто = любой
+    "regions": "",          # конкретные регионы (CSV). Пусто = любой
+    "max_hours": 0,         # верхняя граница часов/нед (0 = без ограничения)
+    "exclude_brands": "",   # НЕ предлагать эти бренды (CSV кодов)
+    "exclude_cities": "",   # НЕ предлагать эти города (CSV названий)
+    "exclude_keywords": "", # НЕ предлагать, если слово есть в названии/описании (CSV)
+    # --- расписание активности (когда автопилот шлёт карточки/подаёт) ---
+    "active_from": 0,       # с какого часа (0-23). from==to или 0..24 = круглосуточно
+    "active_to": 24,        # по какой час (1-24)
     "seen_ids": [],         # id вакансий, о которых уже уведомляли
     "prepared_ids": [],     # id, которые уже готовили (фаза 2)
     # --- фаза 3: автоотправка (по умолчанию ВЫКЛ, под замком) ---
@@ -42,6 +52,11 @@ DEFAULT_RULE = {
     "submit_log": [],           # журнал автоотправок [{ts,title}]
     "submitted_total": 0,       # сколько автопилот подал всего (за всё время)
     "event_log": [],            # лента событий автопилота [{ts,kind,text}] (для монитора)
+    # --- режим «по разрешению» через Telegram (по умолчанию ВЫКЛ) ---
+    "tg_approval": False,       # спрашивать подтверждение в Telegram перед подачей?
+    "tg_pending": [],           # ждут ответа в TG [{job_id, message_id, ts}]
+    "tg_offered_ids": [],       # уже отправляли карточку в TG — не дублируем
+    "tg_skipped": [],           # пользователь нажал «Пропустить» — не предлагать снова
 }
 
 # Сколько событий держим в ленте монитора (старые отбрасываем).
@@ -84,6 +99,7 @@ def status() -> dict:
     return {
         "enabled": bool(r.get("enabled")),
         "auto_submit": bool(r.get("auto_submit")),
+        "mode": get_mode(),
         "found": len(matches),
         "prepared": len(match_ids & prepared_ids),   # из найденных уже подготовлено
         "pending": len(match_ids - prepared_ids),    # ждут подготовки
@@ -123,6 +139,49 @@ def save_rule(patch: dict) -> dict:
     return rule
 
 
+# ── Единый режим работы (вместо трёх пересекающихся тумблеров) ──────────
+# off → выключен; notify → только уведомлять; telegram → спрашивать в TG
+# перед подачей; auto → автоотправка. Источник правды — поля enabled/
+# auto_submit/tg_approval (остальной код читает их), а это просто удобный
+# единый вид сверху.
+MODES = ("off", "notify", "telegram", "auto")
+
+
+def get_mode() -> str:
+    r = get_rule()
+    if not r.get("enabled"):
+        return "off"
+    if r.get("auto_submit"):
+        return "auto"
+    if r.get("tg_approval"):
+        return "telegram"
+    return "notify"
+
+
+def set_mode(mode: str) -> str:
+    mode = mode if mode in MODES else "off"
+    patch = {
+        "off":      {"enabled": False},
+        "notify":   {"enabled": True, "auto_submit": False, "tg_approval": False},
+        "telegram": {"enabled": True, "auto_submit": False, "tg_approval": True},
+        "auto":     {"enabled": True, "auto_submit": True,  "tg_approval": False},
+    }[mode]
+    save_rule(patch)
+    return mode
+
+
+def within_schedule(rule: dict | None = None) -> bool:
+    """Сейчас рабочее время автопилота? (для отправки карточек/подачи).
+    from==to или диапазон 0..24 = круглосуточно. Поддерживает интервал через полночь."""
+    r = rule or get_rule()
+    a = int(r.get("active_from") or 0)
+    b = int(r.get("active_to") or 24)
+    if a == b or (a <= 0 and b >= 24):
+        return True
+    h = _dt.datetime.now().hour
+    return a <= h < b if a < b else (h >= a or h < b)
+
+
 def _keyword_match(job: Job, raw: str) -> bool:
     raw = (raw or "").strip()
     if not raw:
@@ -134,6 +193,19 @@ def _keyword_match(job: Job, raw: str) -> bool:
         for term in ru_search.expand(phrase):
             if (term or "").lower() in hay:
                 return True
+    return False
+
+
+def _keyword_hit(job: Job, raw: str) -> bool:
+    """True, если хоть одно слово (через запятую) встречается в названии/описании/городе.
+    Пусто = False. Без расширения синонимов — для исключений важна предсказуемость."""
+    raw = (raw or "").strip()
+    if not raw:
+        return False
+    hay = f"{job.title or ''} {job.description or ''} {job.city or ''}".lower()
+    for phrase in (p.strip().lower() for p in raw.split(",") if p.strip()):
+        if phrase and phrase in hay:
+            return True
     return False
 
 
@@ -195,6 +267,25 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
             return False
         if "adult" in ages and job.job_level == "employeeUnder18":
             return False
+    # города — по подстроке (введёшь «København» — попадут все районы); пусто = любой.
+    city_terms = [c.lower() for c in _csv(rule, "cities")]
+    if city_terms:
+        jc = (job.city or "").lower()
+        if not any(t in jc for t in city_terms):
+            return False
+    # регионы — точный мультивыбор из данных (их немного). Пусто = любой.
+    regions = set(_csv(rule, "regions"))
+    if regions and (job.region or "") not in regions:
+        return False
+    # исключения «не предлагать»: бренд / город (подстрока) / слово в названии-описании
+    ex_brands = [labels.resolve(labels.BRANDS, b) or b for b in _csv(rule, "exclude_brands")]
+    if ex_brands and job.brand in ex_brands:
+        return False
+    ex_city_terms = [c.lower() for c in _csv(rule, "exclude_cities")]
+    if ex_city_terms and any(t in (job.city or "").lower() for t in ex_city_terms):
+        return False
+    if _keyword_hit(job, rule.get("exclude_keywords")):
+        return False
     # пороги км/часы/свежесть — мультивыбор через запятую: берём самый МЯГКИЙ
     # (наибольший радиус, наибольший срок, наименьшие часы). Пусто = без ограничения.
     # свежесть: берём только вакансии не старше N дней (если задано).
@@ -212,6 +303,12 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
         # часы не указаны в вакансии — НЕ отбрасываем (чтобы ничего не упустить),
         # отсекаем только если точно знаем, что меньше минимума
         if jh is not None and jh < min_hours:
+            return False
+    max_hour_limits = _nums(rule, "max_hours")
+    if max_hour_limits:
+        max_h = max(max_hour_limits)  # верхняя граница часов/нед (подработка)
+        jh = _job_hours(job)
+        if jh is not None and jh > max_h:
             return False
     km_limits = _nums(rule, "max_km")
     if km_limits and home:
@@ -346,6 +443,61 @@ def record_submitted(jobs) -> None:
     log_event("submit", f"Подал заявок: {len(jobs)} — {titles}")
 
 
+# ── Режим «по разрешению» через Telegram ───────────────────────────────
+def _get_job(job_id: str):
+    with get_session() as s:
+        return s.get(Job, job_id)
+
+
+def tg_pending_ids() -> set:
+    return {p.get("job_id") for p in (get_rule().get("tg_pending") or [])}
+
+
+def tg_pending_add(job_id: str, message_id) -> None:
+    """Запомнить, что по вакансии отправлен запрос в TG и ждём ответа."""
+    r = get_rule()
+    pend = [p for p in (r.get("tg_pending") or []) if p.get("job_id") != job_id]
+    pend.append({"job_id": job_id, "message_id": message_id,
+                 "ts": _dt.datetime.now().isoformat(timespec="seconds")})
+    offered = set(r.get("tg_offered_ids") or []); offered.add(job_id)
+    save_rule({"tg_pending": pend[-100:], "tg_offered_ids": list(offered)[-500:]})
+
+
+def tg_eligible(limit: int = 5) -> list[Job]:
+    """Подходящие вакансии, которые ещё НЕ предлагали в TG и не подавали/не пропускали.
+    Свежие первыми. Уважает baseline охвата (как и автоотправка)."""
+    r = get_rule()
+    skip = (set(r.get("submitted_ids") or []) | set(r.get("tg_offered_ids") or [])
+            | set(r.get("tg_skipped") or []))
+    if (r.get("submit_scope") or "new") != "all":
+        skip |= set(r.get("autosubmit_baseline") or [])
+    todo = [j for j in find_matches() if j.id not in skip]
+    todo.sort(key=_seen_ts, reverse=True)
+    return todo[: max(1, int(limit))]
+
+
+def tg_decide(job_id: str, approve: bool, launcher) -> str:
+    """Ответ на карточку в Telegram. approve=True → подать (launcher), иначе пропустить.
+    Возвращает короткий текст, которым перепишем сообщение в Telegram."""
+    r = get_rule()
+    pend = [p for p in (r.get("tg_pending") or []) if p.get("job_id") != job_id]
+    save_rule({"tg_pending": pend})  # убрать из ожидающих в любом случае
+    job = _get_job(job_id)
+    title = job.title if job else "вакансия"
+    if not approve:
+        skipped = set(r.get("tg_skipped") or []); skipped.add(job_id)
+        save_rule({"tg_skipped": list(skipped)[-1000:]})
+        log_event("info", f"TG: пропущено — {title}")
+        return f"❌ Пропущено: {title}"
+    if job_id in set(r.get("submitted_ids") or []):
+        return f"Уже подавалось ранее: {title}"
+    if not job:
+        return "Вакансия больше недоступна."
+    launcher([job_id])
+    record_submitted([job])
+    return f"✅ Подаю заявку: {title}"
+
+
 def auto_submit_tick(launcher) -> None:
     """Вызывается после скана базы. Если автоотправка включена и есть дневной
     лимит — отправить до (лимит − сегодня) свежих подходящих. launcher(ids)
@@ -355,6 +507,10 @@ def auto_submit_tick(launcher) -> None:
         r = get_rule()
         if not (r.get("enabled") and r.get("auto_submit")):
             return
+        if r.get("tg_approval"):
+            return  # режим «по разрешению» главнее: тихую автоотправку не делаем
+        if not within_schedule(r):
+            return  # вне рабочих часов автопилота
         remaining = int(r.get("daily_limit") or 0) - submitted_today()
         # жёсткий потолок за один скан: даже при большом дневном лимите за раз
         # отправляем не больше MAX_PER_SCAN — ничего не «улетает пачкой».
