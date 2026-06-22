@@ -31,6 +31,7 @@ import profile_store
 import credentials_store
 import subscription
 import account as account_mod
+import cloud_auth
 import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
@@ -1174,6 +1175,7 @@ def account_page(request: Request, saved: str = "", missing: str = ""):
         "city_options": city_options, "country_options": country_options,
         "subscription": subscription.status(),
         "account": account_mod.status(profile),
+        "cloud_login_url": cloud_auth.login_url(),
     })
 
 
@@ -1257,6 +1259,62 @@ async def account_waitlist(request: Request):
         email = str(profile_store.load_profile().get("email") or "").strip()
     ok = subscription.add_waitlist(email, plan)
     return JSONResponse({"ok": ok, "email": email})
+
+
+def _sync_profile_with_cloud():
+    """При первом входе переносим профиль между устройством и облаком — без потерь.
+
+    - есть локальные данные → выгружаем в облако (перенос/резервная копия);
+    - локально пусто, а в облаке профиль есть → скачиваем (данные следуют за
+      человеком на новый ПК/после переустановки).
+    Непустой локальный профиль НИКОГДА не затирается пустым облачным.
+    """
+    try:
+        local = profile_store.load_profile()
+        has_local = any(
+            str(local.get(k) or "").strip()
+            for k in ("first_name", "last_name", "email", "phone")
+        )
+        if has_local:
+            cloud_auth.push_profile(local)
+        else:
+            cloud = cloud_auth.pull_profile()
+            if cloud:
+                merged = dict(local)
+                merged.update(cloud)
+                profile_store.save_profile(merged)
+    except Exception:  # noqa: BLE001 — перенос не должен мешать входу
+        pass
+
+
+@app.get("/account/login/poll")
+def account_login_poll():
+    """Спрашивает облако, вошёл ли пользователь (страница входа открыта в браузере).
+
+    Возвращает {"signed_in": bool, ...}. Страница аккаунта опрашивает это, пока
+    человек подтверждает вход через Telegram; как только облако скажет «вошёл» —
+    сохраняем личность и тариф локально и (один раз) переносим профиль.
+    """
+    user = cloud_auth.fetch_session()
+    if user:
+        was_signed_in = account_mod.is_signed_in()
+        acc = account_mod.apply_session(user)
+        if not was_signed_in:
+            _sync_profile_with_cloud()
+        return JSONResponse({
+            "signed_in": True,
+            "name": acc.get("tg_name") or "",
+            "username": acc.get("username") or "",
+            "plan": acc.get("plan") or "free",
+        })
+    return JSONResponse({"signed_in": account_mod.is_signed_in()})
+
+
+@app.post("/account/logout")
+def account_logout():
+    """Выйти из аккаунта (локально). Облачная сессия остаётся — можно войти снова."""
+    account_mod.sign_out()
+    return RedirectResponse("/account", status_code=303)
 
 
 @app.post("/settings/documents/save")

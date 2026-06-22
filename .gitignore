@@ -5,6 +5,11 @@ telegram.json
 secrets.json
 settings.json
 jobs.db
+jobs.db-journal
+*.db-journal
+account.json
+device.json
+license.json
 geocache.json
 transit_cache.json
 browser_profile/

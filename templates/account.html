@@ -214,25 +214,51 @@
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
 
-  <!-- Аккаунт (заготовка) -->
-  {% if show_billing() %}
+  <!-- Аккаунт: вход через Telegram -->
   <div class="panel acct-card">
     <div class="acct-id">
       <span class="acct-avatar">{{ account.initial }}</span>
       <div class="acct-meta">
         <span class="acct-name">{{ account.display_name }}</span>
         <span class="acct-line">
-          {% if account.email %}{{ account.email }}{% else %}e-mail не заполнен{% endif %}
+          {% if account.signed_in %}
+            {% if account.username %}@{{ account.username }}{% else %}вход через Telegram{% endif %}
+          {% else %}
+            вход не выполнен
+          {% endif %}
           <span class="acct-plan {{ subscription.plan }}">{{ ic.i('star', 11) }} {{ subscription.current_name }}</span>
         </span>
       </div>
     </div>
     <div class="acct-cta">
-      <button class="primary" type="button" disabled>{{ ic.i('unlock', 14) }} Войти в WexFlow — скоро</button>
-      <span class="acct-hint">Вход сохранит профиль, документы и подписку в облаке и синхронизирует их между устройствами.</span>
+      {% if account.signed_in %}
+      <form method="post" action="/account/logout" style="margin:0;"><button class="ghost" type="submit">{{ ic.i('unlock', 14) }} Выйти</button></form>
+      <span class="acct-hint">Ты вошёл через Telegram. Тариф и доступ берутся из облака автоматически.</span>
+      {% else %}
+      <a class="primary" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">{{ ic.i('unlock', 14) }} Войти через Telegram</a>
+      <span class="acct-hint">Откроется страница входа Telegram. После подтверждения вернись сюда — приложение само тебя узнает.</span>
+      {% endif %}
     </div>
   </div>
-  {% endif %}
+  <script>
+  (function () {
+    var btn = document.getElementById('tgLoginBtn');
+    if (!btn) return;            // уже вошли — опрашивать нечего
+    var timer = null;
+    function poll() {
+      fetch('/account/login/poll', { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (d && d.signed_in) { clearInterval(timer); location.reload(); } })
+        .catch(function () {});
+    }
+    // как только человек открыл страницу входа — начинаем спрашивать облако
+    btn.addEventListener('click', function () {
+      if (timer) return;
+      timer = setInterval(poll, 3000);
+      setTimeout(poll, 1500);
+    });
+  })();
+  </script>
 
   <!-- Профиль кандидата (общий для всех фирм; сохраняется автоматически) -->
   <form id="profileForm" class="panel" method="post" action="/account/save">
