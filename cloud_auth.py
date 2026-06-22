@@ -95,3 +95,33 @@ def pull_profile(timeout: int = 10) -> dict | None:
     except (urllib.error.URLError, OSError, ValueError):
         pass
     return None
+
+
+def offer(text: str, job_id: str, timeout: int = 15) -> dict | None:
+    """Отправить карточку вакансии через облако — бот пришлёт её пользователю с
+    кнопками ✅/❌. text — уже собранная карточка (с переводом)."""
+    url = f"{CLOUD_BASE}/api/offer"
+    payload = json.dumps({
+        "deviceId": device_id(), "job": {"id": job_id}, "text": text,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=payload, headers={"content-type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def fetch_decisions(timeout: int = 15) -> list:
+    """Забрать решения пользователя (✅/❌) из облака. Очередь очищается на стороне облака.
+    Возвращает список [{jobId, action, ts}]."""
+    url = f"{CLOUD_BASE}/api/decisions?deviceId={device_id()}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        d = data.get("decisions")
+        return d if isinstance(d, list) else []
+    except (urllib.error.URLError, OSError, ValueError):
+        return []

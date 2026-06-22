@@ -260,19 +260,26 @@ def _tg_handle_update(u: dict) -> None:
 
 
 def _tg_poller_loop() -> None:
-    offset = 0
+    """Опрашивает облако: какие решения (✅/❌) принял пользователь под карточками,
+    и выполняет их локально (подать/пропустить).
+
+    Заменяет старый getUpdates: бот теперь общий и работает через webhook, поэтому
+    нажатия кнопок собирает облако, а приложение забирает готовые решения."""
     while not _tg_stop.is_set():
-        token = telegram_store.get_token()
-        if not token:
-            _tg_stop.wait(5)  # Telegram не настроен — тихо ждём
-            continue
-        r = tg.get_updates(token, offset=offset, timeout=25)
-        if not r.get("ok"):
-            _tg_stop.wait(3)
-            continue
-        for u in r.get("updates", []):
-            offset = u.get("update_id", offset) + 1
-            _tg_handle_update(u)
+        try:
+            if account_mod.is_signed_in():
+                for d in cloud_auth.fetch_decisions():
+                    jid = d.get("jobId")
+                    action = d.get("action")
+                    if not jid or jid == "__demo__" or action not in ("submit", "skip"):
+                        continue
+                    autopilot.tg_decide(
+                        jid, approve=(action == "submit"),
+                        launcher=lambda ids: _launch_salling_apply(ids, submit=True),
+                    )
+        except Exception as e:  # noqa: BLE001 — слушатель не должен падать
+            print(f"telegram(cloud): ошибка опроса решений — {e}")
+        _tg_stop.wait(4)
 
 
 def _ensure_tg_poller() -> None:
@@ -288,11 +295,35 @@ def _ensure_tg_poller() -> None:
 TG_MAX_PER_SCAN = 3  # не больше карточек на подтверждение за один фоновый скан
 
 
+_title_ru_cache: dict[str, str] = {}
+
+
+def _title_ru(title: str) -> str:
+    """Русский перевод названия вакансии для карточки (для тех, кто не знает датский).
+    Кэшируется в памяти; при сбое перевода тихо возвращает пусто."""
+    title = (title or "").strip()
+    if not title:
+        return ""
+    if title in _title_ru_cache:
+        return _title_ru_cache[title]
+    ru = ""
+    try:
+        raw = translator.translate_to_ru(title) or ""
+        ru = re.sub(r"<[^>]+>", "", raw).strip()  # убрать html-теги, оставить текст
+    except Exception:  # noqa: BLE001 — перевод не должен ломать карточку
+        ru = ""
+    _title_ru_cache[title] = ru
+    return ru
+
+
 def _tg_card(job) -> str:
     """Красивая карточка вакансии для Telegram (HTML)."""
     def e(s):
         return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     lines = [f"🏷 <b>{e(job.title)}</b>"]
+    ru_title = _title_ru(job.title)
+    if ru_title and ru_title.lower() != (job.title or "").strip().lower():
+        lines.append(f"   ↳ <i>{e(ru_title)}</i>")
     if job.brand:
         lines.append(f"🏪 {e(labels.brand(job.brand))}")
     # местоположение + расстояние от дома, если знаем
@@ -325,18 +356,15 @@ def _tg_offer_tick() -> None:
             return
         if not autopilot.within_schedule():
             return  # вне рабочих часов автопилота — карточки не шлём
-        if not telegram_store.is_ready():
-            return
-        token = telegram_store.get_token()
-        chat = telegram_store.get_chat()
+        if not account_mod.is_signed_in():
+            return  # нет облачного входа — карточки слать некуда
         for job in autopilot.tg_eligible(limit=TG_MAX_PER_SCAN):
-            buttons = [[("✅ Подать", f"ap_yes:{job.id}"), ("❌ Пропустить", f"ap_no:{job.id}")]]
-            r = tg.send_message(token, chat, _tg_card(job), buttons=buttons)
-            if r.get("ok"):
-                autopilot.tg_pending_add(job.id, r.get("message_id"))
+            r = cloud_auth.offer(_tg_card(job), job.id)
+            if r and r.get("ok"):
+                autopilot.tg_pending_add(job.id, r.get("messageId"))
                 autopilot.log_event("info", f"TG: спросил разрешение — {job.title}")
     except Exception as e:  # noqa: BLE001 — не должно ронять фоновый скан
-        print(f"telegram: ошибка отправки карточек — {e}")
+        print(f"telegram(cloud): ошибка отправки карточек — {e}")
 
 
 @asynccontextmanager
@@ -1570,10 +1598,8 @@ async def telegram_save_token(request: Request):
 def telegram_test():
     """Проверочное сообщение = РЕАЛЬНЫЙ вид карточки вакансии с кнопками
     (на примере подходящей вакансии). Кнопки в примере ничего не отправляют."""
-    token = telegram_store.get_token()
-    chat = telegram_store.get_chat()
-    if not (token and chat):
-        return {"ok": False, "error": "Сначала привяжи Telegram (нажми «Старт» в боте)."}
+    if not account_mod.is_signed_in():
+        return {"ok": False, "error": "Сначала войди через Telegram (раздел «Аккаунт»)."}
     sample = None
     try:
         matches = autopilot.find_matches()
@@ -1586,13 +1612,11 @@ def telegram_test():
                 select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))
             ).first()
     if sample is None:
-        r = tg.send_message(token, chat, "🔔 WexFlow на связи. Подходящих вакансий для примера сейчас нет.")
-        return {"ok": bool(r.get("ok")), "error": r.get("error", "")}
+        return {"ok": False, "error": "Подходящих вакансий для примера сейчас нет."}
     text = ("🔔 <b>Пример сообщения автопилота</b>\n"
             "Вот так будет приходить вакансия на подтверждение:\n\n" + _tg_card(sample))
-    buttons = [[("✅ Подать", "ap_demo"), ("❌ Пропустить", "ap_demo")]]
-    r = tg.send_message(token, chat, text, buttons=buttons)
-    return {"ok": bool(r.get("ok")), "error": r.get("error", "")}
+    r = cloud_auth.offer(text, "__demo__")
+    return {"ok": bool(r and r.get("ok")), "error": (r or {}).get("error", "")}
 
 
 @app.post("/api/telegram/unlink")
