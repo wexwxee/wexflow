@@ -188,6 +188,25 @@
     border-radius:8px; padding:6px 11px; font-size:12.5px; font-weight:650; cursor:pointer; }
   .ap-prof-bar button:hover { border-color:var(--hover-line); color:var(--txt-strong); }
   .ap-prof-bar input[type=text] { padding:6px 10px; border-radius:8px; }
+  /* быстрый старт: пресеты-шаблоны автопилота */
+  .ap-presets { margin:4px 0 12px; }
+  .ap-presets-label { display:block; font-size:12.5px; font-weight:700; color:var(--txt); margin-bottom:7px; }
+  .ap-presets-label .hint { font-weight:400; }
+  .ap-preset-row { display:flex; flex-wrap:wrap; gap:7px; }
+  .ap-preset { display:inline-flex; align-items:center; gap:6px; padding:9px 14px; border-radius:11px;
+    border:1px solid var(--glass-line); background:var(--glass); color:var(--txt); cursor:pointer;
+    font-size:13px; font-weight:650; line-height:1; transition:border-color .12s, color .12s, background .12s; }
+  .ap-preset:hover { border-color:var(--accent); color:var(--txt-strong);
+    background:color-mix(in srgb, var(--accent) 9%, transparent); }
+  .ap-preset .ap-preset-emoji { font-size:15px; }
+  .ap-preset.reset { color:var(--muted); }
+  /* живая сводка человеческим языком */
+  .ap-summary { margin:14px 0 2px; padding:12px 14px; border-radius:11px;
+    border:1px solid var(--glass-line); background:var(--glass); }
+  .ap-summary-title { font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.04em; margin-bottom:6px; }
+  .ap-summary-text { font-size:13.5px; color:var(--txt-strong); line-height:1.5; }
+  .ap-summary-text b { color:var(--accent); font-weight:700; }
 </style>
 {% endblock %}
 
@@ -550,6 +569,20 @@
       </div>
     </div>
 
+    <!-- Быстрый старт: готовые шаблоны заполняют поля нормальными значениями -->
+    <div class="ap-presets">
+      <span class="ap-presets-label">{{ ic.i('zap', 13) }} Быстрый старт
+        <span class="hint">— нажми шаблон, и поля заполнятся сами. Потом можно подправить вручную.</span>
+      </span>
+      <div class="ap-preset-row" id="apPresets">
+        <button type="button" class="ap-preset" data-preset="near"><span class="ap-preset-emoji">🏠</span>Подработка рядом</button>
+        <button type="button" class="ap-preset" data-preset="teen"><span class="ap-preset-emoji">🎓</span>Школьник / до 18</button>
+        <button type="button" class="ap-preset" data-preset="full"><span class="ap-preset-emoji">💼</span>Полная ставка</button>
+        <button type="button" class="ap-preset" data-preset="evening"><span class="ap-preset-emoji">🌙</span>Вечер и выходные</button>
+        <button type="button" class="ap-preset reset" data-preset="reset"><span class="ap-preset-emoji">↺</span>Сбросить фильтры</button>
+      </div>
+    </div>
+
     <div class="grid2">
       <div class="field">
         <label class="lbl">Расстояние от дома</label>
@@ -766,6 +799,11 @@
         <span class="hint" style="margin:0;">ч</span>
       </div>
       <div class="ap-hint">Карточки в Telegram и автоподача — только в эти часы (поиск идёт всегда). 0 и 24 (или одинаковые) = круглосуточно.</div>
+    </div>
+
+    <div class="ap-summary">
+      <div class="ap-summary-title">Что ищет этот набор</div>
+      <div class="ap-summary-text" id="apSummary">…</div>
     </div>
 
     <p class="hint" style="margin-top:10px;">Сейчас по всем включённым наборам подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
@@ -1195,6 +1233,131 @@
     if (!confirm('Точно-точно? Заявки уйдут под твоим именем автоматически (в пределах дневного лимита). Включаем?')) return false;
     return true;
   }
+</script>
+<script>
+  // Быстрый старт (шаблоны) + живая сводка человеческим языком.
+  // Шаблоны не вводят свою логику сохранения — они кликают те же чипы/опции,
+  // что и пользователь руками, поэтому скрытые поля заполняются штатно.
+  (function () {
+    var form = document.getElementById('autopilot'); if (!form) return;
+
+    function hidden(name) { return form.querySelector('input[type=hidden][name="' + name + '"]'); }
+
+    // выставить набору чипов (км/часы/свежесть) ровно заданные значения
+    function setChips(key, vals) {
+      var box = form.querySelector('[data-chips-for="' + key + '"]'); if (!box) return;
+      var clear = box.querySelector('.ap-chip[data-val=""]');
+      if (clear) clear.click();                               // сбросить всё
+      (vals || []).forEach(function (v) {
+        v = String(v);
+        var chip = box.querySelector('.ap-chip[data-val="' + v + '"]');
+        if (chip) { if (!chip.classList.contains('active')) chip.click(); return; }
+        var custom = form.querySelector('[data-chips-custom="' + key + '"]');  // своё число
+        if (custom) { custom.value = v; custom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); }
+      });
+    }
+    // выставить мультиселекту (возраст и т.п.) ровно заданные значения
+    function setSelect(name, vals) {
+      var h = hidden(name); if (!h) return;
+      var root = h.closest('.ap-select'); if (!root) return;
+      var empty = root.querySelector('.ap-opt[data-val=""]');
+      if (empty) empty.click();                               // сбросить выбор
+      (vals || []).forEach(function (v) {
+        var opt = root.querySelector('.ap-opt[data-val="' + v + '"]');
+        if (opt && !opt.classList.contains('sel')) opt.click();
+      });
+      root.classList.remove('open');
+    }
+    // выставить текстовому полю (слова/исключения)
+    function setText(name, val) {
+      var inp = form.querySelector('[name="' + name + '"]');
+      if (inp) { inp.value = val || ''; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+    }
+
+    var PRESETS = {
+      // дом рядом, лёгкая подработка, только свежее
+      near:    { max_km:[10], min_hours:[],   max_hours:[20], max_age_days:[14], age:[],          keywords:'',               exclude_keywords:'' },
+      // школьник/до 18: ближе, мало часов, без ночных смен
+      teen:    { max_km:[15], min_hours:[],   max_hours:[15], max_age_days:[30], age:['under18'], keywords:'',               exclude_keywords:'nat' },
+      // полная ставка для взрослого
+      full:    { max_km:[25], min_hours:[30], max_hours:[],   max_age_days:[30], age:['adult'],   keywords:'',               exclude_keywords:'' },
+      // вечер и выходные
+      evening: { max_km:[15], min_hours:[],   max_hours:[],   max_age_days:[30], age:[],          keywords:'weekend, aften', exclude_keywords:'' },
+      // полный сброс фильтров (город/бренд не трогаем — это личное)
+      reset:   { max_km:[], min_hours:[], max_hours:[], max_age_days:[], age:[], keywords:'', exclude_keywords:'' }
+    };
+
+    function applyPreset(name) {
+      var p = PRESETS[name]; if (!p) return;
+      ['max_km', 'min_hours', 'max_hours', 'max_age_days'].forEach(function (k) { setChips(k, p[k]); });
+      setSelect('age', p.age);
+      setText('keywords', p.keywords);
+      setText('exclude_keywords', p.exclude_keywords);
+      renderSummary();
+      var s = document.getElementById('apSummary');
+      if (s) { s.style.transition = 'none'; s.style.opacity = '.35'; requestAnimationFrame(function () { s.style.transition = 'opacity .35s'; s.style.opacity = '1'; }); }
+    }
+    var presetBox = document.getElementById('apPresets');
+    if (presetBox) presetBox.querySelectorAll('.ap-preset').forEach(function (b) {
+      b.addEventListener('click', function () { applyPreset(b.dataset.preset); });
+    });
+
+    // ——— живая сводка ———
+    function nums(name) {  // числа из CSV-поля чипов
+      var h = hidden(name); if (!h) return [];
+      return (h.value || '').split(',').map(function (s) { return parseFloat(s); }).filter(function (n) { return !isNaN(n); });
+    }
+    function selLabels(name) {  // подписи выбранных опций мультиселекта
+      var h = hidden(name); if (!h) return [];
+      var root = h.closest('.ap-select'); if (!root) return [];
+      return [].slice.call(root.querySelectorAll('.ap-opt.sel'))
+        .filter(function (o) { return o.dataset.val; })
+        .map(function (o) { return o.textContent.replace('✓', '').trim(); });
+    }
+    function textVal(name) {
+      var inp = form.querySelector('[name="' + name + '"]');
+      return inp ? (inp.value || '').trim() : '';
+    }
+    function b(s) { return '<b>' + s + '</b>'; }
+
+    function renderSummary() {
+      var el = document.getElementById('apSummary'); if (!el) return;
+      var parts = [];
+      var km = nums('max_km');     if (km.length) parts.push('рядом ' + b('≤ ' + Math.max.apply(null, km) + ' км'));
+      var mn = nums('min_hours'), mx = nums('max_hours');
+      var lo = mn.length ? Math.min.apply(null, mn) : null;   // самый мягкий нижний порог
+      var hi = mx.length ? Math.max.apply(null, mx) : null;   // самый мягкий верхний порог
+      if (lo !== null && hi !== null) parts.push(b(lo + '–' + hi + ' ч/нед'));
+      else if (lo !== null) parts.push(b('от ' + lo + ' ч/нед'));
+      else if (hi !== null) parts.push(b('до ' + hi + ' ч/нед'));
+      var age = nums('max_age_days'); if (age.length) parts.push('свежее ' + b(Math.max.apply(null, age) + ' дн'));
+      selLabels('age').forEach(function (l) { parts.push(b(l)); });
+      var cat = selLabels('category'); if (cat.length) parts.push('тип: ' + b(cat.join(', ')));
+      var emp = selLabels('employment_type'); if (emp.length) parts.push('занятость: ' + b(emp.join(', ')));
+      var br = selLabels('brand'); if (br.length) parts.push('бренды: ' + b(br.join(', ')));
+      var rg = selLabels('regions'); if (rg.length) parts.push('регионы: ' + b(rg.join(', ')));
+      var city = textVal('cities'); if (city) parts.push('город: ' + b(city));
+      var kw = textVal('keywords'); if (kw) parts.push('со словами ' + b(kw));
+
+      var ex = [];
+      var exBr = selLabels('exclude_brands'); if (exBr.length) ex.push('бренды ' + exBr.join(', '));
+      var exCity = textVal('exclude_cities'); if (exCity) ex.push('города ' + exCity);
+      var exKw = textVal('exclude_keywords'); if (exKw) ex.push('слова ' + exKw);
+
+      var html;
+      if (!parts.length) html = 'Пока без фильтров — подойдёт <b>любая</b> вакансия Salling. Нажми шаблон выше, чтобы быстро сузить.';
+      else html = 'Ищу: ' + parts.join(' · ');
+      if (ex.length) html += '<br>Не предлагать: ' + b(ex.join('; ')) + '.';
+      el.innerHTML = html;
+    }
+
+    // пересчитывать сводку после любого изменения полей формы
+    var pending = false;
+    function schedule() { if (pending) return; pending = true; setTimeout(function () { pending = false; renderSummary(); }, 0); }
+    form.addEventListener('click', schedule, true);
+    form.addEventListener('input', schedule, true);
+    renderSummary();
+  })();
 </script>
 <script>
   // Профиль кандидата редактируется в Аккаунте (/account). Здесь — только сводка.
