@@ -554,30 +554,31 @@
       <div class="field">
         <label class="lbl">Расстояние от дома</label>
         <input type="hidden" name="max_km" value="{{ autopilot.max_km or '' }}">
-        <input type="number" min="0" step="1" data-chips-custom="max_km" placeholder="своё число, напр. 7">
+        <input type="number" min="0" step="1" data-chips-custom="max_km" placeholder="своё число, напр. 12">
         <div class="ap-chips" data-chips-for="max_km" data-chips-unit=" км">
-          <button type="button" class="ap-chip" data-val="3">3 км</button>
           <button type="button" class="ap-chip" data-val="5">5 км</button>
           <button type="button" class="ap-chip" data-val="10">10 км</button>
           <button type="button" class="ap-chip" data-val="15">15 км</button>
           <button type="button" class="ap-chip" data-val="25">25 км</button>
+          <button type="button" class="ap-chip" data-val="50">50 км</button>
           <button type="button" class="ap-chip" data-val="">без ограничения</button>
         </div>
-        <div class="ap-hint">WexFlow берёт вакансии не дальше выбранного значения. Если выбрать 5 и 10 км, действует 10 км. Пусто = любое расстояние.</div>
+        <div class="ap-hint">Популярные радиусы: рядом, по городу и с поездкой. Если выбрать 10 и 25 км, действует 25 км. Пусто = любое расстояние.</div>
       </div>
       <div class="field">
         <label class="lbl">Минимум часов в неделю</label>
         <input type="hidden" name="min_hours" value="{{ autopilot.min_hours or '' }}">
         <input type="number" min="0" step="1" data-chips-custom="min_hours" placeholder="своё число, напр. 12">
         <div class="ap-chips" data-chips-for="min_hours" data-chips-unit=" ч">
-          <button type="button" class="ap-chip" data-val="8">8 ч</button>
+          <button type="button" class="ap-chip" data-val="5">5 ч</button>
           <button type="button" class="ap-chip" data-val="10">10 ч</button>
           <button type="button" class="ap-chip" data-val="15">15 ч</button>
           <button type="button" class="ap-chip" data-val="20">20 ч</button>
           <button type="button" class="ap-chip" data-val="30">30 ч</button>
+          <button type="button" class="ap-chip" data-val="37">37 ч</button>
           <button type="button" class="ap-chip" data-val="">любые</button>
         </div>
-        <div class="ap-hint">Нижняя граница. Если выбрать 8 и 15 ч, действует 8 ч. Если часы не указаны в вакансии, она всё равно попадёт.</div>
+        <div class="ap-hint">Популярные варианты: короткая подработка, half-time, 30+ и датский full-time 37 ч. Если выбрать 10 и 20 ч, действует 10 ч. Если часы не указаны, вакансия всё равно попадёт.</div>
       </div>
       <div class="field">
         <label class="lbl">Вакансия не старше</label>
@@ -667,15 +668,18 @@
       <div class="field">
         <label class="lbl">Максимум часов в неделю</label>
         <input type="hidden" name="max_hours" value="{{ autopilot.max_hours or '' }}">
-        <input type="number" min="0" step="1" data-chips-custom="max_hours" placeholder="своё число, напр. 20">
+        <input type="number" min="0" step="1" data-chips-custom="max_hours" placeholder="своё число, напр. 25">
         <div class="ap-chips" data-chips-for="max_hours" data-chips-unit=" ч">
           <button type="button" class="ap-chip" data-val="10">10 ч</button>
           <button type="button" class="ap-chip" data-val="15">15 ч</button>
           <button type="button" class="ap-chip" data-val="20">20 ч</button>
+          <button type="button" class="ap-chip" data-val="25">25 ч</button>
           <button type="button" class="ap-chip" data-val="30">30 ч</button>
+          <button type="button" class="ap-chip" data-val="37">37 ч</button>
+          <button type="button" class="ap-chip" data-val="40">40 ч</button>
           <button type="button" class="ap-chip" data-val="">без ограничения</button>
         </div>
-        <div class="ap-hint">Верхняя граница — для подработки. Часы не указаны в вакансии — она всё равно попадёт. Пусто = без ограничения.</div>
+        <div class="ap-hint">Популярные потолки: 20 ч для half-time, 30 ч для большой подработки, 37 ч в Дании и 40 ч как мировой full-time. Часы не указаны — вакансия всё равно попадёт. Пусто = без ограничения.</div>
       </div>
       <div class="field">
         <label class="lbl">Регион Дании</label>
