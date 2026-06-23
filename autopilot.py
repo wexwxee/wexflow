@@ -99,7 +99,7 @@ def status() -> dict:
     matches = find_matches()
     match_ids = {j.id for j in matches}
     prepared_ids = set(r.get("prepared_ids") or [])
-    return {
+    payload = {
         "enabled": bool(r.get("enabled")),
         "auto_submit": bool(r.get("auto_submit")),
         "mode": get_mode(),
@@ -112,6 +112,8 @@ def status() -> dict:
         "submit_scope": r.get("submit_scope") or "new",
         "events": event_log()[:50],
     }
+    payload.update({f"tg_{k}": v for k, v in tg_queue_stats().items()})
+    return payload
 
 # Поля, которые пользователь задаёт в интерфейсе (seen_ids/prepared_ids — служебные).
 _USER_FIELDS = ("enabled", "max_km", "min_hours", "max_age_days", "category",
@@ -568,17 +570,37 @@ def tg_pending_add(job_id: str, message_id) -> None:
     save_rule({"tg_pending": pend[-100:], "tg_offered_ids": list(offered)[-500:]})
 
 
-def tg_eligible(limit: int = 5) -> list[Job]:
+def tg_eligible(limit: int = 5, include_existing: bool = False) -> list[Job]:
     """Подходящие вакансии, которые ещё НЕ предлагали в TG и не подавали/не пропускали.
-    Свежие первыми. Уважает baseline охвата (как и автоотправка)."""
+    Свежие первыми.
+
+    include_existing=False — штатный безопасный режим: если охват «только новые»,
+    текущий бэклог из baseline не шлём автоматически.
+    include_existing=True — ручная кнопка «прислать текущие»: игнорирует baseline,
+    но всё равно не дублирует уже предложенные/пропущенные/поданные.
+    """
     r = get_rule()
     skip = (set(r.get("submitted_ids") or []) | set(r.get("tg_offered_ids") or [])
             | set(r.get("tg_skipped") or []))
-    if (r.get("submit_scope") or "new") != "all":
+    if not include_existing and (r.get("submit_scope") or "new") != "all":
         skip |= set(r.get("autosubmit_baseline") or [])
     todo = [j for j in find_matches() if j.id not in skip]
     todo.sort(key=_seen_ts, reverse=True)
     return todo[: max(1, int(limit))]
+
+
+def tg_queue_stats() -> dict:
+    """Счётчики для интерфейса: почему «нашёл N», но в TG может ничего не уйти."""
+    r = get_rule()
+    return {
+        "found": len(find_matches()),
+        "pending": len(r.get("tg_pending") or []),
+        "offered": len(r.get("tg_offered_ids") or []),
+        "skipped": len(r.get("tg_skipped") or []),
+        "baseline": len(r.get("autosubmit_baseline") or []),
+        "eligible_new": len(tg_eligible(10000, include_existing=False)),
+        "eligible_current": len(tg_eligible(10000, include_existing=True)),
+    }
 
 
 def tg_decide(job_id: str, approve: bool, launcher) -> str:

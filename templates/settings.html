@@ -469,7 +469,7 @@
       <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='auto' else '' }}" data-mode="auto">⚡<span>Автоотправка</span></button>
     </div>
     <div class="ap-hint" id="apModeHint" style="margin-bottom:4px;"></div>
-    <div class="ap-hint" style="margin-bottom:2px;">Главный переключатель. Ниже — фильтры (что искать), а детали выбранного режима (привязка Telegram, лимиты автоотправки) — в блоках ниже на странице.</div>
+    <div class="ap-hint" style="margin-bottom:2px;">Главный переключатель. Ниже — фильтры (что искать), а детали выбранного режима (Telegram-статус, лимиты автоотправки) — в блоках ниже на странице.</div>
     <script>
     (function(){
       var box=document.getElementById('apMode'); if(!box) return;
@@ -477,7 +477,7 @@
       var texts={
         off:'Автопилот выключен — не ищет и ничего не делает.',
         notify:'Ищет подходящие и присылает уведомление. Подаёшь сам.',
-        telegram:'Нашёл вакансию — пришлёт в Telegram карточку с кнопками. Заявка уходит только после твоего «✅ Подать».',
+        telegram:'Новые вакансии будут приходить в Telegram карточками. Текущие подходящие можно прислать кнопкой в блоке Telegram ниже.',
         auto:'Сам отправляет подходящие по правилам (с лимитами). Без подтверждения — на свой страх и риск.'};
       function setHint(m){ if(hint) hint.textContent=texts[m]||''; }
       var cur=box.querySelector('.ap-mode-opt.on'); setHint(cur?cur.dataset.mode:'off');
@@ -657,7 +657,7 @@
           <div class="ap-menu">
             <button type="button" class="ap-opt {{ 'sel' if not sel_region else '' }}" data-val="">Любой регион</button>
             {% for r in autopilot_regions %}
-              <button type="button" class="ap-opt {{ 'sel' if r in sel_region else '' }}" data-val="{{ r }}">{{ r|capitalize }}</button>
+              <button type="button" class="ap-opt {{ 'sel' if r in sel_region else '' }}" data-val="{{ r }}">{{ autopilot_region_labels.get(r, r|capitalize) }}</button>
             {% endfor %}
           </div>
         </div>
@@ -728,6 +728,7 @@
     </div>
 
     <p class="hint" style="margin-top:10px;">Сейчас под это правило подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
+    <p class="hint" style="margin-top:-4px;">Для Telegram сейчас: можно прислать текущих <b>{{ autopilot_tg_stats.eligible_current }}</b>, автоматически новых <b>{{ autopilot_tg_stats.eligible_new }}</b>, ждут ответа <b>{{ autopilot_tg_stats.pending }}</b>.</p>
 
     <div class="actions">
       <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить автопилот</button>
@@ -737,13 +738,18 @@
   <!-- Telegram: подтверждение подачи (режим «по разрешению») -->
   <style>
     #tg .tg-sec { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt);
-      border-radius:9px; padding:9px 14px; font-weight:650; font-size:13.5px; cursor:pointer; }
+      border-radius:9px; padding:9px 14px; font-weight:650; font-size:13.5px; cursor:pointer; text-decoration:none; }
     #tg .tg-sec:hover { border-color:var(--hover-line); color:var(--txt-strong); }
     #tg .actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }
+    #tg .tg-stats { display:grid; grid-template-columns:repeat(4, minmax(96px, 1fr)); gap:8px; margin:12px 0; }
+    #tg .tg-stat { border:1px solid var(--glass-line); background:var(--glass); border-radius:8px; padding:10px 11px; }
+    #tg .tg-stat b { display:block; font-size:18px; color:var(--txt-strong); line-height:1.1; }
+    #tg .tg-stat span { display:block; margin-top:3px; color:var(--muted); font-size:12px; line-height:1.25; }
+    @media (max-width:640px){ #tg .tg-stats { grid-template-columns:1fr 1fr; } }
   </style>
   <section id="tg" class="panel" style="margin-top:14px;">
     <h2>{{ ic.i('send', 16) }} Telegram — подтверждение подачи</h2>
-    <p class="hint">Привяжи Telegram-бота — и автопилот будет спрашивать разрешение перед каждой подачей: бот пришлёт карточку вакансии с кнопками «✅ Подать» / «❌ Пропустить». Заявка уходит только после твоего «да». Работает, пока приложение открыто.</p>
+    <p class="hint">Используется общий бот @wexflowbot: BotFather-токен больше не нужен. Войди через Telegram в разделе «Аккаунт» и нажми Start в боте — после этого автопилот сможет присылать вакансии, пока приложение запущено.</p>
     <div id="tgState"><p class="hint">Загружаю…</p></div>
   </section>
   <script>
@@ -757,54 +763,59 @@
 
     function render(st){
       stopPoll();
-      if(!st.has_token){
+      if(!st.signed_in){
         box.innerHTML =
-          '<div class="field ap-field-wide"><label class="lbl">Токен бота (от @BotFather)</label>'+
-          '<input type="text" id="tgToken" placeholder="напр. 1234567890:AAH...">'+
-          '<div class="ap-hint">В Telegram открой @BotFather → команда /newbot (или возьми готового бота) → скопируй токен и вставь сюда. Токен сохранится зашифрованно.</div></div>'+
-          '<div class="actions"><button class="primary" type="button" id="tgSave">Сохранить токен</button>'+
-          '<span class="hint" id="tgErr" style="margin:0;color:var(--err-txt);"></span></div>';
-        document.getElementById('tgSave').addEventListener('click', saveToken);
+          '<p class="hint">Сначала войди через Telegram в разделе «Аккаунт». После входа WexFlow будет знать, куда присылать карточки.</p>'+
+          '<div class="actions"><a class="primary" href="/account">Открыть Аккаунт</a>'+
+          '<a class="tg-sec" href="https://t.me/wexflowbot" target="_blank" rel="noopener">Открыть @wexflowbot</a></div>';
+        pollTimer = setInterval(function(){ api('/api/telegram/status').then(function(s){ if(s.signed_in){ render(s); } }); }, 3000);
         return;
       }
-      if(!st.linked){
-        var uname = st.username ? ('@'+esc(st.username)) : 'бот';
-        var link = st.username ? ('https://t.me/'+encodeURIComponent(st.username)) : '#';
-        box.innerHTML =
-          '<p class="hint">Бот <b>'+uname+'</b> подключён. Осталось привязать твой аккаунт:</p>'+
-          '<div class="actions"><a class="primary" href="'+link+'" target="_blank" rel="noopener">Открыть бота и нажать «Старт»</a>'+
-          '<span class="hint" style="margin:0;">⏳ Жду, пока нажмёшь «Старт» в боте…</span></div>'+
-          '<div class="actions"><button type="button" class="tg-sec" id="tgReset">Сменить токен</button></div>';
-        document.getElementById('tgReset').addEventListener('click', unlink);
-        pollTimer = setInterval(function(){ api('/api/telegram/status').then(function(s){ if(s.linked){ render(s); } }); }, 2000);
-        return;
-      }
+      var account = st.username ? ('@'+esc(st.username)) : ('Telegram ID '+esc(st.tg_id || ''));
+      var current = Number(st.eligible_current || 0);
+      var batch = current ? Math.min(current, Number(st.max_per_send || current)) : 0;
+      var sendLabel = current > batch ? ('Прислать ' + batch + ' из ' + current) : ('Прислать текущие (' + current + ')');
+      var disabled = current ? '' : ' disabled';
       box.innerHTML =
-        '<p class="hint">✅ Привязан'+(st.name?': <b>'+esc(st.name)+'</b>':'')+(st.username?' · бот @'+esc(st.username):'')+'</p>'+
+        '<p class="hint">✅ Аккаунт подключён: <b>'+account+'</b>. Карточки приходят через общий бот @wexflowbot.</p>'+
+        '<div class="tg-stats">'+
+          '<div class="tg-stat"><b>'+esc(st.found || 0)+'</b><span>подходит по фильтрам</span></div>'+
+          '<div class="tg-stat"><b>'+esc(st.eligible_new || 0)+'</b><span>новых отправит сам</span></div>'+
+          '<div class="tg-stat"><b>'+esc(st.eligible_current || 0)+'</b><span>текущих можно прислать</span></div>'+
+          '<div class="tg-stat"><b>'+esc(st.pending || 0)+'</b><span>ждут ответа</span></div>'+
+        '</div>'+
         '<div class="ap-hint">'+(st.approval
-            ? '✅ Режим «Спрашивать в Telegram» включён вверху — бот присылает карточки сюда.'
-            : 'Чтобы бот спрашивал перед каждой подачей, выбери вверху страницы режим «💬 Спрашивать в Telegram».')+'</div>'+
+            ? 'Режим Telegram включён. Новые подходящие вакансии будут приходить автоматически после проверок; текущие можно отправить кнопкой ниже, по несколько карточек за раз.'
+            : 'Чтобы бот спрашивал перед подачей, выбери вверху режим «Спрашивать в Telegram» или нажми кнопку отправки текущих.')+'</div>'+
         '<div class="actions"><button type="button" class="primary" id="tgTest">Отправить проверочное</button>'+
-        '<button type="button" class="tg-sec" id="tgUnlink">Отвязать</button>'+
+        '<button type="button" class="tg-sec" id="tgSendCurrent"'+disabled+'>'+sendLabel+'</button>'+
+        '<a class="tg-sec" href="https://t.me/wexflowbot" target="_blank" rel="noopener">Открыть @wexflowbot</a>'+
         '<span class="hint" id="tgMsg" style="margin:0;"></span></div>';
       document.getElementById('tgTest').addEventListener('click', testMsg);
-      document.getElementById('tgUnlink').addEventListener('click', unlink);
-    }
-
-    function saveToken(){
-      var t = (document.getElementById('tgToken').value||'').trim();
-      var err = document.getElementById('tgErr'), btn = document.getElementById('tgSave');
-      if(!t){ err.textContent='Вставь токен.'; return; }
-      btn.disabled=true; err.textContent='Проверяю токен…';
-      api('/api/telegram/save-token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})})
-        .then(function(r){ btn.disabled=false; if(r.ok){ load(); } else { err.textContent=r.error||'Не вышло.'; } })
-        .catch(function(){ btn.disabled=false; err.textContent='Ошибка сети.'; });
+      document.getElementById('tgSendCurrent').addEventListener('click', sendCurrent);
     }
     function testMsg(){
       var m=document.getElementById('tgMsg'); m.textContent='Отправляю…';
       api('/api/telegram/test',{method:'POST'}).then(function(r){ m.textContent = r.ok?'Отправлено — проверь Telegram ✅':('Не вышло: '+(r.error||'')); });
     }
-    function unlink(){ api('/api/telegram/unlink',{method:'POST'}).then(load); }
+    function sendCurrent(){
+      var m=document.getElementById('tgMsg');
+      var btn=document.getElementById('tgSendCurrent');
+      if(btn) btn.disabled=true;
+      m.textContent='Отправляю текущие подходящие…';
+      api('/api/telegram/send-current',{method:'POST'}).then(function(r){
+        if(r.ok){
+          m.textContent='Отправлено: '+(r.sent||0)+'. Осталось: '+(r.remaining||0)+'.';
+          load();
+        } else {
+          m.textContent='Не вышло: '+(r.error||'ничего не отправлено');
+          if(btn) btn.disabled=false;
+        }
+      }).catch(function(){
+        m.textContent='Ошибка сети.';
+        if(btn) btn.disabled=false;
+      });
+    }
     function load(){ api('/api/telegram/status').then(render).catch(function(){ box.innerHTML='<p class="hint">Не удалось загрузить статус.</p>'; }); }
     load();
   })();
