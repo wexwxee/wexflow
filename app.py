@@ -36,6 +36,7 @@ import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
 import autopilot
+import ai_filters
 from apscheduler.schedulers.background import BackgroundScheduler
 
 PROFILE_REQUIRED = [
@@ -1072,6 +1073,43 @@ async def api_autopilot_mode(request: Request):
     return {"ok": True, "mode": new_mode}
 
 
+@app.post("/api/autopilot/preview")
+async def api_autopilot_preview(request: Request):
+    """Сколько активных вакансий подходит под НЕСОХРАНЁННЫЙ набор фильтров —
+    для светофора «узко/нормально/широко». Ничего не сохраняет."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    p = {k: (body.get(k) or "") for k in autopilot._FILTER_FIELDS}
+    p["enabled"] = True
+    try:
+        count = autopilot.profile_match_count(p)
+    except Exception:  # noqa: BLE001
+        count = 0
+    return {"ok": True, "count": count}
+
+
+@app.post("/api/autopilot/ai_suggest")
+async def api_autopilot_ai_suggest(request: Request):
+    """«Опиши словами / резюме» -> черновик фильтров через Gemini.
+    Возвращает только черновик; применяет его пользователь вручную."""
+    if not ai_filters.available():
+        return {
+            "ok": False,
+            "error": "ИИ не подключён. Добавь бесплатный ключ Gemini в файл secrets.json "
+                     "(ключ gemini_api_key) — см. AI Studio.",
+        }
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    return ai_filters.suggest_filters(
+        body.get("text") or "",
+        labels.CATEGORY, labels.BRANDS, labels.EMPLOYMENT, labels.REGION,
+    )
+
+
 def _autopilot_rule_summary(rule: dict) -> list[dict]:
     """Человеко-читаемая сводка «что ищет автопилот» для страницы /autopilot."""
     def _csv(raw, mapping):
@@ -1236,6 +1274,19 @@ def _autopilot_geo_options(rule: dict | None = None):
     return (cities or all_cities), regions
 
 
+def _home_city(home: dict | None) -> str:
+    """Город из домашнего адреса (для кнопки «мой город»). Датский адрес
+    оканчивается на «<4 цифры индекс> <город>»; берём город и убираем
+    хвостовую букву района (København V -> København), чтобы совпало шире."""
+    if not home:
+        return ""
+    text = (home.get("address") or home.get("lookup_address") or "").strip()
+    m = re.search(r"\b\d{4}\s+([^,]+)$", text)
+    city = (m.group(1) if m else "").strip()
+    city = re.sub(r"\s+[A-ZÆØÅ]{1,2}$", "", city).strip()  # срез района: V, K, SV, NV…
+    return city
+
+
 def _settings_context(
     request: Request,
     saved: str = "",
@@ -1273,6 +1324,8 @@ def _settings_context(
         "autopilot_cities": ap_cities, "autopilot_regions": ap_regions,
         "autopilot_region_labels": labels.REGION,
         "autopilot_mode": autopilot.get_mode(),
+        "home_city": _home_city(settings_store.get_home()),
+        "ai_available": ai_filters.available(),
         "autopilot_profiles": ap_profiles, "autopilot_profile": sel_profile,
         "autopilot_profile_count": autopilot.profile_match_count(sel_profile),
         "autopilot_count": autopilot.match_count(),

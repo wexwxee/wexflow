@@ -207,6 +207,28 @@
     letter-spacing:.04em; margin-bottom:6px; }
   .ap-summary-text { font-size:13.5px; color:var(--txt-strong); line-height:1.5; }
   .ap-summary-text b { color:var(--accent); font-weight:700; }
+  .ap-summary-status { margin-top:8px; font-size:13px; font-weight:650; color:var(--txt); }
+  /* мой город — отдельный акцентный чип */
+  .ap-chip.ap-chip-home { border-color:var(--accent); color:var(--accent);
+    background:color-mix(in srgb, var(--accent) 10%, transparent); }
+  /* ИИ: заполнить по описанию */
+  .ap-ai { margin:4px 0 12px; padding:12px 14px; border-radius:12px;
+    border:1px solid var(--glass-line); background:var(--glass); }
+  .ap-ai-label { display:block; font-size:12.5px; font-weight:700; color:var(--txt); margin-bottom:7px; }
+  .ap-ai-label .hint { font-weight:400; }
+  .ap-ai textarea { width:100%; box-sizing:border-box; resize:vertical; min-height:42px;
+    padding:9px 11px; border-radius:9px; border:1px solid var(--glass-line);
+    background:var(--bg); color:var(--txt); font:inherit; font-size:13.5px; }
+  .ap-ai textarea:focus { outline:none; border-color:var(--accent); }
+  .ap-ai-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:8px; }
+  .ap-ai-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 15px; border-radius:10px;
+    border:1px solid var(--accent); color:var(--accent); background:color-mix(in srgb, var(--accent) 10%, transparent);
+    font-size:13px; font-weight:700; cursor:pointer; }
+  .ap-ai-btn:hover { background:color-mix(in srgb, var(--accent) 18%, transparent); }
+  .ap-ai-btn:disabled { opacity:.6; cursor:default; }
+  .ap-ai-status { font-size:12.5px; color:var(--muted); }
+  .ap-ai-off { margin-top:8px; }
+  .ap-ai-off code { background:var(--bg); padding:1px 5px; border-radius:5px; }
 </style>
 {% endblock %}
 
@@ -583,6 +605,20 @@
       </div>
     </div>
 
+    <!-- ИИ: заполнить фильтры по свободному описанию или резюме (только если подключён ключ) -->
+    {% if ai_available %}
+    <div class="ap-ai">
+      <span class="ap-ai-label">✨ Заполнить по описанию
+        <span class="hint">— напиши словами или вставь резюме, ИИ предложит фильтры. Применит черновик — проверишь и сохранишь.</span>
+      </span>
+      <textarea id="apAiText" rows="2" placeholder="напр.: ищу подработку кассиром рядом с домом, 15–20 часов в неделю, можно вечером и по выходным"></textarea>
+      <div class="ap-ai-row">
+        <button type="button" class="ap-ai-btn" id="apAiBtn">✨ Предложить фильтры</button>
+        <span class="ap-ai-status" id="apAiStatus"></span>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="grid2">
       <div class="field">
         <label class="lbl">Расстояние от дома</label>
@@ -738,6 +774,7 @@
         <div class="suggest-menu"></div>
         <div class="ap-chips ap-city-presets" data-csv-chip-for="cities">
           <span class="ap-chips-label">Быстро добавить</span>
+          {% if home_city %}<button type="button" class="ap-chip ap-chip-home" data-val="{{ home_city }}">📍 Мой город: {{ home_city }}</button>{% endif %}
           <button type="button" class="ap-chip" data-val="København">København</button>
           <button type="button" class="ap-chip" data-val="Aarhus">Aarhus</button>
           <button type="button" class="ap-chip" data-val="Odense">Odense</button>
@@ -804,6 +841,7 @@
     <div class="ap-summary">
       <div class="ap-summary-title">Что ищет этот набор</div>
       <div class="ap-summary-text" id="apSummary">…</div>
+      <div class="ap-summary-status" id="apStatus"></div>
     </div>
 
     <p class="hint" style="margin-top:10px;">Сейчас по всем включённым наборам подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
@@ -1351,12 +1389,75 @@
       el.innerHTML = html;
     }
 
-    // пересчитывать сводку после любого изменения полей формы
+    // ——— светофор «узко/нормально/широко»: живой счётчик через сервер ———
+    var FILTER_FIELDS = ['max_km', 'min_hours', 'max_hours', 'max_age_days', 'category',
+      'employment_type', 'age', 'keywords', 'brand', 'cities', 'regions',
+      'exclude_brands', 'exclude_cities', 'exclude_keywords'];
+    function gatherFields() {
+      var o = {};
+      FILTER_FIELDS.forEach(function (k) { var el = form.querySelector('[name="' + k + '"]'); o[k] = el ? (el.value || '') : ''; });
+      return o;
+    }
+    var statusTimer = null;
+    function refreshStatus() {
+      var el = document.getElementById('apStatus'); if (!el) return;
+      clearTimeout(statusTimer);
+      statusTimer = setTimeout(function () {
+        fetch('/api/autopilot/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(gatherFields()) })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d || !d.ok) { el.textContent = ''; return; }
+            var n = d.count | 0, dot, msg;
+            if (n === 0) { dot = '🔴'; msg = 'сейчас ничего не подходит — стоит ослабить фильтры'; }
+            else if (n <= 60) { dot = '🟢'; msg = 'нормально — подходит ' + n; }
+            else { dot = '🟡'; msg = 'широковато — подходит ' + n + ', можно сузить'; }
+            el.textContent = dot + ' ' + msg;
+          })
+          .catch(function () { el.textContent = ''; });
+      }, 350);
+    }
+
+    // применить черновик фильтров (от ИИ) к форме — через те же обработчики
+    function applyFields(f) {
+      ['max_km', 'min_hours', 'max_hours', 'max_age_days'].forEach(function (k) {
+        var v = (f[k] || '').toString().trim();
+        setChips(k, v ? v.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : []);
+      });
+      ['category', 'employment_type', 'brand', 'regions'].forEach(function (k) {
+        var v = (f[k] || '').toString().trim();
+        setSelect(k, v ? v.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : []);
+      });
+      setSelect('age', f.age ? [f.age] : []);
+      setText('cities', f.cities || '');
+      setText('keywords', f.keywords || '');
+      setText('exclude_keywords', f.exclude_keywords || '');
+      renderSummary(); refreshStatus();
+    }
+
+    // ——— ИИ: «заполнить по описанию» ———
+    var aiBtn = document.getElementById('apAiBtn');
+    if (aiBtn) aiBtn.addEventListener('click', function () {
+      var ta = document.getElementById('apAiText'), st = document.getElementById('apAiStatus');
+      var text = ((ta && ta.value) || '').trim();
+      if (!text) { if (st) st.textContent = 'Напиши пару слов, что ищешь.'; return; }
+      aiBtn.disabled = true; if (st) st.textContent = 'ИИ думает…';
+      fetch('/api/autopilot/ai_suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          aiBtn.disabled = false;
+          if (!d || !d.ok) { if (st) st.textContent = (d && d.error) || 'Не вышло.'; return; }
+          applyFields(d.fields || {});
+          if (st) st.textContent = d.explanation ? ('Готово: ' + d.explanation + ' Проверь и сохрани.') : 'Готово — проверь поля и сохрани.';
+        })
+        .catch(function () { aiBtn.disabled = false; if (st) st.textContent = 'Ошибка связи.'; });
+    });
+
+    // пересчитывать сводку и светофор после любого изменения полей формы
     var pending = false;
-    function schedule() { if (pending) return; pending = true; setTimeout(function () { pending = false; renderSummary(); }, 0); }
+    function schedule() { if (pending) return; pending = true; setTimeout(function () { pending = false; renderSummary(); refreshStatus(); }, 0); }
     form.addEventListener('click', schedule, true);
     form.addEventListener('input', schedule, true);
-    renderSummary();
+    renderSummary(); refreshStatus();
   })();
 </script>
 <script>
