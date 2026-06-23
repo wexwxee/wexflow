@@ -198,7 +198,7 @@
     font-size:13px; font-weight:650; line-height:1; transition:border-color .12s, color .12s, background .12s; }
   .ap-preset:hover { border-color:var(--accent); color:var(--txt-strong);
     background:color-mix(in srgb, var(--accent) 9%, transparent); }
-  .ap-preset .ap-preset-emoji { font-size:15px; }
+  .ap-preset .ic { opacity:.92; }
   .ap-preset.reset { color:var(--muted); }
   /* живая сводка человеческим языком */
   .ap-summary { margin:14px 0 2px; padding:12px 14px; border-radius:11px;
@@ -523,10 +523,10 @@
 
     <label class="lbl" style="margin-bottom:6px;display:block;">Режим работы</label>
     <div class="ap-mode" id="apMode">
-      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='off' else '' }}" data-mode="off">⏸️<span>Выключен</span></button>
-      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='notify' else '' }}" data-mode="notify">🔔<span>Уведомлять</span></button>
-      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='telegram' else '' }}" data-mode="telegram">💬<span>Спрашивать в Telegram</span></button>
-      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='auto' else '' }}" data-mode="auto">⚡<span>Автоотправка</span></button>
+      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='off' else '' }}" data-mode="off">{{ ic.i('pause', 20) }}<span>Выключен</span></button>
+      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='notify' else '' }}" data-mode="notify">{{ ic.i('bell', 20) }}<span>Уведомлять</span></button>
+      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='telegram' else '' }}" data-mode="telegram">{{ ic.i('message', 20) }}<span>Спрашивать в Telegram</span></button>
+      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='auto' else '' }}" data-mode="auto">{{ ic.i('zap', 20) }}<span>Автоотправка</span></button>
     </div>
     <div class="ap-hint" id="apModeHint" style="margin-bottom:4px;"></div>
     <div class="ap-hint" style="margin-bottom:2px;">Главный переключатель. Ниже — фильтры (что искать), а детали выбранного режима (Telegram-статус, лимиты автоотправки) — в блоках ниже на странице.</div>
@@ -597,23 +597,23 @@
         <span class="hint">— нажми шаблон, и поля заполнятся сами. Потом можно подправить вручную.</span>
       </span>
       <div class="ap-preset-row" id="apPresets">
-        <button type="button" class="ap-preset" data-preset="near"><span class="ap-preset-emoji">🏠</span>Подработка рядом</button>
-        <button type="button" class="ap-preset" data-preset="teen"><span class="ap-preset-emoji">🎓</span>Школьник / до 18</button>
-        <button type="button" class="ap-preset" data-preset="full"><span class="ap-preset-emoji">💼</span>Полная ставка</button>
-        <button type="button" class="ap-preset" data-preset="evening"><span class="ap-preset-emoji">🌙</span>Вечер и выходные</button>
-        <button type="button" class="ap-preset reset" data-preset="reset"><span class="ap-preset-emoji">🧹</span>Сбросить фильтры</button>
+        <button type="button" class="ap-preset" data-preset="near">{{ ic.i('home', 16) }}Подработка рядом</button>
+        <button type="button" class="ap-preset" data-preset="teen">{{ ic.i('cap', 16) }}Школьник / до 18</button>
+        <button type="button" class="ap-preset" data-preset="full">{{ ic.i('briefcase', 16) }}Полная ставка</button>
+        <button type="button" class="ap-preset" data-preset="evening">{{ ic.i('moon', 16) }}Вечер и выходные</button>
+        <button type="button" class="ap-preset reset" data-preset="reset">{{ ic.i('broom', 16) }}Сбросить фильтры</button>
       </div>
     </div>
 
     <!-- ИИ: заполнить фильтры по свободному описанию или резюме (только если подключён ключ) -->
     {% if ai_available %}
     <div class="ap-ai">
-      <span class="ap-ai-label">✨ Заполнить по описанию
+      <span class="ap-ai-label">{{ ic.i('sparkles', 14) }} Заполнить по описанию
         <span class="hint">— напиши словами или вставь резюме, ИИ предложит фильтры. Применит черновик — проверишь и сохранишь.</span>
       </span>
       <textarea id="apAiText" rows="2" placeholder="напр.: ищу подработку кассиром рядом с домом, 15–20 часов в неделю, можно вечером и по выходным"></textarea>
       <div class="ap-ai-row">
-        <button type="button" class="ap-ai-btn" id="apAiBtn">✨ Предложить фильтры</button>
+        <button type="button" class="ap-ai-btn" id="apAiBtn">{{ ic.i('sparkles', 14) }} Предложить фильтры</button>
         <span class="ap-ai-status" id="apAiStatus"></span>
       </div>
     </div>
@@ -774,7 +774,7 @@
         <div class="suggest-menu"></div>
         <div class="ap-chips ap-city-presets" data-csv-chip-for="cities">
           <span class="ap-chips-label">Быстро добавить</span>
-          {% if home_city %}<button type="button" class="ap-chip ap-chip-home" data-val="{{ home_city }}">📍 Мой город: {{ home_city }}</button>{% endif %}
+          {% if home_city %}<button type="button" class="ap-chip ap-chip-home" data-val="{{ home_city }}">{{ ic.i('pin', 12) }} Мой город: {{ home_city }}</button>{% endif %}
           <button type="button" class="ap-chip" data-val="København">København</button>
           <button type="button" class="ap-chip" data-val="Aarhus">Aarhus</button>
           <button type="button" class="ap-chip" data-val="Odense">Odense</button>
