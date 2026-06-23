@@ -1129,7 +1129,7 @@ def _autopilot_profiles_summary(profiles: list[dict]) -> list[dict]:
         exclude = [p.get("exclude_brands"), p.get("exclude_cities"), p.get("exclude_keywords")]
         if any(exclude):
             parts.append("есть исключения")
-        name = (p.get("name") or "Правило") + ("" if p.get("enabled", True) else " · выкл")
+        name = (p.get("name") or "Набор") + ("" if p.get("enabled", True) else " · выкл")
         rows.append({"label": name, "value": "; ".join(parts) or "без ограничений"})
     return rows
 
@@ -1253,7 +1253,7 @@ def _settings_context(
     ap_cities, ap_regions = _autopilot_geo_options(ap_view)
     titles = {
         "salling": ("Salling", "Логин, документы, домашний адрес и сброс входа"),
-        "autopilot": ("Автопилот", "Правила подбора, режим работы и автоотправка"),
+        "autopilot": ("Автопилот", "Наборы фильтров, режим работы и автоотправка"),
         "telegram": ("Telegram", "Статус @wexflowbot, проверка и ручная отправка текущих"),
         "overview": ("Настройки", "Короткая карта управления WexFlow"),
     }
@@ -1491,6 +1491,19 @@ def autopilot_save(
         except (ValueError, TypeError):
             return default
 
+    def _text_csv(v: str) -> str:
+        out: list[str] = []
+        seen: set[str] = set()
+        for p in str(v or "").split(","):
+            item = re.sub(r"\s+", " ", p.strip(" ,;"))
+            if not item:
+                continue
+            key = item.casefold()
+            if key not in seen:
+                seen.add(key)
+                out.append(item)
+        return ", ".join(out)
+
     # ФИЛЬТРЫ пишем в выбранный профиль (режим/лимиты/расписание — глобальные).
     autopilot.save_profile_filters(profile_id, {
         "max_km": _num_csv(max_km),
@@ -1500,13 +1513,13 @@ def autopilot_save(
         "category": category.strip(),
         "employment_type": employment_type.strip(),
         "age": age.strip(),
-        "keywords": keywords.strip(),
+        "keywords": _text_csv(keywords),
         "brand": brand.strip(),
-        "cities": cities.strip(),
+        "cities": _text_csv(cities),
         "regions": regions.strip(),
         "exclude_brands": exclude_brands.strip(),
-        "exclude_cities": exclude_cities.strip(),
-        "exclude_keywords": exclude_keywords.strip(),
+        "exclude_cities": _text_csv(exclude_cities),
+        "exclude_keywords": _text_csv(exclude_keywords),
     })
     autopilot.save_rule({"active_from": _hour(active_from, 0), "active_to": _hour(active_to, 24)})
     # «с этого момента»: текущие совпадения считаем уже виденными (без спама о старых).
@@ -1517,8 +1530,9 @@ def autopilot_save(
 
 
 @app.post("/autopilot/profile/add")
-def autopilot_profile_add(name: str = Form("Новое правило")):
-    pid = autopilot.add_profile((name or "").strip() or "Новое правило")
+def autopilot_profile_add(name: str = Form("")):
+    default_name = f"Набор {len(autopilot.ensure_profiles()) + 1}"
+    pid = autopilot.add_profile((name or "").strip() or default_name)
     return RedirectResponse(f"/settings/autopilot?profile={pid}", status_code=303)
 
 
@@ -1584,7 +1598,7 @@ def autopilot_autosubmit(
             autopilot.save_rule({"daily_limit": limit})  # лимит сохраним, охват — нет
             return _redirect_back(
                 request, "/settings/autopilot",
-                error=f"Охват «все подходящие» сейчас нельзя: под правило подходит {pool} "
+                error=f"Охват «все подходящие» сейчас нельзя: под набор фильтров подходит {pool} "
                       f"(предел {autopilot.SCOPE_ALL_GUARD}). Сузь фильтры или оставь «только новые».",
             )
 

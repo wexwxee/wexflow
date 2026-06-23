@@ -58,7 +58,7 @@
   .hub-link.warn { border-color: color-mix(in srgb, var(--red) 40%, var(--glass-line)); color: var(--red); }
   .hub-link:disabled { opacity: .55; cursor: not-allowed; }
 
-  /* ── нижняя сетка: правило + журнал ── */
+  /* ── нижняя сетка: набор фильтров + журнал ── */
   .apx-grid { display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 16px; align-items: start; }
   @media (max-width: 760px) { .apx-grid { grid-template-columns: 1fr; } .ap-stats { grid-template-columns: repeat(2, 1fr); } }
   .apx-card { border: 1px solid var(--glass-line); border-radius: 12px; background: var(--card); box-shadow: var(--shadow-sm); padding: 16px 18px; display: grid; gap: 12px; }
@@ -111,7 +111,7 @@
       <button class="hub-link" id="apPause" type="button">Пауза</button>
       <button class="hub-link" id="apScanNow" type="button">{{ ic.i('refresh', 14) }} Проверить сейчас</button>
       <button class="hub-link" type="button" onclick="openAutopilotMonitor()">{{ ic.i('zap', 14) }} Отдельным окном</button>
-      <a class="hub-link" href="/settings/autopilot">{{ ic.i('sliders', 14) }} Настройки правила</a>
+      <a class="hub-link" href="/settings/autopilot">{{ ic.i('sliders', 14) }} Настройки наборов</a>
     </div>
   </section>
 
@@ -125,7 +125,7 @@
         {% endfor %}
       </ul>
       {% else %}
-      <p class="apx-muted">Пока без ограничений — под правило подходит любая вакансия. Сузь фильтры в настройках, чтобы автопилот искал точнее.</p>
+      <p class="apx-muted">Пока без ограничений — под набор фильтров подходит любая вакансия. Сузь фильтры в настройках, чтобы автопилот искал точнее.</p>
       {% endif %}
       <a class="hub-link" href="/settings/autopilot">{{ ic.i('edit', 14) }} Изменить в настройках</a>
     </section>

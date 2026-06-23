@@ -340,11 +340,11 @@ def get_profiles(rule: dict | None = None) -> list[dict]:
     if profs:
         return profs
     legacy = {k: r.get(k, DEFAULT_RULE.get(k)) for k in _FILTER_FIELDS}
-    legacy.update({"id": "default", "name": "Правило 1", "enabled": True})
+    legacy.update({"id": "default", "name": "Набор 1", "enabled": True})
     return [legacy]
 
 
-def _new_profile(name: str = "Новое правило") -> dict:
+def _new_profile(name: str = "Новый набор") -> dict:
     p = {k: DEFAULT_RULE.get(k) for k in _FILTER_FIELDS}
     p.update({"id": uuid.uuid4().hex[:8], "name": name, "enabled": True})
     return p
@@ -356,7 +356,19 @@ def ensure_profiles() -> list[dict]:
     r = get_rule()
     if not r.get("profiles"):
         save_rule({"profiles": get_profiles(r)})
-    return get_rule().get("profiles") or []
+    profs = get_rule().get("profiles") or []
+    changed = False
+    for p in profs:
+        if p.get("name") == "Правило 1":
+            p["name"] = "Набор 1"
+            changed = True
+        elif p.get("name") == "Новое правило":
+            p["name"] = "Новый набор"
+            changed = True
+    if changed:
+        save_rule({"profiles": profs})
+        profs = get_rule().get("profiles") or []
+    return profs
 
 
 def get_profile(pid: str) -> dict:
@@ -364,10 +376,10 @@ def get_profile(pid: str) -> dict:
     for p in profs:
         if p.get("id") == pid:
             return p
-    return profs[0] if profs else _new_profile("Правило 1")
+    return profs[0] if profs else _new_profile("Набор 1")
 
 
-def add_profile(name: str = "Новое правило") -> str:
+def add_profile(name: str = "Новый набор") -> str:
     profs = list(ensure_profiles())
     p = _new_profile(name)
     profs.append(p)
@@ -377,8 +389,8 @@ def add_profile(name: str = "Новое правило") -> str:
 
 def delete_profile(pid: str) -> None:
     profs = [p for p in ensure_profiles() if p.get("id") != pid]
-    if not profs:                       # хотя бы одно правило всегда остаётся
-        profs = [_new_profile("Правило 1")]
+    if not profs:                       # хотя бы один набор всегда остаётся
+        profs = [_new_profile("Набор 1")]
     save_rule({"profiles": profs})
 
 
@@ -386,7 +398,7 @@ def rename_profile(pid: str, name: str) -> None:
     profs = ensure_profiles()
     for p in profs:
         if p.get("id") == pid:
-            p["name"] = (name or "").strip() or p.get("name") or "Правило"
+            p["name"] = (name or "").strip() or p.get("name") or "Набор"
     save_rule({"profiles": profs})
 
 
@@ -403,7 +415,7 @@ def save_profile_filters(pid: str, fields: dict) -> None:
     profs = ensure_profiles()
     target = next((p for p in profs if p.get("id") == pid), None) or (profs[0] if profs else None)
     if target is None:
-        target = _new_profile("Правило 1")
+        target = _new_profile("Набор 1")
         profs.append(target)
     target.update({k: fields.get(k, target.get(k, DEFAULT_RULE.get(k))) for k in _FILTER_FIELDS})
     save_rule({"profiles": profs})

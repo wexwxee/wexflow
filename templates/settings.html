@@ -127,6 +127,23 @@
     border-radius:999px; padding:5px 12px; font-size:12.5px; cursor:pointer; transition:.12s; }
   .ap-chip:hover { border-color:var(--hover-line); color:var(--txt); }
   .ap-chip.active { background:var(--accent); color:#07100b; border-color:var(--accent); font-weight:650; }
+  .ap-rule-help {
+    display:grid; gap:8px; margin:10px 0 12px; padding:12px 14px;
+    border:1px solid var(--glass-line); border-radius:9px; background:var(--glass);
+    color:var(--muted); font-size:13px; line-height:1.45;
+  }
+  .ap-rule-help strong { color:var(--txt-strong); }
+  .ap-rule-help .ap-rule-flow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .ap-rule-step {
+    display:inline-flex; align-items:center; min-height:26px; padding:4px 9px;
+    border:1px solid var(--glass-line); border-radius:999px; background:var(--chip-bg);
+    color:var(--txt); font-size:12px; font-weight:650;
+  }
+  .ap-rule-arrow { color:var(--muted); font-size:12px; }
+  .ap-csv-field.suggest-open { margin-bottom:198px; }
+  .ap-csv-field .suggest-menu { max-height:176px; }
+  .ap-city-presets { margin-top:8px; }
+  .ap-city-presets .ap-chip { padding:5px 10px; }
   /* автоотправка: «на свой страх и риск» + раскрывающийся FAQ «что может произойти» */
   .ap-risk { border:1px solid var(--err-line); background:color-mix(in srgb, var(--err-txt) 8%, transparent);
     border-radius:9px; padding:11px 13px; margin:12px 0; font-size:13px; line-height:1.5; }
@@ -156,7 +173,7 @@
   .ap-mode-opt.on { border-color:var(--accent); color:var(--accent);
     background:color-mix(in srgb, var(--accent) 12%, transparent); }
   .ap-mode-opt.busy { opacity:.55; pointer-events:none; }
-  /* профили подбора (несколько правил) */
+  /* профили подбора (несколько наборов фильтров) */
   .ap-profiles-wrap { margin:6px 0 10px; padding-bottom:10px; border-bottom:1px dashed var(--glass-line); }
   .ap-profiles { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0; }
   .ap-prof { display:inline-flex; align-items:center; padding:6px 12px; border-radius:999px;
@@ -457,7 +474,7 @@
     <h2>{{ ic.i('zap', 17) }} Автопилот подбора
       {% if show_billing() %}<span class="tier-pill pro">Pro</span>{% endif %}
     </h2>
-    <p class="hint">WexFlow следит за новыми вакансиями по твоим правилам и присылает уведомление, когда появляется подходящая. Подачу по-прежнему подтверждаешь ты. Работает, пока приложение запущено.</p>
+    <p class="hint">WexFlow следит за новыми вакансиями по твоим наборам фильтров и присылает уведомление, когда появляется подходящая. Подачу по-прежнему подтверждаешь ты. Работает, пока приложение запущено.</p>
 
     <div class="ap-risk">
       ⚠ <b>Про автоотправку.</b> Поиск и подготовка вакансий — безопасны, ничего не отправляют сами. Но если ниже включить <b>автоотправку</b>, WexFlow будет сам отправлять заявки от твоего имени <b>без подтверждения и без возможности отозвать</b>. Включай её только когда профиль, документы и фильтры точно верны — <b>на свой страх и риск</b>.
@@ -480,7 +497,7 @@
         off:'Автопилот выключен — не ищет и ничего не делает.',
         notify:'Ищет подходящие и присылает уведомление. Подаёшь сам.',
         telegram:'Новые вакансии будут приходить в Telegram карточками. Текущие подходящие можно прислать кнопкой в блоке Telegram ниже.',
-        auto:'Сам отправляет подходящие по правилам (с лимитами). Без подтверждения — на свой страх и риск.'};
+        auto:'Сам отправляет подходящие по наборам фильтров (с лимитами). Без подтверждения — на свой страх и риск.'};
       function setHint(m){ if(hint) hint.textContent=texts[m]||''; }
       var cur=box.querySelector('.ap-mode-opt.on'); setHint(cur?cur.dataset.mode:'off');
       box.querySelectorAll('.ap-mode-opt').forEach(function(b){
@@ -499,31 +516,43 @@
     <!-- Профили подбора: наборы фильтров под цель (объединяются) -->
     <input type="hidden" name="profile_id" value="{{ autopilot_profile.id }}">
     <div class="ap-profiles-wrap">
-      <label class="lbl" style="display:block;">Правила подбора
-        <span class="hint" style="font-weight:400;">— наборы фильтров под разные цели; вакансия подходит, если совпала с любым включённым</span>
+      <label class="lbl" style="display:block;">Наборы фильтров
+        <span class="hint" style="font-weight:400;">— раньше назывались правилами; можно сделать отдельный набор под каждую цель</span>
       </label>
+      <div class="ap-rule-help">
+        <div><strong>Что такое набор фильтров?</strong> Это один сценарий поиска: например «рядом с домом», «только выходные» или «любой Netto». Вакансия считается подходящей, если совпала хотя бы с одним включённым набором.</div>
+        <div class="ap-rule-flow" aria-label="Как WexFlow проверяет наборы фильтров">
+          <span class="ap-rule-step">1. Берёт вакансии</span>
+          <span class="ap-rule-arrow">→</span>
+          <span class="ap-rule-step">2. Проверяет каждый набор</span>
+          <span class="ap-rule-arrow">→</span>
+          <span class="ap-rule-step">3. Убирает исключения</span>
+          <span class="ap-rule-arrow">→</span>
+          <span class="ap-rule-step">4. Шлёт подходящие</span>
+        </div>
+      </div>
       <div class="ap-profiles">
         {% for p in autopilot_profiles %}
         <a class="ap-prof {{ 'on' if p.id == autopilot_profile.id else '' }} {{ 'off' if not p.enabled else '' }}"
            href="?profile={{ p.id }}#autopilot">{{ p.name }}{% if not p.enabled %} · выкл{% endif %}</a>
         {% endfor %}
-        <button class="ap-prof add" type="submit" form="profAddForm">+ правило</button>
+        <button class="ap-prof add" type="submit" form="profAddForm">+ набор</button>
       </div>
       <div class="ap-prof-bar">
-        <input type="text" form="profRenameForm" name="name" value="{{ autopilot_profile.name }}" maxlength="40" style="max-width:200px;">
+        <input type="text" form="profRenameForm" name="name" value="{{ autopilot_profile.name }}" maxlength="40" placeholder="например: рядом с домом" style="max-width:240px;">
         <button type="submit" form="profRenameForm">Переименовать</button>
         <button type="submit" form="profToggleForm">{{ 'Выключить' if autopilot_profile.enabled else 'Включить' }}</button>
         {% if autopilot_profiles|length > 1 %}
         <button type="submit" form="profDeleteForm" style="color:var(--err-txt);"
-                onclick="return confirm('Удалить правило «{{ autopilot_profile.name }}»?')">Удалить</button>
+                onclick="return confirm('Удалить набор «{{ autopilot_profile.name }}»?')">Удалить</button>
         {% endif %}
-        <span class="hint" style="margin:0;">Под это правило подходит: <b>{{ autopilot_profile_count }}</b></span>
+        <span class="hint" style="margin:0;">Под выбранный набор подходит: <b>{{ autopilot_profile_count }}</b></span>
       </div>
     </div>
 
     <div class="grid2">
       <div class="field">
-        <label class="lbl">Не дальше от дома</label>
+        <label class="lbl">Расстояние от дома</label>
         <input type="hidden" name="max_km" value="{{ autopilot.max_km or '' }}">
         <input type="number" min="0" step="1" data-chips-custom="max_km" placeholder="своё число, напр. 7">
         <div class="ap-chips" data-chips-for="max_km" data-chips-unit=" км">
@@ -534,10 +563,10 @@
           <button type="button" class="ap-chip" data-val="25">25 км</button>
           <button type="button" class="ap-chip" data-val="">без ограничения</button>
         </div>
-        <div class="ap-hint">Можно отметить несколько — будет выбран самый дальний из вариантов. Своё число добавляется чипом. Пусто = без ограничения.</div>
+        <div class="ap-hint">WexFlow берёт вакансии не дальше выбранного значения. Если выбрать 5 и 10 км, действует 10 км. Пусто = любое расстояние.</div>
       </div>
       <div class="field">
-        <label class="lbl">Часов в неделю, не меньше</label>
+        <label class="lbl">Минимум часов в неделю</label>
         <input type="hidden" name="min_hours" value="{{ autopilot.min_hours or '' }}">
         <input type="number" min="0" step="1" data-chips-custom="min_hours" placeholder="своё число, напр. 12">
         <div class="ap-chips" data-chips-for="min_hours" data-chips-unit=" ч">
@@ -548,10 +577,10 @@
           <button type="button" class="ap-chip" data-val="30">30 ч</button>
           <button type="button" class="ap-chip" data-val="">любые</button>
         </div>
-        <div class="ap-hint">Можно отметить несколько — будет выбран самый мягкий порог (наименьшие часы). Если часы в вакансии не указаны — она всё равно попадёт.</div>
+        <div class="ap-hint">Нижняя граница. Если выбрать 8 и 15 ч, действует 8 ч. Если часы не указаны в вакансии, она всё равно попадёт.</div>
       </div>
       <div class="field">
-        <label class="lbl">Свежесть — не старше</label>
+        <label class="lbl">Вакансия не старше</label>
         <input type="hidden" name="max_age_days" value="{{ autopilot.max_age_days or '' }}">
         <input type="number" min="0" step="1" data-chips-custom="max_age_days" placeholder="своё число, напр. 10">
         <div class="ap-chips" data-chips-for="max_age_days" data-chips-unit=" дн">
@@ -562,10 +591,10 @@
           <button type="button" class="ap-chip" data-val="30">30 дней</button>
           <button type="button" class="ap-chip" data-val="">любой возраст</button>
         </div>
-        <div class="ap-hint">Можно отметить несколько — будет выбран самый широкий срок (наибольшее число дней). Если у вакансии нет даты — она всё равно попадёт.</div>
+        <div class="ap-hint">Фильтр по дате публикации. Если выбрать 7 и 30 дней, действует 30 дней. Если даты нет, вакансия всё равно попадёт.</div>
       </div>
       <div class="field">
-        <label class="lbl">Должность (категория)</label>
+        <label class="lbl">Тип работы</label>
         {% set sel_cat = autopilot.category.split(',') if autopilot.category else [] %}
         <div class="ap-select" data-multi data-empty="Любая должность">
           <input type="hidden" name="category" value="{{ autopilot.category or '' }}">
@@ -580,7 +609,7 @@
             {% endfor %}
           </div>
         </div>
-        <div class="ap-hint">Можно выбрать несколько — найдёт по любой из них. Те же категории, что и фильтр на главной.</div>
+        <div class="ap-hint">Категория из Salling. Несколько вариантов работают как «или»: подойдёт любая выбранная категория.</div>
       </div>
       <div class="field">
         <label class="lbl">Занятость</label>
@@ -598,9 +627,10 @@
             {% endfor %}
           </div>
         </div>
+        <div class="ap-hint">Тип занятости из вакансии. Пусто = любая занятость.</div>
       </div>
       <div class="field">
-        <label class="lbl">Возраст</label>
+        <label class="lbl">Возрастной допуск</label>
         {% set sel_age = autopilot.age.split(',') if autopilot.age else [] %}
         <div class="ap-select" data-multi data-empty="Любой">
           <input type="hidden" name="age" value="{{ autopilot.age or '' }}">
@@ -635,7 +665,7 @@
         <div class="ap-hint">Можно выбрать несколько брендов сразу. Пусто = все бренды.</div>
       </div>
       <div class="field">
-        <label class="lbl">Часов в неделю, не больше</label>
+        <label class="lbl">Максимум часов в неделю</label>
         <input type="hidden" name="max_hours" value="{{ autopilot.max_hours or '' }}">
         <input type="number" min="0" step="1" data-chips-custom="max_hours" placeholder="своё число, напр. 20">
         <div class="ap-chips" data-chips-for="max_hours" data-chips-unit=" ч">
@@ -648,7 +678,7 @@
         <div class="ap-hint">Верхняя граница — для подработки. Часы не указаны в вакансии — она всё равно попадёт. Пусто = без ограничения.</div>
       </div>
       <div class="field">
-        <label class="lbl">Регион</label>
+        <label class="lbl">Регион Дании</label>
         {% set sel_region = autopilot.regions.split(',') if autopilot.regions else [] %}
         <div class="ap-select" data-multi data-empty="Любой регион">
           <input type="hidden" name="regions" value="{{ autopilot.regions or '' }}">
@@ -665,25 +695,29 @@
         </div>
         <div class="ap-hint">Можно выбрать несколько. Пусто = любой регион.</div>
       </div>
-      <div class="field ap-field-wide">
-        <label class="lbl">Город (необязательно)</label>
-        <input type="text" name="cities" value="{{ autopilot.cities or '' }}" list="apCityList" placeholder="напр. København, Aarhus">
-        <div class="ap-hint">Несколько через запятую — найдёт по любому. Достаточно части названия: «København» захватит все районы. Пусто = любой город.</div>
+      <div class="field ap-field-wide ap-csv-field" data-suggest='{{ autopilot_cities|tojson }}' data-suggest-kind="city" data-suggest-mode="csv">
+        <label class="lbl">Город или район</label>
+        <input type="text" name="cities" value="{{ autopilot.cities or '' }}" placeholder="любой текст: København, Aarhus, Odense" autocomplete="off" spellcheck="false">
+        <div class="suggest-menu"></div>
+        <div class="ap-chips ap-city-presets" data-csv-chip-for="cities">
+          <span class="ap-chips-label">Быстро добавить</span>
+          <button type="button" class="ap-chip" data-val="København">København</button>
+          <button type="button" class="ap-chip" data-val="Aarhus">Aarhus</button>
+          <button type="button" class="ap-chip" data-val="Odense">Odense</button>
+          <button type="button" class="ap-chip" data-val="Frederiksberg">Frederiksberg</button>
+        </div>
+        <div class="ap-hint">Это не закрытый список: можно написать свой город, район или часть названия. Несколько значений через запятую. «København» найдёт København K, N, SV и другие районы. Пусто = любой город.</div>
       </div>
       <div class="field ap-field-wide">
-        <label class="lbl">Ещё слова в названии (необязательно)</label>
+        <label class="lbl">Слова, которые должны быть в вакансии</label>
         <input type="text" name="keywords" value="{{ autopilot.keywords or '' }}" placeholder="напр. weekend, student, ungarbejder">
-        <div class="ap-hint">Дополнительно к выбору выше. Несколько через запятую — найдёт по любому. Русские слова WexFlow переведёт на датский. Пусто = не учитывать.</div>
+        <div class="ap-hint">Дополнительный фильтр по названию, описанию, городу или улице. Несколько через запятую работают как «или». Русские слова WexFlow попробует перевести на датский. Пусто = не учитывать.</div>
       </div>
     </div>
 
-    <datalist id="apCityList">
-      {% for c in autopilot_cities %}<option value="{{ c }}"></option>{% endfor %}
-    </datalist>
-
     <!-- Исключения: «не предлагать» -->
     <div class="ap-exclude">
-      <div class="ap-exclude-head">{{ ic.i('x', 13) }} Исключения — что НЕ предлагать</div>
+      <div class="ap-exclude-head">{{ ic.i('x', 13) }} Исключения — что не предлагать даже при совпадении</div>
       <div class="grid2">
         <div class="field">
           <label class="lbl">Не предлагать бренды</label>
@@ -702,15 +736,16 @@
             </div>
           </div>
         </div>
-        <div class="field">
+        <div class="field ap-csv-field" data-suggest='{{ autopilot_cities|tojson }}' data-suggest-kind="city" data-suggest-mode="csv">
           <label class="lbl">Не предлагать города</label>
-          <input type="text" name="exclude_cities" value="{{ autopilot.exclude_cities or '' }}" list="apCityList" placeholder="напр. Aalborg, Esbjerg">
-          <div class="ap-hint">Через запятую. Часть названия тоже работает.</div>
+          <input type="text" name="exclude_cities" value="{{ autopilot.exclude_cities or '' }}" placeholder="любой текст: Aalborg, Esbjerg" autocomplete="off" spellcheck="false">
+          <div class="suggest-menu"></div>
+          <div class="ap-hint">Можно написать свой город или часть названия. Несколько через запятую.</div>
         </div>
         <div class="field ap-field-wide">
-          <label class="lbl">Не предлагать, если в названии есть слова</label>
+          <label class="lbl">Не предлагать, если есть слова</label>
           <input type="text" name="exclude_keywords" value="{{ autopilot.exclude_keywords or '' }}" placeholder="напр. nat, weekend, leder">
-          <div class="ap-hint">Если хоть одно слово встретится в названии или описании — вакансия не попадёт. Через запятую.</div>
+          <div class="ap-hint">Если хоть одно слово встретится в названии или описании, вакансия не попадёт. Через запятую.</div>
         </div>
       </div>
     </div>
@@ -729,7 +764,7 @@
       <div class="ap-hint">Карточки в Telegram и автоподача — только в эти часы (поиск идёт всегда). 0 и 24 (или одинаковые) = круглосуточно.</div>
     </div>
 
-    <p class="hint" style="margin-top:10px;">Сейчас под это правило подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
+    <p class="hint" style="margin-top:10px;">Сейчас по всем включённым наборам подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
     <p class="hint" style="margin-top:-4px;">Для Telegram сейчас: можно прислать текущих <b>{{ autopilot_tg_stats.eligible_current }}</b>, автоматически новых <b>{{ autopilot_tg_stats.eligible_new }}</b>, ждут ответа <b>{{ autopilot_tg_stats.pending }}</b>.</p>
 
     <div class="actions">
@@ -849,7 +884,7 @@
     <h2>{{ ic.i('zap', 16) }} Настройки автоотправки
       {% if show_billing() %}<span class="tier-pill max">Max</span>{% endif %}
     </h2>
-    <p class="hint">Режим «⚡ Автоотправка» включён вверху — WexFlow сам отправляет подходящие по твоим правилам. Защита: дневной лимит и не больше <b>{{ autopilot_max_per_scan }} за один проход</b>. Уже поданные вакансии не трогаются.</p>
+    <p class="hint">Режим «⚡ Автоотправка» включён вверху — WexFlow сам отправляет подходящие по твоим наборам фильтров. Защита: дневной лимит и не больше <b>{{ autopilot_max_per_scan }} за один проход</b>. Уже поданные вакансии не трогаются.</p>
     <p class="hint" style="color:var(--err-txt);">Работает только пока приложение запущено, а вход в Salling активен.</p>
 
     <div class="ap-risk">
@@ -1107,6 +1142,41 @@
       inp.addEventListener('input', sync);
       sync();
     });
+    // текстовые CSV-поля: быстрые чипы добавляют/убирают отдельные значения
+    document.querySelectorAll('#autopilot [data-csv-chip-for]').forEach(function (box) {
+      var inp = input(box.dataset.csvChipFor);
+      if (!inp) return;
+      function parts() {
+        return (inp.value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      }
+      function setParts(list) {
+        var out = [];
+        list.forEach(function (item) {
+          var value = (item || '').trim();
+          if (value && out.map(function (x) { return x.toLowerCase(); }).indexOf(value.toLowerCase()) < 0) out.push(value);
+        });
+        inp.value = out.join(', ');
+        inp.dispatchEvent(new Event('input', { bubbles:true }));
+      }
+      function sync() {
+        var have = parts().map(function (s) { return s.toLowerCase(); });
+        box.querySelectorAll('.ap-chip[data-val]').forEach(function (chip) {
+          chip.classList.toggle('active', have.indexOf((chip.dataset.val || '').toLowerCase()) >= 0);
+        });
+      }
+      box.querySelectorAll('.ap-chip[data-val]').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          var list = parts();
+          var low = (chip.dataset.val || '').toLowerCase();
+          var idx = list.map(function (s) { return s.toLowerCase(); }).indexOf(low);
+          if (idx >= 0) list.splice(idx, 1); else list.push(chip.dataset.val);
+          setParts(list);
+          sync();
+        });
+      });
+      inp.addEventListener('input', sync);
+      sync();
+    });
   })();
 
   // двойное подтверждение перед включением автоотправки (необратимо)
@@ -1116,7 +1186,7 @@
     var scope = (form.querySelector('#apScope') || {}).value;
     if (!confirm('ВНИМАНИЕ: WexFlow будет САМ отправлять заявки работодателю — без твоего участия и без подтверждения каждой. Это необратимо. Включить автоотправку?')) return false;
     if (scope === 'all') {
-      if (!confirm('Охват «ВСЕ подходящие»: WexFlow будет постепенно подавать на ВСЕ вакансии под твоё правило (а не только новые), по дневному лимиту. Уверен? Безопаснее «только новые».')) return false;
+      if (!confirm('Охват «ВСЕ подходящие»: WexFlow будет постепенно подавать на ВСЕ вакансии под выбранные наборы фильтров (а не только новые), по дневному лимиту. Уверен? Безопаснее «только новые».')) return false;
     }
     if (!confirm('Точно-точно? Заявки уйдут под твоим именем автоматически (в пределах дневного лимита). Включаем?')) return false;
     return true;
@@ -1128,6 +1198,7 @@
     const input = field.querySelector('input');
     const menu = field.querySelector('.suggest-menu');
     const items = JSON.parse(field.dataset.suggest || '[]');
+    const csvMode = field.dataset.suggestMode === 'csv';
     let active = -1;
 
     function fold(value) {
@@ -1149,17 +1220,46 @@
         .replace(/'/g, '&#39;');
     }
 
+    function csvParts() {
+      return input.value.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+
+    function currentQuery() {
+      if (!csvMode) return input.value.trim();
+      const beforeCursor = input.value.slice(0, input.selectionStart || input.value.length);
+      const chunks = beforeCursor.split(',');
+      return (chunks[chunks.length - 1] || '').trim();
+    }
+
+    function applyValue(value) {
+      if (!csvMode) {
+        input.value = value;
+        return;
+      }
+      const parts = csvParts();
+      const q = currentQuery();
+      if (q && parts.length) parts[parts.length - 1] = value;
+      else parts.push(value);
+      const out = [];
+      parts.forEach((item) => {
+        const clean = String(item || '').trim();
+        if (clean && !out.some((x) => fold(x) === fold(clean))) out.push(clean);
+      });
+      input.value = out.join(', ');
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+
     function render() {
-      const q = fold(input.value.trim());
+      const q = fold(currentQuery());
       const shown = items.filter((x) => !q || fold(x).includes(q)).slice(0, 60);
       const meta = field.dataset.suggestKind === 'city'
-        ? '<div class="suggest-meta">Поиск по городам Дании</div>'
+        ? '<div class="suggest-meta">Подсказки по городам Дании. Можно ввести свой текст.</div>'
         : '<div class="suggest-meta">Выбор страны</div>';
       const body = shown.length
         ? shown.map((item, i) => `<button type="button" class="suggest-item${i === active ? ' active' : ''}" data-value="${escapeHtml(item)}">${escapeHtml(item)}</button>`).join('')
-        : '<div class="suggest-empty">Ничего не найдено, можно ввести вручную</div>';
+        : '<div class="suggest-empty">Ничего не найдено, но свой текст можно сохранить вручную</div>';
       menu.innerHTML = meta + body;
-      field.classList.toggle('suggest-open', shown.length > 0);
+      field.classList.toggle('suggest-open', input === document.activeElement);
     }
 
     input.addEventListener('focus', () => { active = -1; render(); });
@@ -1171,7 +1271,7 @@
       if (event.key === 'ArrowUp') { event.preventDefault(); active = Math.max(0, active - 1); render(); }
       if (event.key === 'Enter' && active >= 0) {
         event.preventDefault();
-        input.value = buttons[active].dataset.value;
+        applyValue(buttons[active].dataset.value);
         field.classList.remove('suggest-open');
         input.dispatchEvent(new Event('input', { bubbles:true }));
       }
@@ -1179,7 +1279,7 @@
     menu.addEventListener('click', (event) => {
       const btn = event.target.closest('.suggest-item');
       if (!btn) return;
-      input.value = btn.dataset.value;
+      applyValue(btn.dataset.value);
       field.classList.remove('suggest-open');
       input.dispatchEvent(new Event('input', { bubbles:true }));
     });

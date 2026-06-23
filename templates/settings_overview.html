@@ -104,11 +104,11 @@
         <h2>{{ ic.i('zap', 18) }} Автопилот</h2>
         <span class="arrow">→</span>
       </div>
-      <p>Правила подбора, режим работы, лимиты и автоотправка.</p>
+      <p>Наборы фильтров под разные цели, режим работы, лимиты и автоотправка.</p>
       <div class="settings-meta">
         <span class="settings-pill {{ 'ok' if autopilot.enabled else '' }}">{{ 'включён' if autopilot.enabled else 'пауза' }}</span>
         <span class="settings-pill">{{ autopilot_count }} подходит</span>
-        <span class="settings-pill">{{ autopilot_profiles|length }} правил</span>
+        <span class="settings-pill">{{ autopilot_profiles|length }} наборов</span>
       </div>
     </a>
 
