@@ -70,6 +70,7 @@
     font-size:12.5px; font-weight:650; text-decoration:none; transition:.14s;
   }
   .sec-nav a:hover { color:var(--txt-strong); border-color:var(--hover-line); }
+  .sec-nav a.active { color:#07100b; border-color:var(--accent); background:var(--accent); }
   .settings-brand { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin:18px 0 8px; }
   .settings-brand h1 { margin:0; }
   @media (max-width:640px){ .field.suggest-open { margin-bottom:166px; } }
@@ -177,8 +178,8 @@
 {{ ui.shell_start('settings') }}
 <header class="wex-topbar">
   <div class="wex-title-stack">
-    <h1>{{ ui.brand('Salling') }}</h1>
-    <span class="wex-title-meta">Логин Salling, домашний адрес и автопилот</span>
+    <h1>{{ ui.brand(settings_title) }}</h1>
+    <span class="wex-title-meta">{{ settings_meta }}</span>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
@@ -189,21 +190,20 @@
   </div>
 </header>
 <section class="wex-workbench wex-narrow">
-  <p class="sub">Настройки Salling: профиль, логин, документы, дом и автопилот.</p>
+  <p class="sub">{{ settings_meta }}. <a class="crosslink" href="/settings">Все настройки</a></p>
 
   <nav class="sec-nav">
-    <a href="#profile">{{ ic.i('sliders', 13) }} Профиль</a>
-    <a href="#login">{{ ic.i('unlock', 13) }} Логин Salling</a>
-    <a href="#documents">{{ ic.i('file', 13) }} Документы</a>
-    <a href="#home">{{ ic.i('home', 13) }} Дом</a>
-    <a href="#autopilot">{{ ic.i('zap', 13) }} Автопилот</a>
-    <a href="#tg">{{ ic.i('send', 13) }} Telegram</a>
+    <a class="{{ 'active' if settings_section == 'salling' else '' }}" href="/settings/salling">{{ ic.i('cart', 13) }} Salling</a>
+    <a class="{{ 'active' if settings_section == 'autopilot' else '' }}" href="/settings/autopilot">{{ ic.i('zap', 13) }} Автопилот</a>
+    <a class="{{ 'active' if settings_section == 'telegram' else '' }}" href="/settings/telegram">{{ ic.i('send', 13) }} Telegram</a>
+    <a href="/account#profile">{{ ic.i('user', 13) }} Аккаунт</a>
   </nav>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить в профиле: {{ missing_fields|join(', ') }}.</div>{% endif %}
   {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее (улица, город или индекс).</div>{% endif %}
 
+  {% if settings_section == 'salling' %}
   <!-- Профиль кандидата живёт в Аккаунте (общий, заполняется один раз) -->
   <div class="panel" id="profile">
     <h2>{{ ic.i('sliders', 17) }} Профиль кандидата</h2>
@@ -443,7 +443,9 @@
       });
     })();
   </script>
+  {% endif %}
 
+  {% if settings_section == 'autopilot' %}
   <!-- хелпер-формы управления профилями (вне основной формы; кнопки ссылаются через form=) -->
   <form id="profAddForm" method="post" action="/autopilot/profile/add" style="display:none;"></form>
   <form id="profRenameForm" method="post" action="/autopilot/profile/rename" style="display:none;"><input type="hidden" name="profile_id" value="{{ autopilot_profile.id }}"></form>
@@ -734,7 +736,9 @@
       <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить автопилот</button>
     </div>
   </form>
+  {% endif %}
 
+  {% if settings_section == 'telegram' %}
   <!-- Telegram: подтверждение подачи (режим «по разрешению») -->
   <style>
     #tg .tg-sec { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt);
@@ -820,7 +824,9 @@
     load();
   })();
   </script>
+  {% endif %}
 
+  {% if settings_section == 'autopilot' %}
   {% if autopilot.enabled %}
   <!-- Автоподготовка (Фаза 2) -->
   <form class="panel" method="post" action="/autopilot/prepare" style="margin-top:14px;"
@@ -925,7 +931,9 @@
   </div>
   {% endif %}
   {% endif %}
+  {% endif %}
 
+  {% if settings_section == 'salling' %}
   <!-- Управление -->
   <div class="panel" style="border-color:var(--err-line);background:var(--err-bg);">
     <h2>{{ ic.i('broom', 17) }} Управление</h2>
@@ -939,6 +947,7 @@
       </form>
     </div>
   </div>
+  {% endif %}
 </section>
 {{ ui.shell_end() }}
 {% endblock %}

@@ -424,6 +424,7 @@
 
   <!-- Профиль кандидата (общий для всех фирм; сохраняется автоматически) -->
   <form id="profileForm" class="panel" method="post" action="/account/save">
+    <span id="profile" style="position:relative;top:-90px;"></span>
     <h2>Профиль кандидата</h2>
     <p class="hint">Общие личные данные — используются всеми модулями. CV и письмо настраиваются отдельно в каждой фирме.</p>
     <div class="grid2">
@@ -531,7 +532,7 @@
     <h2>{{ ic.i('sliders', 17) }} Настройки модулей</h2>
     <p class="hint">Параметры, которые относятся к конкретному модулю.</p>
     <div class="actions">
-      <a class="crosslink" href="/settings">{{ ic.i('cart', 14) }} Настройки Salling →</a>
+      <a class="crosslink" href="/settings/salling">{{ ic.i('cart', 14) }} Настройки Salling →</a>
       <a class="crosslink" href="/__app/7eleven">{{ ic.i('store', 14) }} Модуль 7-Eleven →</a>
     </div>
   </div>

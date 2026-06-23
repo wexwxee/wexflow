@@ -36,8 +36,6 @@ import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
 import autopilot
-import tg
-import telegram_store
 from apscheduler.schedulers.background import BackgroundScheduler
 
 PROFILE_REQUIRED = [
@@ -204,59 +202,11 @@ def _data_age_minutes() -> int | None:
     return max(0, int((utcnow() - last).total_seconds() // 60))
 
 
-# ── Telegram: фоновый слушатель (long polling) ──────────────────────────
-# Один поток на всё приложение: ловит /start (привязка chat_id) и нажатия
-# кнопок ✅/❌ под карточками вакансий. Вся работа с Telegram — в модуле tg;
-# когда дойдём до облака, переносить в облако нужно будет только его.
+# ── Telegram: cloud decision poller ─────────────────────────────────────
+# Общий бот @wexflowbot принимает нажатия в Telegram, а локальное приложение
+# забирает готовые решения из облака и выполняет их на этом компьютере.
 _tg_thread = None
 _tg_stop = threading.Event()
-
-
-def _tg_handle_decision(cb: dict, data: str, token: str) -> None:
-    """Нажата кнопка под карточкой вакансии (формат data: 'ap_yes:<id>' / 'ap_no:<id>').
-    Реальная подача по ✅ подключается в режиме «по разрешению» (следующий шаг)."""
-    msg = cb.get("message") or {}
-    chat = (msg.get("chat") or {}).get("id")
-    mid = msg.get("message_id")
-    if not (chat and mid and ":" in data):
-        return
-    action, job_id = data.split(":", 1)
-    result = autopilot.tg_decide(job_id, approve=(action == "ap_yes"),
-                                 launcher=lambda ids: _launch_salling_apply(ids, submit=True))
-    tg.edit_message(token, chat, mid, result or "Готово.")
-
-
-def _tg_handle_update(u: dict) -> None:
-    try:
-        token = telegram_store.get_token()
-        if not token:
-            return
-        # 1) обычное сообщение → привязка: запоминаем chat_id отправителя
-        msg = u.get("message")
-        if msg and msg.get("chat"):
-            chat = msg["chat"]
-            if not telegram_store.get_chat():
-                name = " ".join(x for x in (chat.get("first_name"), chat.get("last_name")) if x)
-                telegram_store.set_chat(chat["id"], name or chat.get("username", ""))
-                tg.send_message(token, chat["id"],
-                                "✅ <b>Telegram привязан к WexFlow!</b>\n\n"
-                                "Я буду присылать сюда подходящие вакансии, а ты подтверждаешь "
-                                "подачу одной кнопкой:\n"
-                                "✅ <b>Подать</b> — WexFlow подаст заявку за тебя\n"
-                                "❌ <b>Пропустить</b> — пройдём мимо\n\n"
-                                "🔔 Жди первую вакансию — пришлю, как только найдётся.")
-            return
-        # 2) нажатие кнопки ✅/❌ под карточкой вакансии
-        cb = u.get("callback_query")
-        if cb:
-            data = cb.get("data") or ""
-            if data == "ap_demo":  # кнопки в примере-«проверочном» ничего не делают
-                tg.answer_callback(token, cb["id"], "Это пример — реальная заявка не отправляется.")
-                return
-            tg.answer_callback(token, cb["id"])
-            _tg_handle_decision(cb, data, token)
-    except Exception as e:  # noqa: BLE001 — слушатель не должен падать
-        print(f"telegram: ошибка обработки апдейта — {e}")
 
 
 def _tg_poller_loop() -> None:
@@ -1286,25 +1236,38 @@ def _autopilot_geo_options(rule: dict | None = None):
     return (cities or all_cities), regions
 
 
-@app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+def _settings_context(
+    request: Request,
+    saved: str = "",
+    geoerror: str = "",
+    missing: str = "",
+    section: str = "salling",
+) -> dict:
     profile = profile_store.load_profile()
-    # профили подбора: выбранный профиль (?profile=id) редактируется формой ниже.
     ap_profiles = autopilot.ensure_profiles()
     sel_id = request.query_params.get("profile") or ""
     sel_profile = next((p for p in ap_profiles if p.get("id") == sel_id), ap_profiles[0])
-    # «вид» правила для формы = глобальные поля + фильтры ВЫБРАННОГО профиля,
-    # чтобы шаблон фильтров не переписывать (он читает autopilot.<поле>).
     ap_view = dict(autopilot.get_rule())
     for k in autopilot._FILTER_FIELDS:
         ap_view[k] = sel_profile.get(k, autopilot.DEFAULT_RULE.get(k))
     ap_cities, ap_regions = _autopilot_geo_options(ap_view)
-    return templates.TemplateResponse("settings.html", {
+    titles = {
+        "salling": ("Salling", "Логин, документы, домашний адрес и сброс входа"),
+        "autopilot": ("Автопилот", "Правила подбора, режим работы и автоотправка"),
+        "telegram": ("Telegram", "Статус @wexflowbot, проверка и ручная отправка текущих"),
+        "overview": ("Настройки", "Короткая карта управления WexFlow"),
+    }
+    settings_title, settings_meta = titles.get(section, titles["salling"])
+    return {
         "request": request,
         "profile": profile, "file_info": _profile_file_info(profile),
         "creds": credentials_store.status(), "home": settings_store.get_home(),
         "saved": saved, "geoerror": geoerror,
         "subscription": subscription.status(),
+        "account_tg_id": account_mod.load().get("tg_id") or "",
+        "settings_section": section,
+        "settings_title": settings_title,
+        "settings_meta": settings_meta,
         "autopilot": ap_view, "brands": labels.BRANDS,
         "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
         "autopilot_cities": ap_cities, "autopilot_regions": ap_regions,
@@ -1322,7 +1285,43 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
         "autopilot_tg_stats": autopilot.tg_queue_stats(),
         "autopilot_max_per_scan": autopilot.MAX_PER_SCAN,
         "autopilot_scan_min": AUTOPILOT_SCAN_MIN,
-    })
+    }
+
+
+def _render_settings_section(
+    request: Request,
+    section: str,
+    saved: str = "",
+    geoerror: str = "",
+    missing: str = "",
+):
+    return templates.TemplateResponse(
+        "settings.html",
+        _settings_context(request, saved=saved, geoerror=geoerror, missing=missing, section=section),
+    )
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+    return templates.TemplateResponse(
+        "settings_overview.html",
+        _settings_context(request, saved=saved, geoerror=geoerror, missing=missing, section="overview"),
+    )
+
+
+@app.get("/settings/salling", response_class=HTMLResponse)
+def settings_salling(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+    return _render_settings_section(request, "salling", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.get("/settings/autopilot", response_class=HTMLResponse)
+def settings_autopilot(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+    return _render_settings_section(request, "autopilot", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.get("/settings/telegram", response_class=HTMLResponse)
+def settings_telegram(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+    return _render_settings_section(request, "telegram", saved=saved, geoerror=geoerror, missing=missing)
 
 
 @app.post("/account/save")
@@ -1442,9 +1441,9 @@ def settings_documents_save(
     profile = profile_store.load_profile()
     profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
     if file_error:
-        return RedirectResponse(_url_with_system_response("/settings", error=file_error), status_code=303)
+        return RedirectResponse(_url_with_system_response("/settings/salling", error=file_error), status_code=303)
     profile_store.save_profile(profile)
-    return RedirectResponse("/settings?saved=1#documents", status_code=303)
+    return RedirectResponse("/settings/salling?saved=1#documents", status_code=303)
 
 
 @app.post("/autopilot/save")
@@ -1513,32 +1512,32 @@ def autopilot_save(
     # «с этого момента»: текущие совпадения считаем уже виденными (без спама о старых).
     autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
     _reschedule_autopilot_scan()
-    dest = f"/settings?saved=1&profile={profile_id}#autopilot" if profile_id else "/settings?saved=1#autopilot"
+    dest = f"/settings/autopilot?saved=1&profile={profile_id}" if profile_id else "/settings/autopilot?saved=1"
     return RedirectResponse(dest, status_code=303)
 
 
 @app.post("/autopilot/profile/add")
 def autopilot_profile_add(name: str = Form("Новое правило")):
     pid = autopilot.add_profile((name or "").strip() or "Новое правило")
-    return RedirectResponse(f"/settings?profile={pid}#autopilot", status_code=303)
+    return RedirectResponse(f"/settings/autopilot?profile={pid}", status_code=303)
 
 
 @app.post("/autopilot/profile/delete")
 def autopilot_profile_delete(profile_id: str = Form("")):
     autopilot.delete_profile(profile_id)
-    return RedirectResponse("/settings#autopilot", status_code=303)
+    return RedirectResponse("/settings/autopilot", status_code=303)
 
 
 @app.post("/autopilot/profile/rename")
 def autopilot_profile_rename(profile_id: str = Form(""), name: str = Form("")):
     autopilot.rename_profile(profile_id, name)
-    return RedirectResponse(f"/settings?profile={profile_id}#autopilot", status_code=303)
+    return RedirectResponse(f"/settings/autopilot?profile={profile_id}", status_code=303)
 
 
 @app.post("/autopilot/profile/toggle")
 def autopilot_profile_toggle(profile_id: str = Form("")):
     autopilot.toggle_profile(profile_id)
-    return RedirectResponse(f"/settings?profile={profile_id}#autopilot", status_code=303)
+    return RedirectResponse(f"/settings/autopilot?profile={profile_id}", status_code=303)
 
 
 @app.post("/autopilot/prepare")
@@ -1548,13 +1547,13 @@ def autopilot_prepare(request: Request):
     не запускаем НИКОГДА — её жмёт пользователь сам."""
     jobs = autopilot.pending_prepare(limit=5)
     if not jobs:
-        return _redirect_back(request, "/settings",
+        return _redirect_back(request, "/settings/autopilot",
                               notice="Новых подходящих для подготовки нет — свежие уже готовились.")
     ids = [j.id for j in jobs]
     _launch_salling_apply(ids, submit=False)
     autopilot.mark_prepared(ids)
     return _redirect_back(
-        request, "/settings",
+        request, "/settings/autopilot",
         notice=f"Готовлю {len(ids)} вакансий — WexFlow заполнит формы "
                "и остановится перед отправкой. Проверь и нажми «Отправить» сам.",
     )
@@ -1584,7 +1583,7 @@ def autopilot_autosubmit(
         if pool > autopilot.SCOPE_ALL_GUARD:
             autopilot.save_rule({"daily_limit": limit})  # лимит сохраним, охват — нет
             return _redirect_back(
-                request, "/settings",
+                request, "/settings/autopilot",
                 error=f"Охват «все подходящие» сейчас нельзя: под правило подходит {pool} "
                       f"(предел {autopilot.SCOPE_ALL_GUARD}). Сузь фильтры или оставь «только новые».",
             )
@@ -1593,14 +1592,14 @@ def autopilot_autosubmit(
     # переключение на «только новые» — обновить baseline (слать лишь новые после этого)
     if scope == "new" and was_scope != "new":
         autopilot.set_autosubmit_baseline()
-    return _redirect_back(request, "/settings", notice="Настройки автоотправки сохранены.")
+    return _redirect_back(request, "/settings/autopilot", notice="Настройки автоотправки сохранены.")
 
 
 @app.post("/autopilot/stop")
 def autopilot_stop(request: Request):
     """Аварийная остановка автоотправки — мгновенно выключает."""
     autopilot.save_rule({"auto_submit": False})
-    return _redirect_back(request, "/settings", notice="Автоотправка остановлена.")
+    return _redirect_back(request, "/settings/autopilot", notice="Автоотправка остановлена.")
 
 
 @app.post("/autopilot/toggle")
@@ -1667,24 +1666,6 @@ async def telegram_approval(request: Request):
     return {"ok": True, "on": on}
 
 
-@app.post("/api/telegram/save-token")
-async def telegram_save_token(request: Request):
-    """Проверить токен через getMe и сохранить (шифрованно). Запускает слушатель."""
-    try:
-        body = await request.json()
-    except Exception:  # noqa: BLE001
-        body = {}
-    token = (body.get("token") or "").strip()
-    if not token:
-        return {"ok": False, "error": "Вставь токен бота от @BotFather."}
-    me = tg.get_me(token)
-    if not me.get("ok"):
-        return {"ok": False, "error": f"Токен не подошёл: {me.get('error')}"}
-    telegram_store.save_token(token, me.get("username", ""))
-    _ensure_tg_poller()
-    return {"ok": True, "username": me.get("username", "")}
-
-
 @app.post("/api/telegram/test")
 def telegram_test():
     """Проверочное сообщение = РЕАЛЬНЫЙ вид карточки вакансии с кнопками
@@ -1729,13 +1710,6 @@ def telegram_send_current():
         "remaining": stats["eligible_current"],
         "error": result.get("error") or "Нечего отправлять: текущие уже предложены, пропущены или поданы.",
     }
-
-
-@app.post("/api/telegram/unlink")
-def telegram_unlink():
-    """Отвязать: забыть токен и chat_id (бот при этом не удаляется)."""
-    telegram_store.clear()
-    return {"ok": True}
 
 
 @app.post("/settings/profile/autosave")
@@ -1837,9 +1811,16 @@ def apply_prepare(request: Request, job_id: str, started: str = "", saved: str =
 
 
 @app.post("/credentials/save")
-def save_credentials(job_id: str = Form(""), sf_email: str = Form(""), sf_password: str = Form("")):
+def save_credentials(request: Request, job_id: str = Form(""), sf_email: str = Form(""), sf_password: str = Form("")):
     credentials_store.save(sf_email, sf_password)
-    target = f"/job/{job_id}/apply?saved=login" if job_id else _url_with_system_response("/", notice="Логин Salling сохранён.")
+    if job_id:
+        target = f"/job/{job_id}/apply?saved=login"
+    else:
+        ref = request.headers.get("referer") or ""
+        target = _url_with_system_response(
+            ref if "/settings" in ref else "/settings/salling",
+            notice="Логин Salling сохранён.",
+        )
     return RedirectResponse(target, status_code=303)
 
 
@@ -1851,7 +1832,7 @@ def reset_browser(request: Request, job_id: str = Form("")):
     shutil.rmtree(config.BROWSER_PROFILE_DIR, ignore_errors=True)
     ref = request.headers.get("referer")
     if ref and "/settings" in ref:
-        return RedirectResponse("/settings?saved=1", status_code=303)
+        return RedirectResponse("/settings/salling?saved=1", status_code=303)
     target = f"/job/{job_id}/apply?reset=1" if job_id else "/"
     return RedirectResponse(target, status_code=303)
 
@@ -1859,7 +1840,7 @@ def reset_browser(request: Request, job_id: str = Form("")):
 @app.post("/credentials/clear")
 def clear_credentials(request: Request):
     credentials_store.clear()
-    return _redirect_back(request, "/settings", notice="Логин Salling очищен.")
+    return _redirect_back(request, "/settings/salling", notice="Логин Salling очищен.")
 
 
 def _update_profile_files(profile: dict, cv_path: str, cover_letter_path: str, cv_file, cover_letter_file) -> dict:

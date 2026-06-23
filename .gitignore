@@ -34,6 +34,7 @@ connector_browser/
 tools/_tt_candidates.txt
 # мусор и бэкапы (не удаляем файлы, просто не коммитим)
 _backups/
+.bak_*/
 design_drafts/
 static/theme_wexflow.css
 templates/*_wexflow.html
