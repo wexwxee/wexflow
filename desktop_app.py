@@ -21,6 +21,11 @@ import time
 import json
 import re
 import socket
+# encodings.idna нужен сокетам: socket.getaddrinfo кодирует имя хоста кодеком
+# "idna" ДАЖЕ для числового IP (127.0.0.1). В собранном exe этот кодек не
+# подхватывается автоматически — импортируем явно, иначе ЛЮБОЕ сетевое обращение
+# падает с «LookupError: unknown encoding: idna» (крэш на старте серверов).
+import encodings.idna  # noqa: F401
 import subprocess
 import pathlib
 import shutil
@@ -929,17 +934,7 @@ def run_window():
     _next = urllib.request.quote(f"/hub?_cb={int(time.time())}")
     fresh_hub = f"http://127.0.0.1:{HUB_PORT}/__app/salling?next={_next}"
 
-    start_url = fresh_hub if ready else "data:text/html;charset=utf-8," + urllib.request.quote(
-        "<body style='font:16px system-ui;background:#101111;color:#e6e8e6;"
-        "display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"
-        "text-align:center'>"
-        "<div><h2>WexFlow не смог запустить серверы</h2>"
-        "<p>Закрой это окно и запусти заново.</p></div></body>"
-    )
-
-    native_window = webview.create_window(
-        "WexFlow",
-        start_url,
+    win_kwargs = dict(
         js_api=controls,
         width=1280,
         height=860,
@@ -950,6 +945,23 @@ def run_window():
         shadow=True,
         background_color="#101111",
     )
+
+    if ready:
+        native_window = webview.create_window("WexFlow", fresh_hub, **win_kwargs)
+    else:
+        # Серверы не поднялись. ВАЖНО: показываем HTML через html=, а НЕ через
+        # data:-URL — иначе pywebview принимает его за локальный путь, поднимает
+        # свой http-сервер и отдаёт «404 / File does not exist» (путанее некуда).
+        fallback_html = (
+            "<body style='font:16px system-ui;background:#101111;color:#e6e8e6;"
+            "display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"
+            "text-align:center'>"
+            "<div style='max-width:420px;padding:24px'>"
+            "<h2 style='margin:0 0 8px'>WexFlow не смог запустить серверы</h2>"
+            "<p style='color:#9aa0a6;line-height:1.5'>Закрой это окно и запусти WexFlow заново. "
+            "Если повторяется — переустанови приложение свежим установщиком.</p></div></body>"
+        )
+        native_window = webview.create_window("WexFlow", html=fallback_html, **win_kwargs)
     # перетаскивание — через pywebview drag-region (класс .desktop-drag),
     # ресайз — через window_chrome.js + resize_window. Нативный WndProc-хук на
     # родительском окне для WebView2 не работает (хиты ловит дочернее окно),
