@@ -355,6 +355,19 @@ def _set_file_by_attrs(frame, path: str, label: str, attr_re) -> bool:
     return False
 
 
+def _input_attr_str(fi) -> str:
+    """id/name/aria/title file-инпута — чтобы отличать поле CV от поля письма."""
+    try:
+        return " ".join(filter(None, [
+            fi.get_attribute("id"),
+            fi.get_attribute("name"),
+            fi.get_attribute("aria-label"),
+            fi.get_attribute("title"),
+        ]))
+    except Exception:
+        return ""
+
+
 def _all_frames(page):
     """Главный фрейм + все вложенные (форма Salling часто внутри iframe)."""
     try:
@@ -502,6 +515,8 @@ def upload_documents(page, profile: dict):
             if not cover_uploaded:  # фолбэк: скрытое file-поле по контексту
                 try:
                     for fi in fr.query_selector_all('input[type="file"]'):
+                        if cv_input_re.search(_input_attr_str(fi)):
+                            continue  # не кладём письмо в поле CV
                         if cover_re.search(_context_text(fi)):
                             if _set_file(fi, cover, "Мотивационное письмо"):
                                 cover_uploaded = True
@@ -521,11 +536,13 @@ def upload_documents(page, profile: dict):
                 except Exception:
                     pass
 
-    # последний шанс для письма: любое ещё не использованное pdf-поле
+    # последний шанс для письма: любое ещё не использованное pdf-поле, КРОМЕ поля CV
     if cover and not cover_uploaded:
         for fr in frames:
             try:
                 for fi in fr.query_selector_all('input[type="file"]'):
+                    if cv_input_re.search(_input_attr_str(fi)):
+                        continue  # никогда не кладём письмо в поле CV (иначе «прикрепи CV»)
                     acc = (fi.get_attribute("accept") or "").lower()
                     if "pdf" in acc or acc == "":
                         if _set_file(fi, cover, "Мотивационное письмо (запасной вариант)"):

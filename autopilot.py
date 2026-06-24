@@ -285,9 +285,14 @@ def _profile_matches(job: Job, rule: dict, home: dict | None) -> bool:
     ages = set(_csv(rule, "age"))
     # оба варианта (или ни одного) = без ограничения по возрасту
     if ages and ages != {"under18", "adult"}:
-        if "under18" in ages and job.job_level != "employeeUnder18":
+        # под-18 определяем не только по полю job_level: часть вакансий приходит
+        # без employeeUnder18, но с «under 18 år» в названии/описании — иначе они
+        # протекают сквозь фильтр «от 18».
+        _age_hay = f"{job.title or ''} {job.description or ''}".lower()
+        is_under18 = (job.job_level == "employeeUnder18") or bool(re.search(r"under\s*-?\s*18", _age_hay))
+        if "under18" in ages and not is_under18:
             return False
-        if "adult" in ages and job.job_level == "employeeUnder18":
+        if "adult" in ages and is_under18:
             return False
     # города — по подстроке (введёшь «København» — попадут все районы); пусто = любой.
     city_terms = [c.lower() for c in _csv(rule, "cities")]
