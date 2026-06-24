@@ -137,6 +137,17 @@ def sync():
             upd = geo.geocode_jobs(missing)
             s.commit()
             print(f"  координат проставлено: {upd}")
+        needs_precision = [
+            j for j in active_jobs
+            if (j.country or "").upper() == "DK"
+            and j.street
+            and re.search(r"\d+\s*[-–]\s*\d+|(?:frd|fred)\.?\s*sundsvej|frederikssundsv\.?", j.street, re.I)
+        ]
+        if needs_precision:
+            print(f"Уточняю координаты адресов с диапазонами/сокращениями: {len(needs_precision)}…")
+            upd = geo.geocode_jobs(needs_precision, force=True)
+            s.commit()
+            print(f"  координат уточнено: {upd}")
 
     print(f"Новых: {new_count} | Активных всего: {len(seen_ids)} | Закрыто в этот раз: {closed}")
 

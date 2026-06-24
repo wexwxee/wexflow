@@ -326,6 +326,35 @@ def _set_file(el, path: str, label: str) -> bool:
         return False
 
 
+def _set_file_by_attrs(frame, path: str, label: str, attr_re) -> bool:
+    """Ставит файл прямо в SAP file-input по id/name/aria.
+
+    Это надёжнее клика по тексту кнопки: в форме Salling реальные поля уже имеют
+    стабильные id вроде ApplyResumeUpload-fu и idCoverLetUpload-fu.
+    """
+    if not path or not Path(path).exists():
+        return False
+    try:
+        inputs = frame.query_selector_all('input[type="file"]')
+    except Exception:
+        return False
+    for fi in inputs:
+        try:
+            attrs = " ".join(filter(None, [
+                fi.get_attribute("id"),
+                fi.get_attribute("name"),
+                fi.get_attribute("aria-label"),
+                fi.get_attribute("title"),
+                fi.get_attribute("accept"),
+            ]))
+        except Exception:
+            attrs = ""
+        if attr_re.search(attrs):
+            if _set_file(fi, path, label):
+                return True
+    return False
+
+
 def _all_frames(page):
     """Главный фрейм + все вложенные (форма Salling часто внутри iframe)."""
     try:
@@ -442,6 +471,8 @@ def upload_documents(page, profile: dict):
 
     cover_re = re.compile(r"ansøg|cover|motivation|følgebrev", re.I)
     cv_re = re.compile(r"\bcv\b|resume|curriculum", re.I)
+    cover_input_re = re.compile(r"coverlet|cover|ansøg|ansoeg|motivation|følgebrev", re.I)
+    cv_input_re = re.compile(r"applyresume|resume|\bcv\b|curriculum", re.I)
     # текст КНОПОК (а не контекста)
     cover_btn_re = re.compile(r"vælg fil|vedhæft ansøg|vælg|browse|upload|attach", re.I)
     cv_btn_re = re.compile(r"tilføj cv|vælg cv|upload cv", re.I)
@@ -453,7 +484,12 @@ def upload_documents(page, profile: dict):
     cv_uploaded = False
 
     for fr in frames:
-        # 1) Письмо — клик по кнопке «Vælg fil»
+        # 1) Сначала прямые SAP file-input по id/name.
+        if cv and not cv_uploaded:
+            cv_uploaded = _set_file_by_attrs(fr, cv, "CV", cv_input_re)
+        if cover and not cover_uploaded:
+            cover_uploaded = _set_file_by_attrs(fr, cover, "Мотивационное письмо", cover_input_re)
+        # 2) Письмо — клик по кнопке «Vælg fil»
         if cover and not cover_uploaded:
             cover_uploaded = _click_upload_by_text(page, fr, cover_btn_re, cover, "Мотивационное письмо")
             if not cover_uploaded:  # фолбэк: скрытое file-поле по контексту
@@ -465,7 +501,7 @@ def upload_documents(page, profile: dict):
                                 break
                 except Exception:
                     pass
-        # 2) CV — клик по «Tilføj CV»
+        # 3) CV — клик по «Tilføj CV»
         if cv and not cv_uploaded:
             cv_uploaded = _click_upload_by_text(page, fr, cv_btn_re, cv, "CV")
             if not cv_uploaded:
@@ -770,6 +806,7 @@ def _mark_applied(job_id: str):
 def process_job(page, job, profile, submit: bool):
     """Открывает вакансию, ждёт логин, открывает форму, грузит файлы, опц. отправляет."""
     print(f"\n=== {job.title} — {job.city} ===\n{job.application_link}")
+    sent = False
     try:
         page.goto(job.application_link, wait_until="domcontentloaded", timeout=60000)
     except Exception as e:
@@ -785,15 +822,21 @@ def process_job(page, job, profile, submit: bool):
     except Exception as e:
         print("  warning:", e)
     if submit:
-        ok = submit_application(page)
+        try:
+            ok = submit_application(page)
+        except Exception as e:
+            print("  отправка сорвалась:", str(e)[:120])
+            ok = False
         if ok:
             print("  ОТПРАВЛЕНО ✔")
             _save_proof(page, job)
             _mark_applied(job.id)
+            sent = True
         else:
             print("  отправка не нажалась — проверь вручную")
     else:
         print("  Прогон без отправки — проверь форму и нажми Ansøg сам.")
+    return sent
 
 
 def run(job_id: str | None, login_only: bool = False, web_mode: bool = False, submit: bool = False):
@@ -833,9 +876,13 @@ def _chunks(lst, n):
         yield lst[i:i + n]
 
 
-def run_batch(job_ids, submit: bool = False, web_mode: bool = True, concurrency: int = 2):
-    """Пакетная подача: открывает по `concurrency` вкладок одновременно (загрузка
-    идёт параллельно), обрабатывает, затем следующую пачку. Один браузер = один логин."""
+def run_batch(job_ids, submit: bool = False, web_mode: bool = True, concurrency: int = 1):
+    """Пакетная подача.
+
+    Реальная отправка всегда идёт последовательно в одной вкладке: так меньше
+    шансов потерять браузерный контекст между заявками. Параллельные вкладки
+    остаются только запасным режимом для ручного dry-run.
+    """
     profile = load_profile()
     config.BROWSER_PROFILE_DIR.mkdir(exist_ok=True)
     jobs = []
@@ -846,14 +893,41 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True, concurrency:
                 jobs.append(j)
     if not jobs:
         sys.exit("Не нашёл выбранных вакансий в БД.")
-    print(f"Пакетная подача: вакансий {len(jobs)}, по {concurrency} за раз, "
+    effective_concurrency = 1 if submit else max(1, concurrency)
+    print(f"Пакетная подача: вакансий {len(jobs)}, по {effective_concurrency} за раз, "
           f"{'С ОТПРАВКОЙ' if submit else 'прогон без отправки'}")
 
     submitted = 0
     with sync_playwright() as p:
         ctx = _launch_browser(p)
+        if effective_concurrency <= 1:
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            for job in jobs:
+                if page.is_closed():
+                    page = ctx.new_page()
+                if process_job(page, job, profile, submit):
+                    submitted += 1
+                if submit:
+                    try:
+                        page.goto("about:blank", wait_until="domcontentloaded", timeout=10000)
+                    except Exception:
+                        if page.is_closed():
+                            page = ctx.new_page()
+            if submit:
+                print(f"\n========\nИТОГ: реально отправлено и отмечено «подано»: {submitted} из {len(jobs)}")
+                if submitted < len(jobs):
+                    print("Остальные не подтвердили отправку — проверь их вручную.")
+            else:
+                print(f"\n========\nПрогон завершён ({len(jobs)} вакансий обработано) — НЕ отправлял, ничего не отмечал.")
+
+            if web_mode:
+                print("\n>>> Готово. Браузер остаётся открытым — проверь/закрой сам.")
+                _wait_until_browser_closed(ctx)
+            ctx.close()
+            return
+
         # закрыть стартовую пустую вкладку позже; пока используем новые
-        for batch in _chunks(jobs, concurrency):
+        for batch in _chunks(jobs, effective_concurrency):
             pages = []
             # 1) открыть все вкладки пачки и запустить загрузку параллельно
             for job in batch:

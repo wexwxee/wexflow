@@ -7,6 +7,7 @@
 """
 import json
 import math
+import re
 import time
 from pathlib import Path
 
@@ -16,6 +17,15 @@ import config
 import labels
 
 CACHE_PATH = config.DATA_DIR / "geocache.json"
+_DAWA_RETRYABLE = object()
+
+_STREET_ABBR = [
+    # Salling иногда отдаёт Frederikssundsvej как Fred.sundsvej / Frd.sundsvej.
+    # DAWA такие сокращения часто не понимает, поэтому разворачиваем их.
+    (re.compile(r"\bfrd\.?\s*sundsvej\b", re.I), "Frederikssundsvej"),
+    (re.compile(r"\bfred\.?\s*sundsvej\b", re.I), "Frederikssundsvej"),
+    (re.compile(r"\bfrederikssundsv\.?\b", re.I), "Frederikssundsvej"),
+]
 
 
 def _load_cache() -> dict:
@@ -51,6 +61,49 @@ def geocode_zip(country: str, zip_code: str, cache: dict) -> tuple[float, float]
     return None
 
 
+def _dawa_lookup(q: str, zip_code: str):
+    try:
+        r = httpx.get(
+            "https://api.dataforsyningen.dk/adresser",
+            params={"q": q, "postnr": zip_code, "struktur": "mini", "per_side": 1},
+            timeout=15,
+        )
+        if r.status_code == 200:
+            arr = r.json()
+            if arr:
+                return float(arr[0]["y"]), float(arr[0]["x"])  # DAWA: x=lon, y=lat
+            return None
+    except Exception:
+        return _DAWA_RETRYABLE
+    return _DAWA_RETRYABLE
+
+
+def _house_variants(street: str) -> list[str]:
+    """Варианты адреса для DAWA. Оригинал + «только первый номер дома» — потому что
+    диапазоны («Frederikssundsvej 261-267») и сокращения («Fred.sundsvej») DAWA
+    часто НЕ находит как есть, и раньше они падали в неточный центр индекса."""
+    variants: list[str] = []
+
+    def add(value: str):
+        value = re.sub(r"\s+", " ", (value or "").strip())
+        if value and value.casefold() not in {v.casefold() for v in variants}:
+            variants.append(value)
+
+    def add_number_normalized(value: str):
+        m = re.match(r"^(.*?\d+)", value)
+        if m:
+            add(m.group(1))
+
+    add(street)
+    add_number_normalized(street)
+    for rx, replacement in _STREET_ABBR:
+        expanded = rx.sub(replacement, street)
+        if expanded != street:
+            add(expanded)
+            add_number_normalized(expanded)
+    return variants
+
+
 def geocode_dk_address(street: str, zip_code: str, cache: dict) -> tuple[float, float] | None:
     """Точные координаты датского адреса (улица+индекс) через DAWA (dataforsyningen).
     Бесплатно и без лимита. Возвращает (lat, lon)."""
@@ -59,22 +112,24 @@ def geocode_dk_address(street: str, zip_code: str, cache: dict) -> tuple[float, 
     key = f"DKADDR:{zip_code}:{street.lower()}"
     if key in cache:
         v = cache[key]
-        return (v[0], v[1]) if v else None
-    try:
-        r = httpx.get(
-            "https://api.dataforsyningen.dk/adresser",
-            params={"q": street, "postnr": zip_code, "struktur": "mini", "per_side": 1},
-            timeout=15,
-        )
-        if r.status_code == 200:
-            arr = r.json()
-            if arr:
-                lat, lon = float(arr[0]["y"]), float(arr[0]["x"])  # DAWA: x=lon, y=lat
-                cache[key] = [lat, lon]
-                return lat, lon
-    except Exception:
-        pass
-    cache[key] = None
+        if isinstance(v, list):
+            return (v[0], v[1])
+        # dict с v2 — нормализацию номера уже пробовали, сеть не дёргаем
+        if isinstance(v, dict) and v.get("v2"):
+            return None
+        # старый «сырой» промах (None) — попробуем ещё раз с нормализацией номера
+    retryable_error = False
+    for q in _house_variants(street):
+        coords = _dawa_lookup(q, zip_code)
+        if coords is _DAWA_RETRYABLE:
+            retryable_error = True
+            continue
+        if coords:
+            cache[key] = [coords[0], coords[1]]
+            return coords
+    if retryable_error:
+        return None
+    cache[key] = {"v2": True}  # отметили, что варианты уже пробовали — без повторов
     return None
 
 
@@ -255,6 +310,10 @@ def geocode_jobs(jobs, force=False):
             if not was_cached:
                 new_lookups += 1
                 time.sleep(0.1)  # DAWA быстрый, лёгкая вежливость
+        if not coords and is_dk and j.street and force and j.lat is not None and j.lon is not None:
+            # При уточнении уже сохранённой DK-вакансии не перезаписываем старые
+            # координаты центром индекса, если точный адрес сейчас не ответил.
+            continue
         if not coords:  # фолбэк на центр индекса (и для DE/PL)
             was_cached = f"{j.country}:{j.zip}" in cache
             coords = geocode_zip(j.country, j.zip, cache)

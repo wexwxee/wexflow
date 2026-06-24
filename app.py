@@ -693,6 +693,12 @@ def _job_facts(job: Job, distance: float | None) -> list[dict]:
         facts.append({"label": "Старт", "value": job.start_date, "kind": "date"})
     if job.published:
         facts.append({"label": "Опубликовано", "value": job.published[:10], "kind": "muted"})
+    if job.modified:
+        facts.append({"label": "Обновлено", "value": job.modified[:10], "kind": "muted"})
+    if job.requisition_id:
+        facts.append({"label": "ID вакансии", "value": job.requisition_id, "kind": "muted"})
+    if job.first_seen:
+        facts.append({"label": "Найдено WexFlow", "value": job.first_seen.strftime("%Y-%m-%d"), "kind": "muted"})
     if job.pay_rate:
         facts.append({"label": "Ставка", "value": job.pay_rate, "kind": "money"})
     else:

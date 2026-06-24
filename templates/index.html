@@ -565,7 +565,7 @@
       {% if g.dist is not none %}<span class="badge dist">≈ {{ g.dist }} км</span>{% endif %}
       <span class="badge st-interview">{{ ic.i('store', 12) }} {{ g.jobs|length }} вакансий</span>
     </div>
-    <h3>{{ ic.i('pin') }} {{ g.street or '' }}{% if g.city %}{{ ', ' if g.street }}{{ g.city }}{% endif %}</h3>
+    <h3>{{ ic.i('pin') }} {{ g.street or '' }}{% if g.zip or g.city %}{{ ', ' if g.street }}{{ g.zip or '' }} {{ g.city or '' }}{% endif %}{% if g.country %}, {{ g.country }}{% endif %}</h3>
     {% if g.region %}<div class="meta">{{ L.REGION.get(g.region, g.region) }}</div>{% endif %}
     <div class="group-jobs">
       {% for j in g.jobs[:12] %}
@@ -601,9 +601,12 @@
     <div class="role">{{ ic.i('user', 13) }} {% if cat %}{{ L.CATEGORY.get(cat, cat) }}{% endif %}{% if j.job_level and L.LEVEL.get(j.job_level) %}<span class="lvl"> · {{ L.LEVEL.get(j.job_level) }}</span>{% endif %}</div>
     {% endif %}
     <div class="meta">
-      {{ ic.i('pin', 13) }} {{ j.city or '—' }}{% if j.street %}, {{ j.street }}{% endif %}{% if j.region %} · {{ L.REGION.get(j.region, j.region) }}{% endif %}<br>
+      {{ ic.i('pin', 13) }} {% if j.street %}{{ j.street }}{% endif %}{% if j.zip or j.city %}{{ ', ' if j.street }}{{ j.zip or '' }} {{ j.city or '' }}{% endif %}{% if j.country %}, {{ j.country }}{% endif %}{% if j.region %} · {{ L.REGION.get(j.region, j.region) }}{% endif %}<br>
       {% if j.hours %}{{ ic.i('clock', 13) }} {{ j.hours }} ч/нед · {% endif %}{% if j.employment_type %}{{ L.EMPLOYMENT.get(j.employment_type, j.employment_type) }} · {% endif %}{% if j.start_date %}старт {{ j.start_date }}{% endif %}<br>
       {% if j.pay_rate %}{{ ic.i('money', 13) }} {{ j.pay_rate }} · {% endif %}{% if j.published %}размещено {{ j.published[:10] }}{% endif %}
+      {% if j.requisition_id or j.first_seen or j.modified %}<br>
+      {{ ic.i('file', 13) }} {% if j.requisition_id %}ID {{ j.requisition_id }}{% endif %}{% if j.first_seen %}{% if j.requisition_id %} · {% endif %}найдено {{ j.first_seen.strftime('%Y-%m-%d') }}{% endif %}{% if j.modified %} · обновлено {{ j.modified[:10] }}{% endif %}
+      {% endif %}
     </div>
     <div class="row">
       {% if j.status == 'applied' %}
