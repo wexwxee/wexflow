@@ -367,16 +367,50 @@ def _tg_card(job) -> str:
             "Подать заявку от твоего имени?")
 
 
-def _tg_offer_jobs(jobs) -> dict:
+def _tg_job_payload(job) -> dict:
+    """Структурные поля для Mini App-панели: фильтры не должны парсить только текст."""
+    home = None
+    distance = None
+    try:
+        home = settings_store.get_home()
+        if home and job.lat is not None and job.lon is not None:
+            distance = round(geo.haversine_km(home["lat"], home["lon"], job.lat, job.lon), 1)
+    except Exception:  # noqa: BLE001
+        home = None
+    address = _job_address(job)
+    loc = (job.city or "").strip()
+    if distance is not None:
+        loc = f"{loc} · ~{round(distance)} км от дома" if loc else f"~{round(distance)} км от дома"
+    return {
+        "id": job.id,
+        "title": job.title or "",
+        "titleRu": _title_ru(job.title),
+        "brand": labels.brand(job.brand) if job.brand else "",
+        "city": job.city or "",
+        "location": loc,
+        "address": address,
+        "hours": job.hours or "",
+        "distanceKm": distance,
+        "url": job.application_link or "",
+        "mapsUrl": _maps_url(job, home) if (address or job.lat is not None) else "",
+        "lat": job.lat,
+        "lon": job.lon,
+    }
+
+
+def _tg_offer_jobs(jobs, panel: bool = False) -> dict:
     """Отправить список вакансий в облачного бота. Безопасно: сама заявка не
     уходит, пока пользователь не нажмёт ✅ в Telegram."""
     sent = 0
     last_error = ""
     for job in jobs:
-        r = cloud_auth.offer(_tg_card(job), job.id)
+        r = cloud_auth.offer(_tg_card(job), job.id, job=_tg_job_payload(job), panel=panel)
         if r and r.get("ok"):
             autopilot.tg_pending_add(job.id, r.get("messageId"))
-            autopilot.log_event("info", f"TG: спросил разрешение — {job.title}")
+            if panel:
+                autopilot.log_event("info", f"TG-панель: добавил вакансию — {job.title}")
+            else:
+                autopilot.log_event("info", f"TG: спросил разрешение — {job.title}")
             sent += 1
         else:
             last_error = (r or {}).get("error") or "не удалось отправить карточку"
@@ -386,7 +420,7 @@ def _tg_offer_jobs(jobs) -> dict:
 
 
 def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False,
-                   limit: int | None = None) -> dict:
+                   limit: int | None = None, panel: bool = False) -> dict:
     """После скана: если включён режим «по разрешению» и Telegram привязан —
     отправить карточки НОВЫХ подходящих вакансий с кнопками ✅/❌.
     limit=None — штатный потолок (TG_MAX_PER_SCAN, чтобы не заливать чат);
@@ -401,7 +435,7 @@ def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False
         jobs = autopilot.tg_eligible(limit=limit or TG_MAX_PER_SCAN, include_existing=include_existing)
         if not jobs:
             return {"sent": 0, "error": ""}
-        result = _tg_offer_jobs(jobs)
+        result = _tg_offer_jobs(jobs, panel=panel)
         result["remaining"] = len(autopilot.tg_eligible(10000, include_existing=include_existing))
         return result
     except Exception as e:  # noqa: BLE001 — не должно ронять фоновый скан
@@ -489,12 +523,14 @@ def _handle_tg_remote_command(command: dict) -> str:
             _reschedule_autopilot_scan()
             # из Mini App-панели присылаем МНОГО (до 30 за раз), в чат — скромно,
             # чтобы не залить переписку. panel=True ставит панель при постановке команды.
-            limit = 30 if command.get("panel") else None
-            result = _tg_offer_tick(include_existing=True, ignore_schedule=True, limit=limit)
+            is_panel = bool(command.get("panel"))
+            limit = 30 if is_panel else None
+            result = _tg_offer_tick(include_existing=True, ignore_schedule=True, limit=limit, panel=is_panel)
             stats = autopilot.tg_queue_stats()
             if result.get("sent"):
+                label = "Добавил в панель" if is_panel else "Отправил карточек"
                 return (
-                    f"📨 Отправил карточек: {result['sent']}.\n"
+                    f"📨 {label}: {result['sent']}.\n"
                     f"Осталось доступных текущих: {stats.get('eligible_current', 0)}."
                 )
             return (

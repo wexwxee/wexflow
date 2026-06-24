@@ -139,12 +139,15 @@ def rebind_confirm(code: str, timeout: int = 10) -> dict:
     )
 
 
-def offer(text: str, job_id: str, timeout: int = 15) -> dict | None:
+def offer(text: str, job_id: str, timeout: int = 15, *,
+          job: dict | None = None, panel: bool = False) -> dict | None:
     """Отправить карточку вакансии через облако — бот пришлёт её пользователю с
     кнопками ✅/❌. text — уже собранная карточка (с переводом)."""
     url = f"{CLOUD_BASE}/api/offer"
+    job_payload = dict(job or {})
+    job_payload["id"] = job_id
     payload = json.dumps({
-        "deviceId": device_id(), "job": {"id": job_id}, "text": text,
+        "deviceId": device_id(), "job": job_payload, "text": text, "panel": bool(panel),
     }).encode("utf-8")
     req = urllib.request.Request(
         url, data=payload, headers={"content-type": "application/json"}
