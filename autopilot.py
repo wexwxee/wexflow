@@ -50,6 +50,7 @@ DEFAULT_RULE = {
     "submit_scope": "new",      # "new" = только появившиеся ПОСЛЕ включения; "all" = все подходящие
     "autosubmit_baseline": [],  # снимок совпадений на момент включения — их НЕ трогаем (для scope=new)
     "submitted_ids": [],        # id, которые автоотправка уже подала
+    "submitting_ids": [],       # id, по которым подача запущена, но ещё не подтверждена status=applied
     "submit_day": "",           # день, за который считаем счётчик
     "submit_count_today": 0,    # сколько отправлено сегодня
     "submit_log": [],           # журнал автоотправок [{ts,title}]
@@ -142,6 +143,15 @@ def save_rule(patch: dict) -> dict:
     data["autopilot"] = rule
     settings_store.save(data)
     return rule
+
+
+def reset_tg_queue_for_filters() -> None:
+    """Drop local Telegram offers that were built for old filters."""
+    r = get_rule()
+    if not (r.get("tg_pending") or r.get("tg_offered_ids")):
+        return
+    save_rule({"tg_pending": [], "tg_offered_ids": []})
+    log_event("info", "TG: сбросил старую очередь после изменения фильтров")
 
 
 # ── Единый режим работы (вместо трёх пересекающихся тумблеров) ──────────
@@ -384,6 +394,7 @@ def add_profile(name: str = "Новый набор") -> str:
     p = _new_profile(name)
     profs.append(p)
     save_rule({"profiles": profs})
+    reset_tg_queue_for_filters()
     return p["id"]
 
 
@@ -392,6 +403,7 @@ def delete_profile(pid: str) -> None:
     if not profs:                       # хотя бы один набор всегда остаётся
         profs = [_new_profile("Набор 1")]
     save_rule({"profiles": profs})
+    reset_tg_queue_for_filters()
 
 
 def rename_profile(pid: str, name: str) -> None:
@@ -408,6 +420,7 @@ def toggle_profile(pid: str) -> None:
         if p.get("id") == pid:
             p["enabled"] = not p.get("enabled", True)
     save_rule({"profiles": profs})
+    reset_tg_queue_for_filters()
 
 
 def save_profile_filters(pid: str, fields: dict) -> None:
@@ -417,8 +430,12 @@ def save_profile_filters(pid: str, fields: dict) -> None:
     if target is None:
         target = _new_profile("Набор 1")
         profs.append(target)
+    before = {k: target.get(k, DEFAULT_RULE.get(k)) for k in _FILTER_FIELDS}
     target.update({k: fields.get(k, target.get(k, DEFAULT_RULE.get(k))) for k in _FILTER_FIELDS})
     save_rule({"profiles": profs})
+    after = {k: target.get(k, DEFAULT_RULE.get(k)) for k in _FILTER_FIELDS}
+    if before != after:
+        reset_tg_queue_for_filters()
 
 
 def profile_match_count(p: dict) -> int:
@@ -490,9 +507,73 @@ def _today() -> str:
     return _dt.date.today().isoformat()
 
 
+def _date_key(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, _dt.datetime):
+        return value.date().isoformat()
+    if isinstance(value, _dt.date):
+        return value.isoformat()
+    return str(value)[:10]
+
+
+def _dedupe_ids(values) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        item = str(value or "").strip()
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
+
+
+def reconcile_submitted_state() -> dict:
+    """Repair old optimistic counters: only applied jobs remain counted."""
+    r = get_rule()
+    ids = _dedupe_ids(r.get("submitted_ids") or [])
+    day = _today()
+    if not ids:
+        patch = {}
+        if r.get("submitted_ids"):
+            patch["submitted_ids"] = []
+        if int(r.get("submit_count_today") or 0) != 0:
+            patch["submit_day"] = day
+            patch["submit_count_today"] = 0
+        if int(r.get("submitted_total") or 0) != 0:
+            patch["submitted_total"] = 0
+        if r.get("submit_log"):
+            patch["submit_log"] = []
+        return save_rule(patch) if patch else r
+
+    with get_session() as s:
+        jobs = list(s.exec(select(Job).where(Job.id.in_(ids))).all())
+    by_id = {str(j.id): j for j in jobs if j and (j.status == "applied" or j.applied_at is not None)}
+    valid_ids = [jid for jid in ids if jid in by_id]
+    removed_count = max(0, len(ids) - len(valid_ids))
+    today_count = sum(1 for jid in valid_ids if _date_key(by_id[jid].applied_at) == day)
+    old_total = int(r.get("submitted_total") or 0)
+    fixed_total = max(len(valid_ids), old_total - removed_count)
+
+    patch = {}
+    if ids != valid_ids:
+        patch["submitted_ids"] = valid_ids
+        valid_titles = {by_id[jid].title for jid in valid_ids}
+        patch["submit_log"] = [
+            entry for entry in (r.get("submit_log") or [])
+            if entry.get("title") in valid_titles
+        ][:50]
+    if r.get("submit_day") != day or int(r.get("submit_count_today") or 0) != today_count:
+        patch["submit_day"] = day
+        patch["submit_count_today"] = today_count
+    if old_total != fixed_total:
+        patch["submitted_total"] = fixed_total
+    return save_rule(patch) if patch else r
+
+
 def submitted_today() -> int:
     """Сколько автоотправок сделано сегодня (счётчик сбрасывается в новый день)."""
-    r = get_rule()
+    r = reconcile_submitted_state()
     return int(r.get("submit_count_today") or 0) if r.get("submit_day") == _today() else 0
 
 
@@ -511,7 +592,7 @@ def _eligible_all(rule: dict) -> list[Job]:
     - scope=new (по умолчанию): только появившиеся ПОСЛЕ включения (нет в baseline);
     - scope=all: все подходящие сейчас (baseline игнорируется).
     Уже отправленные ботом исключаются всегда. Свежие — первыми."""
-    done = set(rule.get("submitted_ids") or [])
+    done = set(rule.get("submitted_ids") or []) | set(rule.get("submitting_ids") or [])
     if (rule.get("submit_scope") or "new") == "all":
         todo = [j for j in find_matches() if j.id not in done]
     else:
@@ -540,26 +621,50 @@ def scope_all_pool(rule: dict | None = None) -> int:
     return len(_eligible_all(r))
 
 
+def mark_submitting(ids) -> None:
+    r = get_rule()
+    current = _dedupe_ids(r.get("submitting_ids") or [])
+    incoming = _dedupe_ids(ids)
+    merged = _dedupe_ids(current + incoming)
+    if merged != current:
+        save_rule({"submitting_ids": merged[-500:]})
+
+
+def clear_submitting(ids) -> None:
+    remove = set(_dedupe_ids(ids))
+    if not remove:
+        return
+    r = get_rule()
+    current = _dedupe_ids(r.get("submitting_ids") or [])
+    kept = [jid for jid in current if jid not in remove]
+    if kept != current:
+        save_rule({"submitting_ids": kept})
+
+
 def record_submitted(jobs) -> None:
     r = get_rule()
     day = _today()
     count = int(r.get("submit_count_today") or 0) if r.get("submit_day") == day else 0
     log = list(r.get("submit_log") or [])
     done = set(r.get("submitted_ids") or [])
+    new_jobs = [j for j in jobs if j and j.id not in done]
+    if not new_jobs:
+        return
     now = _dt.datetime.now().strftime("%d.%m %H:%M")
-    for j in jobs:
+    for j in new_jobs:
         done.add(j.id)
         log.insert(0, {"ts": now, "title": j.title})
-    total = int(r.get("submitted_total") or 0) + len(jobs)
+    total = int(r.get("submitted_total") or 0) + len(new_jobs)
     save_rule({
         "submit_day": day,
-        "submit_count_today": count + len(jobs),
+        "submit_count_today": count + len(new_jobs),
         "submit_log": log[:50],
         "submitted_ids": list(done),
         "submitted_total": total,
     })
-    titles = "; ".join(j.title for j in jobs[:5])
-    log_event("submit", f"Подал заявок: {len(jobs)} — {titles}")
+    clear_submitting([j.id for j in new_jobs])
+    titles = "; ".join(j.title for j in new_jobs[:5])
+    log_event("submit", f"Подал заявок: {len(new_jobs)} — {titles}")
 
 
 # ── Режим «по разрешению» через Telegram ───────────────────────────────
@@ -593,7 +698,7 @@ def tg_eligible(limit: int = 5, include_existing: bool = False) -> list[Job]:
     """
     r = get_rule()
     skip = (set(r.get("submitted_ids") or []) | set(r.get("tg_offered_ids") or [])
-            | set(r.get("tg_skipped") or []))
+            | set(r.get("tg_skipped") or []) | set(r.get("submitting_ids") or []))
     if not include_existing and (r.get("submit_scope") or "new") != "all":
         skip |= set(r.get("autosubmit_baseline") or [])
     todo = [j for j in find_matches() if j.id not in skip]
@@ -629,12 +734,23 @@ def tg_decide(job_id: str, approve: bool, launcher) -> str:
         save_rule({"tg_skipped": list(skipped)[-1000:]})
         log_event("info", f"TG: пропущено — {title}")
         return f"❌ <b>Пропущено</b>\n{t}"
-    if job_id in set(r.get("submitted_ids") or []):
+    latest = get_rule()
+    if job_id in set(latest.get("submitted_ids") or []):
         return f"ℹ️ <b>Уже подавалось ранее</b>\n{t}"
+    if job_id in set(latest.get("submitting_ids") or []):
+        return f"ℹ️ <b>Подача уже запущена</b>\n{t}"
     if not job:
         return "⚠️ Вакансия больше недоступна."
-    launcher([job_id])
-    record_submitted([job])
+    if not _matches(job, latest, settings_store.get_home()):
+        log_event("info", f"TG: карточка устарела и не подходит под текущие фильтры — {title}")
+        return f"⚠️ <b>Карточка устарела</b>\n{t}\n\nЭта вакансия больше не подходит под текущие фильтры."
+    mark_submitting([job_id])
+    try:
+        launcher([job_id])
+    except Exception as e:  # noqa: BLE001
+        clear_submitting([job_id])
+        log_event("info", f"TG: не смог запустить подачу — {title}: {e}")
+        return f"⚠️ <b>Не смог запустить подачу</b>\n{t}"
     return f"✅ <b>Отправляю заявку…</b>\n{t}\n\nWexFlow заполнит форму и подаст за тебя."
 
 
@@ -660,10 +776,15 @@ def auto_submit_tick(launcher) -> None:
         jobs = eligible_for_submit(remaining)
         if not jobs:
             return
-        launcher([j.id for j in jobs])
-        record_submitted(jobs)
+        ids = [j.id for j in jobs]
+        mark_submitting(ids)
+        try:
+            launcher(ids)
+        except Exception:
+            clear_submitting(ids)
+            raise
         import scheduler
-        scheduler.notify(f"Автопилот отправил заявки: {len(jobs)}",
+        scheduler.notify(f"Автопилот запустил подачу: {len(jobs)}",
                          "; ".join(j.title for j in jobs[:5]))
     except Exception as e:  # noqa: BLE001 — автоотправка не должна ронять обновление
         print(f"автопилот: автоотправка — ошибка {e}")

@@ -155,7 +155,7 @@ def _sync_jobs():
         autopilot.scan_and_notify()  # автопилот: уведомить о новых совпадениях
         # автоотправка (фаза 3, по умолчанию ВЫКЛ): отправляет ТОЛЬКО при явно
         # включённом auto_submit, в пределах дневного лимита и только новые
-        autopilot.auto_submit_tick(lambda ids: _launch_salling_apply(ids, submit=True))
+        autopilot.auto_submit_tick(lambda ids: _launch_salling_apply(ids, submit=True, track_autopilot=True))
         _tg_offer_tick()  # режим «по разрешению»: спросить в Telegram про новые подходящие
     except Exception as e:
         _sync_state["last_error"] = str(e)[:200]
@@ -252,6 +252,8 @@ def _watch_and_report_apply(job_id: str) -> None:
             with get_session() as s:
                 job = s.get(Job, job_id)
             if job is not None and job.status == "applied":
+                autopilot.clear_submitting([job_id])
+                autopilot.record_submitted([job])
                 try:
                     cloud_auth.report_apply_result(job_id, "submitted", "Заявка отправлена")
                 except Exception:  # noqa: BLE001
@@ -259,6 +261,11 @@ def _watch_and_report_apply(job_id: str) -> None:
                 return
         except Exception:  # noqa: BLE001
             pass
+    autopilot.clear_submitting([job_id])
+    try:
+        cloud_auth.report_apply_result(job_id, "failed", "Подача не подтверждена")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _tg_poller_loop() -> None:
@@ -278,13 +285,8 @@ def _tg_poller_loop() -> None:
                         continue
                     autopilot.tg_decide(
                         jid, approve=(action == "submit"),
-                        launcher=lambda ids: _launch_salling_apply(ids, submit=True),
+                        launcher=lambda ids: _launch_salling_apply(ids, submit=True, track_autopilot=True),
                     )
-                    # «живой эфир» в панели: следим за подачей и шлём статус в облако
-                    if action == "submit":
-                        threading.Thread(
-                            target=_watch_and_report_apply, args=(jid,), daemon=True
-                        ).start()
             tg_id = account_mod.load().get("tg_id") if account_mod.is_signed_in() else ""
             for cmd in cloud_auth.fetch_commands(tg_id=tg_id or ""):
                 result_text = _handle_tg_remote_command(cmd)
@@ -2189,7 +2191,7 @@ def _salling_apply_cmd(extra: list[str]) -> list[str]:
     return [sys.executable, "-u", str(config.BASE_DIR / "apply.py"), *extra]
 
 
-def _launch_salling_apply(ids: list[str], submit: bool = False) -> None:
+def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot: bool = False) -> None:
     """Запустить подачу Salling по списку id с диагностикой фонового процесса.
     submit=False — режим подготовки: WexFlow заполняет и останавливается перед отправкой."""
     env = dict(os.environ)
@@ -2206,6 +2208,9 @@ def _launch_salling_apply(ids: list[str], submit: bool = False) -> None:
             stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
+        if submit and track_autopilot:
+            for jid in ids:
+                threading.Thread(target=_watch_and_report_apply, args=(jid,), daemon=True).start()
     finally:
         log.close()
 
