@@ -276,6 +276,19 @@
         <span class="tg-login-text">Войти через Telegram</span>
       </a>
       <span class="acct-hint">Откроется страница входа Telegram. После подтверждения вернись сюда — приложение само тебя узнает.</span>
+
+      <div class="link-id">
+        <div class="link-id-or"><span>или без браузера</span></div>
+        <button class="ghost link-id-btn" type="button" id="linkIdBtn">{{ ic.i('send', 14) }} Привязать по ID</button>
+        <div class="link-id-box" id="linkIdBox" hidden>
+          <p class="acct-hint" style="margin:0 0 8px;">Отправь этот код боту <b>@wexflowbot</b> со своего Telegram — и ты в системе:</p>
+          <div class="link-id-code-row">
+            <span class="link-id-code" id="linkIdCode">······</span>
+            <button class="ghost" type="button" id="linkIdCopy">Копировать</button>
+          </div>
+          <p class="acct-hint link-id-wait" id="linkIdWait" hidden>Жду привязку… как подтвердишь в боте, страница обновится сама.</p>
+        </div>
+      </div>
       {% endif %}
     </div>
   </div>
@@ -296,6 +309,66 @@
       timer = setInterval(poll, 3000);
       setTimeout(poll, 1500);
     });
+  })();
+  </script>
+
+  <style>
+    .link-id { margin-top: 14px; }
+    .link-id-or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; margin-bottom:12px; }
+    .link-id-or::before, .link-id-or::after { content:""; flex:1; height:1px; background:var(--glass-line); }
+    .link-id-btn { width:100%; justify-content:center; }
+    .link-id-box { margin-top:12px; }
+    .link-id-code-row { display:flex; align-items:center; gap:10px; }
+    .link-id-code { flex:1; font-size:26px; font-weight:700; letter-spacing:.32em; text-align:center;
+      padding:12px 8px; border-radius:10px; border:1px dashed var(--accent); background:var(--glass);
+      color:var(--txt-strong); font-family:ui-monospace,Menlo,Consolas,monospace; }
+    .link-id-wait { margin:12px 0 0; color:var(--accent); }
+  </style>
+  <script>
+  (function () {
+    var btn = document.getElementById('linkIdBtn');
+    if (!btn) return;                 // уже вошли — привязывать нечего
+    var box = document.getElementById('linkIdBox');
+    var codeEl = document.getElementById('linkIdCode');
+    var copyBtn = document.getElementById('linkIdCopy');
+    var waitEl = document.getElementById('linkIdWait');
+    var timer = null;
+    function startPoll() {
+      if (timer) return;
+      timer = setInterval(function () {
+        fetch('/account/login/poll', { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (d) { if (d && d.signed_in) { clearInterval(timer); location.reload(); } })
+          .catch(function () {});
+      }, 3000);
+    }
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      var prev = btn.innerHTML; btn.textContent = 'Получаю код…';
+      fetch('/account/link/code', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok && d.code) {
+            codeEl.textContent = d.code;
+            box.hidden = false;
+            if (waitEl) waitEl.hidden = false;
+            btn.hidden = true;
+            startPoll();
+          } else {
+            btn.disabled = false; btn.innerHTML = prev;
+            alert((d && d.error) || 'Не удалось получить код. Проверь интернет и попробуй снова.');
+          }
+        })
+        .catch(function () { btn.disabled = false; btn.innerHTML = prev; });
+    });
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var t = (codeEl.textContent || '').trim();
+        function done() { copyBtn.textContent = 'Скопировано'; setTimeout(function () { copyBtn.textContent = 'Копировать'; }, 1500); }
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done, done); }
+        else { done(); }
+      });
+    }
   })();
   </script>
 

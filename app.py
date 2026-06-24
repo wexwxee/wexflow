@@ -208,6 +208,57 @@ def _data_age_minutes() -> int | None:
 # забирает готовые решения из облака и выполняет их на этом компьютере.
 _tg_thread = None
 _tg_stop = threading.Event()
+_tg_session_sync_last = 0.0
+
+
+def _sync_account_from_cloud() -> None:
+    global _tg_session_sync_last
+    now = time.time()
+    if now - _tg_session_sync_last < 25:
+        return
+    _tg_session_sync_last = now
+
+    user = cloud_auth.fetch_session(timeout=5)
+    if not user:
+        return
+
+    acc = account_mod.load()
+    remote_tg = str(user.get("tgId") or user.get("tg_id") or "")
+    if not remote_tg:
+        return
+
+    changed = (
+        remote_tg != str(acc.get("tg_id") or "")
+        or str(user.get("plan") or "free") != str(acc.get("plan") or "free")
+        or str(user.get("username") or "") != str(acc.get("username") or "")
+    )
+    if changed:
+        account_mod.apply_session(user)
+
+
+def _watch_and_report_apply(job_id: str) -> None:
+    """Фон: для «живого эфира» в Mini App-панели сообщает облаку, что заявка
+    подаётся, затем следит за её статусом. Когда подача проходит (status=applied)
+    — шлёт «submitted». Если не дождались за лимит — молчим (панель завершит мягко
+    сама, ложное «не удалось» не показываем)."""
+    try:
+        cloud_auth.report_apply_result(job_id, "submitting", "WexFlow заполняет форму")
+    except Exception:  # noqa: BLE001
+        pass
+    deadline = time.time() + 180
+    while time.time() < deadline and not _tg_stop.is_set():
+        _tg_stop.wait(3)
+        try:
+            with get_session() as s:
+                job = s.get(Job, job_id)
+            if job is not None and job.status == "applied":
+                try:
+                    cloud_auth.report_apply_result(job_id, "submitted", "Заявка отправлена")
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _tg_poller_loop() -> None:
@@ -218,6 +269,7 @@ def _tg_poller_loop() -> None:
     нажатия кнопок собирает облако, а приложение забирает готовые решения."""
     while not _tg_stop.is_set():
         try:
+            _sync_account_from_cloud()
             if account_mod.is_signed_in():
                 for d in cloud_auth.fetch_decisions():
                     jid = d.get("jobId")
@@ -228,6 +280,15 @@ def _tg_poller_loop() -> None:
                         jid, approve=(action == "submit"),
                         launcher=lambda ids: _launch_salling_apply(ids, submit=True),
                     )
+                    # «живой эфир» в панели: следим за подачей и шлём статус в облако
+                    if action == "submit":
+                        threading.Thread(
+                            target=_watch_and_report_apply, args=(jid,), daemon=True
+                        ).start()
+            tg_id = account_mod.load().get("tg_id") if account_mod.is_signed_in() else ""
+            for cmd in cloud_auth.fetch_commands(tg_id=tg_id or ""):
+                result_text = _handle_tg_remote_command(cmd)
+                cloud_auth.send_command_result(cmd, result_text)
         except Exception as e:  # noqa: BLE001 — слушатель не должен падать
             print(f"telegram(cloud): ошибка опроса решений — {e}")
         _tg_stop.wait(4)
@@ -279,6 +340,7 @@ def _tg_card(job) -> str:
         lines.append(f"🏪 {e(labels.brand(job.brand))}")
     # местоположение + расстояние от дома, если знаем
     loc = (job.city or "").strip()
+    home = None
     try:
         home = settings_store.get_home()
         if home and job.lat is not None and job.lon is not None:
@@ -288,6 +350,12 @@ def _tg_card(job) -> str:
         pass
     if loc:
         lines.append(f"📍 {e(loc)}")
+    address = _job_address(job)
+    if address:
+        lines.append(f"📌 {e(address)}")
+        lines.append(f'🗺 <a href="{e(_maps_url(job, home))}">Открыть адрес в картах</a>')
+    elif job.lat is not None and job.lon is not None:
+        lines.append(f'🗺 <a href="{e(_maps_url(job, home))}">Открыть точку в картах</a>')
     if job.hours:
         lines.append(f"🕒 {e(job.hours)} ч/нед")
     if job.application_link:
@@ -336,6 +404,108 @@ def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False
     except Exception as e:  # noqa: BLE001 — не должно ронять фоновый скан
         print(f"telegram(cloud): ошибка отправки карточек — {e}")
         return {"sent": 0, "error": str(e)[:120]}
+
+
+def _ago_text(ts: float | int | None) -> str:
+    if not ts:
+        return "ещё не было"
+    sec = max(0, int(time.time() - float(ts)))
+    if sec < 60:
+        return "только что"
+    minutes = sec // 60
+    if minutes < 60:
+        return f"{minutes} мин назад"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} ч назад"
+    return f"{hours // 24} дн назад"
+
+
+def _remote_status_text(prefix: str = "") -> str:
+    st = _autopilot_status_payload()
+    mode_label = {
+        "off": "пауза",
+        "notify": "только уведомления",
+        "telegram": "спрашивать в Telegram",
+        "auto": "автоотправка",
+    }.get(st.get("mode"), st.get("mode") or "неизвестно")
+    lines = []
+    if prefix:
+        lines.append(prefix)
+        lines.append("")
+    lines.extend([
+        "📊 WexFlow на ПК онлайн",
+        f"Режим: {mode_label}",
+        f"Подходит по фильтрам: {st.get('found', 0)}",
+        f"Можно прислать текущих: {st.get('tg_eligible_current', 0)}",
+        f"Новых к Telegram-вопросу: {st.get('tg_eligible_new', 0)}",
+        f"Ждут ответа в Telegram: {st.get('tg_pending', 0)}",
+        f"Подано сегодня: {st.get('submitted_today', 0)} из {st.get('daily_limit', 0)}",
+        f"Последняя проверка: {_ago_text(st.get('last_scan'))}",
+    ])
+    if st.get("running"):
+        lines.append("Сейчас идёт проверка вакансий.")
+    if st.get("error"):
+        lines.append(f"Последняя ошибка: {st.get('error')}")
+    return "\n".join(lines)
+
+
+def _handle_tg_remote_command(command: dict) -> str:
+    """Выполнить команду, пришедшую из Telegram-пульта, и вернуть текст ответа."""
+    action = str(command.get("action") or "").strip().lower()
+    try:
+        if action == "status":
+            return _remote_status_text()
+
+        if action == "pause":
+            autopilot.set_mode("off")
+            autopilot.log_event("info", "Telegram: автопилот поставлен на паузу")
+            _reschedule_autopilot_scan()
+            return _remote_status_text("⏸ Автопилот поставлен на паузу.")
+
+        if not account_mod.is_signed_in():
+            return (
+                "ПК онлайн, но в WexFlow не выполнен вход через Telegram.\n"
+                "Открой приложение на ПК → Аккаунт → войти через Telegram."
+            )
+
+        if action == "start":
+            autopilot.set_mode("telegram")
+            if (autopilot.get_rule().get("submit_scope") or "new") != "all":
+                autopilot.set_autosubmit_baseline()
+            autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+            autopilot.log_event("info", "Telegram: включён режим подтверждения")
+            _reschedule_autopilot_scan()
+            threading.Thread(target=_tg_offer_tick, daemon=True).start()
+            return _remote_status_text(
+                "▶️ Telegram-режим включён. Новые подходящие вакансии будут приходить сюда."
+            )
+
+        if action == "send_current":
+            autopilot.set_mode("telegram")
+            _reschedule_autopilot_scan()
+            result = _tg_offer_tick(include_existing=True, ignore_schedule=True)
+            stats = autopilot.tg_queue_stats()
+            if result.get("sent"):
+                return (
+                    f"📨 Отправил карточек: {result['sent']}.\n"
+                    f"Осталось доступных текущих: {stats.get('eligible_current', 0)}."
+                )
+            return (
+                "📨 Сейчас нечего прислать.\n"
+                f"{result.get('error') or 'Текущие вакансии уже предложены, пропущены или поданы.'}\n"
+                f"Доступных текущих: {stats.get('eligible_current', 0)}."
+            )
+
+        if action == "scan":
+            if _sync_state["running"]:
+                return "🔄 Проверка уже идёт. Скоро пришлю новые подходящие вакансии, если они появятся."
+            threading.Thread(target=_sync_jobs, daemon=True).start()
+            return "🔄 Запустил проверку вакансий на ПК. Если появятся новые подходящие, пришлю сюда."
+
+        return "Неизвестная команда Telegram-пульта."
+    except Exception as e:  # noqa: BLE001
+        return f"Команда не выполнена: {str(e)[:180]}"
 
 
 @asynccontextmanager
@@ -1069,6 +1239,7 @@ async def api_autopilot_mode(request: Request):
             f"Telegram включён: подходит {stats['found']}, новых к отправке {stats['eligible_new']}. "
             "Текущие можно прислать кнопкой в настройках.",
         )
+        threading.Thread(target=_tg_offer_tick, daemon=True).start()
     _reschedule_autopilot_scan()
     return {"ok": True, "mode": new_mode}
 
@@ -1468,6 +1639,14 @@ def account_logout():
     return RedirectResponse("/account", status_code=303)
 
 
+@app.post("/account/link/code")
+def account_link_code():
+    """Получить одноразовый код привязки по ID. Пользователь отправляет его боту
+    @wexflowbot — облако логинит аккаунт в это устройство, а /account/login/poll
+    подхватит вход. Запасной путь к «Войти через Telegram», без браузера."""
+    return JSONResponse(cloud_auth.link_new())
+
+
 @app.post("/account/rebind/start")
 def account_rebind_start():
     """Шаг 1 перепривязки: облако шлёт код подтверждения в текущий (старый) Telegram."""
@@ -1719,10 +1898,10 @@ async def telegram_approval(request: Request):
     on = bool(body.get("on"))
     if on and not account_mod.is_signed_in():
         return {"ok": False, "error": "Сначала войди через Telegram в разделе «Аккаунт»."}
-    patch = {"tg_approval": on}
     if on:
-        patch["enabled"] = True  # режиму нужен работающий поиск
-    autopilot.save_rule(patch)
+        autopilot.set_mode("telegram")
+    else:
+        autopilot.save_rule({"tg_approval": False})
     if on:
         # спрашивать только про НОВЫЕ вакансии (текущие фиксируем как baseline),
         # если охват «только новые» — чтобы не завалить бэклогом
@@ -1765,7 +1944,7 @@ def telegram_send_current():
     режим автоматически шлёт только новые после включения."""
     if not account_mod.is_signed_in():
         return {"ok": False, "error": "Сначала войди через Telegram (раздел «Аккаунт»)."}
-    autopilot.save_rule({"enabled": True, "tg_approval": True})
+    autopilot.set_mode("telegram")
     _reschedule_autopilot_scan()
     result = _tg_offer_tick(include_existing=True, ignore_schedule=True)
     stats = autopilot.tg_queue_stats()

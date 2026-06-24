@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -119,6 +120,13 @@ def _post_json(path: str, payload: dict, timeout: int = 10) -> dict:
         return {"ok": False, "error": "Нет связи с облаком"}
 
 
+def link_new(timeout: int = 10) -> dict:
+    """Получить одноразовый код привязки по ID. Пользователь отправляет код боту
+    @wexflowbot со своего Telegram — облако логинит его аккаунт в это устройство
+    (как «Войти через Telegram», только без браузера). Возвращает {ok, code, botUsername}."""
+    return _post_json("/api/link/new", {"deviceId": device_id()}, timeout)
+
+
 def rebind_start(timeout: int = 10) -> dict:
     """Шаг 1 перепривязки: попросить облако прислать код в СТАРЫЙ Telegram."""
     return _post_json("/api/rebind", {"action": "start", "device": device_id()}, timeout)
@@ -159,3 +167,45 @@ def fetch_decisions(timeout: int = 15) -> list:
         return d if isinstance(d, list) else []
     except (urllib.error.URLError, OSError, ValueError):
         return []
+
+
+def fetch_commands(tg_id: str = "", timeout: int = 15) -> list:
+    """Забрать удалённые команды из Telegram-пульта. Очередь очищается в облаке.
+    Возвращает список [{id, action, chatId, ts}]. Сам GET также служит heartbeat:
+    облако видит, что ПК онлайн и может честно показывать это в боте."""
+    query = {"deviceId": device_id(), "kind": "commands"}
+    if tg_id:
+        query["tgId"] = str(tg_id)
+    url = f"{CLOUD_BASE}/api/decisions?{urllib.parse.urlencode(query)}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        cmds = data.get("commands")
+        return cmds if isinstance(cmds, list) else []
+    except (urllib.error.URLError, OSError, ValueError):
+        return []
+
+
+def send_command_result(command: dict, text: str, timeout: int = 10) -> bool:
+    """Отправить результат выполнения удалённой команды обратно в Telegram."""
+    payload = {
+        "kind": "command_result",
+        "deviceId": device_id(),
+        "commandId": command.get("id") or "",
+        "chatId": command.get("chatId") or "",
+        "text": text,
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
+
+
+def report_apply_result(job_id: str, state: str, msg: str = "", timeout: int = 8) -> bool:
+    """Сообщить облаку статус подачи вакансии — для «живого эфира» в Mini App-панели.
+    state: submitting | submitted | failed. Панель опрашивает result:<device>:<job>."""
+    payload = {
+        "kind": "apply_result",
+        "deviceId": device_id(),
+        "jobId": str(job_id),
+        "state": str(state),
+        "msg": str(msg or ""),
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
