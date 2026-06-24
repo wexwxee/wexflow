@@ -385,9 +385,12 @@ def _tg_offer_jobs(jobs) -> dict:
     return {"sent": sent, "error": last_error}
 
 
-def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False) -> dict:
+def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False,
+                   limit: int | None = None) -> dict:
     """После скана: если включён режим «по разрешению» и Telegram привязан —
-    отправить карточки НОВЫХ подходящих вакансий с кнопками ✅/❌."""
+    отправить карточки НОВЫХ подходящих вакансий с кнопками ✅/❌.
+    limit=None — штатный потолок (TG_MAX_PER_SCAN, чтобы не заливать чат);
+    больше передаёт ручной показ из Mini App-панели."""
     try:
         if not autopilot.get_rule().get("tg_approval"):
             return {"sent": 0, "error": "режим Telegram выключен"}
@@ -395,7 +398,7 @@ def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False
             return {"sent": 0, "error": "сейчас вне часов активности"}
         if not account_mod.is_signed_in():
             return {"sent": 0, "error": "сначала войди через Telegram в разделе Аккаунт"}
-        jobs = autopilot.tg_eligible(limit=TG_MAX_PER_SCAN, include_existing=include_existing)
+        jobs = autopilot.tg_eligible(limit=limit or TG_MAX_PER_SCAN, include_existing=include_existing)
         if not jobs:
             return {"sent": 0, "error": ""}
         result = _tg_offer_jobs(jobs)
@@ -484,7 +487,10 @@ def _handle_tg_remote_command(command: dict) -> str:
         if action == "send_current":
             autopilot.set_mode("telegram")
             _reschedule_autopilot_scan()
-            result = _tg_offer_tick(include_existing=True, ignore_schedule=True)
+            # из Mini App-панели присылаем МНОГО (до 30 за раз), в чат — скромно,
+            # чтобы не залить переписку. panel=True ставит панель при постановке команды.
+            limit = 30 if command.get("panel") else None
+            result = _tg_offer_tick(include_existing=True, ignore_schedule=True, limit=limit)
             stats = autopilot.tg_queue_stats()
             if result.get("sent"):
                 return (

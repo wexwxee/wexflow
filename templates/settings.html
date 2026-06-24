@@ -901,23 +901,51 @@
       var batch = current ? Math.min(current, Number(st.max_per_send || current)) : 0;
       var sendLabel = current > batch ? ('Прислать ' + batch + ' из ' + current) : ('Прислать текущие (' + current + ')');
       var disabled = current ? '' : ' disabled';
+      var telegramOn = st.mode === 'telegram' || st.approval;
+      var startButton = telegramOn ? '' : '<button type="button" class="primary" id="tgStart">Запустить Telegram-режим</button>';
+      var testClass = telegramOn ? 'primary' : 'tg-sec';
       box.innerHTML =
         '<p class="hint">✅ Аккаунт подключён: <b>'+account+'</b>. Карточки приходят через общий бот @wexflowbot.</p>'+
         '<div class="tg-stats">'+
           '<div class="tg-stat"><b>'+esc(st.found || 0)+'</b><span>подходит по фильтрам</span></div>'+
-          '<div class="tg-stat"><b>'+esc(st.eligible_new || 0)+'</b><span>новых отправит сам</span></div>'+
+          '<div class="tg-stat"><b>'+esc(st.eligible_new || 0)+'</b><span>новых спросит сам</span></div>'+
           '<div class="tg-stat"><b>'+esc(st.eligible_current || 0)+'</b><span>текущих можно прислать</span></div>'+
           '<div class="tg-stat"><b>'+esc(st.pending || 0)+'</b><span>ждут ответа</span></div>'+
         '</div>'+
-        '<div class="ap-hint">'+(st.approval
+        '<div class="ap-hint">'+(telegramOn
             ? 'Режим Telegram включён. Новые подходящие вакансии будут приходить автоматически после проверок; текущие можно отправить кнопкой ниже, по несколько карточек за раз.'
-            : 'Чтобы бот спрашивал перед подачей, выбери вверху режим «Спрашивать в Telegram» или нажми кнопку отправки текущих.')+'</div>'+
-        '<div class="actions"><button type="button" class="primary" id="tgTest">Отправить проверочное</button>'+
+            : 'Сейчас включён не Telegram-режим. Нажми запуск — WexFlow будет искать в фоне, присылать новые вакансии в Telegram и ждать твоё Да/Нет.')+'</div>'+
+        '<div class="actions">'+startButton+
+        '<button type="button" class="'+testClass+'" id="tgTest">Отправить проверочное</button>'+
         '<button type="button" class="tg-sec" id="tgSendCurrent"'+disabled+'>'+sendLabel+'</button>'+
         '<a class="tg-sec" href="https://t.me/wexflowbot" target="_blank" rel="noopener">Открыть @wexflowbot</a>'+
         '<span class="hint" id="tgMsg" style="margin:0;"></span></div>';
+      var start = document.getElementById('tgStart');
+      if(start) start.addEventListener('click', startTelegram);
       document.getElementById('tgTest').addEventListener('click', testMsg);
       document.getElementById('tgSendCurrent').addEventListener('click', sendCurrent);
+    }
+    function startTelegram(){
+      var m=document.getElementById('tgMsg');
+      var btn=document.getElementById('tgStart');
+      if(btn) btn.disabled=true;
+      m.textContent='Включаю Telegram-режим…';
+      api('/api/autopilot/mode',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mode:'telegram'})
+      }).then(function(r){
+        if(r.ok){
+          m.textContent='Telegram-режим включён. Новые вакансии будут приходить в бот.';
+          load();
+        } else {
+          m.textContent='Не вышло: '+(r.error||'режим не включился');
+          if(btn) btn.disabled=false;
+        }
+      }).catch(function(){
+        m.textContent='Ошибка сети.';
+        if(btn) btn.disabled=false;
+      });
     }
     function testMsg(){
       var m=document.getElementById('tgMsg'); m.textContent='Отправляю…';
