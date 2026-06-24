@@ -159,6 +159,12 @@ def offer(text: str, job_id: str, timeout: int = 15, *,
         return None
 
 
+def clear_panel(timeout: int = 5) -> bool:
+    """Очистить сохранённые вакансии в Telegram Mini App для этого устройства."""
+    payload = {"deviceId": device_id(), "clearPanel": True}
+    return bool(_post_json("/api/offer", payload, timeout).get("ok"))
+
+
 def fetch_decisions(timeout: int = 15) -> list:
     """Забрать решения пользователя (✅/❌) из облака. Очередь очищается на стороне облака.
     Возвращает список [{jobId, action, ts}]."""

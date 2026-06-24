@@ -526,6 +526,8 @@ def _handle_tg_remote_command(command: dict) -> str:
             # из Mini App-панели присылаем МНОГО (до 30 за раз), в чат — скромно,
             # чтобы не залить переписку. panel=True ставит панель при постановке команды.
             is_panel = bool(command.get("panel"))
+            if is_panel:
+                autopilot.reset_tg_queue_for_filters()
             limit = 30 if is_panel else None
             result = _tg_offer_tick(include_existing=True, ignore_schedule=True, limit=limit, panel=is_panel)
             stats = autopilot.tg_queue_stats()

@@ -148,10 +148,17 @@ def save_rule(patch: dict) -> dict:
 def reset_tg_queue_for_filters() -> None:
     """Drop local Telegram offers that were built for old filters."""
     r = get_rule()
-    if not (r.get("tg_pending") or r.get("tg_offered_ids")):
-        return
-    save_rule({"tg_pending": [], "tg_offered_ids": []})
-    log_event("info", "TG: сбросил старую очередь после изменения фильтров")
+    had_local = bool(r.get("tg_pending") or r.get("tg_offered_ids"))
+    if had_local:
+        save_rule({"tg_pending": [], "tg_offered_ids": []})
+    cleared_cloud = False
+    try:
+        import cloud_auth
+        cleared_cloud = cloud_auth.clear_panel(timeout=3)
+    except Exception:  # noqa: BLE001
+        cleared_cloud = False
+    if had_local or cleared_cloud:
+        log_event("info", "TG: сбросил старую очередь после изменения фильтров")
 
 
 # ── Единый режим работы (вместо трёх пересекающихся тумблеров) ──────────
