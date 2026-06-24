@@ -460,6 +460,13 @@ def _dump_form(frames):
 def upload_documents(page, profile: dict):
     cv = profile.get("cv_path")
     cover = profile.get("cover_letter_path")
+    try:
+        if cv:
+            cv = profile_store.safe_document_upload_path(cv, "cv")
+        if cover:
+            cover = profile_store.safe_document_upload_path(cover, "cover_letter")
+    except Exception as e:
+        print(f"  warning: не смог подготовить безопасное имя файла: {str(e)[:120]}")
 
     # убрать подсказку про логин, если осталась
     try:

@@ -1,5 +1,9 @@
 """Хранение данных для ассистированной подачи."""
+import filecmp
 import json
+import re
+import shutil
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -8,6 +12,57 @@ import config
 UPLOAD_DIR = config.DATA_DIR / "uploads"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".doc", ".docx"}
+
+
+def _clean_upload_filename(filename: str | None) -> str:
+    raw_name = Path(filename or "file.pdf").name.strip() or "file.pdf"
+    raw_name = raw_name.strip(" .") or "file.pdf"
+    suffix = Path(raw_name).suffix.lower()
+    stem = raw_name[: -len(suffix)] if suffix else raw_name
+    stem = unicodedata.normalize("NFKD", stem).encode("ascii", "ignore").decode("ascii")
+    stem = re.sub(r"\s+", "_", stem)
+    stem = re.sub(r"\.{2,}", ".", stem).strip(" ._-")
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-")
+    if not stem:
+        stem = "file"
+    return f"{stem}{suffix}"
+
+
+def _safe_copy_target(source: Path, prefix: str, safe_name: str) -> Path:
+    UPLOAD_DIR.mkdir(exist_ok=True)
+    if not safe_name.lower().startswith(f"{prefix.lower()}_"):
+        safe_name = f"{prefix}_{safe_name}"
+    target = UPLOAD_DIR / safe_name
+    try:
+        if target.resolve() == source.resolve():
+            return target
+    except OSError:
+        pass
+    if target.exists():
+        try:
+            if filecmp.cmp(source, target, shallow=False):
+                return target
+        except OSError:
+            pass
+        target = UPLOAD_DIR / f"{prefix}_{uuid.uuid4().hex[:10]}_{safe_name}"
+    return target
+
+
+def safe_document_upload_path(path: str, prefix: str) -> str:
+    """Return a path with a site-friendly basename, copying the file if needed."""
+    clean_path = validate_document_path(path)
+    if not clean_path:
+        return ""
+    source = Path(clean_path)
+    if not source.exists() or not source.is_file():
+        return clean_path
+    safe_name = _clean_upload_filename(source.name)
+    if safe_name == source.name:
+        return clean_path
+    target = _safe_copy_target(source, prefix, safe_name)
+    if not target.exists():
+        shutil.copy2(source, target)
+    return str(target)
 
 CITY_FIXES = {
     "k??benhavn": "København",
@@ -101,7 +156,7 @@ def validate_document_path(path: str) -> str:
 def save_upload(upload_file, prefix: str) -> str:
     """Сохраняет UploadFile в uploads/ и возвращает абсолютный путь."""
     UPLOAD_DIR.mkdir(exist_ok=True)
-    safe_name = Path(upload_file.filename or "file.pdf").name
+    safe_name = _clean_upload_filename(upload_file.filename)
     suffix = Path(safe_name).suffix.lower()
     if suffix not in ALLOWED_UPLOAD_EXTENSIONS:
         raise ValueError("Можно загрузить только PDF, DOC или DOCX.")
