@@ -421,7 +421,8 @@
 {% if geoerror %}<div class="notice-line" style="color:var(--err-txt);background:var(--err-bg);">Не удалось распознать адрес — попробуй точнее (например: «M.P. Bruuns Gade 55, Aarhus» или индекс «8000»).</div>{% endif %}
 {% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings/salling#home">изменить</a></div>
 {% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings/salling#home">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
-{% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('send', 13) }} Запущена пакетная подача на {{ batch }} вакансий ({{ 'с авто-отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — открывается по 2 окна за раз.</div>{% endif %}
+{% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('send', 13) }} Запущена пакетная подача на {{ batch }} вакансий ({{ 'с отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — подаётся по одной, прогресс ниже.</div>{% endif %}
+<div id="applyProgress" class="notice-line" style="display:none;flex-direction:column;gap:7px;align-items:stretch;color:var(--ok-txt);background:var(--ok-bg);"></div>
 
 <div class="ap-bar {{ 'on' if autopilot and autopilot.enabled else '' }}">
   <span class="ap-bar-ic">{{ ic.i('zap', 15) }}</span>
@@ -694,6 +695,43 @@
 </script>
 {% endif %}
 <script>
+  // --- живой прогресс пакетной подачи ---
+  (function () {
+    const box = document.getElementById('applyProgress');
+    if (!box) return;
+    const esc = (s) => String(s == null ? '' : s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+    async function tick() {
+      let d = null;
+      try {
+        const r = await fetch('/api/apply/progress', { cache: 'no-store' });
+        d = await r.json();
+      } catch (e) { return; }
+      if (!d || !d.active) {
+        // недавно завершилась — покажем краткий итог, потом скроем
+        if (d && d.total && d.finished_at) {
+          box.style.display = 'flex';
+          const failTxt = d.failed ? ` · не удалось ${d.failed}` : '';
+          const head = d.stalled ? '⚠ Подача прервалась' : '✓ Подача завершена';
+          box.innerHTML = `<div><b>${head}:</b> подано ${d.ok || 0} из ${d.total}${failTxt}</div>`;
+        } else { box.style.display = 'none'; }
+        return;
+      }
+      box.style.display = 'flex';
+      const pct = d.total ? Math.round((d.done / d.total) * 100) : 0;
+      const cur = d.current ? `${esc(d.current.title)}${d.current.city ? ' — ' + esc(d.current.city) : ''}` : '';
+      const failTxt = d.failed ? ` · <span style="color:var(--err-txt);">не удалось ${d.failed}</span>` : '';
+      box.innerHTML =
+        `<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">` +
+          `<b>Подаю ${d.done} из ${d.total}</b>` +
+          `<span>подано ${d.ok || 0}${failTxt}</span></div>` +
+        `<div style="height:9px;background:rgba(0,0,0,.18);border-radius:6px;overflow:hidden;">` +
+          `<div style="height:100%;width:${pct}%;background:var(--ok-txt,#16a34a);transition:width .4s;"></div></div>` +
+        (cur ? `<div style="opacity:.85;font-size:.92em;">Сейчас: ${cur}</div>` : '');
+    }
+    tick();
+    setInterval(tick, 2000);
+  })();
+
   // --- пакетный выбор вакансий ---
   const selboxes = [...document.querySelectorAll('[data-selbox]')];
   const bar = document.getElementById('batchform');

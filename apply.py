@@ -962,6 +962,41 @@ def _chunks(lst, n):
         yield lst[i:i + n]
 
 
+# ── Прогресс пакетной подачи ────────────────────────────────────────────
+# Воркер пишет живой прогресс в apply_progress.json — дашборд приложения и
+# (через облако) Mini App в Telegram показывают: сколько всего, сколько подано,
+# какая вакансия сейчас, что не удалось.
+PROGRESS_PATH = config.DATA_DIR / "apply_progress.json"
+
+
+def _now_iso() -> str:
+    from datetime import datetime
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _write_progress(state: dict) -> None:
+    """Атомарно записать прогресс (через .tmp + replace), чтобы дашборд не читал
+    наполовину записанный файл."""
+    try:
+        import os
+        tmp = str(PROGRESS_PATH) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False)
+        os.replace(tmp, str(PROGRESS_PATH))
+    except Exception:
+        pass
+
+
+def _cloud_report(job_id, state: str, msg: str = "") -> None:
+    """Best-effort: сообщить облаку статус заявки, чтобы карточка в Mini App
+    обновлялась вживую и для подачи из самого приложения тоже. Никогда не падает."""
+    try:
+        import cloud_auth
+        cloud_auth.report_apply_result(str(job_id), state, msg)
+    except Exception:
+        pass
+
+
 def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
               concurrency: int = 1, keep_open: bool = True):
     """Пакетная подача.
@@ -989,17 +1024,55 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
         ctx = _launch_browser(p)
         if effective_concurrency <= 1:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
-            for job in jobs:
+            items = [{"id": j.id, "title": j.title, "city": j.city, "state": "pending"} for j in jobs]
+            prog = {
+                "active": True, "mode": "submit" if submit else "dry",
+                "total": len(jobs), "done": 0, "ok": 0, "failed": 0,
+                "current": None, "items": items,
+                "started_at": _now_iso(), "updated_at": _now_iso(), "finished_at": None,
+            }
+            _write_progress(prog)
+            for i, job in enumerate(jobs):
                 if page.is_closed():
                     page = ctx.new_page()
-                if process_job(page, job, profile, submit):
-                    submitted += 1
+                prog["current"] = {"idx": i + 1, "id": job.id, "title": job.title, "city": job.city}
+                items[i]["state"] = "submitting"
+                prog["updated_at"] = _now_iso()
+                _write_progress(prog)
+                if submit:
+                    _cloud_report(job.id, "submitting", "WexFlow заполняет форму")
+                ok = False
+                try:
+                    ok = process_job(page, job, profile, submit)
+                except Exception as e:  # одна вакансия не должна валить всю пачку
+                    print("  job error:", str(e)[:120])
+                    ok = False
+                if submit:
+                    if ok:
+                        submitted += 1
+                        items[i]["state"] = "ok"
+                        prog["ok"] += 1
+                        _cloud_report(job.id, "submitted", "Заявка отправлена")
+                    else:
+                        items[i]["state"] = "failed"
+                        prog["failed"] += 1
+                        _cloud_report(job.id, "failed", "Подача не подтверждена — проверь вручную")
+                else:
+                    items[i]["state"] = "ok" if ok else "done"
+                prog["done"] = i + 1
+                prog["updated_at"] = _now_iso()
+                _write_progress(prog)
                 if submit:
                     try:
                         page.goto("about:blank", wait_until="domcontentloaded", timeout=10000)
                     except Exception:
                         if page.is_closed():
                             page = ctx.new_page()
+            prog["active"] = False
+            prog["current"] = None
+            prog["finished_at"] = _now_iso()
+            prog["updated_at"] = _now_iso()
+            _write_progress(prog)
             if submit:
                 print(f"\n========\nИТОГ: реально отправлено и отмечено «подано»: {submitted} из {len(jobs)}")
                 if submitted < len(jobs):

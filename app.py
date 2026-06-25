@@ -811,6 +811,31 @@ def api_version():
         return {"version": "dev", "repo": "", "update": None, "error": "version unavailable"}
 
 
+@app.get("/api/apply/progress")
+def api_apply_progress():
+    """Живой прогресс пакетной подачи для панели в дашборде (и Mini App).
+    Воркер apply.py пишет apply_progress.json; если он завис/умер и давно не
+    обновлялся — считаем подачу неактивной, чтобы панель не висела вечно."""
+    try:
+        p = config.DATA_DIR / "apply_progress.json"
+        if not p.exists():
+            return {"active": False}
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if data.get("active"):
+            ts = data.get("updated_at") or ""
+            try:
+                from datetime import datetime
+                age = (datetime.now() - datetime.fromisoformat(ts)).total_seconds()
+                if age > 240:  # 4 мин тишины — воркер, видимо, оборвался
+                    data["active"] = False
+                    data["stalled"] = True
+            except Exception:  # noqa: BLE001
+                pass
+        return data
+    except Exception:  # noqa: BLE001
+        return {"active": False}
+
+
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 templates.env.globals["brand_label"] = labels.brand
