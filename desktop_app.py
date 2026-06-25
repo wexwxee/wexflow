@@ -922,7 +922,15 @@ def run_window():
     _free_our_ports()
     start_servers()
     ensure_browser_async()
-    ready = wait_for_hub()
+    ready = wait_for_hub(90)
+    if not ready:
+        # Частый случай при первом запуске: антивирус сканирует свежие .exe-воркеры
+        # (они стартуют дольше), либо остались процессы прошлой версии на портах.
+        # Не сдаёмся сразу — чистим порты и поднимаем серверы ещё раз.
+        print("[WexFlow] серверы не ответили за 90с — чищу порты и пробую снова")
+        _free_our_ports()
+        start_servers()
+        ready = wait_for_hub(90)
 
     import webview
 
@@ -956,10 +964,18 @@ def run_window():
             "<body style='font:16px system-ui;background:#101111;color:#e6e8e6;"
             "display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"
             "text-align:center'>"
-            "<div style='max-width:420px;padding:24px'>"
-            "<h2 style='margin:0 0 8px'>WexFlow не смог запустить серверы</h2>"
-            "<p style='color:#9aa0a6;line-height:1.5'>Закрой это окно и запусти WexFlow заново. "
-            "Если повторяется — переустанови приложение свежим установщиком.</p></div></body>"
+            "<div style='max-width:460px;padding:24px'>"
+            "<h2 style='margin:0 0 10px'>WexFlow не смог запустить серверы</h2>"
+            "<p style='color:#9aa0a6;line-height:1.6;text-align:left'>"
+            "Чаще всего это бывает при <b>первом запуске</b>: антивирус проверяет свежие файлы, "
+            "и они стартуют медленнее обычного.<br><br>"
+            "<b>Что сделать:</b><br>"
+            "1. Закрой это окно полностью.<br>"
+            "2. Подожди примерно минуту.<br>"
+            "3. Запусти WexFlow снова — обычно со второго раза всё стартует.<br><br>"
+            "Если повторяется — добавь папку WexFlow в исключения антивируса "
+            "или переустанови приложение свежим установщиком (WexFlow-Setup.exe)."
+            "</p></div></body>"
         )
         native_window = webview.create_window("WexFlow", html=fallback_html, **win_kwargs)
     # перетаскивание — через pywebview drag-region (класс .desktop-drag),
