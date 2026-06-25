@@ -766,6 +766,84 @@ def tg_decide(job_id: str, approve: bool, launcher) -> str:
     return f"✅ <b>Отправляю заявку…</b>\n{t}\n\nWexFlow заполнит форму и подаст за тебя."
 
 
+def tg_submit_batch(job_ids, launcher) -> dict:
+    """Start one submit worker for many Telegram Mini App decisions.
+
+    The single-card tg_decide path intentionally launches one id at a time. The
+    Mini App can send many submit decisions in one poll, so starting one browser
+    worker per id would make those workers fight over the same browser profile.
+    """
+    ids = _dedupe_ids(job_ids)
+    if not ids:
+        return {"started": [], "skipped": []}
+
+    pending_ids = set(ids)
+    r = get_rule()
+    pend = [p for p in (r.get("tg_pending") or []) if p.get("job_id") not in pending_ids]
+    save_rule({"tg_pending": pend})
+
+    latest = get_rule()
+    home = settings_store.get_home()
+    submitted = set(latest.get("submitted_ids") or [])
+    submitting = set(latest.get("submitting_ids") or [])
+    started: list[str] = []
+    started_jobs: list[Job] = []
+    skipped: list[dict] = []
+
+    for job_id in ids:
+        job = _get_job(job_id)
+        title = job.title if job else "vacancy"
+        if job_id in submitted:
+            skipped.append({
+                "job_id": job_id, "state": "submitted",
+                "reason": "already_submitted", "title": title,
+            })
+        elif job is not None and (job.status == "applied" or job.applied_at is not None):
+            skipped.append({
+                "job_id": job_id, "state": "submitted",
+                "reason": "already_submitted", "title": title,
+            })
+        elif job_id in submitting:
+            skipped.append({
+                "job_id": job_id, "state": "submitting",
+                "reason": "already_submitting", "title": title,
+            })
+        elif not job:
+            skipped.append({
+                "job_id": job_id, "state": "failed",
+                "reason": "missing", "title": title,
+            })
+        elif not _matches(job, latest, home):
+            log_event("info", f"TG: карточка устарела и не подходит под текущие фильтры — {title}")
+            skipped.append({
+                "job_id": job_id, "state": "failed",
+                "reason": "stale", "title": title,
+            })
+        else:
+            started.append(job_id)
+            started_jobs.append(job)
+
+    if not started:
+        return {"started": [], "skipped": skipped}
+
+    mark_submitting(started)
+    try:
+        launcher(started)
+    except Exception as e:  # noqa: BLE001
+        clear_submitting(started)
+        for job in started_jobs:
+            skipped.append({
+                "job_id": job.id, "state": "failed",
+                "reason": "launch_error", "title": job.title,
+            })
+        log_event("info", f"TG: не смог запустить пакетную подачу: {e}")
+        return {"started": [], "skipped": skipped, "error": str(e)[:160]}
+
+    titles = "; ".join(j.title for j in started_jobs[:5])
+    log_event("submit", f"TG: запущена пакетная подача: {len(started)} — {titles}")
+    return {"started": started, "skipped": skipped}
+
+
 def auto_submit_tick(launcher) -> None:
     """Вызывается после скана базы. Если автоотправка включена и есть дневной
     лимит — отправить до (лимит − сегодня) свежих подходящих. launcher(ids)

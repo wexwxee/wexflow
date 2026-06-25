@@ -15,6 +15,7 @@ placeholder/name) и сознательно не жмёт Submit. После п�
 """
 import json
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -623,6 +624,56 @@ def _disable_autofill(user_data_dir: str):
         pass
 
 
+def _ps_single_quote(value: str) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _browser_profile_in_use() -> bool:
+    if not sys.platform.startswith("win"):
+        return False
+    profile = str(config.BROWSER_PROFILE_DIR)
+    script = (
+        "$profile = " + _ps_single_quote(profile) + "; "
+        "$names = @('chrome.exe','msedge.exe','chromium.exe'); "
+        "$count = @(Get-CimInstance Win32_Process | Where-Object { "
+        "$names -contains $_.Name -and $_.CommandLine -like ('*' + $profile + '*') "
+        "}).Count; "
+        "Write-Output $count"
+    )
+    try:
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return int((res.stdout or "0").strip() or "0") > 0
+    except Exception:
+        return True
+
+
+def _clear_stale_browser_locks() -> bool:
+    if _browser_profile_in_use():
+        return False
+    removed = []
+    for path in config.BROWSER_PROFILE_DIR.glob("Singleton*"):
+        try:
+            path.unlink()
+            removed.append(path.name)
+        except OSError:
+            pass
+    if removed:
+        print(f"  очистил старый lock браузера: {', '.join(removed)}")
+    return bool(removed)
+
+
+def _is_browser_lock_error(msg: str) -> bool:
+    return any(s in msg for s in (
+        "has been closed", "SingletonLock", "ProcessSingleton",
+        "being used by another", "DevToolsActivePort",
+    ))
+
+
 def _launch_browser(p):
     """Запускает ВИДИМЫЙ браузер с сохранённым профилем.
 
@@ -631,6 +682,7 @@ def _launch_browser(p):
     Visual C++ Redistributable («side-by-side configuration is incorrect»).
     Системные браузеры имеют все зависимости и открываются без проблем.
     """
+    _clear_stale_browser_locks()
     _disable_autofill(str(config.BROWSER_PROFILE_DIR))
     no_autofill_args = [
         "--disable-features=AutofillServerCommunication,AutofillEnableAccountWalletStorage,PasswordManagerOnboarding",
@@ -641,27 +693,36 @@ def _launch_browser(p):
         {"channel": "msedge"},
         {},  # встроенный Chromium как последний шанс
     ]
-    last_err = None
-    for opts in attempts:
-        try:
-            ctx = p.chromium.launch_persistent_context(
-                user_data_dir=str(config.BROWSER_PROFILE_DIR),
-                headless=False,
-                locale="da-DK",
-                args=no_autofill_args,
-                **opts,
-            )
-            label = opts.get("channel", "bundled chromium")
-            print(f"  браузер: {label}")
-            return ctx
-        except Exception as e:
-            last_err = e
-            continue
+    def try_attempts():
+        last = None
+        for opts in attempts:
+            try:
+                ctx = p.chromium.launch_persistent_context(
+                    user_data_dir=str(config.BROWSER_PROFILE_DIR),
+                    headless=False,
+                    locale="da-DK",
+                    args=no_autofill_args,
+                    **opts,
+                )
+                label = opts.get("channel", "bundled chromium")
+                print(f"  браузер: {label}")
+                return ctx, None
+            except Exception as e:
+                last = e
+                continue
+        return None, last
+
+    ctx, last_err = try_attempts()
+    if ctx:
+        return ctx
     msg = str(last_err)
-    if any(s in msg for s in (
-        "has been closed", "SingletonLock", "ProcessSingleton",
-        "being used by another", "DevToolsActivePort",
-    )):
+    if _is_browser_lock_error(msg):
+        if _clear_stale_browser_locks():
+            time.sleep(1)
+            ctx, last_err = try_attempts()
+            if ctx:
+                return ctx
+            msg = str(last_err)
         raise RuntimeError(
             "Похоже, браузер от прошлой подачи ещё открыт — из-за этого новый "
             "не запускается. Закрой ВСЕ окна браузера, которые открыл бот, "
@@ -863,7 +924,8 @@ def process_job(page, job, profile, submit: bool):
     return sent
 
 
-def run(job_id: str | None, login_only: bool = False, web_mode: bool = False, submit: bool = False):
+def run(job_id: str | None, login_only: bool = False, web_mode: bool = False,
+        submit: bool = False, keep_open: bool = True):
     profile = load_profile()
     config.BROWSER_PROFILE_DIR.mkdir(exist_ok=True)
 
@@ -887,10 +949,10 @@ def run(job_id: str | None, login_only: bool = False, web_mode: bool = False, su
         else:
             process_job(page, job, profile, submit)
 
-        if web_mode:
+        if web_mode and keep_open:
             print("\n>>> Браузер останется открытым. Закрой его, когда закончишь.")
             _wait_until_browser_closed(ctx)
-        else:
+        elif not web_mode and keep_open:
             input("\nНажми Enter здесь, когда закончишь, чтобы закрыть браузер...")
         ctx.close()
 
@@ -900,7 +962,8 @@ def _chunks(lst, n):
         yield lst[i:i + n]
 
 
-def run_batch(job_ids, submit: bool = False, web_mode: bool = True, concurrency: int = 1):
+def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
+              concurrency: int = 1, keep_open: bool = True):
     """Пакетная подача.
 
     Реальная отправка всегда идёт последовательно в одной вкладке: так меньше
@@ -944,7 +1007,7 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True, concurrency:
             else:
                 print(f"\n========\nПрогон завершён ({len(jobs)} вакансий обработано) — НЕ отправлял, ничего не отмечал.")
 
-            if web_mode:
+            if web_mode and keep_open:
                 print("\n>>> Готово. Браузер остаётся открытым — проверь/закрой сам.")
                 _wait_until_browser_closed(ctx)
             ctx.close()
@@ -1002,7 +1065,7 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True, concurrency:
         else:
             print(f"\n========\nПрогон завершён ({len(jobs)} вакансий открыто) — НЕ отправлял, ничего не отмечал.")
 
-        if web_mode:
+        if web_mode and keep_open:
             print("\n>>> Готово. Браузер остаётся открытым — проверь/закрой сам.")
             _wait_until_browser_closed(ctx)
         ctx.close()
@@ -1011,16 +1074,17 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True, concurrency:
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
-        sys.exit("Использование: python apply.py <job_id> [<job_id> ...] [--submit] [--web] | python apply.py --login")
+        sys.exit("Использование: python apply.py <job_id> [<job_id> ...] [--submit] [--web] [--auto-close] | python apply.py --login")
     web_mode = "--web" in args
     submit = "--submit" in args
+    keep_open = "--auto-close" not in args
     ids = [a for a in args if not a.startswith("--")]
     if "--login" in args:
-        run(None, login_only=True, web_mode=web_mode)
+        run(None, login_only=True, web_mode=web_mode, keep_open=keep_open)
     elif len(ids) > 1:
-        run_batch(ids, submit=submit, web_mode=web_mode)
+        run_batch(ids, submit=submit, web_mode=web_mode, keep_open=keep_open)
     else:
-        run(ids[0], web_mode=web_mode, submit=submit)
+        run(ids[0], web_mode=web_mode, submit=submit, keep_open=keep_open)
 
 
 if __name__ == "__main__":

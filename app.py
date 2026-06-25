@@ -236,36 +236,173 @@ def _sync_account_from_cloud() -> None:
         account_mod.apply_session(user)
 
 
-def _watch_and_report_apply(job_id: str) -> None:
-    """Фон: для «живого эфира» в Mini App-панели сообщает облаку, что заявка
-    подаётся, затем следит за её статусом. Когда подача проходит (status=applied)
-    — шлёт «submitted». Если не дождались за лимит — молчим (панель завершит мягко
-    сама, ложное «не удалось» не показываем)."""
+def _report_apply_result_safe(job_id: str, state: str, msg: str = "") -> None:
     try:
-        cloud_auth.report_apply_result(job_id, "submitting", "WexFlow заполняет форму")
+        cloud_auth.report_apply_result(job_id, state, msg)
     except Exception:  # noqa: BLE001
         pass
-    deadline = time.time() + 180
-    while time.time() < deadline and not _tg_stop.is_set():
-        _tg_stop.wait(3)
+
+
+# ── Сериализатор автоматической подачи ──────────────────────────────────
+# Все автоматические подачи (из Mini App и автопилота) идут через ОДНУ очередь.
+# Пока на ПК открыт браузер и заполняется одна пачка, новые решения НЕ запускают
+# второй процесс apply.py — иначе два процесса дрались бы за один профиль
+# браузера (browser_profile) и подавалась бы только часть заявок. Новые id
+# встают в очередь и подаются сразу следом, как только освободится браузер.
+_apply_queue: list[list[str]] = []
+_apply_queue_lock = threading.Lock()
+_apply_runner_busy = False
+
+
+def _enqueue_auto_submit(ids) -> None:
+    """Поставить пачку id в очередь автоматической подачи и при необходимости
+    поднять воркер очереди. Дубликаты (id, который уже ждёт в очереди) отсеиваются."""
+    clean, seen = [], set()
+    for raw in ids or []:
+        jid = str(raw or "").strip()
+        if jid and jid not in seen:
+            seen.add(jid)
+            clean.append(jid)
+    if not clean:
+        return
+    global _apply_runner_busy
+    with _apply_queue_lock:
+        queued = {jid for batch in _apply_queue for jid in batch}
+        batch = [jid for jid in clean if jid not in queued]
+        if batch:
+            _apply_queue.append(batch)
+        if not _apply_runner_busy and _apply_queue:
+            _apply_runner_busy = True
+            threading.Thread(target=_apply_runner_loop, daemon=True,
+                             name="apply-runner").start()
+
+
+def _apply_runner_loop() -> None:
+    """Воркер очереди: берёт пачку, запускает подачу, ждёт её завершения
+    (следит и сообщает статусы в Mini App), затем берёт следующую пачку.
+    Так в любой момент времени работает только один браузер."""
+    global _apply_runner_busy
+    while True:
+        with _apply_queue_lock:
+            if _tg_stop.is_set() or not _apply_queue:
+                _apply_runner_busy = False
+                return
+            batch = _apply_queue.pop(0)
+        proc = _spawn_salling_apply(batch, submit=True, auto_close=True)
+        # следим за пачкой и шлём статусы, пока процесс жив (или до дедлайна)
+        _watch_and_report_apply_batch(batch, proc)
+        # гарантированно освобождаем браузер перед следующей пачкой:
+        # если процесс завис, снимаем его — иначе следующая пачка снова
+        # упрётся в занятый профиль браузера
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+                proc.wait(timeout=10)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _watch_and_report_apply_batch(job_ids: list[str], proc=None) -> None:
+    ids = []
+    seen = set()
+    for raw in job_ids or []:
+        jid = str(raw or "").strip()
+        if jid and jid not in seen:
+            seen.add(jid)
+            ids.append(jid)
+    if not ids:
+        return
+
+    for jid in ids:
+        _report_apply_result_safe(jid, "submitting", "WexFlow заполняет форму")
+
+    pending = set(ids)
+    deadline = time.time() + max(300, 180 * len(ids))
+    while pending and time.time() < deadline and not _tg_stop.is_set():
+        submitted_jobs = []
         try:
             with get_session() as s:
-                job = s.get(Job, job_id)
-            if job is not None and job.status == "applied":
-                autopilot.clear_submitting([job_id])
-                autopilot.record_submitted([job])
-                try:
-                    cloud_auth.report_apply_result(job_id, "submitted", "Заявка отправлена")
-                except Exception:  # noqa: BLE001
-                    pass
-                return
+                for jid in list(pending):
+                    job = s.get(Job, jid)
+                    if job is not None and job.status == "applied":
+                        submitted_jobs.append(job)
         except Exception:  # noqa: BLE001
-            pass
-    autopilot.clear_submitting([job_id])
-    try:
-        cloud_auth.report_apply_result(job_id, "failed", "Подача не подтверждена")
-    except Exception:  # noqa: BLE001
-        pass
+            submitted_jobs = []
+
+        if submitted_jobs:
+            submitted_ids = [j.id for j in submitted_jobs]
+            pending.difference_update(submitted_ids)
+            autopilot.record_submitted(submitted_jobs)
+            for jid in submitted_ids:
+                _report_apply_result_safe(jid, "submitted", "Заявка отправлена")
+
+        if not pending:
+            return
+
+        if proc is not None and proc.poll() is not None:
+            break
+        _tg_stop.wait(3)
+
+    if pending:
+        # финальная перепроверка: процесс мог отметить «applied» в самый
+        # последний момент — как раз когда мы выходили из цикла. Не врём
+        # «не удалось» про заявку, которая на деле подалась.
+        really_failed = []
+        try:
+            with get_session() as s:
+                for jid in list(pending):
+                    job = s.get(Job, jid)
+                    if job is not None and job.status == "applied":
+                        autopilot.record_submitted([job])
+                        _report_apply_result_safe(jid, "submitted", "Заявка отправлена")
+                    else:
+                        really_failed.append(jid)
+        except Exception:  # noqa: BLE001
+            really_failed = list(pending)
+        if really_failed:
+            autopilot.clear_submitting(really_failed)
+            for jid in really_failed:
+                _report_apply_result_safe(jid, "failed", "Подача не подтверждена — проверь вручную")
+
+
+def _apply_result_msg(state: str, reason: str) -> str:
+    if state == "submitted":
+        return "Уже подано"
+    if state == "submitting":
+        return "Подача уже запущена"
+    return {
+        "missing": "Вакансия больше не доступна",
+        "stale": "Карточка больше не подходит под текущие фильтры",
+        "launch_error": "Не удалось запустить подачу на ПК",
+    }.get(reason or "", "Подача не запущена")
+
+
+def _handle_tg_decisions(decisions: list) -> None:
+    submit_ids = []
+    for d in decisions or []:
+        if not isinstance(d, dict):
+            continue
+        jid = d.get("jobId")
+        action = d.get("action")
+        if not jid or jid == "__demo__" or action not in ("submit", "skip"):
+            continue
+        if action == "skip":
+            autopilot.tg_decide(jid, approve=False, launcher=lambda ids: None)
+        else:
+            submit_ids.append(jid)
+
+    if not submit_ids:
+        return
+
+    result = autopilot.tg_submit_batch(
+        submit_ids,
+        launcher=lambda ids: _launch_salling_apply(ids, submit=True, track_autopilot=True),
+    )
+    for item in result.get("skipped") or []:
+        jid = item.get("job_id")
+        state = item.get("state")
+        if jid and state in ("submitting", "submitted", "failed"):
+            _report_apply_result_safe(jid, state, _apply_result_msg(state, item.get("reason", "")))
 
 
 def _tg_poller_loop() -> None:
@@ -278,15 +415,7 @@ def _tg_poller_loop() -> None:
         try:
             _sync_account_from_cloud()
             if account_mod.is_signed_in():
-                for d in cloud_auth.fetch_decisions():
-                    jid = d.get("jobId")
-                    action = d.get("action")
-                    if not jid or jid == "__demo__" or action not in ("submit", "skip"):
-                        continue
-                    autopilot.tg_decide(
-                        jid, approve=(action == "submit"),
-                        launcher=lambda ids: _launch_salling_apply(ids, submit=True, track_autopilot=True),
-                    )
+                _handle_tg_decisions(cloud_auth.fetch_decisions())
             tg_id = account_mod.load().get("tg_id") if account_mod.is_signed_in() else ""
             for cmd in cloud_auth.fetch_commands(tg_id=tg_id or ""):
                 result_text = _handle_tg_remote_command(cmd)
@@ -335,6 +464,9 @@ def _tg_card(job) -> str:
     def e(s):
         return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     lines = [f"🏷 <b>{e(job.title)}</b>"]
+    public_id = _job_public_id(job)
+    if public_id:
+        lines.append(f"ID: <code>{e(public_id)}</code>")
     ru_title = _title_ru(job.title)
     if ru_title and ru_title.lower() != (job.title or "").strip().lower():
         lines.append(f"   ↳ <i>{e(ru_title)}</i>")
@@ -369,6 +501,61 @@ def _tg_card(job) -> str:
             "Подать заявку от твоего имени?")
 
 
+def _job_public_id(job) -> str:
+    return str(job.requisition_id or job.id or "").strip()
+
+
+def _job_short_id(job) -> str:
+    raw = _job_public_id(job)
+    if not raw:
+        return ""
+    return raw if len(raw) <= 12 else raw[-8:]
+
+
+def _job_detail_bits(job) -> list[str]:
+    bits = []
+    if job.hours:
+        bits.append(f"{job.hours} ч/нед")
+    address = _job_address(job)
+    if address:
+        short_address = address.replace(", DK", "").replace(", Denmark", "")
+        bits.append(short_address)
+    elif job.city:
+        bits.append(job.city)
+    return bits
+
+
+def _job_summary_line(job, loc: str = "", address: str = "") -> str:
+    bits = []
+    if job.brand:
+        bits.append(labels.brand(job.brand))
+    if loc:
+        bits.append(loc)
+    if job.hours:
+        bits.append(f"{job.hours} ч/нед")
+    if address:
+        bits.append(address)
+    return " · ".join(b for b in bits if b)
+
+
+def _plain_snippet(value: str | None, limit: int = 220) -> str:
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _tg_display_title(job) -> str:
+    title = (job.title or "Вакансия").strip()
+    sid = _job_short_id(job)
+    parts = [title]
+    if sid and sid.lower() not in title.lower():
+        parts.append(f"ID {sid}")
+    parts.extend(_job_detail_bits(job)[:2])
+    return " · ".join(p for p in parts if p)
+
+
 def _tg_job_payload(job) -> dict:
     """Структурные поля для Mini App-панели: фильтры не должны парсить только текст."""
     home = None
@@ -383,15 +570,34 @@ def _tg_job_payload(job) -> dict:
     loc = (job.city or "").strip()
     if distance is not None:
         loc = f"{loc} · ~{round(distance)} км от дома" if loc else f"~{round(distance)} км от дома"
+    public_id = _job_public_id(job)
+    short_id = _job_short_id(job)
+    title = job.title or ""
+    display_title = _tg_display_title(job)
+    summary = _job_summary_line(job, loc=loc, address=address)
+    description = _plain_snippet(job.description_ru or job.description)
     return {
         "id": job.id,
-        "title": job.title or "",
-        "titleRu": _title_ru(job.title),
+        "jobId": job.id,
+        "publicId": public_id,
+        "shortId": short_id,
+        "requisitionId": job.requisition_id or "",
+        "title": display_title,
+        "displayTitle": display_title,
+        "titleBase": title,
+        "titleRu": _title_ru(title),
+        "summary": summary,
+        "subtitle": summary,
+        "description": description,
+        "descriptionSnippet": description,
         "brand": labels.brand(job.brand) if job.brand else "",
         "city": job.city or "",
         "location": loc,
         "address": address,
         "hours": job.hours or "",
+        "hoursLabel": f"{job.hours} ч/нед" if job.hours else "",
+        "published": job.published or "",
+        "publishedDate": (job.published or "")[:10],
         "distanceKm": distance,
         "url": job.application_link or "",
         "mapsUrl": _maps_url(job, home) if (address or job.lat is not None) else "",
@@ -1990,22 +2196,36 @@ def telegram_test():
 
 
 @app.post("/api/telegram/send-current")
-def telegram_send_current():
+async def telegram_send_current(request: Request, panel: bool = False):
     """Ручная отправка текущих подходящих вакансий в Telegram.
     Нужна для понятного сценария: счётчик «подходит» уже есть, но безопасный
     режим автоматически шлёт только новые после включения."""
     if not account_mod.is_signed_in():
         return {"ok": False, "error": "Сначала войди через Telegram (раздел «Аккаунт»)."}
+    try:
+        body = await request.json()
+        if isinstance(body, dict) and "panel" in body:
+            panel = bool(body.get("panel"))
+    except Exception:  # noqa: BLE001
+        pass
     autopilot.set_mode("telegram")
     _reschedule_autopilot_scan()
-    result = _tg_offer_tick(include_existing=True, ignore_schedule=True)
+    if panel:
+        autopilot.reset_tg_queue_for_filters()
+    result = _tg_offer_tick(
+        include_existing=True,
+        ignore_schedule=True,
+        limit=30 if panel else None,
+        panel=panel,
+    )
     stats = autopilot.tg_queue_stats()
     if result.get("sent"):
-        return {"ok": True, "sent": result["sent"], "remaining": stats["eligible_current"]}
+        return {"ok": True, "sent": result["sent"], "remaining": stats["eligible_current"], "panel": panel}
     return {
         "ok": False,
         "sent": 0,
         "remaining": stats["eligible_current"],
+        "panel": panel,
         "error": result.get("error") or "Нечего отправлять: текущие уже предложены, пропущены или поданы.",
     }
 
@@ -2193,9 +2413,10 @@ def _salling_apply_cmd(extra: list[str]) -> list[str]:
     return [sys.executable, "-u", str(config.BASE_DIR / "apply.py"), *extra]
 
 
-def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot: bool = False) -> None:
-    """Запустить подачу Salling по списку id с диагностикой фонового процесса.
-    submit=False — режим подготовки: WexFlow заполняет и останавливается перед отправкой."""
+def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool = False):
+    """Запустить процесс apply.py по списку id. Возвращает Popen (или None при сбое).
+    auto_close=True добавляет --auto-close: браузер закроется сам после пачки
+    (для фоновой подачи из Mini App/автопилота, где нет человека у экрана)."""
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
@@ -2203,18 +2424,30 @@ def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot:
     cmd = _salling_apply_cmd(list(ids) + ["--web"])
     if submit:
         cmd.append("--submit")
+    if submit and auto_close:
+        cmd.append("--auto-close")
     log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
     try:
-        subprocess.Popen(
+        return subprocess.Popen(
             cmd, cwd=str(config.BASE_DIR),
             stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
-        if submit and track_autopilot:
-            for jid in ids:
-                threading.Thread(target=_watch_and_report_apply, args=(jid,), daemon=True).start()
     finally:
-        log.close()
+        log.close()  # потомок унаследовал свой хэндл; родительский больше не нужен
+
+
+def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot: bool = False) -> None:
+    """Запустить подачу Salling по списку id.
+    submit=False — режим подготовки: WexFlow заполняет и останавливается перед отправкой.
+    submit + track_autopilot — фоновая подача из Mini App/автопилота: идёт через
+    ОБЩУЮ очередь (_apply_runner_loop), строго по одной пачке за раз, чтобы два
+    процесса не дрались за один профиль браузера. Из-за этой драки раньше
+    подавалась только одна вакансия, а остальные «зависали в процессе»."""
+    if submit and track_autopilot:
+        _enqueue_auto_submit(list(ids))
+        return
+    _spawn_salling_apply(ids, submit=submit, auto_close=False)
 
 
 @app.post("/job/{job_id}/apply/start")
