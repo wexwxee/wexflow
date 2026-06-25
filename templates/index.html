@@ -736,22 +736,63 @@
   const selboxes = [...document.querySelectorAll('[data-selbox]')];
   const bar = document.getElementById('batchform');
   const selcount = document.getElementById('selcount');
+
+  // Выбор сохраняем в браузере, чтобы он не пропадал при переходе на
+  // «Подробнее» и обратно (это полная перезагрузка страницы).
+  const SEL_KEY = 'wex_selected_jobs';
+  const loadSelIds = () => {
+    try { return new Set(JSON.parse(localStorage.getItem(SEL_KEY) || '[]')); }
+    catch (e) { return new Set(); }
+  };
+  const visibleIds = new Set(selboxes.map(c => c.value));
+  function persistSel() {
+    const saved = loadSelIds();
+    // обновляем только вакансии, видимые на этой странице, чужие не трогаем
+    visibleIds.forEach(id => saved.delete(id));
+    selboxes.filter(c => c.checked).forEach(c => saved.add(c.value));
+    try { localStorage.setItem(SEL_KEY, JSON.stringify([...saved])); } catch (e) {}
+  }
+
   function refreshSel() {
     const n = selboxes.filter(c => c.checked).length;
     selcount.textContent = n;
     bar.classList.toggle('show', n > 0);
     selboxes.forEach(c => c.closest('[data-jobcard]').classList.toggle('selected', c.checked));
   }
-  selboxes.forEach(c => c.addEventListener('change', refreshSel));
+  selboxes.forEach(c => c.addEventListener('change', () => { refreshSel(); persistSel(); }));
   document.getElementById('selclear').addEventListener('click', () => {
-    selboxes.forEach(c => c.checked = false); refreshSel();
+    selboxes.forEach(c => c.checked = false);
+    try { localStorage.removeItem(SEL_KEY); } catch (e) {}
+    refreshSel();
   });
+
+  // Восстанавливаем ранее выбранные вакансии при загрузке списка.
+  (function restoreSel() {
+    const saved = loadSelIds();
+    if (saved.size) selboxes.forEach(c => { if (saved.has(c.value)) c.checked = true; });
+  })();
   document.getElementById('changefiles').addEventListener('click', (e) => {
     e.preventDefault();
     const first = selboxes.find(c => c.checked) || selboxes[0];
     if (first) location.href = '/job/' + first.value + '/apply';
   });
   refreshSel();
+
+  // --- помним позицию прокрутки и адрес списка ---
+  // Чтобы после «Подробнее» и возврата к списку остаться на том же месте,
+  // а не прыгать наверх. Адрес запоминаем для кнопки «к списку».
+  (function keepScroll() {
+    try { sessionStorage.setItem('wex_list_url', location.pathname + location.search); } catch (e) {}
+    const SCROLL_KEY = 'wex_list_scroll:' + location.pathname + location.search;
+    // отключаем авто-восстановление браузера, чтобы не дёргало дважды
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    const sy = sessionStorage.getItem(SCROLL_KEY);
+    if (sy !== null) window.scrollTo(0, parseInt(sy, 10) || 0);
+    let t;
+    const save = () => { try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY)); } catch (e) {} };
+    window.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(save, 150); }, { passive: true });
+    window.addEventListener('beforeunload', save);
+  })();
 
   // --- сохранить текущие фильтры как пресет ---
   const savePresetBtn = document.getElementById('savePreset');

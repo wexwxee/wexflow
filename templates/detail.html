@@ -43,7 +43,7 @@
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
-    <a class="tablink" href="/">← к списку</a>
+    <a class="tablink" id="backToList" href="/">← к списку</a>
     {{ ui.app_switch() }}
     {{ ui.theme_toggle() }}
   </div>
@@ -112,6 +112,15 @@
 
 {% block script %}
 <script>
+  // «к списку» — вернуться к тому же отфильтрованному списку, а не на голую «/»
+  (function () {
+    const back = document.getElementById("backToList");
+    try {
+      const url = sessionStorage.getItem("wex_list_url");
+      if (back && url) back.setAttribute("href", url);
+    } catch (e) {}
+  })();
+
   const tb = document.getElementById("transitBtn");
   if (tb) tb.addEventListener("click", async () => {
     const out = document.getElementById("transitOut");
