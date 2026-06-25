@@ -220,6 +220,18 @@ def report_apply_result(job_id: str, state: str, msg: str = "", timeout: int = 8
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
 
+def report_applied(items, timeout: int = 8) -> bool:
+    """Отправить в облако список поданных вакансий — для раздела «Поданные» в Mini App
+    (одно облако: подал на ПК → видно в телефоне). Облако заодно убирает эти вакансии
+    из «ждут решения», чтобы не висели стейлом. items: [{id,title,brand,city,hours,url,ts}]."""
+    payload = {
+        "kind": "applied_sync",
+        "deviceId": device_id(),
+        "applied": list(items or [])[:60],
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
+
+
 def report_apply_progress(progress: dict, timeout: int = 6) -> bool:
     """Сообщить облаку сводку прогресса пакетной подачи — для панели прогресса в
     Mini App («Подаю X из N», что сейчас, сколько подано/не удалось). Облако хранит

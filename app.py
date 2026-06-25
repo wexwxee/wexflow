@@ -300,6 +300,7 @@ def _apply_runner_loop() -> None:
                 proc.wait(timeout=10)
             except Exception:  # noqa: BLE001
                 pass
+        _sync_applied_to_cloud(force=True)  # сразу обновим «Поданные» в Mini App
 
 
 def _watch_and_report_apply_batch(job_ids: list[str], proc=None) -> None:
@@ -405,6 +406,46 @@ def _handle_tg_decisions(decisions: list) -> None:
             _report_apply_result_safe(jid, state, _apply_result_msg(state, item.get("reason", "")))
 
 
+_applied_sync_last = 0.0
+
+
+def _sync_applied_to_cloud(force: bool = False) -> None:
+    """Одно облако: периодически шлём в облако список недавно поданных вакансий —
+    чтобы раздел «Поданные» в Mini App был виден (подал на ПК → видно в телефоне),
+    а поданные карточки ушли из «ждут решения». Троттлинг 30 сек."""
+    global _applied_sync_last
+    if not account_mod.is_signed_in():
+        return
+    now = time.time()
+    if not force and now - _applied_sync_last < 30:
+        return
+    _applied_sync_last = now
+    try:
+        with get_session() as s:
+            jobs = s.exec(
+                select(Job).where(Job.status == "applied")
+                .order_by(Job.applied_at.desc()).limit(60)
+            ).all()
+        items = []
+        for job in jobs:
+            try:
+                ts = job.applied_at.isoformat() if job.applied_at else ""
+            except Exception:  # noqa: BLE001
+                ts = ""
+            items.append({
+                "id": job.id,
+                "title": _tg_display_title(job),
+                "brand": labels.brand(job.brand) if job.brand else "",
+                "city": job.city or "",
+                "hours": f"{job.hours} ч/нед" if job.hours else "",
+                "url": job.application_link or "",
+                "ts": ts,
+            })
+        cloud_auth.report_applied(items)
+    except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
+        print(f"applied-sync: ошибка — {e}")
+
+
 def _tg_poller_loop() -> None:
     """Опрашивает облако: какие решения (✅/❌) принял пользователь под карточками,
     и выполняет их локально (подать/пропустить).
@@ -416,6 +457,7 @@ def _tg_poller_loop() -> None:
             _sync_account_from_cloud()
             if account_mod.is_signed_in():
                 _handle_tg_decisions(cloud_auth.fetch_decisions())
+                _sync_applied_to_cloud()  # одно облако: держим «Поданные» свежими (троттлинг 30с)
             tg_id = account_mod.load().get("tg_id") if account_mod.is_signed_in() else ""
             for cmd in cloud_auth.fetch_commands(tg_id=tg_id or ""):
                 result_text = _handle_tg_remote_command(cmd)
