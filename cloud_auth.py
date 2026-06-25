@@ -218,3 +218,15 @@ def report_apply_result(job_id: str, state: str, msg: str = "", timeout: int = 8
         "msg": str(msg or ""),
     }
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
+
+
+def report_apply_progress(progress: dict, timeout: int = 6) -> bool:
+    """Сообщить облаку сводку прогресса пакетной подачи — для панели прогресса в
+    Mini App («Подаю X из N», что сейчас, сколько подано/не удалось). Облако хранит
+    progress:<device> с коротким TTL, поэтому по завершении баннер сам исчезает."""
+    payload = {
+        "kind": "apply_progress",
+        "deviceId": device_id(),
+        "progress": progress or {},
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))

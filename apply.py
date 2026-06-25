@@ -997,6 +997,26 @@ def _cloud_report(job_id, state: str, msg: str = "") -> None:
         pass
 
 
+def _cloud_progress(prog: dict) -> None:
+    """Best-effort: отправить в облако компактную сводку прогресса пачки — для
+    баннера прогресса в Mini App. Шлём только лёгкие поля, без всего списка."""
+    try:
+        import cloud_auth
+        cloud_auth.report_apply_progress({
+            "active": prog.get("active"),
+            "mode": prog.get("mode"),
+            "total": prog.get("total"),
+            "done": prog.get("done"),
+            "ok": prog.get("ok"),
+            "failed": prog.get("failed"),
+            "current": prog.get("current"),
+            "updated_at": prog.get("updated_at"),
+            "finished_at": prog.get("finished_at"),
+        })
+    except Exception:
+        pass
+
+
 def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
               concurrency: int = 1, keep_open: bool = True):
     """Пакетная подача.
@@ -1032,6 +1052,8 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 "started_at": _now_iso(), "updated_at": _now_iso(), "finished_at": None,
             }
             _write_progress(prog)
+            if submit:
+                _cloud_progress(prog)
             for i, job in enumerate(jobs):
                 if page.is_closed():
                     page = ctx.new_page()
@@ -1063,6 +1085,7 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 prog["updated_at"] = _now_iso()
                 _write_progress(prog)
                 if submit:
+                    _cloud_progress(prog)
                     try:
                         page.goto("about:blank", wait_until="domcontentloaded", timeout=10000)
                     except Exception:
@@ -1074,6 +1097,7 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
             prog["updated_at"] = _now_iso()
             _write_progress(prog)
             if submit:
+                _cloud_progress(prog)
                 print(f"\n========\nИТОГ: реально отправлено и отмечено «подано»: {submitted} из {len(jobs)}")
                 if submitted < len(jobs):
                     print("Остальные не подтвердили отправку — проверь их вручную.")
