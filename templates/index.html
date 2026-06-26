@@ -422,6 +422,8 @@
 {% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings/salling#home">изменить</a></div>
 {% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings/salling#home">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
 {% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('send', 13) }} Запущена пакетная подача на {{ batch }} вакансий ({{ 'с отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — подаётся по одной, прогресс ниже.</div>{% endif %}
+{% if skipped %}<div class="notice-line" style="color:var(--warn-txt,#b06b00);background:var(--warn-bg,rgba(255,180,0,.12));">{{ ic.i('alert', 13) }} Придержано руководящих вакансий: {{ skipped }} — пачкой не подаём ради безопасности. Если правда нужно, открой вакансию и подай с её страницы.</div>{% endif %}
+{% if dup %}<div class="notice-line" style="color:var(--warn-txt,#b06b00);background:var(--warn-bg,rgba(255,180,0,.12));">{{ ic.i('check', 13) }} Пропущено уже поданных: {{ dup }} — повторную заявку на ту же вакансию не отправляем.</div>{% endif %}
 <div id="applyProgress" class="notice-line" style="display:none;flex-direction:column;gap:7px;align-items:stretch;color:var(--ok-txt);background:var(--ok-bg);"></div>
 
 <div class="ap-bar {{ 'on' if autopilot and autopilot.enabled else '' }}">

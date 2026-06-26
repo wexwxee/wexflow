@@ -1173,6 +1173,8 @@ def index(
     geoerror: str = "",
     batch: str = "",
     mode: str = "",
+    skipped: str = "",
+    dup: str = "",
     reset: str = "",
 ):
     # запоминаем фильтры в cookie и восстанавливаем при заходе на голую "/"
@@ -1259,6 +1261,13 @@ def index(
             stmt = stmt.order_by(Job.published.desc())
 
         jobs = list(s.exec(stmt).all())
+
+        # job_level из данных Salling недостоверен: руководящие должности
+        # (Souschef, Serviceleder, Teamkoordinator …) часто приходят с
+        # job_level="employee" и протекали в выборку «Сотрудник». Если выбран
+        # НЕ-руководящий уровень — дополнительно отсекаем их по названию.
+        if level_code in ("employee", "employeeUnder18", "apprentice"):
+            jobs = [j for j in jobs if not labels.is_leadership(j.title)]
 
         cities = _distinct(s, Job.city)
         brands = _distinct(s, Job.brand)
@@ -1384,7 +1393,7 @@ def index(
         "sync_error": _sync_state["last_error"],
         "home": home, "distances": distances, "geoerror": geoerror,
         "presets": settings_store.get_presets(),
-        "batch": batch, "batch_mode": mode,
+        "batch": batch, "batch_mode": mode, "skipped": skipped, "dup": dup,
         "apply_files": {
             "cv": profile_store.file_label((_apply_profile := profile_store.load_profile()).get("cv_path", "")),
             "cover": profile_store.file_label(_apply_profile.get("cover_letter_path", "")),
@@ -2567,6 +2576,37 @@ def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: s
     ids = [j for j in job_ids if j]
     if not ids:
         return _redirect_back(request, "/", error="Сначала выбери хотя бы одну вакансию для пакетной подачи.")
+    # Страховка от ОШИБОЧНОЙ подачи: поле job_level от Salling недостоверно —
+    # руководящие роли (Souschef, Serviceleder, Teamkoordinator …) помечены
+    # "employee" и могли попасть в выбор. Пачкой их не подаём. Если человек
+    # правда хочет такую вакансию — он подаёт её осознанно с её страницы.
+    with get_session() as s:
+        picked = [(jid, s.get(Job, jid)) for jid in ids]
+    # Не подаём повторно: если на вакансию уже подавались (есть applied_at или
+    # статус "applied") — пропускаем её, чтобы не слать вторую заявку тому же HR.
+    already = [(jid, j) for jid, j in picked
+               if j and (j.status == "applied" or j.applied_at is not None)]
+    if already:
+        done = {jid for jid, _ in already}
+        ids = [jid for jid in ids if jid not in done]
+        picked = [(jid, j) for jid, j in picked if jid not in done]
+    leadership = [(jid, j) for jid, j in picked if j and labels.is_leadership(j.title)]
+    if leadership:
+        held = {jid for jid, _ in leadership}
+        ids = [jid for jid in ids if jid not in held]
+    if not ids:
+        parts = []
+        if already:
+            parts.append(f"уже поданы ранее: {len(already)}")
+        if leadership:
+            names = ", ".join((j.title or "?") for _, j in leadership[:4])
+            more = f" и ещё {len(leadership) - 4}" if len(leadership) > 4 else ""
+            parts.append(f"руководящие (пачкой не подаём): {names}{more}")
+        reason = "; ".join(parts) if parts else "нечего подавать"
+        return _redirect_back(
+            request, "/",
+            error=f"Подавать нечего — {reason}. Повторно на одну и ту же вакансию заявка не уходит.",
+        )
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
@@ -2583,7 +2623,12 @@ def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: s
         )
     finally:
         log.close()
-    return RedirectResponse(f"/?batch={len(ids)}&mode={mode}", status_code=303)
+    url = f"/?batch={len(ids)}&mode={mode}"
+    if leadership:
+        url += f"&skipped={len(leadership)}"
+    if already:
+        url += f"&dup={len(already)}"
+    return RedirectResponse(url, status_code=303)
 
 
 @app.post("/job/{job_id}/translate")

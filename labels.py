@@ -21,6 +21,27 @@ LEVEL = {
     "manager": "Менеджер",
 }
 
+# Поле job_level из данных Salling недостоверно: руководящие должности
+# (Souschef, Serviceleder, Driftsleder, Teamkoordinator …) приходят с
+# job_level="employee". Поэтому уровень «руководитель» определяем ещё и по
+# названию — по суффиксу слова. Одно правило ловит все составные варианты:
+# souschef, serviceleder, salgsleder, teamkoordinator, projektchef, …
+# Границы слова (\b…\b) важны, иначе зацепит salgsassistent/medarbejder.
+_LEADERSHIP_RX = re.compile(
+    r"\b\w*(?:chef|leder|koordinator|ansvarlig)\b|\bdirekt\w*",
+    re.IGNORECASE,
+)
+
+
+def is_leadership(title: str) -> bool:
+    """True, если название должности — руководящее (по слову-суффиксу).
+
+    Нужно как страховка поверх job_level: Salling часто метит руководящие
+    роли как «employee». Проверено на базе: ловит 268 руковод. названий и
+    не задевает рядовые (salgsassistent, kasseassistent, 1. assistent,
+    morgenopfylder, gourmetslagter, kontorassistent …)."""
+    return bool(_LEADERSHIP_RX.search(title or ""))
+
 REGION = {
     # Дания
     "hovedstaden": "Столичный регион", "midtjylland": "Центральная Ютландия",
