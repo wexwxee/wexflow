@@ -94,6 +94,20 @@ def sync():
     new_count = 0
 
     with get_session() as s:
+        # Само-восстановление: если у вакансии есть applied_at (на неё точно
+        # подавались), но статус сбит на closed/seen старым багом — возвращаем
+        # «applied». Так «Поданные» чинятся у всех автоматически при синке.
+        healed = 0
+        for job in s.exec(
+            select(Job).where(Job.applied_at.is_not(None), Job.status != "applied")
+        ).all():
+            job.status = "applied"
+            s.add(job)
+            healed += 1
+        if healed:
+            s.commit()
+            print(f"Восстановлено «подано» из applied_at: {healed}")
+
         for h in hits:
             job = hit_to_job(h)
             if not job.id:
@@ -113,16 +127,24 @@ def sync():
                 for k, v in data.items():
                     setattr(existing, k, v)
                 existing.last_seen = now
-                if existing.status == "closed":
+                # «подано» — нерушимый статус: даже если вакансия вернулась в
+                # ленту, не сбрасываем applied в seen (иначе можно подать повторно).
+                if existing.status == "closed" and existing.applied_at is None:
                     existing.status = "seen"  # вакансия вернулась
                 s.add(existing)
         s.commit()
 
-        # пометить исчезнувшие активные вакансии как closed
+        # пометить исчезнувшие активные вакансии как closed.
+        # ВАЖНО: вакансии, на которые уже подались (applied_at заполнен или
+        # status=="applied"), НИКОГДА не закрываем — иначе они пропадают из
+        # «Поданных» и открываются для повторной подачи. После подачи Salling
+        # часто снимает вакансию из ленты — это нормально, статус «подано» важнее.
         closed = 0
-        active = s.exec(select(Job).where(Job.status != "closed")).all()
+        active = s.exec(
+            select(Job).where(Job.status.not_in(["closed", "applied"]))
+        ).all()
         for job in active:
-            if job.id not in seen_ids:
+            if job.id not in seen_ids and job.applied_at is None:
                 job.status = "closed"
                 s.add(job)
                 closed += 1

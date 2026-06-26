@@ -272,6 +272,11 @@ def _nums(rule: dict, key: str) -> list[float]:
 def _profile_matches(job: Job, rule: dict, home: dict | None) -> bool:
     """Подходит ли вакансия под ОДИН профиль (набор фильтров). `rule` здесь —
     это профиль (или легаси-правило целиком: поля те же)."""
+    # Страховка: автопилот никогда не предлагает/не подаёт на руководящие роли.
+    # Поле job_level от Salling недостоверно (Souschef и пр. помечены "employee"),
+    # поэтому отсекаем по названию. Автопилот рассчитан на рядовые позиции.
+    if labels.is_leadership(job.title):
+        return False
     # бренд/категория/занятость/возраст — мультивыбор: подходит по ЛЮБОМУ из выбранных.
     brands = [labels.resolve(labels.BRANDS, b) or b for b in _csv(rule, "brand")]
     if brands and job.brand not in brands:
