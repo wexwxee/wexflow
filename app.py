@@ -253,6 +253,41 @@ _apply_queue: list[list[str]] = []
 _apply_queue_lock = threading.Lock()
 _apply_runner_busy = False
 
+# Защита от гонки ручной подачи: нельзя запускать вторую подачу, пока идёт первая —
+# иначе два браузера дерутся за один профиль (browser_profile) и часть заявок может
+# уйти повторно или потеряться. Двойной клик «Подать пачкой» ловится коротким окном.
+_manual_apply_lock = threading.Lock()
+_last_manual_apply_ts = 0.0
+
+
+def _submit_in_progress() -> bool:
+    """Идёт ли прямо сейчас какая-либо подача (ручная пачка или очередь автопилота)."""
+    if _apply_runner_busy:
+        return True
+    try:
+        p = config.DATA_DIR / "apply_progress.json"
+        if p.exists():
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if data.get("active"):
+                from datetime import datetime
+                age = (datetime.now() - datetime.fromisoformat(data.get("updated_at") or "")).total_seconds()
+                if age <= 240:  # свежий воркер; 4 мин тишины — считаем оборвавшимся
+                    return True
+    except Exception:  # noqa: BLE001 — нет/битый файл прогресса → считаем, что не идёт
+        pass
+    return False
+
+
+def _claim_apply_slot() -> bool:
+    """Занять «слот» ручной подачи. False — если подача уже идёт или была запущена
+    только что (двойной клик). True — слот занят, можно запускать."""
+    global _last_manual_apply_ts
+    with _manual_apply_lock:
+        if _submit_in_progress() or (time.time() - _last_manual_apply_ts) < 12:
+            return False
+        _last_manual_apply_ts = time.time()
+        return True
+
 
 def _enqueue_auto_submit(ids) -> None:
     """Поставить пачку id в очередь автоматической подачи и при необходимости
@@ -2570,6 +2605,16 @@ def start_apply(
             status_code=303,
         )
     profile_store.save_profile(profile)
+    # Не запускаем вторую подачу поверх идущей (пачка/автопилот/двойной клик):
+    # два браузера на одном профиле дерутся и часть заявок может уйти повторно.
+    if not _claim_apply_slot():
+        return RedirectResponse(
+            _url_with_system_response(
+                f"/job/{job_id}/apply",
+                error="Подача уже идёт — дождись её окончания и нажми снова.",
+            ),
+            status_code=303,
+        )
     # вывод apply.py пишем в лог, чтобы сбои не были «молчаливыми»
     log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
     env = dict(os.environ)
@@ -2629,6 +2674,14 @@ def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: s
         return _redirect_back(
             request, "/",
             error=f"Подавать нечего — {reason}. Повторно на одну и ту же вакансию заявка не уходит.",
+        )
+    # Гонка/двойной клик: если подача уже идёт (другая пачка или автопилот) —
+    # второй процесс не запускаем. Иначе два браузера дерутся за профиль и заявки
+    # могут уйти повторно. Человек дождётся окончания и нажмёт снова.
+    if not _claim_apply_slot():
+        return _redirect_back(
+            request, "/",
+            error="Подача уже идёт — дождись её окончания. Второй раз не запускаю, чтобы не ушли дубли.",
         )
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
