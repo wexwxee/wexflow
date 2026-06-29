@@ -459,13 +459,22 @@ def profile_match_count(p: dict) -> int:
     """Сколько активных вакансий подходит под ОДИН профиль (для подписи)."""
     home = settings_store.get_home()
     with get_session() as s:
-        jobs = list(s.exec(select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))).all())
+        jobs = list(s.exec(select(Job).where(
+            Job.status.not_in(["closed", "hidden", "applied"]),
+            Job.applied_at.is_(None),
+        )).all())
     return sum(1 for j in jobs if _profile_matches(j, p, home))
 
 
 def _matches(job: Job, rule: dict, home: dict | None) -> bool:
     """Вакансия подходит, если совпала хотя бы с ОДНИМ включённым профилем."""
     if job.status in ("closed", "hidden", "applied"):
+        return False
+    # «Подавали хоть раз» (applied_at заполнен) — навсегда исключаем из автопилота,
+    # даже если статус ушёл вперёд по воронке (interview/offer/rejected). Иначе
+    # после подачи и перевода в «Собеседование» вакансия снова стала бы «подходящей»
+    # и тихий автопилот подал бы на неё повторно. applied_at — нерушимая правда.
+    if job.applied_at is not None:
         return False
     profs = [p for p in get_profiles(rule) if p.get("enabled", True)]
     if not profs:
@@ -479,7 +488,10 @@ def find_matches() -> list[Job]:
     home = settings_store.get_home()
     with get_session() as s:
         jobs = list(
-            s.exec(select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))).all()
+            s.exec(select(Job).where(
+                Job.status.not_in(["closed", "hidden", "applied"]),
+                Job.applied_at.is_(None),
+            )).all()
         )
     return [j for j in jobs if _matches(j, rule, home)]
 

@@ -95,11 +95,18 @@ def sync():
 
     with get_session() as s:
         # Само-восстановление: если у вакансии есть applied_at (на неё точно
-        # подавались), но статус сбит на closed/seen старым багом — возвращаем
+        # подавались), но статус сбит на closed/seen/new старым багом — возвращаем
         # «applied». Так «Поданные» чинятся у всех автоматически при синке.
+        # ВАЖНО: чиним только из «потерянных» статусов (closed/seen/new). Статусы
+        # дальше по воронке (interview/offer/rejected) и «hidden» НЕ трогаем —
+        # у них applied_at тоже заполнен, и откат в «applied» стирал бы пометки
+        # о собеседовании/оффере/отказе при каждом автосинке.
         healed = 0
         for job in s.exec(
-            select(Job).where(Job.applied_at.is_not(None), Job.status != "applied")
+            select(Job).where(
+                Job.applied_at.is_not(None),
+                Job.status.in_(["closed", "seen", "new"]),
+            )
         ).all():
             job.status = "applied"
             s.add(job)

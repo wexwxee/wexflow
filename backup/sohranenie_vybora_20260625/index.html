@@ -1,0 +1,924 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}WexFlow Jobs{% endblock %}
+
+{% macro empty_state() %}
+<div class="empty-state">
+  {% if sync_running %}
+    <div class="empty-spin"></div>
+    <h3>Загружаю вакансии с Salling…</h3>
+    <p>Это первый запуск — база наполняется. Обычно занимает до минуты. Можно подождать или нажать «Обновить».</p>
+  {% elif sync_error %}
+    <div class="empty-ic warn">{{ ic.i('alert', 24) }}</div>
+    <h3>Не удалось загрузить вакансии</h3>
+    <p>Проверь интернет и попробуй снова. Если не помогает — антивирус или файрвол может блокировать запрос к Salling.</p>
+    <form method="post" action="/refresh"><button class="primary" type="submit">{{ ic.i('refresh', 14) }} Попробовать снова</button></form>
+  {% elif f.status == 'applied' %}
+    <div class="empty-ic applied">{{ ic.i('check', 24) }}</div>
+    {% if applied_count == 0 %}
+      <h3>Поданных вакансий пока нет</h3>
+      <p>Здесь появятся вакансии, где ты нажал «Подал» или запускал автоподачу. Сейчас архив поданных пустой.</p>
+      <a class="empty-btn" href="/?status=active">{{ ic.i('cart', 14) }} К активным вакансиям</a>
+    {% else %}
+      <h3>В поданных по фильтрам ничего нет</h3>
+      <p>Всего поданных вакансий: <b>{{ applied_count }}</b>, но текущие фильтры скрыли их. Открой все поданные или сбрось условия.</p>
+      <div class="empty-actions">
+        <a class="empty-btn" href="/?status=applied">{{ ic.i('check', 14) }} Все поданные</a>
+        <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
+      </div>
+    {% endif %}
+  {% elif total_active == 0 %}
+    <div class="empty-ic">{{ ic.i('cart', 24) }}</div>
+    <h3>База вакансий пустая</h3>
+    <p>Это нормально для нового устройства — список вакансий ещё не загружен. Сделай так:</p>
+    <ol class="empty-steps">
+      <li>Нажми <b>«Загрузить вакансии»</b> ниже (или зелёную «Обновить» вверху).</li>
+      <li>Подожди <b>~1 минуту</b> — нужен интернет, качается ~2700 вакансий.</li>
+      <li>Карточки появятся сами, счётчик «найдено» начнёт расти.</li>
+    </ol>
+    <form method="post" action="/refresh"><button class="primary" type="submit">{{ ic.i('refresh', 14) }} Загрузить вакансии</button></form>
+  {% elif f.status and f.status not in ['active', ''] %}
+    {% set status_empty = {
+      'new': 'новых вакансий',
+      'seen': 'просмотренных вакансий',
+      'interview': 'вакансий с собеседованием',
+      'offer': 'офферов',
+      'rejected': 'отказов',
+      'hidden': 'скрытых вакансий',
+      'closed': 'закрытых вакансий'
+    } %}
+    <div class="empty-ic">{{ ic.i('search', 24) }}</div>
+    <h3>Нет {{ status_empty.get(f.status, 'вакансий в этом статусе') }}</h3>
+    <p>Список работает правильно: в выбранном статусе ничего не найдено. Можно вернуться к активным вакансиям или сбросить фильтры.</p>
+    <div class="empty-actions">
+      <a class="empty-btn" href="/?status=active">{{ ic.i('cart', 14) }} Активные вакансии</a>
+      <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
+    </div>
+  {% else %}
+    <div class="empty-ic">{{ ic.i('search', 24) }}</div>
+    <h3>По фильтрам ничего не найдено</h3>
+    <p>В базе есть <b>{{ total_active }}</b> активных вакансий, но под текущие фильтры ничего не подошло. Сбрось фильтры или смягчи условия.</p>
+    <a class="empty-btn" href="/">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block style %}
+<style>
+  /* пустое состояние списка (нет вакансий / нет совпадений / ошибка) —
+     стили живут ВНУТРИ block style, иначе Jinja не выводит их в дочернем шаблоне */
+  .empty-state {
+    max-width: 540px; margin: 48px auto; padding: 34px 30px; text-align: center;
+    display: grid; gap: 14px; justify-items: center;
+    background: var(--glass); border: 1px solid var(--glass-line);
+    border-radius: 18px; box-shadow: var(--shadow-sm);
+  }
+  .empty-state h3 { margin: 2px 0 0; font-size: 19px; font-weight: 700; color: var(--txt-strong); }
+  .empty-state p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+  .empty-state p b { color: var(--txt-strong); }
+  .empty-state form { margin: 2px 0 0; }
+  .empty-ic {
+    width: 60px; height: 60px; border-radius: 18px; display: grid; place-items: center;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--glass-line));
+  }
+  .empty-ic.warn { background: var(--warn-bg); color: var(--warn-txt); border-color: var(--warn-line); }
+  .empty-ic.applied { background: rgba(167,139,250,.14); color: #c4b5fd; border-color: rgba(167,139,250,.38); }
+  html[data-theme="light"] .empty-ic.applied { background: #f1edff; color: #6d28d9; border-color: #d8ccff; }
+  .empty-steps {
+    text-align: left; margin: 4px 0 0; padding: 16px 20px 16px 38px; width: 100%;
+    display: grid; gap: 9px; color: var(--txt); font-size: 13.5px; line-height: 1.45;
+    background: var(--bg-soft); border: 1px solid var(--glass-line); border-radius: 12px;
+  }
+  .empty-steps b { color: var(--accent); }
+  .empty-btn {
+    display: inline-flex; align-items: center; gap: 7px; margin: 2px 0 0;
+    padding: 10px 18px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    color: var(--txt-strong); background: var(--chip-bg); border: 1px solid var(--line-strong);
+    text-decoration: none; cursor: pointer;
+  }
+  .empty-btn:hover { border-color: var(--hover-line); background: var(--menu-bg); }
+  .empty-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .empty-spin {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid var(--glass-line); border-top-color: var(--accent);
+    animation: emptySpin .8s linear infinite;
+  }
+  @keyframes emptySpin { to { transform: rotate(360deg); } }
+
+  .jobs-topbar .tablink { flex:0 0 auto; }
+  .jobs-shell-band { background:rgba(255,255,255,.018); border-top:1px solid var(--glass-line); border-bottom:1px solid var(--glass-line); }
+  /* ---- бар автопилота на главной ---- */
+  .ap-bar { display:flex; align-items:center; gap:12px; padding:10px 22px; font-size:13px;
+            color:var(--muted); background:var(--bg-soft); border-bottom:1px solid var(--glass-line); flex-wrap:wrap; }
+  .ap-bar.on { background:var(--ok-bg); color:var(--ok-txt); }
+  .ap-bar-ic { display:inline-flex; opacity:.85; }
+  .ap-bar-txt { flex:1 1 auto; min-width:200px; line-height:1.4; }
+  .ap-bar-txt b { color:var(--txt-strong); }
+  .ap-bar.on .ap-bar-txt b { color:var(--ok-txt); }
+  .ap-bar-cfg { flex:0 0 auto; color:var(--accent); text-decoration:none; display:inline-flex; align-items:center; gap:4px; }
+  .ap-bar-cfg:hover { text-decoration:underline; }
+  .ap-bar-btn { flex:0 0 auto; cursor:pointer; border:1px solid var(--accent); background:transparent; color:var(--accent);
+                border-radius:999px; padding:5px 14px; font-size:12px; font-weight:600; }
+  .ap-bar-btn:hover { background:var(--accent); color:#04210f; }
+  .ap-bar-btn.is-on { border-color:var(--err-line); color:var(--err-txt); }
+  .ap-bar-btn.is-on:hover { background:var(--err-txt); color:#fff; }
+  .jobs-result-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 22px 0; }
+  .jobs-result-head .muted { font-size:12px; }
+  /* ---- панель фильтров ---- */
+  .filterbar { padding:16px 22px 18px; border-bottom:0;
+               background:transparent; backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .fgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:10px 12px; align-items:end; }
+  .fgrid > .field:first-child { grid-column:span 2; }
+  @media (max-width:1280px){ .fgrid{ grid-template-columns:repeat(3,minmax(180px,1fr)); } }
+  @media (max-width:760px){ .fgrid{ grid-template-columns:repeat(2,minmax(150px,1fr)); } }
+  @media (max-width:520px){ .fgrid{ grid-template-columns:1fr; } }
+  .field { display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .field > label { display:flex; align-items:center; gap:4px; font-size:10px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); padding-left:2px; }
+  .help {
+    display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px;
+    border:1px solid var(--line); border-radius:50%; color:var(--muted);
+    font-size:0; font-weight:800; letter-spacing:0; text-transform:none; cursor:help;
+    background:transparent; transition:background .12s, border-color .12s, color .12s, transform .12s;
+  }
+  .help::before { content:"i"; font-size:9px; line-height:1; font-family:"Space Grotesk", system-ui, sans-serif; }
+  .help:hover, .help:focus-visible { color:var(--txt); border-color:var(--accent); background:var(--accent-soft); transform:translateY(-1px); }
+  .smart-tip {
+    position:fixed; left:0; top:0; z-index:1000; width:min(264px, calc(100vw - 24px));
+    padding:10px 12px; border:1px solid var(--glass-line); border-radius:11px;
+    background:rgba(20,24,22,.97); color:#f5faf7; box-shadow:0 16px 40px rgba(0,0,0,.38);
+    opacity:0; transform:translateY(-3px); pointer-events:none;
+    transition:opacity .13s ease, transform .13s ease; backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+  }
+  /* стрелка-указатель на элемент, к которому относится подсказка */
+  .smart-tip::after {
+    content:""; position:absolute; left:var(--tip-arrow, 50%);
+    width:11px; height:11px; transform:translateX(-50%) rotate(45deg);
+    background:rgba(20,24,22,.97); border:1px solid var(--glass-line);
+  }
+  .smart-tip[data-pos="below"]::after { top:-6px; border-right:0; border-bottom:0; }
+  .smart-tip[data-pos="above"]::after { bottom:-6px; border-left:0; border-top:0; }
+  html[data-theme="light"] .smart-tip { background:rgba(255,255,255,.98); color:var(--txt); }
+  html[data-theme="light"] .smart-tip::after { background:rgba(255,255,255,.98); }
+  .smart-tip.show { opacity:1; transform:translateY(0); }
+  .smart-tip-title { font-size:12px; line-height:1.25; font-weight:800; margin-bottom:3px; color:var(--accent); }
+  .smart-tip-body { font-size:12.5px; line-height:1.38; color:inherit; }
+  .smart-tip-body kbd {
+    display:inline-flex; align-items:center; min-height:16px; padding:0 5px; border-radius:5px;
+    background:var(--chip-bg); border:1px solid var(--line); font:11px/1.2 "Space Grotesk", system-ui, sans-serif;
+  }
+  .field input, .field select, .combo-btn {
+     width:100%; height:36px; background:var(--input-bg); color:var(--txt); border:1px solid var(--line);
+     border-radius:9px; padding:7px 10px; font-size:12.5px; appearance:none; transition:border-color .15s, box-shadow .15s; }
+  .field input:hover, .field select:hover, .combo-btn:hover { border-color:var(--hover-line); }
+  .field input:focus, .field select:focus, .combo.open .combo-btn { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .field.sel { position:relative; }
+  .field.sel::after { content:"▾"; position:absolute; right:12px; bottom:10px; color:var(--muted); pointer-events:none; font-size:11px; }
+  .field select option { background:var(--card); }
+  .combo { position:relative; }
+  .combo.open { z-index:220; }
+  .combo-btn { display:flex; align-items:center; justify-content:space-between; gap:8px; text-align:left; cursor:pointer; }
+  .combo-btn span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .combo-btn::after { content:"▾"; color:var(--muted); font-size:11px; flex:0 0 auto; }
+  .combo-menu {
+     display:none; position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:220;
+     background:#191b1a; border:1px solid rgba(255,255,255,.16); border-radius:10px;
+     box-shadow:0 20px 44px rgba(0,0,0,.62), 0 0 0 1px rgba(255,255,255,.04);
+     padding:5px; max-height:176px; overflow:auto; overscroll-behavior:contain; }
+  html[data-theme="light"] .combo-menu { background:#fff; border-color:var(--line-strong); }
+  .combo.open .combo-menu { display:block; }
+  .combo-option {
+     width:100%; border:none; background:transparent; color:var(--txt); border-radius:7px;
+     padding:6px 9px; text-align:left; font-size:12px; line-height:1.2;
+     display:flex; justify-content:space-between; gap:10px; }
+  .combo-option:hover, .combo-option.active { background:var(--chip-bg); }
+  .combo-option.selected { background:var(--accent); color:#fff; font-weight:600; }
+  .factions {
+    display:grid;
+    grid-template-columns:repeat(4,minmax(135px,1fr));
+    gap:10px 12px; margin-top:12px; align-items:end;
+  }
+  .factions > * { min-width:0; margin-top:0 !important; }
+  .filter-actions {
+    display:grid;
+    grid-column:1 / -1;
+    grid-template-columns:minmax(145px,.85fr) minmax(190px,1fr) minmax(135px,.72fr) minmax(78px,.42fr);
+    gap:6px;
+    align-items:end;
+    min-width:0;
+    background:var(--input-bg);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:4px;
+  }
+  .grpchk,
+  .filter-action,
+  .toggle-applied,
+  .filter-reset {
+    min-height:36px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    white-space:nowrap;
+  }
+  .filter-action { width:100%; }
+  .toggle-applied { width:100%; }
+  .filter-actions .filter-action,
+  .filter-actions .toggle-applied,
+  .filter-actions .filter-reset { min-height:30px; border-radius:7px; padding-left:8px; padding-right:8px; font-size:12px; }
+  .filter-actions .primary { box-shadow:none; }
+  html[data-theme="dark"] .filter-actions .primary { box-shadow:none; }
+  .filter-reset {
+    color:var(--muted);
+    border:1px solid transparent;
+    font-weight:600;
+    padding:0 10px;
+  }
+  .filter-reset:hover { color:var(--txt); border-color:var(--hover-line); background:var(--glass); }
+  .factions .chip { grid-column:1 / -1; }
+  @media (max-width:1280px){ .fgrid > .field:first-child { grid-column:span 1; } }
+  @media (max-width:760px){
+    .factions{ grid-template-columns:1fr 1fr; }
+    .filter-actions{ grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width:520px){
+    .factions{ grid-template-columns:1fr; }
+    .filter-actions{ grid-template-columns:1fr; }
+  }
+  .chip { font-size:12px; color:var(--muted); }
+
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; padding:18px 22px; }
+  .card {
+    --state-line: transparent;
+    --state-bg: transparent;
+    position:relative; background:linear-gradient(90deg, var(--state-bg), transparent 52%), var(--card);
+    border:1px solid var(--glass-line); border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:6px;
+    overflow:hidden; transition:border-color .15s, box-shadow .15s, transform .1s;
+  }
+  .card[data-jobcard]::before {
+    content:""; position:absolute; left:0; top:12px; bottom:12px; width:3px;
+    background:var(--state-line); border-radius:0 4px 4px 0; opacity:.78; pointer-events:none;
+  }
+  .card.job-status-new { --state-line:var(--accent); --state-bg:rgba(30,215,96,.075); }
+  .card.job-status-seen { --state-line:var(--info-line); --state-bg:rgba(125,211,252,.052); }
+  .card.job-status-applied { --state-line:#a78bfa; --state-bg:rgba(167,139,250,.11); border-color:rgba(167,139,250,.38); }
+  html[data-theme="light"] .card.job-status-new { --state-bg:rgba(13,159,110,.055); }
+  html[data-theme="light"] .card.job-status-seen { --state-bg:rgba(29,78,216,.045); }
+  html[data-theme="light"] .card.job-status-applied { --state-line:#7c3aed; --state-bg:rgba(124,58,237,.075); border-color:rgba(124,58,237,.26); }
+  .card:hover { border-color:var(--hover-line); transform:translateY(-1px); box-shadow:var(--shadow-sm); }
+  .card h3 { margin:4px 0 2px; font-size:15.5px; line-height:1.3; }
+  .badges { display:flex; gap:6px; flex-wrap:wrap; padding-right:32px; }
+  .tablink { display:inline-flex; align-items:center; gap:6px; background:var(--glass); color:var(--muted);
+    border:1px solid var(--glass-line); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600; }
+  .tablink:hover { color:var(--txt); border-color:var(--hover-line); }
+  .tablink.active { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
+  .pager { display:flex; justify-content:center; align-items:center; gap:16px; padding:18px 22px 90px; }
+  .pager a { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt); border-radius:10px; padding:9px 16px; text-decoration:none; font-weight:600; font-size:14px; }
+  .pager a:hover { border-color:var(--accent); }
+  .pager .dis { color:var(--hover-line); padding:9px 16px; font-size:14px; }
+  .pager .pinfo { color:var(--muted); font-size:13px; }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+  input[type=number] { -moz-appearance:textfield; appearance:textfield; }
+  .num-stepper { display:flex; align-items:stretch; background:var(--input-bg); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .num-stepper:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .num-stepper input { border:none !important; box-shadow:none !important; text-align:center; width:100%; min-width:0; background:transparent; padding:9px 4px; }
+  .num-stepper button { background:var(--card); border:none; color:var(--txt); width:34px; flex:0 0 34px; cursor:pointer; font-size:17px; font-weight:700; line-height:1; border-radius:0; }
+  .num-stepper button:hover { background:var(--accent); color:#fff; }
+  .grpchk { display:inline-flex; align-items:center; gap:7px; color:var(--txt); font-size:13px; font-weight:600; cursor:pointer; background:var(--input-bg); border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
+  .grpchk input { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+  .group-card { cursor:default; }
+  .group-jobs { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
+  .gjob { color:var(--txt); text-decoration:none; font-size:13px; padding:5px 8px; border-radius:7px; background:var(--glass); border:1px solid var(--glass-line); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .gjob:hover { border-color:var(--accent); }
+  .gjob b { color:var(--info-txt); font-weight:700; }
+  .gmore { color:var(--muted); font-size:12px; padding:3px 8px; }
+  .undo-toast { position:fixed; left:20px; bottom:20px; z-index:60; display:none; align-items:center; gap:14px;
+    background:rgba(8,12,10,.90); border:1px solid var(--glass-line);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    box-shadow:var(--shadow); border-radius:12px; padding:12px 16px; font-size:14px; }
+  html[data-theme="light"] .undo-toast { background:rgba(255,255,255,.94); }
+  .undo-toast.show { display:flex; }
+  .undo-toast .undo-btn { background:var(--accent); border:none; color:#fff; border-radius:8px; padding:7px 13px; font-weight:600; cursor:pointer; font-size:13px; }
+  html[data-theme="dark"] .undo-toast .undo-btn { color:#041a13; }
+  .undo-toast .undo-btn:hover { background:var(--accent-hover); }
+  .presets { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 22px 0; }
+  .presets-lbl { color:var(--muted); font-size:13px; }
+  .preset-chip { display:inline-flex; align-items:center; background:var(--glass); border:1px solid var(--glass-line); border-radius:999px; overflow:hidden; }
+  .preset-chip a { color:var(--txt); text-decoration:none; padding:6px 8px 6px 13px; font-size:13px; font-weight:600; }
+  .preset-chip a:hover { color:var(--accent); }
+  .preset-chip form { display:inline; margin:0; }
+  .preset-chip button { background:transparent; border:none; color:var(--muted); cursor:pointer; padding:6px 9px; font-size:12px; }
+  .preset-chip button:hover { color:var(--err-txt); }
+  .toggle-applied { display:inline-flex; align-items:center; gap:6px; text-decoration:none;
+    background:var(--glass); color:var(--muted); border:1px solid var(--glass-line); border-radius:10px;
+    padding:9px 14px; font-size:13px; font-weight:600; transition:border-color .15s, color .15s; }
+  .toggle-applied:hover { color:var(--txt); border-color:var(--hover-line); }
+  .toggle-applied.on { background:rgba(167,139,250,.12); color:#c4b5fd; border-color:rgba(167,139,250,.36); }
+  .toggle-applied.on:hover { border-color:#c4b5fd; }
+  html[data-theme="light"] .toggle-applied.on { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
+  .badge.brand { font-weight:700; }
+  .badge.dist { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
+  .badge.st-new { background:var(--accent-soft); color:var(--accent); border-color:rgba(30,215,96,.32); }
+  .badge.st-seen { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
+  .badge.st-applied { background:rgba(167,139,250,.14); color:#c4b5fd; border-color:rgba(167,139,250,.38); font-weight:800; }
+  html[data-theme="light"] .badge.st-applied { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
+  .role { display:inline-block; margin-top:2px; font-size:12.5px; font-weight:700;
+    color:var(--info-txt); letter-spacing:.01em; }
+  .role .lvl { color:var(--warn-txt); }
+  .row { display:flex; gap:7px; margin-top:12px; flex-wrap:wrap; align-items:center; }
+  .row a { display:inline-flex; }
+  .row button { white-space:nowrap; padding:8px 12px; font-size:12.5px; }
+  .row button:disabled { cursor:default; color:#c4b5fd; border-color:rgba(167,139,250,.38); background:rgba(167,139,250,.14); opacity:1; }
+  html[data-theme="light"] .row button:disabled { color:#6d28d9; border-color:#d8ccff; background:#f1edff; }
+  .row .primary { font-weight:700; }
+  .meta { font-size:12px; }
+  /* кастомный чекбокс выбора вакансии */
+  .selwrap { position:absolute; top:12px; right:12px; z-index:3; cursor:pointer; line-height:0; }
+  .selwrap input { position:absolute; opacity:0; width:0; height:0; }
+  .selbox-ui { display:inline-flex; align-items:center; justify-content:center;
+    width:22px; height:22px; border:1.5px solid var(--hover-line); border-radius:7px;
+    background:var(--input-bg); transition:background .12s, border-color .12s; }
+  .selbox-ui::after { content:"✓"; color:#fff; font-size:14px; font-weight:700; opacity:0; transition:opacity .12s; }
+  .selwrap input:checked + .selbox-ui { background:var(--accent); border-color:var(--accent); }
+  .selwrap input:checked + .selbox-ui::after { opacity:1; }
+  .selwrap:hover .selbox-ui { border-color:var(--accent); }
+  .card.selected { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft), var(--shadow-sm); }
+  /* плашка пакетной подачи */
+  .batchbar { position:fixed; left:calc(84px + (100vw - 84px) / 2); transform:translateX(-50%); bottom:74px; z-index:900;
+    display:none; grid-template-columns:1fr; align-items:center; gap:12px;
+    width:min(620px, calc(100vw - 124px));
+    background:#09100d; border:1px solid rgba(255,255,255,.13);
+    box-shadow:0 24px 60px rgba(0,0,0,.58), 0 0 0 1px rgba(30,215,96,.08);
+    border-radius:18px; padding:14px 16px; }
+  html[data-theme="light"] .batchbar { background:#fff; border-color:var(--line-strong); box-shadow:0 20px 45px rgba(20,50,40,.18); }
+  .batchbar.show { display:grid; opacity:1 !important; animation:none !important; }
+  .batchbar .binfo { width:100%; min-width:0; display:flex; flex-direction:column; align-items:center; text-align:center; gap:5px; }
+  .batchbar .cnt { font-weight:800; font-family:"Space Grotesk",system-ui,sans-serif; color:var(--txt-strong); }
+  .batchbar .files { display:block; width:100%; max-width:100%; font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .batchbar .files a { margin-left:8px; font-weight:700; }
+  .batchbar .bactions { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
+  .batchbar button { min-height:34px; border-radius:9px; padding:8px 12px; }
+  .batchbar .primary { background:#21d86b; color:#05130a; border-color:#21d86b; font-weight:800; }
+  .batchbar .submitbtn { background:rgba(30,215,96,.12); border:1px solid rgba(30,215,96,.34); color:var(--ok-txt); font-weight:700; }
+  .batchbar .submitbtn:hover { border-color:var(--ok-txt); background:rgba(30,215,96,.18); }
+  @media (max-width:820px){
+    .batchbar { left:50%; width:calc(100vw - 24px); bottom:24px; }
+    .batchbar .bactions { justify-content:stretch; }
+    .batchbar .bactions button { flex:1 1 150px; }
+  }
+  .notice-line { padding:8px 22px; font-size:13px; }
+</style>
+{% endblock %}
+
+{% block body %}
+{% macro tip(title, body) -%}
+  <span class="help" tabindex="0" role="button" aria-label="{{ title }}: {{ body }}" data-tip-title="{{ title }}" data-tip-body="{{ body }}"></span>
+{%- endmacro %}
+{% macro custom_select(name, label, placeholder, options, selected, hint='') -%}
+  {% set ns = namespace(text=placeholder) %}
+  {% for key,lbl in options %}
+    {% if selected == key %}{% set ns.text = lbl %}{% endif %}
+  {% endfor %}
+  <div class="field combo" data-combo>
+    <label>{{ label }}{% if hint %}{{ tip(label, hint) }}{% endif %}</label>
+    <input type="hidden" name="{{ name }}" value="{{ selected }}">
+    <button type="button" class="combo-btn" data-combo-button><span>{{ ns.text }}</span></button>
+    <div class="combo-menu" data-combo-menu>
+      <button type="button" class="combo-option {{ 'selected' if not selected }}" data-value="" data-label="{{ placeholder }}">{{ placeholder }}</button>
+      {% for key,lbl in options %}
+        <button type="button" class="combo-option {{ 'selected' if selected == key }}" data-value="{{ key }}" data-label="{{ lbl }}">{{ lbl }}</button>
+      {% endfor %}
+    </div>
+  </div>
+{%- endmacro %}
+{% macro check(sz=14) -%}
+<svg width="{{ sz }}" height="{{ sz }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><polyline points="20 6 9 17 4 12"/></svg>
+{%- endmacro %}
+
+{{ ui.shell_start('applied' if f.status == 'applied' else 'jobs') }}
+
+<header class="wex-topbar jobs-topbar">
+  <div class="wex-title-group">
+    <div class="wex-title-stack">
+      <h1>{{ ui.brand('Jobs') }}</h1>
+      <span class="wex-title-meta">Активных: {{ total_active }} · найдено: {{ total_filtered }}{% if pages > 1 %} · стр. {{ page }}/{{ pages }}{% endif %}</span>
+    </div>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    {{ ui.freshness(data_age_min, sync_running) }}
+    <a class="tablink {{ 'active' if f.status == 'applied' }}" href="/?status=applied&sort={{ f.sort or 'published' }}">{{ check() }} Поданные ({{ applied_count }})</a>
+    {{ ui.app_switch() }}
+    <form method="post" action="/refresh">
+      <button class="primary" type="submit" data-tip-title="Обновление" data-tip-body="Запускает свежую синхронизацию вакансий. Обычно это не нужно: список и так обновляется в фоне примерно раз в 30 минут.">{{ ic.i('refresh', 13) }} Обновить</button>
+    </form>
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+<section class="jobs-shell-band">
+{% if geoerror %}<div class="notice-line" style="color:var(--err-txt);background:var(--err-bg);">Не удалось распознать адрес — попробуй точнее (например: «M.P. Bruuns Gade 55, Aarhus» или индекс «8000»).</div>{% endif %}
+{% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings/salling#home">изменить</a></div>
+{% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings/salling#home">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
+{% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('send', 13) }} Запущена пакетная подача на {{ batch }} вакансий ({{ 'с отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — подаётся по одной, прогресс ниже.</div>{% endif %}
+<div id="applyProgress" class="notice-line" style="display:none;flex-direction:column;gap:7px;align-items:stretch;color:var(--ok-txt);background:var(--ok-bg);"></div>
+
+<div class="ap-bar {{ 'on' if autopilot and autopilot.enabled else '' }}">
+  <span class="ap-bar-ic">{{ ic.i('zap', 15) }}</span>
+  <span class="ap-bar-txt">
+    {% if autopilot and autopilot.enabled %}
+      <b>Автопилот включён</b> — слежу за новыми вакансиями. Подходит сейчас: <b>{{ autopilot_count }}</b>{% if autopilot.auto_submit %} · <span style="color:var(--err-txt);">автоотправка ВКЛ</span>{% endif %}
+    {% else %}
+      <b>Автопилот выключен</b> — могу сам следить за новыми подходящими вакансиями и уведомлять.
+    {% endif %}
+  </span>
+  {% if autopilot and autopilot.enabled %}
+  <a class="ap-bar-cfg" href="#" onclick="openAutopilotMonitor();return false;" data-tip-title="Окно автопилота" data-tip-body="Живая статистика автопилота в отдельном окне.">{{ ic.i('zap', 13) }} Окно</a>
+  {% endif %}
+  <a class="ap-bar-cfg" href="/settings/autopilot" data-tip-title="Настройки автопилота" data-tip-body="Наборы фильтров, свежесть, автоподготовка и автоотправка.">{{ ic.i('sliders', 13) }} Настроить</a>
+  <form method="post" action="/autopilot/toggle" style="margin:0;">
+    <button type="submit" class="ap-bar-btn {{ 'is-on' if autopilot and autopilot.enabled else '' }}">
+      {% if autopilot and autopilot.enabled %}Выключить{% else %}Включить{% endif %}
+    </button>
+  </form>
+</div>
+
+{% if presets %}
+<div class="presets">
+  <span class="presets-lbl">{{ ic.i('star', 13) }} Мои фильтры:</span>
+  {% for p in presets %}
+  <span class="preset-chip">
+    <a href="/?{{ p.query }}">{{ p.name }}</a>
+    <form method="post" action="/presets/delete" onsubmit="return confirm('Удалить пресет «{{ p.name }}»?')">
+      <input type="hidden" name="name" value="{{ p.name }}"><button type="submit" aria-label="Удалить фильтр">✕</button>
+    </form>
+  </span>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form id="filterform" class="filterbar" method="get" action="/">
+  {% if f.show_applied %}<input type="hidden" name="show_applied" value="1">{% endif %}
+  {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','hidden':'Скрытые','closed':'Закрытые'} %}
+  {% set sorts = {'published':'↓ по дате','distance':'по расстоянию','title':'по названию','city':'по городу'} %}
+  <div class="fgrid">
+    <div class="field">
+      <label>Поиск {{ tip('Умный поиск', 'Ищет по названию, описанию, адресу и городу. Можно писать по-русски: например кассир, пекарь, склад.') }}</label>
+      <input name="q" value="{{ f.q }}" placeholder="можно по-русски: кассир, пекарь, склад…">
+    </div>
+    <div class="field">
+      <label>Город {{ ic.i('edit', 11) }} {{ tip('Город или район', 'Понимает русские и датские названия. Копенгаген мапится на København и ближайшие районы, если они есть в базе.') }}</label>
+      <input name="city" list="dl_city" value="{{ f.city }}" placeholder="Напиши по-русски: Копенгаген" autocomplete="off">
+      <datalist id="dl_city">
+        <option value="Копенгаген"><option value="Орхус"><option value="Оденсе"><option value="Ольборг">
+        <option value="Фредериксберг"><option value="Броннбю"><option value="Хвидовре"><option value="Херлев">
+        {% for city,lbl in city_suggestions %}<option value="{{city}}" label="{{lbl}}">{% endfor %}
+      </datalist>
+    </div>
+    {{ custom_select('brand', 'Бренд', 'Все бренды', brands, f.brand, 'Фильтрует конкретную сеть. Удобно, если хочешь смотреть только Netto/Føtex/Bilka и не смешивать разные форматы магазинов.') }}
+    {{ custom_select('region', 'Регион', 'Все регионы', regions, f.region, 'Широкий фильтр по части Дании. Используй, когда город не принципиален, но ехать в другой регион не хочется.') }}
+    {{ custom_select('category', 'Категория', 'Все категории', cats, f.category, 'Тип работы: касса, продажи, склад, пекарня, кухня, обслуживание. Лучше комбинировать с городом или радиусом.') }}
+    {{ custom_select('employment_type', 'Занятость', 'Любая', etypes, f.employment_type, 'Отсекает полную/частичную занятость. Оставь Любая, если важнее место и расстояние, чем часы.') }}
+    {{ custom_select('job_level', 'Уровень', 'Любой', levels, f.job_level, 'Помогает отделить обычные позиции, under 18, менеджмент и trainee. Если не уверен, оставь Любой.') }}
+  </div>
+  <div class="factions">
+    <div class="filter-status">{{ custom_select('status', 'Статус', 'Любой статус', statuses.items(), f.status, 'Быстро переключает рабочий список: новые, просмотренные, поданные, скрытые. Активные по умолчанию прячут уже поданные.') }}</div>
+    <div class="filter-sort">{{ custom_select('sort', 'Сортировка', 'по умолчанию', sorts.items(), f.sort, 'Меняет приоритет карточек. По расстоянию работает только когда задан домашний адрес в настройках.') }}</div>
+    {% if home %}
+    <div class="field filter-radius">
+      <label>Радиус, км {{ tip('Радиус от дома', 'Оставь пустым или ∞, чтобы не ограничивать выдачу. Расстояние считается от домашнего адреса в настройках.') }}</label>
+      <div class="num-stepper">
+        <button type="button" data-step="-1" tabindex="-1">−</button>
+        <input name="radius" type="number" min="0" step="1" value="{{ f.radius }}" placeholder="∞" inputmode="numeric">
+        <button type="button" data-step="1" tabindex="-1">+</button>
+      </div>
+    </div>
+    {% endif %}
+    <label class="grpchk" style="margin-top:18px;" data-tip-title="Группировка" data-tip-body="Собирает вакансии одного магазина в одну карточку. Полезно, когда один Netto/Føtex публикует много похожих позиций.">
+      <input type="checkbox" name="group" value="1" {{ 'checked' if f.group }} onchange="this.form.submit()"> {{ ic.i('store') }} По магазинам {{ tip('По магазинам', 'Сжимает список: сначала видишь магазин и адрес, а внутри уже все позиции этого места.') }}
+    </label>
+    <div class="filter-actions">
+    <button class="primary filter-action" type="submit" style="margin-top:18px;" data-tip-title="Применить" data-tip-body="Обновляет список по текущим фильтрам. Выпадающие фильтры применяются сразу после выбора, текстовые поля — этой кнопкой.">Применить</button>
+    {# переключатель «Поданные»: сохраняет остальные фильтры, меняет только статус #}
+    {% set parts = [] %}
+    {% for k in ['q','city','brand','region','category','employment_type','job_level','sort','radius','group'] %}
+      {% if f[k] %}{% set _ = parts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
+    {% endfor %}
+    {% set base_qs = parts|join('&') %}
+    {% if f.status == 'active' and f.show_applied %}
+      <a class="toggle-applied on" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active" data-tip-title="Поданные" data-tip-body="Убирает уже отправленные вакансии из общего активного списка, чтобы они не мешали новым.">{{ check() }} Скрыть поданные</a>
+    {% elif f.status == 'active' %}
+      <a class="toggle-applied" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active&show_applied=1" data-tip-title="Поданные вместе" data-tip-body="Показывает отправленные вакансии рядом с активными. Они подсвечены отдельным цветом и не выбираются для повторной подачи.">{{ check() }} Поданные ({{ applied_count }})</a>
+    {% elif f.status == 'applied' %}
+      <a class="toggle-applied on" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active" data-tip-title="Назад к активным" data-tip-body="Вернёт обычную выдачу активных вакансий с теми же поисковыми фильтрами.">← К списку вакансий</a>
+    {% else %}
+      <a class="toggle-applied" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=applied" data-tip-title="Архив подач" data-tip-body="Открывает отдельный список вакансий, куда ты уже отправлял заявку.">{{ check() }} Показать поданные ({{ applied_count }})</a>
+    {% endif %}
+    <button type="button" id="savePreset" class="ghost filter-action" style="margin-top:18px;" data-tip-title="Сохранить набор" data-tip-body="Запоминает текущие фильтры как быстрый пресет над списком. Удобно для разных сценариев поиска.">{{ ic.i('save', 13) }} Сохранить</button>
+    <a class="filter-reset" href="/?reset=1" style="margin-top:18px;" data-tip-title="Сброс фильтров" data-tip-body="Очищает все фильтры и возвращает обычную активную выдачу. Статусы вакансий не меняет.">Сброс</a>
+    </div>
+    {% if resolved.city or resolved.brand or resolved.region or resolved.category or resolved.employment_type or resolved.job_level %}
+      <span class="chip" style="margin-top:18px;">
+        Понял:
+        {% if resolved.city %}город → {{ resolved.city }}{% endif %}
+        {% if resolved.brand %} бренд → {{ resolved.brand }}{% endif %}
+        {% if resolved.region %} регион → {{ resolved.region }}{% endif %}
+        {% if resolved.category %} категория → {{ resolved.category }}{% endif %}
+        {% if resolved.employment_type %} занятость → {{ resolved.employment_type }}{% endif %}
+        {% if resolved.job_level %} уровень → {{ resolved.job_level }}{% endif %}
+      </span>
+    {% endif %}
+  </div>
+</form>
+</section>
+
+<div class="jobs-result-head">
+  {% set result_title = 'Поданные вакансии' if f.status == 'applied' else ('Группировка по магазинам' if group else 'Карточки вакансий') %}
+  <span class="muted">{{ result_title }} · {{ total_filtered }} найдено</span>
+  <span class="muted">
+    {% if f.status == 'applied' %}
+      Здесь только вакансии, куда уже отмечена подача
+    {% else %}
+      Новые, просмотренные и поданные различаются мягкой левой линией
+    {% endif %}
+  </span>
+</div>
+
+{% set brand_colors = {
+  'netto': ('#ffe400', '#1a1a1a'),
+  'foetex': ('#13499b', '#ffffff'),
+  'bilka': ('#0098da', '#06283d'),
+  'salling': ('#c0392b', '#ffffff'),
+  'br': ('#e2001a', '#ffffff'),
+  'carlsjr': ('#e8470f', '#ffffff'),
+  'starbucks': ('#00704a', '#ffffff'),
+  'sallinggroup': ('#0f766e', '#ffffff'),
+  'hugoboss': ('#111111', '#ffffff'),
+  'matinique': ('#3a3a3a', '#ffffff')
+} %}
+<div class="grid">
+  {% if group %}
+  {% for g in groups %}
+  <div class="card group-card">
+    <div class="badges">
+      {% if g.brand %}{% set bc = brand_colors.get(g.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(g.brand) }}</span>{% endif %}
+      {% if g.dist is not none %}<span class="badge dist">≈ {{ g.dist }} км</span>{% endif %}
+      <span class="badge st-interview">{{ ic.i('store', 12) }} {{ g.jobs|length }} вакансий</span>
+    </div>
+    <h3>{{ ic.i('pin') }} {{ g.street or '' }}{% if g.zip or g.city %}{{ ', ' if g.street }}{{ g.zip or '' }} {{ g.city or '' }}{% endif %}{% if g.country %}, {{ g.country }}{% endif %}</h3>
+    {% if g.region %}<div class="meta">{{ L.REGION.get(g.region, g.region) }}</div>{% endif %}
+    <div class="group-jobs">
+      {% for j in g.jobs[:12] %}
+      {% set cat0 = (j.categories or '').split(',')[0] %}
+      <a class="gjob" href="/job/{{ j.id }}">{% if cat0 %}<b>{{ L.CATEGORY.get(cat0, cat0) }}</b> · {% endif %}{{ j.title }}</a>
+      {% endfor %}
+      {% if g.jobs|length > 12 %}<span class="gmore">…ещё {{ g.jobs|length - 12 }}</span>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  {{ empty_state() }}
+  {% endfor %}
+  {% else %}
+  {% for j in jobs %}
+  <div class="card job-status-{{ j.status }}" data-jobcard
+       onclick="if(!event.target.closest('.row') && !event.target.closest('.selwrap')){ const cb=this.querySelector('[data-selbox]'); if(cb){ cb.checked=!cb.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); } }"
+       aria-label="{{ 'Уже подано' if j.status == 'applied' else 'Нажми, чтобы выбрать вакансию' }}" style="cursor:{{ 'default' if j.status == 'applied' else 'pointer' }};">
+    {% if j.status != 'applied' %}
+    <label class="selwrap" aria-label="Выбрать для пакетной подачи">
+      <input type="checkbox" name="job_ids" value="{{ j.id }}" form="batchform" data-selbox>
+      <span class="selbox-ui"></span>
+    </label>
+    {% endif %}
+    {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','hidden':'скрыто','closed':'закрыта'} %}
+    <div class="badges">
+      {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
+      {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно по прямой от домашнего адреса. Маршрут общественным транспортом смотри через кнопку Маршрут.">≈ {{ distances[j.id] }} км</span>{% endif %}
+      <span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>
+    </div>
+    <h3>{{ j.title }}</h3>
+    {% set cat = (j.categories or '').split(',')[0] %}
+    {% if cat or (j.job_level and L.LEVEL.get(j.job_level)) %}
+    <div class="role">{{ ic.i('user', 13) }} {% if cat %}{{ L.CATEGORY.get(cat, cat) }}{% endif %}{% if j.job_level and L.LEVEL.get(j.job_level) %}<span class="lvl"> · {{ L.LEVEL.get(j.job_level) }}</span>{% endif %}</div>
+    {% endif %}
+    <div class="meta">
+      {{ ic.i('pin', 13) }} {% if j.street %}{{ j.street }}{% endif %}{% if j.zip or j.city %}{{ ', ' if j.street }}{{ j.zip or '' }} {{ j.city or '' }}{% endif %}{% if j.country %}, {{ j.country }}{% endif %}{% if j.region %} · {{ L.REGION.get(j.region, j.region) }}{% endif %}<br>
+      {% if j.hours %}{{ ic.i('clock', 13) }} {{ j.hours }} ч/нед · {% endif %}{% if j.employment_type %}{{ L.EMPLOYMENT.get(j.employment_type, j.employment_type) }} · {% endif %}{% if j.start_date %}старт {{ j.start_date }}{% endif %}<br>
+      {% if j.pay_rate %}{{ ic.i('money', 13) }} {{ j.pay_rate }} · {% endif %}{% if j.published %}размещено {{ j.published[:10] }}{% endif %}
+      {% if j.requisition_id or j.first_seen or j.modified %}<br>
+      {{ ic.i('file', 13) }} {% if j.requisition_id %}ID {{ j.requisition_id }}{% endif %}{% if j.first_seen %}{% if j.requisition_id %} · {% endif %}найдено {{ j.first_seen.strftime('%Y-%m-%d') }}{% endif %}{% if j.modified %} · обновлено {{ j.modified[:10] }}{% endif %}
+      {% endif %}
+    </div>
+    <div class="row">
+      {% if j.status == 'applied' %}
+      <button type="button" class="ghost" disabled>{{ check(13) }} Уже подано</button>
+      {% else %}
+      <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>
+      {% endif %}
+      <a href="/job/{{ j.id }}"><button type="button" class="ghost">Подробнее</button></a>
+      <a href="{{ maps_urls[j.id] }}"><button type="button" class="ghost">{{ ic.i('map', 13) }} Маршрут</button></a>
+      {% if j.status != 'applied' %}
+      <form method="post" action="/job/{{ j.id }}/status">
+        <input type="hidden" name="status" value="applied">
+        <button type="submit" class="ghost">{{ ic.i('check', 13) }} Подал</button>
+      </form>
+      {% endif %}
+      {% if j.status == 'hidden' %}
+      <form method="post" action="/job/{{ j.id }}/status">
+        <input type="hidden" name="status" value="seen"><button type="submit" class="ghost" aria-label="Вернуть из скрытых">{{ ic.i('undo', 13) }}</button>
+      </form>
+      {% else %}
+      <button type="button" class="ghost hide-btn" data-job="{{ j.id }}" aria-label="Скрыть вакансию">{{ ic.i('eyeoff', 13) }}</button>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  {{ empty_state() }}
+  {% endfor %}
+  {% endif %}
+</div>
+
+{% if pages > 1 %}
+{% set pparts = [] %}
+{% for k in ['q','city','brand','region','category','employment_type','job_level','status','sort','radius','group','show_applied'] %}
+  {% if f[k] %}{% set _ = pparts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
+{% endfor %}
+{% set pqs = pparts|join('&') %}
+<div class="pager">
+  {% if page > 1 %}<a href="/?{{ pqs }}{{ '&' if pqs }}page={{ page-1 }}">← Назад</a>{% else %}<span class="dis">← Назад</span>{% endif %}
+  <span class="pinfo">Страница {{ page }} из {{ pages }} · всего {{ total_filtered }}</span>
+  {% if page < pages %}<a href="/?{{ pqs }}{{ '&' if pqs }}page={{ page+1 }}">Вперёд →</a>{% else %}<span class="dis">Вперёд →</span>{% endif %}
+</div>
+{% endif %}
+
+<form id="batchform" class="batchbar" method="post" action="/apply/batch">
+  <div class="binfo">
+    <span class="cnt"><span id="selcount">0</span> выбрано · по 2 за раз</span>
+    <span class="files">{{ ic.i('file', 12) }} CV: {{ apply_files.cv }} · {{ ic.i('edit', 12) }} Письмо: {{ apply_files.cover }}
+      <a href="#" id="changefiles">изменить файлы</a></span>
+  </div>
+  <div class="bactions">
+    <button class="primary" type="submit" name="mode" value="dry"
+            data-tip-title="Без отправки" data-tip-body="WexFlow откроет форму, заполнит поля и прикрепит файлы, но не отправит заявку. Хорошо для проверки.">Подготовить</button>
+    <button class="submitbtn" type="submit" name="mode" value="submit"
+            data-tip-title="Авто-отправка" data-tip-body="WexFlow заполнит форму, отправит заявку и подтвердит согласие, если сайт его покажет.">Авто-отправка</button>
+    <button type="button" id="selclear">Сброс</button>
+  </div>
+</form>
+
+<div id="undoToast" class="undo-toast">
+  <span class="undo-text">Вакансия скрыта</span>
+  <button type="button" class="undo-btn">Отменить (<span class="undo-count">5</span>)</button>
+</div>
+{{ ui.shell_end() }}
+{% endblock %}
+
+{% block script %}
+{% if sync_running %}
+<script>
+  // Идёт фоновое обновление вакансий. Раньше страница перезагружалась по
+  // таймеру каждые 8 секунд — мигало без конца, пока шёл sync. Теперь тихо
+  // спрашиваем сервер раз в 6 секунд и перезагружаемся РОВНО ОДИН раз —
+  // когда обновление закончилось и есть что показать.
+  (function () {
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries++;
+      try {
+        const r = await fetch("/api/sync-status", { cache: "no-store" });
+        const d = await r.json();
+        if (!d.running) { clearInterval(poll); location.reload(); }
+      } catch (e) { /* сервер занят — попробуем в следующий раз */ }
+      if (tries > 60) clearInterval(poll); // страховка ~6 минут, не висим вечно
+    }, 6000);
+  })();
+</script>
+{% endif %}
+<script>
+  // --- живой прогресс пакетной подачи ---
+  (function () {
+    const box = document.getElementById('applyProgress');
+    if (!box) return;
+    const esc = (s) => String(s == null ? '' : s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+    async function tick() {
+      let d = null;
+      try {
+        const r = await fetch('/api/apply/progress', { cache: 'no-store' });
+        d = await r.json();
+      } catch (e) { return; }
+      if (!d || !d.active) {
+        // недавно завершилась — покажем краткий итог, потом скроем
+        if (d && d.total && d.finished_at) {
+          box.style.display = 'flex';
+          const failTxt = d.failed ? ` · не удалось ${d.failed}` : '';
+          const head = d.stalled ? '⚠ Подача прервалась' : '✓ Подача завершена';
+          box.innerHTML = `<div><b>${head}:</b> подано ${d.ok || 0} из ${d.total}${failTxt}</div>`;
+        } else { box.style.display = 'none'; }
+        return;
+      }
+      box.style.display = 'flex';
+      const pct = d.total ? Math.round((d.done / d.total) * 100) : 0;
+      const cur = d.current ? `${esc(d.current.title)}${d.current.city ? ' — ' + esc(d.current.city) : ''}` : '';
+      const failTxt = d.failed ? ` · <span style="color:var(--err-txt);">не удалось ${d.failed}</span>` : '';
+      box.innerHTML =
+        `<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">` +
+          `<b>Подаю ${d.done} из ${d.total}</b>` +
+          `<span>подано ${d.ok || 0}${failTxt}</span></div>` +
+        `<div style="height:9px;background:rgba(0,0,0,.18);border-radius:6px;overflow:hidden;">` +
+          `<div style="height:100%;width:${pct}%;background:var(--ok-txt,#16a34a);transition:width .4s;"></div></div>` +
+        (cur ? `<div style="opacity:.85;font-size:.92em;">Сейчас: ${cur}</div>` : '');
+    }
+    tick();
+    setInterval(tick, 2000);
+  })();
+
+  // --- пакетный выбор вакансий ---
+  const selboxes = [...document.querySelectorAll('[data-selbox]')];
+  const bar = document.getElementById('batchform');
+  const selcount = document.getElementById('selcount');
+  function refreshSel() {
+    const n = selboxes.filter(c => c.checked).length;
+    selcount.textContent = n;
+    bar.classList.toggle('show', n > 0);
+    selboxes.forEach(c => c.closest('[data-jobcard]').classList.toggle('selected', c.checked));
+  }
+  selboxes.forEach(c => c.addEventListener('change', refreshSel));
+  document.getElementById('selclear').addEventListener('click', () => {
+    selboxes.forEach(c => c.checked = false); refreshSel();
+  });
+  document.getElementById('changefiles').addEventListener('click', (e) => {
+    e.preventDefault();
+    const first = selboxes.find(c => c.checked) || selboxes[0];
+    if (first) location.href = '/job/' + first.value + '/apply';
+  });
+  refreshSel();
+
+  // --- сохранить текущие фильтры как пресет ---
+  const savePresetBtn = document.getElementById('savePreset');
+  if (savePresetBtn) savePresetBtn.addEventListener('click', () => {
+    const name = prompt('Название набора фильтров:');
+    if (!name) return;
+    const fd = new FormData(document.getElementById('filterform'));
+    const params = new URLSearchParams();
+    for (const [k, v] of fd.entries()) { if (v) params.append(k, v); }
+    const f = document.createElement('form');
+    f.method = 'post'; f.action = '/presets/save';
+    const add = (n, val) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = n; i.value = val; f.appendChild(i); };
+    add('name', name); add('query', params.toString());
+    document.body.appendChild(f); f.submit();
+  });
+
+  // --- кастомный числовой степпер ---
+  document.querySelectorAll('.num-stepper').forEach((st) => {
+    const inp = st.querySelector('input');
+    st.querySelectorAll('button[data-step]').forEach((b) => {
+      b.addEventListener('click', () => {
+        let v = parseInt(inp.value || '0', 10); if (isNaN(v)) v = 0;
+        v = Math.max(0, v + parseInt(b.dataset.step, 10));
+        inp.value = v === 0 ? '' : v;
+        inp.focus();
+      });
+    });
+  });
+
+  // --- скрытие вакансии с отменой (5 сек) ---
+  const toast = document.getElementById('undoToast');
+  let undoTimer = null, undoTick = null;
+  async function setStatus(id, status) {
+    return fetch(`/job/${id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'status=' + status,
+    });
+  }
+  function showUndo(jobId, card) {
+    clearTimeout(undoTimer); clearInterval(undoTick);
+    let left = 5;
+    const cnt = toast.querySelector('.undo-count'); cnt.textContent = left;
+    toast.classList.add('show');
+    undoTick = setInterval(() => { left--; cnt.textContent = Math.max(0, left); if (left <= 0) clearInterval(undoTick); }, 1000);
+    toast.querySelector('.undo-btn').onclick = async () => {
+      clearTimeout(undoTimer); clearInterval(undoTick); toast.classList.remove('show');
+      await setStatus(jobId, 'seen');
+      if (card) card.style.display = '';
+    };
+    undoTimer = setTimeout(() => { clearInterval(undoTick); toast.classList.remove('show'); }, 5000);
+  }
+  document.querySelectorAll('.hide-btn').forEach((b) => b.addEventListener('click', async () => {
+    const id = b.dataset.job, card = b.closest('[data-jobcard]');
+    if (card) card.style.display = 'none';
+    await setStatus(id, 'hidden');
+    showUndo(id, card);
+  }));
+
+  // --- кастомные подсказки: задержка при наведении, стрелка, надёжное скрытие ---
+  const smartTip = document.createElement('div');
+  smartTip.className = 'smart-tip';
+  smartTip.innerHTML = '<div class="smart-tip-title"></div><div class="smart-tip-body"></div>';
+  document.body.appendChild(smartTip);
+  const smartTipTitle = smartTip.querySelector('.smart-tip-title');
+  const smartTipBody = smartTip.querySelector('.smart-tip-body');
+  let smartTipTarget = null, tipShowTimer = null;
+  const TIP_DELAY = 320; // мс — короткое наведение не дёргает подсказку
+
+  function placeSmartTip(target) {
+    const r = target.getBoundingClientRect();
+    const margin = 10, gap = 9;
+    smartTip.style.left = '0px';
+    smartTip.style.top = '0px';
+    smartTip.classList.add('show');
+    const tr = smartTip.getBoundingClientRect();
+    let left = r.left + r.width / 2 - tr.width / 2;
+    left = Math.max(margin, Math.min(left, window.innerWidth - tr.width - margin));
+    let top = r.bottom + gap, pos = 'below';
+    if (top + tr.height > window.innerHeight - margin) { top = r.top - tr.height - gap; pos = 'above'; }
+    if (top < margin) top = margin;
+    smartTip.dataset.pos = pos;
+    // стрелка указывает на центр элемента
+    const arrow = Math.max(14, Math.min(r.left + r.width / 2 - left, tr.width - 14));
+    smartTip.style.setProperty('--tip-arrow', `${Math.round(arrow)}px`);
+    smartTip.style.left = `${Math.round(left)}px`;
+    smartTip.style.top = `${Math.round(top)}px`;
+  }
+
+  function renderSmartTip(target) {
+    smartTipTarget = target;
+    const title = target.dataset.tipTitle || '';
+    smartTipTitle.textContent = title;
+    smartTipTitle.style.display = title ? '' : 'none';
+    smartTipBody.textContent = target.dataset.tipBody || '';
+    placeSmartTip(target);
+  }
+
+  function scheduleSmartTip(target, immediate) {
+    if (!target || (!target.dataset.tipBody && !target.dataset.tipTitle)) return;
+    clearTimeout(tipShowTimer);
+    if (immediate) { renderSmartTip(target); return; }
+    tipShowTimer = setTimeout(() => renderSmartTip(target), TIP_DELAY);
+  }
+
+  function hideSmartTip() {
+    clearTimeout(tipShowTimer); tipShowTimer = null;
+    smartTip.classList.remove('show');
+    smartTipTarget = null;
+  }
+
+  document.querySelectorAll('[data-tip-title], [data-tip-body]').forEach((el) => {
+    el.addEventListener('mouseenter', () => scheduleSmartTip(el, false));
+    el.addEventListener('mouseleave', hideSmartTip);
+    el.addEventListener('focus', () => scheduleSmartTip(el, true)); // клавиатура — сразу
+    el.addEventListener('blur', hideSmartTip);
+    el.addEventListener('click', hideSmartTip); // клик по кнопке убирает подсказку
+  });
+  window.addEventListener('scroll', hideSmartTip, { passive:true });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideSmartTip(); });
+  window.addEventListener('resize', () => { if (smartTipTarget) placeSmartTip(smartTipTarget); });
+</script>
+<script>
+  const combos = [...document.querySelectorAll("[data-combo]")];
+
+  function closeCombos(except = null) {
+    combos.forEach((combo) => {
+      if (combo !== except) combo.classList.remove("open");
+    });
+  }
+
+  combos.forEach((combo) => {
+    const button = combo.querySelector("[data-combo-button]");
+    const label = button.querySelector("span");
+    const input = combo.querySelector("input[type='hidden']");
+    const options = [...combo.querySelectorAll(".combo-option")];
+
+    button.addEventListener("click", () => {
+      const willOpen = !combo.classList.contains("open");
+      closeCombos(combo);
+      combo.classList.toggle("open", willOpen);
+      if (willOpen) {
+        const selected = combo.querySelector(".combo-option.selected") || options[0];
+        selected?.scrollIntoView({ block: "nearest" });
+      }
+    });
+
+    options.forEach((option) => {
+      option.addEventListener("click", () => {
+        input.value = option.dataset.value || "";
+        label.textContent = option.dataset.label || option.textContent.trim();
+        options.forEach((item) => item.classList.remove("selected"));
+        option.classList.add("selected");
+        combo.classList.remove("open");
+        // авто-применение: выбрал в списке — сразу применяем фильтры
+        const form = combo.closest("form");
+        if (form && form.id === "filterform") form.submit();
+      });
+    });
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-combo]")) closeCombos();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeCombos();
+  });
+</script>
+{% endblock %}

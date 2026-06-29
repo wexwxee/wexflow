@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}{{ 'WexFlow · ' ~ job.title if job else 'WexFlow' }}{% endblock %}
+
+{% block style %}
+<style>
+  .wrap { max-width:860px; }
+  .badge { padding:3px 11px; margin-right:6px; }
+  .meta { font-size:14px; margin:12px 0; line-height:1.7; }
+  .desc { background:var(--card); border:1px solid var(--glass-line); border-radius:8px; padding:18px; line-height:1.6; }
+  .desc h3 { margin-top:0; }
+  .translation { background:var(--ok-bg); border-color:var(--ok-line); }
+  .facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin:16px 0 18px; }
+  .fact { background:var(--glass); border:1px solid var(--glass-line); border-radius:10px; padding:11px 12px; }
+  .fact b { display:block; color:var(--neon); font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; font-family:"Space Grotesk",system-ui,sans-serif; font-weight:600; }
+  .fact span { color:var(--txt-strong); line-height:1.35; }
+  .fact.important, .fact.distance, .fact.money { border-color:var(--info-line); background:var(--info-bg); }
+  .fact.important span, .fact.distance span, .fact.money span { color:var(--txt-strong); }
+  .fact.note { border-color:var(--ok-line); background:var(--ok-bg); }
+  .fact.muted span { color:var(--muted); }
+  .notice { background:var(--glass); border:1px solid var(--glass-line); border-radius:12px; padding:14px 16px; color:var(--txt); line-height:1.55; }
+  .notice.warn { background:var(--err-bg); border-color:var(--err-line); color:var(--err-txt); }
+  .section-title { margin:22px 0 10px; font-size:18px; }
+  button { padding:10px 18px; font-size:14px; }
+  .status-row { display:flex; gap:7px; flex-wrap:wrap; align-items:center; margin:14px 0 4px; }
+  .status-row .lbl { color:var(--muted); font-size:13px; margin-right:4px; }
+  .st { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; transition:border-color .15s; }
+  .st:hover { border-color:var(--accent); }
+  .st.cur { background:var(--ok-bg); border-color:var(--ok-line); color:var(--ok-txt); }
+  .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--glass-line); }
+  .detail-brand { margin:18px 0 12px; }
+</style>
+{% endblock %}
+
+{% block body %}
+{{ ui.shell_start('jobs') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Job') }}</h1>
+    <span class="wex-title-meta">{{ job.title if job else 'Вакансия не найдена' }}</span>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    <a class="tablink" href="/">← к списку</a>
+    {{ ui.app_switch() }}
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+<section class="wex-workbench wex-narrow">
+  {% if not job %}
+    <p>Вакансия не найдена.</p>
+  {% else %}
+    {% set st_ru = {'new':'новая','seen':'просмотрено','applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','closed':'закрыта'} %}
+    <h1 style="font-size:26px;margin:14px 0 8px;">{{ job.title }}</h1>
+    {% set cat0 = (job.categories or '').split(',')[0] %}
+    <div>
+      <span class="badge">{{ st_ru.get(job.status, job.status) }}</span>
+      {% if cat0 %}<span class="badge" style="color:var(--info-txt);">{{ L.CATEGORY.get(cat0, cat0) }}</span>{% endif %}
+    </div>
+    <div class="status-row">
+      <span class="lbl">Статус заявки:</span>
+      {% set sticons = {'applied':'check','interview':'phone','offer':'award','rejected':'x','seen':'undo'} %}
+      <form method="post" action="/job/{{ job.id }}/status" style="display:inline-flex;gap:7px;flex-wrap:wrap;">
+        {% for val,txt in [('applied','Подал'),('interview','Собеседование'),('offer','Оффер'),('rejected','Отказ'),('seen','Сброс')] %}
+          <button class="st {{ 'cur' if job.status==val }}" name="status" value="{{ val }}">{{ ic.i(sticons[val], 13) }} {{ txt }}</button>
+        {% endfor %}
+      </form>
+    </div>
+    <p style="margin-top:14px;">
+      <a href="/job/{{ job.id }}/apply"><button class="primary">{{ ic.i('send', 14) }} Подать →</button></a>
+      <a href="{{ maps_url }}"><button class="secondary">{{ ic.i('map', 14) }} Маршрут в Google Maps</button></a>
+    </p>
+    {% if has_home and job.lat is not none %}
+    <p>
+      <button type="button" class="secondary" id="transitBtn" data-job="{{ job.id }}" data-loading-text="Считаю маршрут…">{{ ic.i('bus', 14) }} Время в пути на транспорте</button>
+      <span id="transitOut" class="meta" style="margin-left:8px;"></span>
+    </p>
+    {% endif %}
+    {% if facts %}
+      <h2 class="section-title">Важное</h2>
+      <div class="facts">
+        {% for fact in facts %}
+          <div class="fact {{ fact.kind }}">
+            <b>{{ fact.label }}</b>
+            <span>{{ fact.value }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    <h2 class="section-title">Русский перевод</h2>
+    {% if trerror %}<div class="notice warn" style="margin-bottom:10px;">Перевод сейчас недоступен. Попробуй ещё раз чуть позже.</div>{% endif %}
+    {% if job.description_ru %}
+      {% if translator_name %}<p class="meta">Переведено через {{ translator_name }}.</p>{% endif %}
+      <div class="desc translation">{{ description_ru_html | safe }}</div>
+      <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
+        <button class="secondary" type="submit" data-loading-text="Обновляю перевод...">Обновить перевод</button>
+      </form>
+    {% else %}
+      <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
+        <button type="submit" class="primary" data-loading-text="Перевожу...">Перевести на русский</button>
+      </form>
+    {% endif %}
+
+    <h2 class="section-title">Оригинал</h2>
+    <div class="desc">{{ description_html | safe }}</div>
+  {% endif %}
+</section>
+{{ ui.shell_end() }}
+{% endblock %}
+
+{% block script %}
+<script>
+  const tb = document.getElementById("transitBtn");
+  if (tb) tb.addEventListener("click", async () => {
+    const out = document.getElementById("transitOut");
+    tb.disabled = true; tb.classList.add("loading"); tb.textContent = tb.dataset.loadingText;
+    try {
+      const r = await fetch("/api/transit/" + tb.dataset.job);
+      const d = await r.json();
+      if (d.ok) {
+        out.textContent = `≈ ${d.minutes} мин на транспорте, пересадок: ${d.transfers}` + (d.modes && d.modes.length ? ` (${d.modes.join(", ")})` : "");
+      } else {
+        out.textContent = d.error || "Маршрут сейчас не посчитался.";
+      }
+    } catch (e) { out.textContent = "Маршрут сейчас не посчитался."; }
+    tb.classList.remove("loading"); tb.textContent = "Обновить время в пути"; tb.disabled = false;
+  });
+  document.querySelectorAll(".translate-form").forEach((f) => f.addEventListener("submit", () => {
+    const b = f.querySelector("button");
+    b.classList.add("loading"); b.textContent = b.dataset.loadingText || b.textContent;
+  }));
+</script>
+{% endblock %}

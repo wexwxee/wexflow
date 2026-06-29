@@ -2493,6 +2493,29 @@ def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool 
     """Запустить процесс apply.py по списку id. Возвращает Popen (или None при сбое).
     auto_close=True добавляет --auto-close: браузер закроется сам после пачки
     (для фоновой подачи из Mini App/автопилота, где нет человека у экрана)."""
+    # Финальная страховка для АВТОМАТИЧЕСКОЙ отправки (submit=True): это узкое
+    # место, через которое проходит вся фоновая подача (очередь автопилота/Mini App).
+    # Даже если выше что-то просочится — здесь руководящие и уже поданные (applied_at)
+    # не уйдут. На подготовку (submit=False) и осознанную одиночную подачу со страницы
+    # вакансии это не влияет — туда этот путь не ведёт.
+    if submit and ids:
+        with get_session() as s:
+            picked = [(jid, s.get(Job, jid)) for jid in ids]
+        safe = []
+        for jid, j in picked:
+            if j is None:
+                continue
+            if j.status == "applied" or j.applied_at is not None:
+                print(f"  ⛔ пропуск (уже подано): {j.title}")
+                continue
+            if labels.is_leadership(j.title):
+                print(f"  ⛔ пропуск (руководящая, авто-подача запрещена): {j.title}")
+                continue
+            safe.append(jid)
+        if not safe:
+            print("  нечего подавать после страховочного отсева — процесс не запускаю")
+            return None
+        ids = safe
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
