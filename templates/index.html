@@ -673,6 +673,64 @@
   <span class="undo-text">Вакансия скрыта</span>
   <button type="button" class="undo-btn">Отменить (<span class="undo-count">5</span>)</button>
 </div>
+
+<!-- Онбординг: знакомство при первом запуске (F14). Показывается один раз. -->
+<style>
+  .wf-welcome { position:fixed; inset:0; z-index:3500; display:flex; align-items:center; justify-content:center;
+    padding:24px; background:rgba(0,0,0,.55); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); }
+  .wf-welcome[hidden] { display:none; }
+  .wf-welcome-card { width:100%; max-width:520px; background:var(--card); border:1px solid var(--glass-line);
+    border-radius:14px; padding:24px; box-shadow:var(--shadow); }
+  .wf-welcome-head { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+  .wf-welcome-head h2 { margin:0; font-size:21px; color:var(--txt-strong); }
+  .wf-welcome-lead { margin:0 0 16px; color:var(--muted); line-height:1.5; }
+  .wf-welcome-list { list-style:none; margin:0 0 20px; padding:0; display:grid; gap:14px; }
+  .wf-welcome-list li { display:flex; gap:12px; align-items:flex-start; line-height:1.5; font-size:14px; color:var(--txt); }
+  .wf-welcome-list b { color:var(--txt-strong); }
+  .wf-ic { flex:0 0 auto; width:30px; height:30px; border-radius:8px; display:grid; place-items:center;
+    color:var(--accent); background:var(--accent-soft); border:1px solid var(--glass-line); }
+  .wf-ic.warn { color:var(--warn-txt); background:var(--warn-bg); border-color:var(--warn-line); }
+  .wf-welcome-actions { display:flex; gap:10px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
+  .wf-welcome-actions a { text-decoration:none; }
+</style>
+<div class="wf-welcome" id="wfWelcome" hidden>
+  <div class="wf-welcome-card" role="dialog" aria-modal="true" aria-label="Знакомство с WexFlow">
+    <div class="wf-welcome-head">
+      {{ ui.plane(26) }}
+      <h2>Привет! Это WexFlow</h2>
+    </div>
+    <p class="wf-welcome-lead">Находит вакансии Salling и 7-Eleven и помогает подать заявку — быстро и в одном окне.</p>
+    <ul class="wf-welcome-list">
+      <li><span class="wf-ic warn">{{ ic.i('alert', 16) }}</span>
+        <div><b>Заявки уходят под вашим настоящим именем.</b> Реальная отправка — только по вашему клику с подтверждением. Всегда можно сначала «Подготовить без отправки».</div></li>
+      <li><span class="wf-ic">{{ ic.i('user', 16) }}</span>
+        <div><b>Что нужно для старта:</b> заполнить профиль кандидата и войти в аккаунт Salling — тогда подача сработает.</div></li>
+      <li><span class="wf-ic">{{ ic.i('zap', 16) }}</span>
+        <div><b>Автопилот — по желанию:</b> следит за новыми вакансиями и спрашивает разрешение в Telegram. Сам ничего не отправляет, пока вы это не включите.</div></li>
+    </ul>
+    <div class="wf-welcome-actions">
+      <button type="button" class="ghost" id="wfWelcomeSkip">Пропустить</button>
+      <a href="/account" id="wfWelcomeCta"><button type="button" class="primary">{{ ic.i('user', 14) }} Заполнить профиль →</button></a>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    var KEY = "wexflow_welcome_seen_v1";
+    var ov = document.getElementById("wfWelcome");
+    if (!ov) return;
+    var seen; try { seen = localStorage.getItem(KEY); } catch (e) { seen = "1"; }
+    if (seen) return;                       // уже видели — не показываем
+    function markSeen() { try { localStorage.setItem(KEY, "1"); } catch (e) {} }
+    function close() { ov.hidden = true; markSeen(); }
+    ov.hidden = false;
+    document.getElementById("wfWelcomeSkip").addEventListener("click", close);
+    // переход к профилю — тоже считаем знакомство пройденным (навигацию не отменяем)
+    document.getElementById("wfWelcomeCta").addEventListener("click", markSeen);
+    ov.addEventListener("click", function (e) { if (e.target === ov) close(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !ov.hidden) close(); });
+  })();
+</script>
 {{ ui.shell_end() }}
 {% endblock %}
 
