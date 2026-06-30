@@ -2524,38 +2524,51 @@ def _salling_apply_cmd(extra: list[str]) -> list[str]:
     return [sys.executable, "-u", str(config.BASE_DIR / "apply.py"), *extra]
 
 
-def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool = False):
-    """Запустить процесс apply.py по списку id. Возвращает Popen (или None при сбое).
-    auto_close=True добавляет --auto-close: браузер закроется сам после пачки
-    (для фоновой подачи из Mini App/автопилота, где нет человека у экрана)."""
-    # Финальная страховка для АВТОМАТИЧЕСКОЙ отправки (submit=True): это узкое
-    # место, через которое проходит вся фоновая подача (очередь автопилота/Mini App).
-    # Даже если выше что-то просочится — здесь руководящие и уже поданные (applied_at)
-    # не уйдут. На подготовку (submit=False) и осознанную одиночную подачу со страницы
-    # вакансии это не влияет — туда этот путь не ведёт.
-    if submit and ids:
-        with get_session() as s:
-            picked = [(jid, s.get(Job, jid)) for jid in ids]
-        safe = []
-        for jid, j in picked:
-            if j is None:
-                continue
-            if j.status == "applied" or j.applied_at is not None:
-                print(f"  ⛔ пропуск (уже подано): {j.title}")
-                continue
-            if labels.is_leadership(j.title):
-                print(f"  ⛔ пропуск (руководящая, авто-подача запрещена): {j.title}")
-                continue
-            safe.append(jid)
-        if not safe:
-            print("  нечего подавать после страховочного отсева — процесс не запускаю")
-            return None
-        ids = safe
+def _partition_submit_ids(picked):
+    """Делит снимок [(id, Job|None)] на (safe, applied, leadership) по нерушимым
+    правилам авто/пакетной подачи: уже поданные (applied_at или status=applied) и
+    руководящие в такую подачу НЕ идут; дубли id отсеиваются. Чистая функция над
+    переданным снимком — без обращения к БД, поэтому её легко покрыть тестом.
+    Поданные проверяем раньше руководящих: вакансия, что и подана, и руководящая,
+    считается поданной. Возвращает (safe: list[str], applied/leadership: list[(id,Job)])."""
+    safe, applied, leadership = [], [], []
+    seen = set()
+    for jid, j in picked:
+        jid = str(jid or "").strip()
+        if not jid or jid in seen:
+            continue
+        seen.add(jid)
+        if j is None:
+            continue
+        if j.status == "applied" or j.applied_at is not None:
+            applied.append((jid, j))
+            continue
+        if labels.is_leadership(j.title or ""):
+            leadership.append((jid, j))
+            continue
+        safe.append(jid)
+    return safe, applied, leadership
+
+
+def _load_jobs_snapshot(ids):
+    """Снимок [(id, Job|None)] для переданных id (один заход в БД)."""
+    with get_session() as s:
+        return [(jid, s.get(Job, jid)) for jid in ids]
+
+
+def _run_apply_worker(ids, submit: bool = False, auto_close: bool = False):
+    """ЕДИНСТВЕННОЕ место, запускающее воркер подачи apply.py (общая «воротина»).
+    Возвращает Popen или None. Здесь НЕТ отсева — вызывающий уже применил нужную
+    политику: авто/пакет проходят через _partition_submit_ids, а одиночная подача
+    со страницы вакансии подаёт осознанно ровно один id."""
+    ids = [str(j).strip() for j in ids if str(j or "").strip()]
+    if not ids:
+        return None
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
-    cmd = _salling_apply_cmd(list(ids) + ["--web"])
+    cmd = _salling_apply_cmd(ids + ["--web"])
     if submit:
         cmd.append("--submit")
     if submit and auto_close:
@@ -2569,6 +2582,23 @@ def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool 
         )
     finally:
         log.close()  # потомок унаследовал свой хэндл; родительский больше не нужен
+
+
+def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool = False):
+    """Запуск apply.py для авто/фоновой подачи (очередь автопилота/Mini App).
+    Для submit=True применяет страховочный отсев (_partition_submit_ids): руководящие
+    и уже поданные не уйдут. Сам запуск — через единый воркер _run_apply_worker."""
+    if submit and ids:
+        safe, applied, leadership = _partition_submit_ids(_load_jobs_snapshot(ids))
+        for _jid, j in applied:
+            print(f"  ⛔ пропуск (уже подано): {j.title}")
+        for _jid, j in leadership:
+            print(f"  ⛔ пропуск (руководящая, авто-подача запрещена): {j.title}")
+        if not safe:
+            print("  нечего подавать после страховочного отсева — процесс не запускаю")
+            return None
+        ids = safe
+    return _run_apply_worker(ids, submit=submit, auto_close=auto_close)
 
 
 def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot: bool = False) -> None:
@@ -2629,27 +2659,9 @@ def start_apply(
             ),
             status_code=303,
         )
-    # вывод apply.py пишем в лог, чтобы сбои не были «молчаливыми»
-    log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
-    env = dict(os.environ)
-    env["PYTHONIOENCODING"] = "utf-8"   # иначе print датских/русских символов падает (cp1251)
-    env["PYTHONUTF8"] = "1"
-    env["PYTHONUNBUFFERED"] = "1"        # чтобы диагностика писалась сразу
-    cmd = _salling_apply_cmd([job_id, "--web"])
-    if mode == "submit":
-        cmd.append("--submit")
-    try:
-        subprocess.Popen(
-            cmd,
-            cwd=str(config.BASE_DIR),
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            env=env,
-            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-        )
-    finally:
-        log.close()  # потомок унаследовал свой хэндл; родительский больше не нужен
+    # Одиночная подача со страницы вакансии — осознанная: руководящие разрешены,
+    # повтор уже отсечён выше (resubmit_ack). Запуск через единый воркер.
+    _run_apply_worker([job_id], submit=(mode == "submit"))
     return RedirectResponse(f"/job/{job_id}/apply?started=1", status_code=303)
 
 
@@ -2658,25 +2670,10 @@ def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: s
     ids = [j for j in job_ids if j]
     if not ids:
         return _redirect_back(request, "/", error="Сначала выбери хотя бы одну вакансию для пакетной подачи.")
-    # Страховка от ОШИБОЧНОЙ подачи: поле job_level от Salling недостоверно —
-    # руководящие роли (Souschef, Serviceleder, Teamkoordinator …) помечены
-    # "employee" и могли попасть в выбор. Пачкой их не подаём. Если человек
-    # правда хочет такую вакансию — он подаёт её осознанно с её страницы.
-    with get_session() as s:
-        picked = [(jid, s.get(Job, jid)) for jid in ids]
-    # Не подаём повторно: если на вакансию уже подавались (есть applied_at или
-    # статус "applied") — пропускаем её, чтобы не слать вторую заявку тому же HR.
-    already = [(jid, j) for jid, j in picked
-               if j and (j.status == "applied" or j.applied_at is not None)]
-    if already:
-        done = {jid for jid, _ in already}
-        ids = [jid for jid in ids if jid not in done]
-        picked = [(jid, j) for jid, j in picked if jid not in done]
-    leadership = [(jid, j) for jid, j in picked if j and labels.is_leadership(j.title)]
-    if leadership:
-        held = {jid for jid, _ in leadership}
-        ids = [jid for jid in ids if jid not in held]
-    if not ids:
+    # Страховка: руководящие и уже поданные пачкой не подаём (единый отсев).
+    # Если человек правда хочет руководящую — подаёт её осознанно с её страницы.
+    safe, already, leadership = _partition_submit_ids(_load_jobs_snapshot(ids))
+    if not safe:
         parts = []
         if already:
             parts.append(f"уже поданы ранее: {len(already)}")
@@ -2690,30 +2687,14 @@ def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: s
             error=f"Подавать нечего — {reason}. Повторно на одну и ту же вакансию заявка не уходит.",
         )
     # Гонка/двойной клик: если подача уже идёт (другая пачка или автопилот) —
-    # второй процесс не запускаем. Иначе два браузера дерутся за профиль и заявки
-    # могут уйти повторно. Человек дождётся окончания и нажмёт снова.
+    # второй процесс не запускаем, чтобы два браузера не дрались за профиль.
     if not _claim_apply_slot():
         return _redirect_back(
             request, "/",
             error="Подача уже идёт — дождись её окончания. Второй раз не запускаю, чтобы не ушли дубли.",
         )
-    env = dict(os.environ)
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
-    env["PYTHONUNBUFFERED"] = "1"
-    cmd = _salling_apply_cmd(ids + ["--web"])
-    if mode == "submit":
-        cmd.append("--submit")
-    log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
-    try:
-        subprocess.Popen(
-            cmd, cwd=str(config.BASE_DIR),
-            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
-            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-        )
-    finally:
-        log.close()
-    url = f"/?batch={len(ids)}&mode={mode}"
+    _run_apply_worker(safe, submit=(mode == "submit"))
+    url = f"/?batch={len(safe)}&mode={mode}"
     if leadership:
         url += f"&skipped={len(leadership)}"
     if already:
