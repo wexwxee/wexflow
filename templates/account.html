@@ -88,6 +88,9 @@
   .acct-cta { display:grid; gap:8px; justify-items:end; text-align:right; max-width:360px; }
   .acct-cta button:disabled { opacity:.8; cursor:not-allowed; }
   .acct-hint { color:var(--muted); font-size:11.5px; line-height:1.4; }
+  .acct-rebind { margin-top:10px; padding-top:10px; border-top:1px solid var(--glass-line); display:grid; gap:5px; justify-items:end; }
+  .acct-rebind-btn { background:transparent; border:0; color:var(--muted); font-size:12px; font-weight:600; cursor:pointer; padding:2px 0; display:inline-flex; align-items:center; gap:6px; }
+  .acct-rebind-btn:hover { color:var(--txt-strong); text-decoration:underline; }
   .tg-login-btn {
     position:relative; isolation:isolate; overflow:hidden;
     display:inline-flex; align-items:center; justify-content:center; gap:10px;
@@ -266,11 +269,15 @@
     <div class="acct-cta">
       {% if account.signed_in %}
       <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
-        <button class="ghost" type="button" id="rebindOpen" data-tg-id="{{ account_tg_id }}">{{ ic.i('send', 14) }} Перепривязать Telegram</button>
         <form method="post" action="/account/logout" style="margin:0;"><button class="ghost" type="submit">{{ ic.i('unlock', 14) }} Выйти</button></form>
       </div>
-      <span class="acct-hint">«Перепривязать» — перенести тариф и данные на другой Telegram-аккаунт.</span>
+      <span class="acct-hint">Выход не удаляет данные — можно войти снова тем же Telegram.</span>
+      <div class="acct-rebind">
+        <button class="acct-rebind-btn" type="button" id="rebindOpen" data-tg-id="{{ account_tg_id }}">{{ ic.i('send', 13) }} Перенести аккаунт на другой Telegram</button>
+        <span class="acct-hint">Перенесёт тариф и все данные на другой Telegram. Этот аккаунт потеряет к ним доступ — отменить нельзя.</span>
+      </div>
       {% else %}
+      <span class="acct-hint" style="margin-bottom:8px;">Вход через Telegram нужен, чтобы получать новые подходящие вакансии и подтверждать подачу прямо с телефона, а тариф и профиль не терялись.</span>
       <a class="tg-login-btn" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">
         <span class="tg-login-ic">{{ ic.i('send', 15) }}</span>
         <span class="tg-login-text">Войти через Telegram</span>
@@ -384,6 +391,9 @@
     .rb-close:hover { color:var(--txt-strong); }
     .rb-title { margin:0 0 12px; font-size:17px; color:var(--txt-strong); }
     .rb-text { color:var(--muted); font-size:13.5px; line-height:1.5; margin:0 0 14px; }
+    .rb-warn { display:flex; align-items:flex-start; gap:8px; margin:0 0 14px; padding:10px 12px; border-radius:10px;
+      background:var(--warn-bg); border:1px solid var(--warn-line); color:var(--warn-txt); font-size:12.5px; line-height:1.45; }
+    .rb-warn svg { flex:0 0 auto; margin-top:1px; }
     .rb-input { width:100%; margin:0 0 12px; padding:11px 13px; border-radius:10px; border:1px solid var(--glass-line);
       background:var(--glass); color:var(--txt); font-size:20px; letter-spacing:.3em; text-align:center; }
     .rb-input:focus { outline:none; border-color:var(--accent); }
@@ -402,6 +412,7 @@
       <div class="rb-step" data-step="1">
         <p class="rb-text">Перенесём твой тариф и профиль на другой Telegram.<br>
           Сначала подтвердим, что это ты — пришлём код в твой <b>текущий</b> Telegram.</p>
+        <div class="rb-warn">{{ ic.i('alert', 14) }} <span>После переноса <b>этот</b> Telegram потеряет доступ к тарифу и данным. Отменить нельзя.</span></div>
         <button class="primary rb-btn" type="button" id="rbSend">Отправить код в Telegram</button>
       </div>
 
