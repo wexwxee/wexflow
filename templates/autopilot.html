@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
 {% block title %}Автопилот — WexFlow{% endblock %}
 
 {% block style %}
@@ -86,6 +87,7 @@
 {% endblock %}
 
 {% block body %}
+{{ ui.shell_start('settings') }}
 <div class="apx-wrap">
   <div class="apx-top">
     <a class="apx-back" href="/hub">{{ ic.i('home', 15) }} На главную</a>
@@ -140,6 +142,7 @@
 </div>
 
 <script>window.__apInit = {{ status | tojson }};</script>
+{{ ui.shell_end() }}
 {% endblock %}
 
 {% block script %}
