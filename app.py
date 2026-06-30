@@ -260,10 +260,9 @@ _manual_apply_lock = threading.Lock()
 _last_manual_apply_ts = 0.0
 
 
-def _submit_in_progress() -> bool:
-    """Идёт ли прямо сейчас какая-либо подача (ручная пачка или очередь автопилота)."""
-    if _apply_runner_busy:
-        return True
+def _apply_progress_active() -> bool:
+    """Пишет ли прямо сейчас какой-то воркер apply.py живой прогресс (свежий, <=240с).
+    4 минуты тишины — считаем процесс оборвавшимся."""
     try:
         p = config.DATA_DIR / "apply_progress.json"
         if p.exists():
@@ -271,11 +270,15 @@ def _submit_in_progress() -> bool:
             if data.get("active"):
                 from datetime import datetime
                 age = (datetime.now() - datetime.fromisoformat(data.get("updated_at") or "")).total_seconds()
-                if age <= 240:  # свежий воркер; 4 мин тишины — считаем оборвавшимся
-                    return True
+                return age <= 240
     except Exception:  # noqa: BLE001 — нет/битый файл прогресса → считаем, что не идёт
         pass
     return False
+
+
+def _submit_in_progress() -> bool:
+    """Идёт ли прямо сейчас какая-либо подача (ручная пачка или очередь автопилота)."""
+    return _apply_runner_busy or _apply_progress_active()
 
 
 def _claim_apply_slot() -> bool:
@@ -312,11 +315,28 @@ def _enqueue_auto_submit(ids) -> None:
                              name="apply-runner").start()
 
 
+def _wait_for_manual_apply_to_finish(timeout: float = 300.0) -> None:
+    """Симметрия гонки (F24): если в момент старта очереди ещё идёт РУЧНАЯ подача
+    (она могла начаться, пока очередь была пуста), подождём её завершения — иначе на
+    одном профиле браузера откроются два процесса. После старта очереди ручная подача
+    уже невозможна: она сверяется с _apply_runner_busy. Поэтому страхуем только старт.
+    По дедлайну выходим (страховка от вечного ожидания; дальше держит профиль-lock)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline and not _tg_stop.is_set():
+        with _manual_apply_lock:
+            just_claimed = (time.time() - _last_manual_apply_ts) < 15
+        if not just_claimed and not _apply_progress_active():
+            return
+        _tg_stop.wait(2)
+
+
 def _apply_runner_loop() -> None:
     """Воркер очереди: берёт пачку, запускает подачу, ждёт её завершения
     (следит и сообщает статусы в Mini App), затем берёт следующую пачку.
     Так в любой момент времени работает только один браузер."""
     global _apply_runner_busy
+    # Дождаться завершения ручной подачи, если она шла, когда очередь была пуста.
+    _wait_for_manual_apply_to_finish()
     while True:
         with _apply_queue_lock:
             if _tg_stop.is_set() or not _apply_queue:
