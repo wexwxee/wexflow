@@ -68,12 +68,12 @@ html[data-theme="light"] {
   --hover-line:   #b9c7c0;
   --txt:        #14201c;
   --txt-strong: #0b1512;
-  --muted:      #6b7a74;
-  --accent:       #0d9f6e;
-  --accent-hover: #0a8a5e;
-  --accent-soft:  rgba(13, 159, 110, .14);
-  --neon:         #0d9f6e;
-  --neon-dim:     rgba(13, 159, 110, .10);
+  --muted:      #5e6e66;   /* затемнён до WCAG AA: 4.8:1 на фоне, 5.4:1 на карточке (F8) */
+  --accent:       #0a8159; /* затемнён до AA: 4.9:1 — и белый текст на кнопке, и зелёные ссылки (F8) */
+  --accent-hover: #097852;
+  --accent-soft:  rgba(10, 129, 89, .14);
+  --neon:         #0a8159;
+  --neon-dim:     rgba(10, 129, 89, .10);
   --neon-glow:    0 0 14px rgba(13, 159, 110, .20);
   --glass:        rgba(0, 0, 0, .025);
   --glass-line:   rgba(0, 0, 0, .09);
