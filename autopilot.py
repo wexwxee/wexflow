@@ -135,14 +135,17 @@ def get_rule() -> dict:
 
 
 def save_rule(patch: dict) -> dict:
-    """Обновить правило частично (мерж), вернуть итоговое правило."""
-    data = settings_store.load()
-    rule = dict(DEFAULT_RULE)
-    rule.update(data.get("autopilot", {}) or {})
-    rule.update(patch)
-    data["autopilot"] = rule
-    settings_store.save(data)
-    return rule
+    """Обновить правило частично (мерж), вернуть итоговое правило.
+
+    Идёт через settings_store.mutate — атомарное чтение-изменение-запись под общим
+    замком, чтобы параллельные правки из разных потоков (seen_ids из скана,
+    submitting_ids из автоотправки, tg_pending из Telegram) не теряли друг друга."""
+    def _m(data):
+        rule = dict(DEFAULT_RULE)
+        rule.update(data.get("autopilot", {}) or {})
+        rule.update(patch)
+        data["autopilot"] = rule
+    return settings_store.mutate(_m)["autopilot"]
 
 
 def reset_tg_queue_for_filters() -> None:
