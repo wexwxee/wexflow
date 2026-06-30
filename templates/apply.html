@@ -140,7 +140,8 @@
       </div>
       <p class="meta">WexFlow откроет форму этой вакансии, попробует войти, приложить сохранённые файлы и продолжить подачу. Перед отправкой проверь данные на странице работодателя.</p>
       <div class="actions">
-        <button class="primary large" type="submit" name="mode" value="submit" formaction="/job/{{ job.id }}/apply/start">{{ ic.i('send', 14) }} Запустить подачу</button>
+        <button class="primary large" type="submit" name="mode" value="submit" formaction="/job/{{ job.id }}/apply/start"
+                onclick="return confirm('WexFlow отправит эту заявку под вашим именем. Это действие нельзя отменить. Продолжить?')">{{ ic.i('send', 14) }} Запустить подачу</button>
         <button class="secondary" type="submit" name="mode" value="dry" formaction="/job/{{ job.id }}/apply/start">Только подготовить без отправки</button>
         <button class="secondary" type="submit" formaction="/job/{{ job.id }}/apply/save">Сохранить файлы</button>
         <a href="{{ job.application_link }}">

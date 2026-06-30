@@ -663,6 +663,7 @@
     <button class="primary" type="submit" name="mode" value="dry"
             data-tip-title="Без отправки" data-tip-body="WexFlow откроет форму, заполнит поля и прикрепит файлы, но не отправит заявку. Хорошо для проверки.">Подготовить</button>
     <button class="submitbtn" type="submit" name="mode" value="submit"
+            onclick="return confirm('Отправить выбранные заявки (' + (document.getElementById('selcount') ? document.getElementById('selcount').textContent : '?') + ') под вашим именем? Это действие нельзя отменить.')"
             data-tip-title="Авто-отправка" data-tip-body="WexFlow заполнит форму, отправит заявку и подтвердит согласие, если сайт его покажет.">Авто-отправка</button>
     <button type="button" id="selclear">Сброс</button>
   </div>
