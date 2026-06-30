@@ -52,6 +52,7 @@
   {% if not job %}
     <p>Вакансия не найдена.</p>
   {% else %}
+    {% set already_applied = job.status == 'applied' or job.applied_at %}
     <h1>Подача заявки</h1>
     {% if started %}
     <div class="ok">WexFlow открыл форму подачи. Проверь заполненные поля и заверши заявку, когда всё готово.</div>
@@ -65,6 +66,7 @@
       <div class="ok">Данные входа сохранены. WexFlow сможет использовать их на странице входа.</div>
     {% endif %}
     {% if reset %}<div class="ok">Сохранённый вход очищен. При следующей подаче WexFlow войдёт заново с сохранёнными данными.</div>{% endif %}
+    {% if already_applied %}<div class="err" style="background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn-txt);">{{ ic.i('alert', 13) }} На эту вакансию уже подавали{% if job.applied_at %} — {{ job.applied_at.strftime('%d.%m.%Y') }}{% endif %}. Повторная заявка уйдёт тому же работодателю — отправляй только если правда нужно подать ещё раз.</div>{% endif %}
 
     <div class="glass panel">
       <h2 style="margin-top:0;">{{ job.title }}</h2>
@@ -115,6 +117,7 @@
     </form>
 
     <form id="apply-files-form" class="glass panel" method="post" action="/job/{{ job.id }}/apply/save" enctype="multipart/form-data">
+      <input type="hidden" name="resubmit_ack" id="resubmit_ack" value="">
       <h2 style="margin-top:0;">Файлы для подачи</h2>
       <div class="grid">
         <div class="file-card">
@@ -141,7 +144,7 @@
       <p class="meta">WexFlow откроет форму этой вакансии, попробует войти, приложить сохранённые файлы и продолжить подачу. Перед отправкой проверь данные на странице работодателя.</p>
       <div class="actions">
         <button class="primary large" type="submit" name="mode" value="submit" formaction="/job/{{ job.id }}/apply/start"
-                onclick="return confirm('WexFlow отправит эту заявку под вашим именем. Это действие нельзя отменить. Продолжить?')">{{ ic.i('send', 14) }} Запустить подачу</button>
+                onclick="if(!confirm('{{ 'Вы уже подавали на эту вакансию. Точно отправить ещё раз тому же работодателю? Отменить нельзя.' if already_applied else 'WexFlow отправит эту заявку под вашим именем. Это действие нельзя отменить. Продолжить?' }}')) return false; var h=document.getElementById('resubmit_ack'); if(h) h.value='1'; return true;">{{ ic.i('send', 14) }} Запустить подачу</button>
         <button class="secondary" type="submit" name="mode" value="dry" formaction="/job/{{ job.id }}/apply/start">Только подготовить без отправки</button>
         <button class="secondary" type="submit" formaction="/job/{{ job.id }}/apply/save">Сохранить файлы</button>
         <a href="{{ job.application_link }}">

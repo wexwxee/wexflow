@@ -2592,11 +2592,25 @@ def start_apply(
     cover_letter_path: str = Form(""),
     cv_file: UploadFile | None = File(None),
     cover_letter_file: UploadFile | None = File(None),
+    resubmit_ack: str = Form(""),
 ):
     with get_session() as s:
         job = s.get(Job, job_id)
     if not job:
         return RedirectResponse("/", status_code=303)
+    # Защита от повторной подачи: реальную отправку на уже поданную вакансию
+    # (applied_at заполнен или статус "applied") выполняем ТОЛЬКО при осознанном
+    # подтверждении (resubmit_ack из диалога на странице). Иначе — назад с
+    # предупреждением: повтор тому же работодателю по случайному клику исключён.
+    # На подготовку без отправки (mode != "submit") это не влияет.
+    if mode == "submit" and (job.status == "applied" or job.applied_at is not None) and not resubmit_ack:
+        return RedirectResponse(
+            _url_with_system_response(
+                f"/job/{job_id}/apply",
+                error="На эту вакансию уже подавали — повторная заявка не отправлена. Если правда нужно подать ещё раз, нажми «Запустить подачу» и подтверди.",
+            ),
+            status_code=303,
+        )
     profile = profile_store.load_profile()
     profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
     if file_error:
