@@ -43,6 +43,7 @@
   /* статусы */
   --ok-bg:   #112318; --ok-txt:   #75e09a; --ok-line:   #255b34;
   --err-bg:  #1f0c0e; --err-txt:  #fca5a5; --err-line:  #5f2630;
+  --red:     var(--err-txt);   /* алиас для «опасных»/warn-кнопок (автопилот: пауза) */
   --warn-bg: #1e1500; --warn-txt: #fcd34d; --warn-line: #5a4108;
   --info-bg: #101e3a; --info-txt: #7dd3fc; --info-line: #1e3a6e;
   /* тени */
@@ -78,6 +79,7 @@ html[data-theme="light"] {
   --glass-line:   rgba(0, 0, 0, .09);
   --ok-bg:   #e7f5ef; --ok-txt:   #006a51; --ok-line:   #bfe3d4;
   --err-bg:  #fdeceb; --err-txt:  #b3261e; --err-line:  #f3c2bd;
+  --red:     var(--err-txt);
   --warn-bg: #fbf3e0; --warn-txt: #8a5a00; --warn-line: #ecd9a8;
   --info-bg: #e7eefc; --info-txt: #1d4ed8; --info-line: #c4d6f6;
   --shadow:    0 12px 35px rgba(20, 50, 40, .14);

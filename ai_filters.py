@@ -126,7 +126,9 @@ def suggest_filters(
     for mdl in _models_to_try():
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent"
         try:
-            r = httpx.post(url, params={"key": key}, json=body, timeout=30)
+            # Ключ — в заголовке, а не в URL (?key=…), чтобы он не утекал в логи
+            # и в строки исключений при сетевых ошибках.
+            r = httpx.post(url, headers={"x-goog-api-key": key}, json=body, timeout=30)
         except Exception as e:  # noqa: BLE001
             last_error = f"Не вышло связаться с Gemini: {e}"
             continue
