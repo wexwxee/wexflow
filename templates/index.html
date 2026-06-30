@@ -19,7 +19,7 @@
     <div class="empty-ic applied">{{ ic.i('check', 24) }}</div>
     {% if applied_count == 0 %}
       <h3>Поданных вакансий пока нет</h3>
-      <p>Здесь появятся вакансии, где ты нажал «Подал» или запускал автоподачу. Сейчас архив поданных пустой.</p>
+      <p>Здесь появятся вакансии, которые ты отметил «Подано» или подал через WexFlow. Сейчас архив поданных пустой.</p>
       <a class="empty-btn" href="/?status=active">{{ ic.i('cart', 14) }} К активным вакансиям</a>
     {% else %}
       <h3>В поданных по фильтрам ничего нет</h3>
@@ -725,7 +725,7 @@
             data-tip-title="Без отправки" data-tip-body="WexFlow откроет форму, заполнит поля и прикрепит файлы, но не отправит заявку. Хорошо для проверки.">Подготовить</button>
     <button class="submitbtn" type="submit" name="mode" value="submit"
             onclick="return confirm('Отправить выбранные заявки (' + (document.getElementById('selcount') ? document.getElementById('selcount').textContent : '?') + ') под вашим именем? Это действие нельзя отменить.')"
-            data-tip-title="Авто-отправка" data-tip-body="WexFlow заполнит форму, отправит заявку и подтвердит согласие, если сайт его покажет.">Авто-отправка</button>
+            data-tip-title="Подать выбранные" data-tip-body="WexFlow заполнит форму, отправит заявку и подтвердит согласие, если сайт его покажет.">Подать выбранные</button>
     <button type="button" id="selclear">Сброс</button>
   </div>
 </form>
