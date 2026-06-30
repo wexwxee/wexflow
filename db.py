@@ -46,7 +46,28 @@ class Job(SQLModel, table=True):
     applied_at: Optional[datetime] = None
 
 
-engine = create_engine(f"sqlite:///{config.DB_PATH}", echo=False)
+from sqlalchemy import event
+
+# timeout=30: ждать освобождения блокировки до 30с, а не падать сразу «database is
+# locked». База открыта двумя процессами (приложение + воркер apply.py) и многими
+# потоками, поэтому ожидание блокировки критично для надёжной отметки applied (F34).
+engine = create_engine(
+    f"sqlite:///{config.DB_PATH}", echo=False,
+    connect_args={"timeout": 30},
+)
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_conn, _rec):
+    """WAL + busy_timeout на каждое соединение: читатели не блокируют писателя
+    (и наоборот), а запись ждёт занятую базу, а не падает мгновенно."""
+    cur = dbapi_conn.cursor()
+    try:
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.execute("PRAGMA synchronous=NORMAL")   # с WAL безопасно и быстрее
+    finally:
+        cur.close()
 
 
 def init_db():

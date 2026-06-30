@@ -873,19 +873,29 @@ def _save_proof(page, job):
 
 
 def _mark_applied(job_id: str):
-    """Отмечает вакансию как поданную в дашборде после реальной отправки."""
-    try:
-        from db import utcnow
-        with get_session() as s:
-            j = s.get(Job, job_id)
-            if j:
-                j.status = "applied"
-                j.applied_at = utcnow()
-                s.add(j)
-                s.commit()
-        print("  ✔ отмечено «подано» в дашборде")
-    except Exception as e:
-        print("  не смог отметить applied:", e)
+    """Отмечает вакансию как поданную после реальной отправки.
+
+    Это критично: без applied_at вакансия снова станет «подходящей» и может уйти
+    повторно. Поэтому при сбое (например, база кратковременно занята синком)
+    повторяем несколько раз с нарастающей паузой, а не сдаёмся с первого раза (F34)."""
+    import time as _time
+    from db import utcnow
+    last_err = None
+    for attempt in range(5):
+        try:
+            with get_session() as s:
+                j = s.get(Job, job_id)
+                if j:
+                    j.status = "applied"
+                    j.applied_at = utcnow()
+                    s.add(j)
+                    s.commit()
+            print("  ✔ отмечено «подано» в дашборде")
+            return
+        except Exception as e:  # noqa: BLE001 — повторяем, отметка важнее
+            last_err = e
+            _time.sleep(0.5 * (attempt + 1))
+    print(f"  ⚠ НЕ смог отметить applied после повторов — проверь вручную: {last_err}")
 
 
 def process_job(page, job, profile, submit: bool):
