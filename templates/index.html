@@ -418,6 +418,67 @@
   </div>
 </header>
 <section class="jobs-shell-band">
+{# Чек-лист настройки (F15): показываем, пока не готов необходимый минимум (профиль + вход + CV) #}
+{% if setup and not setup.required_done %}
+<style>
+  .wf-setup { border:1px solid var(--glass-line); border-radius:12px; background:var(--card); padding:16px 18px; margin-bottom:12px; display:grid; gap:12px; }
+  .wf-setup-head { display:flex; align-items:flex-start; gap:12px; }
+  .wf-setup-head h3 { margin:0; font-size:15px; color:var(--txt-strong); }
+  .wf-setup-head p { margin:2px 0 0; color:var(--muted); font-size:12.5px; line-height:1.4; }
+  .wf-setup-ic { flex:0 0 auto; width:34px; height:34px; border-radius:9px; display:grid; place-items:center; color:var(--accent); background:var(--accent-soft); border:1px solid var(--glass-line); }
+  .wf-setup-hide { margin-left:auto; flex:0 0 auto; background:transparent; border:0; color:var(--muted); cursor:pointer; padding:4px; border-radius:7px; }
+  .wf-setup-hide:hover { color:var(--txt-strong); background:var(--glass); }
+  .wf-setup-bar { height:6px; background:var(--glass); border-radius:99px; overflow:hidden; }
+  .wf-setup-bar > div { height:100%; background:var(--accent); }
+  .wf-setup-items { display:grid; gap:6px; }
+  .wf-step { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:9px; text-decoration:none; color:var(--txt); border:1px solid transparent; }
+  .wf-step:hover { border-color:var(--glass-line); background:var(--glass); }
+  .wf-step-box { flex:0 0 auto; width:20px; height:20px; border-radius:999px; display:grid; place-items:center; border:1.5px solid var(--line-strong); color:#07100b; }
+  .wf-step.done .wf-step-box { background:var(--accent); border-color:var(--accent); }
+  .wf-step.done .wf-step-label { color:var(--muted); text-decoration:line-through; }
+  .wf-step-label { font-size:13.5px; }
+  .wf-step-go { margin-left:auto; font-size:12.5px; color:var(--accent); font-weight:650; white-space:nowrap; }
+</style>
+<div class="wf-setup" id="wfSetup">
+  <div class="wf-setup-head">
+    <span class="wf-setup-ic">{{ ic.i('sparkles', 18) }}</span>
+    <div>
+      <h3>Настройка WexFlow — {{ setup.done }} из {{ setup.total }}</h3>
+      <p>Подача под вашим именем заработает после профиля, входа в Salling и CV.</p>
+    </div>
+    <button type="button" class="wf-setup-hide" id="wfSetupHide" title="Скрыть" aria-label="Скрыть">{{ ic.i('x', 15) }}</button>
+  </div>
+  <div class="wf-setup-bar"><div style="width: {{ (setup.done / setup.total * 100) | round | int }}%;"></div></div>
+  <div class="wf-setup-items">
+    {% for ok, label, href, go in [
+      (setup.profile, 'Профиль кандидата', '/account', 'Заполнить'),
+      (setup.login, 'Вход в аккаунт Salling', '/settings/salling', 'Войти'),
+      (setup.docs, 'CV / резюме', '/settings/salling', 'Прикрепить'),
+      (setup.home, 'Домашний адрес — для расстояний', '/settings/salling#home', 'Указать'),
+      (setup.telegram, 'Telegram для уведомлений — по желанию', '/account', 'Привязать'),
+    ] %}
+    <a class="wf-step {{ 'done' if ok }}" href="{{ href }}">
+      <span class="wf-step-box">{% if ok %}{{ ic.i('check', 13) }}{% endif %}</span>
+      <span class="wf-step-label">{{ label }}</span>
+      {% if not ok %}<span class="wf-step-go">{{ go }} →</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+<script>
+  (function () {
+    var KEY = "wexflow_setup_hidden_v1";
+    var card = document.getElementById("wfSetup");
+    if (!card) return;
+    try { if (localStorage.getItem(KEY)) { card.style.display = "none"; return; } } catch (e) {}
+    var hide = document.getElementById("wfSetupHide");
+    if (hide) hide.addEventListener("click", function () {
+      card.style.display = "none";
+      try { localStorage.setItem(KEY, "1"); } catch (e) {}
+    });
+  })();
+</script>
+{% endif %}
 {% if geoerror %}<div class="notice-line" style="color:var(--err-txt);background:var(--err-bg);">Не удалось распознать адрес — попробуй точнее (например: «M.P. Bruuns Gade 55, Aarhus» или индекс «8000»).</div>{% endif %}
 {% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings/salling#home">изменить</a></div>
 {% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings/salling#home">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}

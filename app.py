@@ -1401,6 +1401,22 @@ def index(
     def by_label(items, mapping):
         return sorted(items, key=lambda k: labels.bi(mapping, k).lower())
 
+    # Чек-лист настройки (F15): что уже готово для подачи. Профиль + вход Salling +
+    # CV — необходимый минимум (required_done); дом и Telegram — по желанию.
+    _profile = profile_store.load_profile()
+    _creds = credentials_store.status()
+    _setup = {
+        "profile": all(str(_profile.get(k) or "").strip() for k, _ in PROFILE_REQUIRED),
+        "login": bool(_creds.get("email")),
+        "docs": bool(str(_profile.get("cv_path") or "").strip()),
+        "home": bool(home),
+        "telegram": bool(account_mod.load().get("tg_id")),
+    }
+    _setup["required_done"] = _setup["profile"] and _setup["login"] and _setup["docs"]
+    _setup["done"] = sum(1 for v in (_setup["profile"], _setup["login"],
+                                     _setup["docs"], _setup["home"], _setup["telegram"]) if v)
+    _setup["total"] = 5
+
     resp = templates.TemplateResponse("index.html", {
         "request": request, "jobs": jobs, "count": len(jobs),
         "groups": groups, "group": group,
@@ -1450,9 +1466,10 @@ def index(
         "presets": settings_store.get_presets(),
         "batch": batch, "batch_mode": mode, "skipped": skipped, "dup": dup,
         "apply_files": {
-            "cv": profile_store.file_label((_apply_profile := profile_store.load_profile()).get("cv_path", "")),
-            "cover": profile_store.file_label(_apply_profile.get("cover_letter_path", "")),
+            "cv": profile_store.file_label(_profile.get("cv_path", "")),
+            "cover": profile_store.file_label(_profile.get("cover_letter_path", "")),
         },
+        "setup": _setup,
         "maps_urls": maps_urls,
         "resolved": {
             "city": (
