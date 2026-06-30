@@ -63,13 +63,13 @@
       <span class="lbl">Статус заявки:</span>
       {% set sticons = {'applied':'check','interview':'phone','offer':'award','rejected':'x','seen':'undo'} %}
       <form method="post" action="/job/{{ job.id }}/status" style="display:inline-flex;gap:7px;flex-wrap:wrap;">
-        {% for val,txt in [('applied','Подал'),('interview','Собеседование'),('offer','Оффер'),('rejected','Отказ'),('seen','Сброс')] %}
+        {% for val,txt in [('applied','Подано'),('interview','Собеседование'),('offer','Оффер'),('rejected','Отказ'),('seen','Сброс')] %}
           <button class="st {{ 'cur' if job.status==val }}" name="status" value="{{ val }}">{{ ic.i(sticons[val], 13) }} {{ txt }}</button>
         {% endfor %}
       </form>
     </div>
     <p style="margin-top:14px;">
-      <a href="/job/{{ job.id }}/apply"><button class="primary">{{ ic.i('send', 14) }} Подать →</button></a>
+      <a href="/job/{{ job.id }}/apply"><button class="primary">{{ ic.i('send', 14) }} Подать заявку →</button></a>
       <a href="{{ maps_url }}"><button class="secondary">{{ ic.i('map', 14) }} Маршрут в Google Maps</button></a>
     </p>
     {% if has_home and job.lat is not none %}

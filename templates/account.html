@@ -517,13 +517,13 @@
       <div class="field"><label class="lbl">Email</label><input type="email" name="email" value="{{ profile.email or '' }}" data-required="Email" autocomplete="email"><div class="req">Заполни email</div></div>
       <div class="field"><label class="lbl">Телефон</label><input type="tel" name="phone" value="{{ profile.phone or '' }}" data-required="Телефон" autocomplete="tel"><div class="req">Заполни телефон</div></div>
       <div class="field"><label class="lbl">Адрес</label><input type="text" name="address" value="{{ profile.address or '' }}" data-required="Адрес" autocomplete="street-address"><div class="req">Заполни адрес</div></div>
-      <div class="field"><label class="lbl">Индекс</label><input type="text" name="zipcode" value="{{ profile.zip or '' }}" data-required="Индекс" autocomplete="postal-code"><div class="req">Заполни индекс</div></div>
+      <div class="field"><label class="lbl">Почтовый индекс</label><input type="text" name="zipcode" value="{{ profile.zip or '' }}" data-required="Почтовый индекс" autocomplete="postal-code" placeholder="напр. 2300"><div class="req">Заполни почтовый индекс</div></div>
       <div class="field" data-suggest='{{ city_options|tojson }}' data-suggest-kind="city"><label class="lbl">Город</label><input type="text" name="city" value="{{ profile.city or '' }}" data-required="Город" autocomplete="off" placeholder="ищи город по всей Дании"><div class="req">Выбери или введи город</div><div class="suggest-menu"></div></div>
       <div class="field" data-suggest='{{ country_options|tojson }}' data-suggest-kind="country"><label class="lbl">Страна</label><input type="text" name="country" value="{{ profile.country or '' }}" data-required="Страна" autocomplete="off" placeholder="например: Danmark"><div class="req">Выбери страну</div><div class="suggest-menu"></div></div>
       <div class="field"><label class="lbl">LinkedIn (необязательно)</label><input type="text" name="linkedin" value="{{ profile.linkedin or '' }}"></div>
     </div>
 
-    <div class="actions" style="margin-top:16px;"><button class="primary" type="submit">Сохранить профиль</button><span id="autosaveStatus" class="autosave">Автосохранение включено</span></div>
+    <div class="actions" style="margin-top:16px;"><span id="autosaveStatus" class="autosave">{{ ic.i('check', 13) }} Изменения сохраняются автоматически</span></div>
   </form>
 
   <!-- Подписка (заготовка) -->
