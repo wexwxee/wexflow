@@ -24,22 +24,32 @@ LEVEL = {
 # Поле job_level из данных Salling недостоверно: руководящие должности
 # (Souschef, Serviceleder, Driftsleder, Teamkoordinator …) приходят с
 # job_level="employee". Поэтому уровень «руководитель» определяем ещё и по
-# названию — по суффиксу слова. Одно правило ловит все составные варианты:
+# названию — по слову. Одно правило ловит все составные варианты:
 # souschef, serviceleder, salgsleder, teamkoordinator, projektchef, …
 # Границы слова (\b…\b) важны, иначе зацепит salgsassistent/medarbejder.
+# Помимо датских основ ловим английские руководящие (Store Manager, Supervisor,
+# Team Lead, Head of…, Director, Chief, Foreman) — у Salling встречаются
+# англоязычные вакансии, и автопилот не должен авто-подавать на руководящие.
+# Намеренно «ловим с запасом»: ложно помеченная рядовая вакансия лишь не уйдёт
+# в АВТО-подачу (можно подать вручную), а пропущенная руководящая — ушла бы сама.
 _LEADERSHIP_RX = re.compile(
-    r"\b\w*(?:chef|leder|koordinator|ansvarlig)\b|\bdirekt\w*",
+    r"\b\w*(?:chef|leder|koordinator|ansvarlig)\b"              # датские
+    r"|\bdirekt\w*"                                             # датское: direktør
+    r"|\b(?:manager|supervisor|director|chief|foreman|head)\b"  # английские
+    r"|\blead(?:er)?\b",                                        # lead / leader / team lead
     re.IGNORECASE,
 )
 
 
 def is_leadership(title: str) -> bool:
-    """True, если название должности — руководящее (по слову-суффиксу).
+    """True, если название должности — руководящее (по слову).
 
     Нужно как страховка поверх job_level: Salling часто метит руководящие
-    роли как «employee». Проверено на базе: ловит 268 руковод. названий и
-    не задевает рядовые (salgsassistent, kasseassistent, 1. assistent,
-    morgenopfylder, gourmetslagter, kontorassistent …)."""
+    роли как «employee». Ловит датские (souschef, serviceleder, teamkoordinator,
+    …ansvarlig, direktør) и английские (Store Manager, Supervisor, Team Lead,
+    Head of…, Director, Chief, Foreman) названия и не задевает рядовые
+    (salgsassistent, kasseassistent, 1. assistent, morgenopfylder, cashier,
+    sales assistant …). Проверка инварианта — tests/test_is_leadership.py."""
     return bool(_LEADERSHIP_RX.search(title or ""))
 
 REGION = {
