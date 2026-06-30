@@ -1596,6 +1596,34 @@
       if (t && input.files.length) { t.textContent = input.files[0].name; t.classList.remove('saved','missing'); }
     });
   });
+
+  // F32: живая подсказка для РУЧНО введённого пути к документу. Показываем имя
+  // файла и предупреждаем о неверном типе ещё до сохранения — чтобы было видно,
+  // какой файл уйдёт под вашим именем (сервер всё равно проверит ещё раз).
+  const ALLOWED_DOC_EXT = ['.pdf', '.doc', '.docx'];
+  function docBasename(p) {
+    const s = String(p || '').trim().replace(/["']/g, '').replace(/[\\/]+$/, '');
+    const parts = s.split(/[\\/]/);
+    return parts[parts.length - 1] || s;
+  }
+  document.querySelectorAll('input[name="cv_path"], input[name="cover_letter_path"]').forEach((input) => {
+    const card = input.closest('.file-card');
+    const span = card ? card.querySelector('.file-name') : null;
+    if (!span) return;
+    const baseText = span.textContent;
+    const baseClass = span.className;
+    input.addEventListener('input', () => {
+      const v = input.value.trim();
+      if (!v) { span.textContent = baseText; span.className = baseClass; return; }
+      const name = docBasename(v);
+      const dot = name.lastIndexOf('.');
+      const ext = dot >= 0 ? name.slice(dot).toLowerCase() : '';
+      const okExt = ALLOWED_DOC_EXT.includes(ext);
+      span.classList.remove('saved', 'missing');
+      span.classList.add(okExt ? 'saved' : 'missing');
+      span.textContent = okExt ? name : (name + ' — только PDF, DOC или DOCX');
+    });
+  });
   const pwd = document.getElementById('sf_pwd'), tg = document.getElementById('pwdToggle');
   const eyeSvg    = `<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`;
   const eyeOffSvg = `<svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;flex:0 0 auto;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`;
