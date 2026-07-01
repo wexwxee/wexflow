@@ -786,6 +786,25 @@ def tg_decide(job_id: str, approve: bool, launcher) -> str:
     return f"✅ <b>Отправляю заявку…</b>\n{t}\n\nWexFlow заполнит форму и подаст за тебя."
 
 
+def partition_offered(job_ids, offered_ids):
+    """Разделить id на (offered, not_offered): подаём ТОЛЬКО то, что сами предлагали.
+
+    Защита F27: реальную (необратимую) подачу запускает решение из облака. Мы
+    честим только те вакансии, карточки которых приложение само отправляло
+    пользователю (они записаны в tg_offered_ids). Решение по «непредложенной»
+    вакансии (сбой/подмена в облаке) сюда не попадёт. Чистая функция, дублирует
+    dedupe и отсеивает пустые id. Порядок сохраняется."""
+    offered = set(offered_ids or [])
+    known, unknown, seen = [], [], set()
+    for jid in job_ids or []:
+        jid = str(jid or "").strip()
+        if not jid or jid in seen:
+            continue
+        seen.add(jid)
+        (known if jid in offered else unknown).append(jid)
+    return known, unknown
+
+
 def tg_submit_batch(job_ids, launcher) -> dict:
     """Start one submit worker for many Telegram Mini App decisions.
 
@@ -797,8 +816,20 @@ def tg_submit_batch(job_ids, launcher) -> dict:
     if not ids:
         return {"started": [], "skipped": []}
 
-    pending_ids = set(ids)
     r = get_rule()
+    # F27: подаём только вакансии, чьи карточки приложение само отправляло.
+    # Решение из облака по «непредложенной» вакансии отклоняем (сбой/подмена).
+    ids, not_offered = partition_offered(ids, r.get("tg_offered_ids") or [])
+    skipped: list[dict] = [
+        {"job_id": jid, "state": "failed", "reason": "not_offered", "title": ""}
+        for jid in not_offered
+    ]
+    if not_offered:
+        log_event("info", f"TG: отклонено решений по непредложенным вакансиям — {len(not_offered)}")
+    if not ids:
+        return {"started": [], "skipped": skipped}
+
+    pending_ids = set(ids)
     pend = [p for p in (r.get("tg_pending") or []) if p.get("job_id") not in pending_ids]
     save_rule({"tg_pending": pend})
 
@@ -808,7 +839,6 @@ def tg_submit_batch(job_ids, launcher) -> dict:
     submitting = set(latest.get("submitting_ids") or [])
     started: list[str] = []
     started_jobs: list[Job] = []
-    skipped: list[dict] = []
 
     for job_id in ids:
         job = _get_job(job_id)
