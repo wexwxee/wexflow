@@ -2617,6 +2617,16 @@ def _run_apply_worker(ids, submit: bool = False, auto_close: bool = False):
             stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
+    except Exception as e:
+        # F38: если воркер подачи не удалось ДАЖЕ запустить (нет exe/прав, заблокировал
+        # антивирус) — оставляем причину в журнале подачи. Иначе apply_last.log остался
+        # бы пустым и сбой самого старта был бы не виден ни пользователю, ни поддержке.
+        try:
+            log.write(f"⚠ не удалось запустить воркер подачи: {e}\n")
+            log.flush()
+        except Exception:
+            pass
+        raise
     finally:
         log.close()  # потомок унаследовал свой хэндл; родительский больше не нужен
 
