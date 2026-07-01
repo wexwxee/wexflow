@@ -1,0 +1,73 @@
+# 🔄 ПЕРЕДАЧА: аудит и починка WexFlow
+
+> Актуально на: `HEAD 07398f7`, ветка `redesign`. Обновлять этот файл в конце каждой сессии.
+
+## Контекст
+**WexFlow** (`C:\saling`) — десктоп-приложение (FastAPI + Jinja + Playwright + PyInstaller),
+которое под именем реального человека подаёт заявки на вакансии Salling/7-Eleven. Есть автопилот,
+облачная синхронизация, Telegram Mini App, аккаунт/тарифы. **Пользователь — не программист.**
+Цена ошибки высокая: лишняя/ошибочная подача необратима. Идёт **поэтапная починка** по аудиту из
+44 находок (F1–F44).
+
+## 🚨 ЖЁСТКИЕ ПРАВИЛА
+1. Правки **только в ветке `redesign`**. `master` неприкосновенен.
+2. **Перед каждой правкой — бэкап** меняемых файлов в `.bak_<что>_<дата>/` (в `.gitignore`).
+3. **НИКОГДА не запускать реальную отправку** (Indsend/Submit/«Запустить подачу»/«Автоотправка»),
+   даже для проверки. Только чтение/рендер/тесты.
+4. **Не писать в реальные данные** (`profile.json`, `jobs.db`, `secrets.json`, `settings.json`,
+   `%AppData%\WexFlow\*`). Дев-данные в `C:\saling` — тоже избегать записи.
+5. Каждый шаг = **маленький коммит** (рус.), в конце строкой
+   `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+6. Объяснять простым языком; в конце шага — короткий отчёт.
+7. **`app.py` делит Codex** — трогать минимально, `git status` перед правкой, коммитить сразу.
+
+## 🧪 Как проверять без реальной подачи
+- **Автономный рендер шаблона** (без импорта `app`): `jinja2.Environment(loader=FileSystemLoader('templates'))`,
+  в `env.globals` стабы (`brand_label`, `L=labels`, `plan_label`, `show_billing=lambda:False`,
+  `CHANGELOG=[]`, `APP_VERSION=""`) + стаб `request` с `.query_params.get`. `sys.path.insert(0, os.getcwd())`.
+- **Только синтаксис шаблона**: `jinja2.Environment().parse(open(f).read())`.
+- **Тесты**: `PYTHONUTF8=1 .venv/Scripts/python.exe tests/<файл>.py` (pytest не установлен — самозапускаемые).
+  8 зелёных: `test_is_leadership`, `test_submit_invariants`, `test_apply_serializer`, `test_settings_store`,
+  `test_apply_race_guard`, `test_parsers`, `test_profile_store`, `test_audit`.
+- **app.py**: `python -m py_compile app.py` + прогон тестов.
+- Пиксельные скриншоты на этой оболочке **зависают** — не использовать.
+
+## ✅ Что закрыто по аудиту (~30 из 44)
+14 коммитов последней сессии (`69545d7` → `07398f7`): F18/F20/F21 микротексты · F19 единый словарь подачи ·
+F3 «Автопилот» в оболочку · F9 мелкие шрифты→11px · F32 живое имя CV · F43 тесты парсеров ·
+F38 лог сбоя запуска подачи · F37 устойчивость `profile.json` · F6 токен `--radius-card` ·
+F10 токен `--on-accent` · бейдж «руководящая» · журнал аудита `/audit`.
+
+## ⏳ Что осталось (~14)
+**Безопасность/доверие (крупно, отдельным заходом):**
+- **F35** 🟠 окно «отправлено-но-не-записано» (нужна песочница Salling).
+- **F27** 🟠 подача по неподтверждённому «решению» из облака.
+- **F29** 🟠 доверие облаку только по `device_id`, без подписи.
+- **F28** 🟠 авто-обновление без проверки подписи/контрольной суммы.
+- **F30** 🟡 локальный тариф не должен быть границей безопасности (серверный гейт).
+
+**UX (решает пользователь / нужен экран):**
+- **F1** двойная навигация · **F2** Telegram в 3 местах · **F4** два входа в «Аккаунт» (не-баг) ·
+  **F5** много акцентных цветов · **F16** нет FAQ/справки.
+
+**Тех-долг:**
+- **F36** `match_count()` лишний проход по базе · **F41** CSRF/loopback-страж в 3 файлах → общий модуль ·
+  **F42** магические лимиты (низкая польза) · **F44** засор рабочей папки (`WexFlow_OLD…`, `*_wexflow.html`, `.bak_*`).
+
+## 📌 Технические заметки
+- **Журнал аудита**: `GET /audit` → `audit.html`; хелперы `_audit_day_label`/`_audit_groups` (`test_audit.py`);
+  запрос только `Job.applied_at is not null`, read-only.
+- **Руководящие**: бейдж через глобаль `L.is_leadership(title)` в `index.html`/`detail.html` (без правок `app.py`).
+- **Токены темы**: `--radius-card`, `--on-accent`. Правило «на акценте — токен `--on-accent`».
+- **`profile_store`**: `save_profile` атомарный (tmp+os.replace) + зеркало `.bak`; `load_profile` терпит битый JSON.
+- **Инварианты**: `applied_at` = нерушимая правда; узкое место подачи — `app._run_apply_worker`;
+  отсев — `app._partition_submit_ids`; руководящие — `labels.is_leadership`.
+- **Карта**: `app.py`(роуты), `apply.py`(Playwright-воркер), `autopilot.py`, `scraper.py`, `db.py`,
+  `settings_store.py`/`profile_store.py`/`credentials_store.py`/`account.py`/`cloud_auth.py`.
+  Шаблоны: `index.html`, `detail.html`, `apply.html`, `account.html`, `settings.html`,
+  `autopilot.html`, `audit.html`, `_ui.html`, `_icons.html`, `base.html`. Стили: `static/theme.css`.
+  Версия: `version.py`; журнал: `changelog.py`.
+
+## 🎯 Следующий шаг
+Блок **безопасности F27–F30** — начать с read-only анализа `cloud_auth.py` и пути авто-обновления
+(`version.py`/апдейтер), затем серверный гейт тарифа. Подпись решений/обновлений.
