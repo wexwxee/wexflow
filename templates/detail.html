@@ -8,6 +8,7 @@
 <style>
   .wrap { max-width:860px; }
   .badge { padding:3px 11px; margin-right:6px; }
+  .badge.lead { background:var(--warn-bg); color:var(--warn-txt); border:1px solid var(--warn-line); font-weight:700; }
   .meta { font-size:14px; margin:12px 0; line-height:1.7; }
   .desc { background:var(--card); border:1px solid var(--glass-line); border-radius:8px; padding:18px; line-height:1.6; }
   .desc h3 { margin-top:0; }
@@ -58,6 +59,7 @@
     <div>
       <span class="badge">{{ st_ru.get(job.status, job.status) }}</span>
       {% if cat0 %}<span class="badge" style="color:var(--info-txt);">{{ L.CATEGORY.get(cat0, cat0) }}</span>{% endif %}
+      {% if L.is_leadership(job.title) %}<span class="badge lead" title="Автопилот и пакетная подача такие не отправляют — подать можно только вручную">{{ ic.i('alert', 12) }} руководящая</span>{% endif %}
     </div>
     <div class="status-row">
       <span class="lbl">Статус заявки:</span>

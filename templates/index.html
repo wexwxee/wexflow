@@ -324,6 +324,7 @@
   .badge.st-seen { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
   .badge.st-applied { background:rgba(167,139,250,.14); color:#c4b5fd; border-color:rgba(167,139,250,.38); font-weight:800; }
   html[data-theme="light"] .badge.st-applied { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
+  .badge.lead { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); font-weight:800; }
   .role { display:inline-block; margin-top:2px; font-size:12.5px; font-weight:700;
     color:var(--info-txt); letter-spacing:.01em; }
   .role .lvl { color:var(--warn-txt); }
@@ -658,6 +659,7 @@
       {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
       {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно по прямой от домашнего адреса. Маршрут общественным транспортом смотри через кнопку Маршрут.">≈ {{ distances[j.id] }} км</span>{% endif %}
       <span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>
+      {% if L.is_leadership(j.title) %}<span class="badge lead" data-tip-title="Руководящая должность" data-tip-body="Автопилот и пакетная подача такие не отправляют — подать можно только вручную.">{{ ic.i('alert', 11) }} руководящая</span>{% endif %}
     </div>
     <h3>{{ j.title }}</h3>
     {% set cat = (j.categories or '').split(',')[0] %}
