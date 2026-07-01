@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}WexFlow · Справка{% endblock %}
+
+{% block style %}
+<style>
+  .faq-intro {
+    display:flex; align-items:flex-start; gap:10px; margin:0 0 18px; padding:12px 14px;
+    border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--glass);
+    color:var(--txt); font-size:13.5px; line-height:1.5;
+  }
+  .faq-intro svg { flex:0 0 auto; margin-top:1px; color:var(--accent); }
+  .faq-sec { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--muted); margin:20px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--glass-line); }
+  .faq-sec:first-of-type { margin-top:0; }
+  .faq-item {
+    border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--card);
+    margin-bottom:8px; overflow:hidden; transition:border-color .14s ease;
+  }
+  .faq-item[open] { border-color:var(--hover-line); background:var(--card-2); }
+  .faq-item summary {
+    list-style:none; cursor:pointer; padding:13px 15px; display:flex; align-items:center; gap:10px;
+    font-weight:650; font-size:14px; color:var(--txt-strong); user-select:none;
+  }
+  .faq-item summary::-webkit-details-marker { display:none; }
+  .faq-item summary .faq-q { flex:1; min-width:0; }
+  .faq-item summary .faq-chev { flex:0 0 auto; color:var(--muted); transition:transform .16s ease; }
+  .faq-item[open] summary .faq-chev { transform:rotate(90deg); }
+  .faq-a { padding:0 15px 14px 15px; color:var(--txt); font-size:13.5px; line-height:1.55; }
+  .faq-a b { color:var(--txt-strong); }
+  .faq-foot { margin-top:22px; padding:13px 15px; border:1px dashed var(--glass-line);
+    border-radius:var(--radius-card); color:var(--muted); font-size:13px; line-height:1.5; }
+</style>
+{% endblock %}
+
+{% block body %}
+{{ ui.shell_start('help') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Справка') }}</h1>
+    <span class="wex-title-meta">Коротко о том, как всё работает</span>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    <a class="tablink" href="/hub">← На главную</a>
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+<section class="wex-workbench wex-narrow">
+  <p class="faq-intro">{{ ic.i('message', 16) }}
+    <span>Частые вопросы простыми словами. Главное правило безопасности: заявка не уходит, пока вы сами её не подтвердите.</span></p>
+
+  <div class="faq-sec">Основное</div>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Что такое WexFlow?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">Приложение для поиска работы в Salling (Føtex, Bilka, Netto и др.) и 7-Eleven. Собирает вакансии в одну ленту с фильтрами (город, расстояние, часы, зарплата), переводит описания на русский и помогает подать заявку под вашим именем.</div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Это бесплатно?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">Да — поиск, фильтры и ручная подача бесплатны и без ограничений. Платные возможности (автопилот) появятся позже; сейчас ничего не блокируется.</div>
+  </details>
+
+  <div class="faq-sec">Подача и безопасность</div>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">WexFlow сам отправит заявку или я?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">По умолчанию WexFlow заполняет форму на сайте и <b>останавливается</b> — кнопку «Отправить» жмёте вы сами. Автоматически заявка уходит, только если вы отдельно включите <b>«Автоотправку»</b> в автопилоте (по умолчанию она выключена).</div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Не подаст ли лишнюю или повторную заявку?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">Нет. На вакансии, куда уже подано, повторная заявка не отправляется. Руководящие должности в пакетную и автоматическую подачу не попадают — такую вы подаёте осознанно вручную с её страницы.</div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Мои данные в безопасности?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">Профиль, резюме и вход хранятся только на вашем компьютере. Приложение отвечает лишь на этом компьютере (localhost) и не открыто наружу. Проверить, что и когда реально отправлено под вашим именем, можно в разделе <b>«Журнал»</b>.</div>
+  </details>
+
+  <div class="faq-sec">Автопилот и Telegram</div>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Что такое Автопилот?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">Он в фоне следит за новыми подходящими вакансиями и присылает уведомления, а также может заранее заполнить анкету. Отправку без вашего участия он делает только при явно включённой автоотправке — иначе просто готовит и спрашивает.</div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Зачем нужен Telegram?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">Чтобы получать новые вакансии на телефон и подтверждать подачу кнопкой ✅ прямо оттуда, а тариф и профиль не терялись при переносе на другой компьютер. Вход — в разделе <b>«Аккаунт»</b>.</div>
+  </details>
+
+  <div class="faq-sec">Обновления и проблемы</div>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Как обновляется приложение?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">WexFlow проверяет новые версии и предлагает обновиться. Обновление устанавливается только после проверки контрольной суммы — подделанный файл не установится. Что изменилось в каждой версии — в окне <b>«Что нового»</b>.</div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Нет вакансий или долго грузит — что делать?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">Нажмите <b>«Обновить»</b> вверху и проверьте интернет. Иногда антивирус или файрвол блокирует запрос к Salling — тогда разрешите приложению доступ к сети.</div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Как задать дом и расстояние до работы?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">В <b>«Настройках»</b> укажите домашний адрес — WexFlow посчитает время в пути и покажет маршрут от дома до каждой вакансии.</div>
+  </details>
+
+  <p class="faq-foot">{{ ic.i('star', 14) }} Не нашли ответ? Загляните в «Что нового» в меню слева — там список свежих изменений и возможностей.</p>
+</section>
+{{ ui.shell_end() }}
+{% endblock %}

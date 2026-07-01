@@ -1806,6 +1806,12 @@ def audit_log(request: Request):
     })
 
 
+@app.get("/help", response_class=HTMLResponse)
+def help_page(request: Request):
+    """Справка/FAQ — частые вопросы простыми словами. Статичная, только чтение."""
+    return templates.TemplateResponse("help.html", {"request": request})
+
+
 @app.get("/api/transit/{job_id}")
 def api_transit(job_id: str):
     home = settings_store.get_home()
