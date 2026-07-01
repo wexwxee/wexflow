@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}WexFlow · Журнал подач{% endblock %}
+
+{% block style %}
+<style>
+  .audit-intro {
+    display:flex; align-items:flex-start; gap:10px; margin:0 0 18px; padding:12px 14px;
+    border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--glass);
+    color:var(--txt); font-size:13.5px; line-height:1.5;
+  }
+  .audit-intro svg { flex:0 0 auto; margin-top:1px; color:var(--accent); }
+  .audit-count { color:var(--muted); font-size:13px; margin:0 0 12px; }
+  .audit-day {
+    font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--muted); margin:16px 0 6px; padding-bottom:5px; border-bottom:1px solid var(--glass-line);
+  }
+  .audit-day:first-of-type { margin-top:0; }
+  .audit-row {
+    display:flex; align-items:center; gap:14px; padding:11px 13px; margin-bottom:7px;
+    border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--card);
+    text-decoration:none; color:var(--txt); transition:border-color .14s ease, background .14s ease;
+  }
+  .audit-row:hover { border-color:var(--hover-line); background:var(--card-2); }
+  .audit-time {
+    flex:0 0 auto; width:46px; font-size:13px; font-weight:700; color:var(--muted);
+    font-family:"Space Grotesk", system-ui, sans-serif;
+  }
+  .audit-main { flex:1; min-width:0; display:grid; gap:2px; }
+  .audit-title { color:var(--txt-strong); font-weight:650; font-size:14px; line-height:1.25;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .audit-sub { color:var(--muted); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .audit-row .badge { flex:0 0 auto; }
+  .audit-empty {
+    display:grid; place-items:center; gap:10px; padding:48px 20px; text-align:center; color:var(--muted);
+  }
+  .audit-empty svg { color:var(--accent); opacity:.8; }
+  .audit-empty p { margin:0; font-size:14px; }
+
+  .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px;
+    font-size:12px; font-weight:700; border:1px solid var(--glass-line); background:var(--glass); color:var(--muted); }
+  .badge.st-applied { background:rgba(167,139,250,.14); color:#c4b5fd; border-color:rgba(167,139,250,.38); }
+  html[data-theme="light"] .badge.st-applied { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
+  .badge.st-interview { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
+  .badge.st-offer { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
+  .badge.st-rejected { background:var(--err-bg); color:var(--err-txt); border-color:var(--err-line); }
+</style>
+{% endblock %}
+
+{% block body %}
+{{ ui.shell_start('audit') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Журнал') }}</h1>
+    <span class="wex-title-meta">Что и когда отправлено под вашим именем</span>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    <a class="tablink" href="/hub">← На главную</a>
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+<section class="wex-workbench wex-narrow">
+  <p class="audit-intro">{{ ic.i('clock', 16) }}
+    <span>Полный неизменный список всех заявок, которые WexFlow реально отправил под вашим именем. Только для проверки — здесь ничего не подаётся.</span></p>
+
+  {% set st_ru = {'applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','seen':'просмотрено','closed':'закрыта','hidden':'скрыто','new':'новая'} %}
+
+  {% if total == 0 %}
+    <div class="audit-empty">
+      {{ ic.i('check', 26) }}
+      <p>Пока ничего не отправлено под вашим именем.</p>
+    </div>
+  {% else %}
+    <p class="audit-count">Всего отправлено: <b>{{ total }}</b></p>
+    {% for label, rows in groups %}
+      <div class="audit-day">{{ label }}</div>
+      {% for r in rows %}
+      <a class="audit-row" href="/job/{{ r.id }}">
+        <span class="audit-time">{{ r.applied_at.strftime('%H:%M') if r.applied_at else '—' }}</span>
+        <span class="audit-main">
+          <span class="audit-title">{{ r.title }}</span>
+          <span class="audit-sub">{% if r.brand %}{{ brand_label(r.brand) }}{% endif %}{% if r.brand and r.city %} · {% endif %}{% if r.city %}{{ r.city }}{% endif %}</span>
+        </span>
+        <span class="badge st-{{ r.status }}">{{ st_ru.get(r.status, r.status) }}</span>
+      </a>
+      {% endfor %}
+    {% endfor %}
+  {% endif %}
+</section>
+{{ ui.shell_end() }}
+{% endblock %}

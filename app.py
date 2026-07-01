@@ -1771,6 +1771,58 @@ def autopilot_mini(request: Request):
     return templates.TemplateResponse("autopilot_mini.html", {"request": request})
 
 
+# ── Журнал аудита подач (read-only): что и когда отправлено под именем ──────
+_RU_MONTHS_GEN = [
+    "", "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+]
+
+
+def _audit_day_label(day, today) -> str:
+    """Подпись дня: «Сегодня» / «Вчера» / «15 июня» (+год, если не текущий)."""
+    delta = (today - day).days
+    if delta == 0:
+        return "Сегодня"
+    if delta == 1:
+        return "Вчера"
+    label = f"{day.day} {_RU_MONTHS_GEN[day.month]}"
+    return label if day.year == today.year else f"{label} {day.year}"
+
+
+def _audit_groups(entries, now):
+    """Группирует записи (уже по убыванию applied_at) по дню. entries — список
+    dict с ключом applied_at (datetime). → [(подпись_дня, [запись, …]), …]."""
+    today = now.date()
+    groups = []
+    for e in entries:
+        ts = e.get("applied_at")
+        label = _audit_day_label(ts.date(), today) if ts else "Без даты"
+        if not groups or groups[-1][0] != label:
+            groups.append((label, []))
+        groups[-1][1].append(e)
+    return groups
+
+
+@app.get("/audit", response_class=HTMLResponse)
+def audit_log(request: Request):
+    """Журнал аудита: неизменный список всего, что реально отправлено под именем
+    пользователя (по applied_at). Только чтение — ничего не подаёт и не меняет."""
+    from db import utcnow
+    with get_session() as s:
+        rows = s.exec(
+            select(Job).where(Job.applied_at.is_not(None)).order_by(Job.applied_at.desc())
+        ).all()
+        entries = [{
+            "id": j.id, "title": j.title, "city": j.city, "brand": j.brand,
+            "status": j.status, "applied_at": j.applied_at,
+        } for j in rows]
+    return templates.TemplateResponse("audit.html", {
+        "request": request,
+        "groups": _audit_groups(entries, utcnow()),
+        "total": len(entries),
+    })
+
+
 @app.get("/api/transit/{job_id}")
 def api_transit(job_id: str):
     home = settings_store.get_home()
