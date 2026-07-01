@@ -14,7 +14,8 @@
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
-from urllib.parse import urlsplit
+
+import local_guard
 
 app = FastAPI(title="Job Apply Hub")
 
@@ -24,40 +25,15 @@ BACKENDS = {
 }
 _DROP_REQ = {"host", "content-length", "connection"}
 _DROP_RESP = {"content-length", "content-encoding", "transfer-encoding", "connection"}
-UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-
-
-def _is_loopback_host(host: str) -> bool:
-    host = (host or "").strip().lower()
-    if host.startswith("[") and "]" in host:
-        host = host[1:host.index("]")]
-    else:
-        host = host.split(":", 1)[0]
-    return host in {"127.0.0.1", "localhost", "::1"}
-
-
-def _is_loopback_url(value: str) -> bool:
-    try:
-        return _is_loopback_host(urlsplit(value).hostname or "")
-    except Exception:
-        return False
-
-
 def _allowed_local_write(request: Request) -> bool:
-    if request.method.upper() not in UNSAFE_METHODS:
-        return True
-    if not _is_loopback_host(request.headers.get("host", "")):
-        return False
-    origin = request.headers.get("origin", "")
-    if origin:
-        return _is_loopback_url(origin)
-    referer = request.headers.get("referer", "")
-    if referer:
-        return _is_loopback_url(referer)
-    fetch_site = (request.headers.get("sec-fetch-site") or "").lower()
-    if fetch_site in {"cross-site", "same-site"}:
-        return False
-    return True
+    """Единый барьер (local_guard): loopback + защита от кросс-сайтовой записи."""
+    return local_guard.allowed_write(
+        request.method,
+        request.headers.get("host", ""),
+        request.headers.get("origin", ""),
+        request.headers.get("referer", ""),
+        request.headers.get("sec-fetch-site", ""),
+    )
 
 
 @app.middleware("http")

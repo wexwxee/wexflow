@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from sqlmodel import func
 
 import config
+import local_guard
 import labels
 import geo
 import settings_store
@@ -51,41 +52,16 @@ PROFILE_REQUIRED = [
 ]
 
 SAFE_JOB_STATUSES = {"new", "seen", "applied", "hidden", "interview", "offer", "rejected", "closed"}
-UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-
-
-def _is_loopback_host(host: str) -> bool:
-    host = (host or "").strip().lower()
-    if host.startswith("[") and "]" in host:
-        host = host[1:host.index("]")]
-    else:
-        host = host.split(":", 1)[0]
-    return host in {"127.0.0.1", "localhost", "::1"}
-
-
-def _is_loopback_url(value: str) -> bool:
-    try:
-        return _is_loopback_host(urlsplit(value).hostname or "")
-    except Exception:
-        return False
-
-
 def _allowed_local_write(request: Request) -> bool:
-    """Block cross-site form/fetch writes against the local desktop server."""
-    if request.method.upper() not in UNSAFE_METHODS:
-        return True
-    if not _is_loopback_host(request.headers.get("host", "")):
-        return False
-    origin = request.headers.get("origin", "")
-    if origin:
-        return _is_loopback_url(origin)
-    referer = request.headers.get("referer", "")
-    if referer:
-        return _is_loopback_url(referer)
-    fetch_site = (request.headers.get("sec-fetch-site") or "").lower()
-    if fetch_site in {"cross-site", "same-site"}:
-        return False
-    return True
+    """Block cross-site form/fetch writes against the local desktop server.
+    Единый барьер в local_guard (тот же, что в hub.py и connectors/webapp.py)."""
+    return local_guard.allowed_write(
+        request.method,
+        request.headers.get("host", ""),
+        request.headers.get("origin", ""),
+        request.headers.get("referer", ""),
+        request.headers.get("sec-fetch-site", ""),
+    )
 
 
 def _url_with_system_response(url: str, notice: str = "", error: str = "") -> str:

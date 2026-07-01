@@ -18,6 +18,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
+import local_guard
 import connectors  # регистрирует коннекторы
 from connectors.apply_dispatch import detect, platform_name
 
@@ -61,22 +62,6 @@ def launch_filler(job_url: str):
         kw["creationflags"] = _DETACHED
     import subprocess
     subprocess.Popen(cmd, **kw)
-
-
-def _is_loopback_host(host: str) -> bool:
-    host = (host or "").strip().lower()
-    if host.startswith("[") and "]" in host:
-        host = host[1:host.index("]")]
-    else:
-        host = host.split(":", 1)[0]
-    return host in {"127.0.0.1", "localhost", "::1"}
-
-
-def _is_loopback_url(value: str) -> bool:
-    try:
-        return _is_loopback_host(urlsplit(value).hostname or "")
-    except Exception:
-        return False
 
 
 def _safe_job_url(url: str) -> str:
@@ -243,16 +228,13 @@ class Handler(BaseHTTPRequestHandler):
         return bool(m and m.value == _AUTH_TOKEN)
 
     def _local_write_allowed(self) -> bool:
-        if not _is_loopback_host(self.headers.get("Host", "")):
-            return False
-        origin = self.headers.get("Origin", "")
-        if origin:
-            return _is_loopback_url(origin)
-        referer = self.headers.get("Referer", "")
-        if referer:
-            return _is_loopback_url(referer)
-        fetch_site = (self.headers.get("Sec-Fetch-Site") or "").lower()
-        return fetch_site not in {"cross-site", "same-site"}
+        # do_POST-контекст (метод всегда «пишущий») → единый барьер local_guard.
+        return local_guard.cross_site_allowed(
+            self.headers.get("Host", ""),
+            self.headers.get("Origin", ""),
+            self.headers.get("Referer", ""),
+            self.headers.get("Sec-Fetch-Site", ""),
+        )
 
     def do_GET(self):
         if self.path.split("?", 1)[0] in ("/", "/index.html"):
