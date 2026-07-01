@@ -44,3 +44,4 @@ templates/*_wexflow.html
 *.log
 *.bak
 WexFlow_OLD_DO_NOT_USE.exe
+HANDOFF.md
