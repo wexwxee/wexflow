@@ -194,7 +194,7 @@
      padding:6px 9px; text-align:left; font-size:12px; line-height:1.2;
      display:flex; justify-content:space-between; gap:10px; }
   .combo-option:hover, .combo-option.active { background:var(--chip-bg); }
-  .combo-option.selected { background:var(--accent); color:#fff; font-weight:600; }
+  .combo-option.selected { background:var(--accent); color:var(--on-accent); font-weight:600; }
   .factions {
     display:grid;
     grid-template-columns:repeat(4,minmax(135px,1fr));
@@ -285,7 +285,7 @@
   .num-stepper:focus-within { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
   .num-stepper input { border:none !important; box-shadow:none !important; text-align:center; width:100%; min-width:0; background:transparent; padding:9px 4px; }
   .num-stepper button { background:var(--card); border:none; color:var(--txt); width:34px; flex:0 0 34px; cursor:pointer; font-size:17px; font-weight:700; line-height:1; border-radius:0; }
-  .num-stepper button:hover { background:var(--accent); color:#fff; }
+  .num-stepper button:hover { background:var(--accent); color:var(--on-accent); }
   .grpchk { display:inline-flex; align-items:center; gap:7px; color:var(--txt); font-size:13px; font-weight:600; cursor:pointer; background:var(--input-bg); border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
   .grpchk input { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
   .group-card { cursor:default; }
@@ -300,7 +300,7 @@
     box-shadow:var(--shadow); border-radius:12px; padding:12px 16px; font-size:14px; }
   html[data-theme="light"] .undo-toast { background:rgba(255,255,255,.94); }
   .undo-toast.show { display:flex; }
-  .undo-toast .undo-btn { background:var(--accent); border:none; color:#fff; border-radius:8px; padding:7px 13px; font-weight:600; cursor:pointer; font-size:13px; }
+  .undo-toast .undo-btn { background:var(--accent); border:none; color:var(--on-accent); border-radius:8px; padding:7px 13px; font-weight:600; cursor:pointer; font-size:13px; }
   html[data-theme="dark"] .undo-toast .undo-btn { color:#041a13; }
   .undo-toast .undo-btn:hover { background:var(--accent-hover); }
   .presets { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 22px 0; }
