@@ -50,6 +50,7 @@
   --shadow:    0 16px 40px rgba(0, 0, 0, .55);
   --shadow-sm: 0 2px 10px rgba(0, 0, 0, .40);
   --radius: 12px;
+  --radius-card: 12px;   /* единый радиус карточек/панелей (F6): меняется одной строкой */
   --header-bg: rgba(16, 17, 17, .94);
   color-scheme: dark;
 }
