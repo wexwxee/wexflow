@@ -33,6 +33,7 @@ import tempfile
 import threading
 import urllib.request
 import zipfile
+import hashlib
 
 APP_NAME = "WexFlow"
 
@@ -126,6 +127,24 @@ def _hidden_updater_vbs(bat: pathlib.Path) -> str:
         'Set sh = CreateObject("WScript.Shell")\r\n'
         f'sh.Run Chr(34) & "{path}" & Chr(34), 0, False\r\n'
     )
+
+
+def _norm_sha(value) -> str:
+    """Привести контрольную сумму к нижнему регистру hex или вернуть '' (невалидна)."""
+    s = str(value or "").strip().lower()
+    return s if re.fullmatch(r"[0-9a-f]{64}", s) else ""
+
+
+def _sha256_file(path: pathlib.Path) -> str:
+    """SHA-256 файла (потоково, чтобы не держать 70 МБ в памяти). '' при ошибке."""
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+    except OSError:
+        return ""
+    return h.hexdigest()
 
 
 def _safe_extract_zip(zip_path: pathlib.Path, dest: pathlib.Path) -> None:
@@ -485,18 +504,38 @@ if ($started -and -not $coord.IsUnknown) {
         except Exception:  # noqa: BLE001
             return False
 
-    def install_update(self, url):
+    def install_update(self, url, sha256=""):
         """Автообновление: скачать новую версию, закрыть приложение, подменить
-        файлы и снова открыть. Работает только в собранном приложении."""
+        файлы и снова открыть. Работает только в собранном приложении.
+
+        Только https и только с проверкой контрольной суммы (см. _run_update)."""
         if not is_frozen():
             return {"ok": False, "error": "Автообновление доступно только в собранном приложении."}
-        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+        if not (isinstance(url, str) and url.startswith("https://")):
             return {"ok": False, "error": "bad url"}
-        threading.Thread(target=self._run_update, args=(url,), daemon=True).start()
+        threading.Thread(target=self._run_update, args=(url, sha256), daemon=True).start()
         return {"ok": True}
 
-    def _run_update(self, url):
+    def _expected_update_sha(self) -> str:
+        """Ожидаемая контрольная сумма релиза из доверенного канала (GitHub API по https)."""
         try:
+            import update_check
+            return _norm_sha((update_check.check() or {}).get("sha256", ""))
+        except Exception:  # noqa: BLE001 — нет сети/суммы — вернём пусто, установку не делаем
+            return ""
+
+    def _run_update(self, url, expected_sha=""):
+        try:
+            # Контрольная сумма из доверенного канала. Без совпадения НЕ ставим —
+            # иначе подменённый архив мог бы установить чужой код (захват ПК).
+            expected_sha = _norm_sha(expected_sha) or self._expected_update_sha()
+            if not expected_sha:
+                self._set_update_status(
+                    "Не удалось проверить подлинность обновления — открываю страницу загрузки."
+                )
+                self._fallback_to_browser(url)
+                return
+
             work = pathlib.Path(tempfile.gettempdir()) / "wexflow_update"
             shutil.rmtree(work, ignore_errors=True)
             work.mkdir(parents=True, exist_ok=True)
@@ -506,6 +545,17 @@ if ($started -and -not $coord.IsUnknown) {
             if not self._download(url, zpath):
                 # сеть/таймаут/антивирус — не вешаемся навсегда, а даём
                 # пользователю рабочий запасной путь (страница загрузки)
+                self._fallback_to_browser(url)
+                return
+
+            got_sha = _sha256_file(zpath)
+            if got_sha != expected_sha:
+                # архив повреждён или подменён — НЕ ставим, уводим в браузер
+                print(f"[WexFlow] контрольная сумма не совпала: "
+                      f"ждали {expected_sha}, получили {got_sha or '(ошибка чтения)'}")
+                self._set_update_status(
+                    "Проверка подлинности не пройдена — открываю страницу загрузки."
+                )
                 self._fallback_to_browser(url)
                 return
 

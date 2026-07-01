@@ -22,6 +22,42 @@ def _norm(tag: str) -> tuple:
     return tuple(int(n) for n in nums[:4]) or (0,)
 
 
+def _sha256_from_digest(asset: dict | None) -> str:
+    """GitHub отдаёт для каждого ассета поле digest вида 'sha256:<хэш>'. Берём хэш."""
+    digest = ((asset or {}).get("digest") or "").strip().lower()
+    if digest.startswith("sha256:"):
+        h = digest.split(":", 1)[1].strip()
+        if re.fullmatch(r"[0-9a-f]{64}", h):
+            return h
+    return ""
+
+
+def _fetch_sha256_asset(assets: list) -> str:
+    """Запасной путь: рядом с zip лежит файл *.sha256 — скачиваем и читаем хэш."""
+    for asset in assets or []:
+        name = (asset.get("name") or "").lower()
+        if not name.endswith(".sha256"):
+            continue
+        url = asset.get("browser_download_url")
+        if not url:
+            continue
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "WexFlow-Updater"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                text = r.read(4096).decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 — нет файла/сети — просто нет суммы
+            return ""
+        m = re.search(r"[0-9a-fA-F]{64}", text)
+        if m:
+            return m.group(0).lower()
+    return ""
+
+
+def _resolve_sha256(zip_asset: dict | None, assets: list) -> str:
+    """Ожидаемая контрольная сумма zip: сперва из digest GitHub, затем из *.sha256."""
+    return _sha256_from_digest(zip_asset) or _fetch_sha256_asset(assets)
+
+
 def check() -> dict | None:
     """Вернуть {'version','url','notes'} если есть версия новее текущей, иначе None."""
     repo = (getattr(version, "GITHUB_REPO", "") or "").strip()
@@ -43,13 +79,21 @@ def check() -> dict | None:
         return None
 
     # ищем zip-ассет дистрибутива, иначе ссылку на страницу релиза
+    assets = data.get("assets", []) or []
     download = data.get("html_url", "")
-    for asset in data.get("assets", []):
+    zip_asset = None
+    for asset in assets:
         name = (asset.get("name") or "").lower()
         if name.endswith(".zip"):
             download = asset.get("browser_download_url", download)
+            zip_asset = asset
             break
-    return {"version": tag, "url": download, "notes": (data.get("body") or "")[:600]}
+    return {
+        "version": tag,
+        "url": download,
+        "notes": (data.get("body") or "")[:600],
+        "sha256": _resolve_sha256(zip_asset, assets),
+    }
 
 
 if __name__ == "__main__":

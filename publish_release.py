@@ -4,6 +4,7 @@
 спрашивает подтверждение и публикует релиз через GitHub CLI (gh).
 Ничего не выкладывает без твоего ответа «y».
 """
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,15 @@ from pathlib import Path
 import version
 
 ROOT = Path(__file__).resolve().parent
+
+
+def _sha256_of(path: Path) -> str:
+    """SHA-256 файла (потоково). Прикладываем к релизу для проверки авто-обновления."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _run_text(cmd: list[str]) -> str:
@@ -87,7 +97,14 @@ def main() -> int:
         print(f"Отменено. Архив лежит здесь: {zip_path}")
         return 0
 
-    assets = [str(zip_path), str(setup_path)]
+    # Контрольная сумма архива — приложение сверяет её при авто-обновлении и не
+    # ставит подменённый zip. Кладём рядом файл WexFlow-<версия>.zip.sha256.
+    checksum = _sha256_of(zip_path)
+    sha_path = zip_path.with_name(zip_path.name + ".sha256")
+    sha_path.write_text(f"{checksum}  {zip_path.name}\n", encoding="ascii")
+    print(f"SHA-256:     {checksum}")
+
+    assets = [str(zip_path), str(sha_path), str(setup_path)]
 
     cmd = [
         "gh", "release", "create", f"v{ver}", *assets,
