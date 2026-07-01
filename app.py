@@ -1394,6 +1394,12 @@ def index(
                                      _setup["docs"], _setup["home"], _setup["telegram"]) if v)
     _setup["total"] = 5
 
+    # F36: полный проход по базе (match_count) нужен ТОЛЬКО когда автопилот включён —
+    # на главной счётчик показывается лишь внутри {% if autopilot.enabled %}. Когда
+    # выключен, не гоняем find_matches зря на каждый рендер.
+    _ap_rule = autopilot.get_rule()
+    _ap_count = autopilot.match_count() if _ap_rule.get("enabled") else 0
+
     resp = templates.TemplateResponse("index.html", {
         "request": request, "jobs": jobs, "count": len(jobs),
         "groups": groups, "group": group,
@@ -1434,8 +1440,8 @@ def index(
               "status": status, "sort": sort, "radius": radius, "group": group,
               "show_applied": show_applied}),
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
-        "autopilot": autopilot.get_rule(),
-        "autopilot_count": autopilot.match_count(),
+        "autopilot": _ap_rule,
+        "autopilot_count": _ap_count,
         "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
         "sync_running": _sync_state["running"],
         "sync_error": _sync_state["last_error"],
