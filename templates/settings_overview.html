@@ -117,12 +117,12 @@
         <h2>{{ ic.i('send', 18) }} Telegram</h2>
         <span class="arrow">→</span>
       </div>
-      <p>@wexflowbot, проверочное сообщение и ручная отправка текущих подходящих.</p>
+      <p>Проверочное сообщение и ручная отправка текущих подходящих. Вход через Telegram — в разделе «Аккаунт».</p>
       <div class="settings-meta">
         {% if account_tg_id %}
           <span class="settings-pill ok">подключён</span>
         {% else %}
-          <span class="settings-pill warn">нужен вход</span>
+          <span class="settings-pill warn">{{ ic.i('user', 12) }} подключить в «Аккаунте»</span>
         {% endif %}
         <span class="settings-pill">{{ autopilot_tg_stats.eligible_current }} можно прислать</span>
         <span class="settings-pill">{{ autopilot_tg_stats.pending }} ждут ответа</span>
