@@ -685,7 +685,7 @@
       {% if j.status != 'applied' %}
       <form method="post" action="/job/{{ j.id }}/status">
         <input type="hidden" name="status" value="applied">
-        <button type="submit" class="ghost">{{ ic.i('check', 13) }} Подал</button>
+        <button type="submit" class="ghost">{{ ic.i('check', 13) }} Подано</button>
       </form>
       {% endif %}
       {% if j.status == 'hidden' %}
