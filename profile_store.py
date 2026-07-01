@@ -1,8 +1,11 @@
 """Хранение данных для ассистированной подачи."""
 import filecmp
 import json
+import os
 import re
 import shutil
+import threading
+import time
 import unicodedata
 import uuid
 from pathlib import Path
@@ -108,10 +111,48 @@ def _migrate_legacy_profile() -> None:
         pass
 
 
+# ── Надёжность profile.json (F37; тот же приём, что в settings_store/F33) ──
+_LOCK = threading.RLock()
+
+
+def _read_json(path: Path) -> dict | None:
+    """Прочитать JSON-словарь или вернуть None, если файла нет либо он битый —
+    без падения приложения."""
+    try:
+        if not path.exists():
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (ValueError, OSError):
+        return None
+
+
+def _backup_corrupt(path: Path, err) -> None:
+    """Отложить повреждённый profile.json в копию .corrupt-<ts>, чтобы данные
+    можно было восстановить вручную, а приложение продолжило работу."""
+    try:
+        if path.exists():
+            bad = path.parent / f"{path.stem}.corrupt-{int(time.time())}.json"
+            path.replace(bad)
+            print(f"profile.json повреждён ({err}); отложил копию: {bad.name}")
+    except OSError:
+        pass
+
+
 def load_profile() -> dict:
     _migrate_legacy_profile()
-    if config.SHARED_PROFILE_PATH.exists():
-        return clean_profile(json.loads(config.SHARED_PROFILE_PATH.read_text(encoding="utf-8")))
+    path = config.SHARED_PROFILE_PATH
+    if path.exists():
+        data = _read_json(path)
+        if data is not None:
+            return clean_profile(data)
+        # основной файл битый: пробуем последнюю резервную копию, затем откладываем битый
+        backup = _read_json(path.with_name(path.name + ".bak"))
+        _backup_corrupt(path, "невалидный JSON")
+        if backup is not None:
+            print("profile.json восстановлен из .bak")
+            save_profile(backup)          # вернём хороший профиль на место (атомарно)
+            return clean_profile(backup)
     if (config.BASE_DIR / "profile.example.json").exists():
         data = json.loads((config.BASE_DIR / "profile.example.json").read_text(encoding="utf-8"))
         data["first_name"] = ""
@@ -130,8 +171,19 @@ def load_profile() -> dict:
 
 def save_profile(data: dict):
     data = clean_profile(data)
-    config.SHARED_PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    config.SHARED_PROFILE_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    path = config.SHARED_PROFILE_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    tmp = path.with_name(path.name + ".tmp")
+    with _LOCK:
+        tmp.write_text(payload, encoding="utf-8")   # атомарно: пишем во временный…
+        os.replace(tmp, path)                        # …и подменяем одним движением
+        # зеркалим последний УСПЕШНО записанный профиль в .bak — если основной файл
+        # позже побьётся, load_profile восстановит из него свежее состояние
+        try:
+            shutil.copy2(path, path.with_name(path.name + ".bak"))
+        except OSError:
+            pass
 
 
 def validate_document_path(path: str) -> str:
