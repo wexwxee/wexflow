@@ -45,3 +45,9 @@ templates/*_wexflow.html
 *.bak
 WexFlow_OLD_DO_NOT_USE.exe
 HANDOFF*.md
+# восстановление подач — содержит личные данные Ивана (заголовки/города/время подач)
+restore_applied.py
+restore_dryrun.txt
+restore_apply.txt
+ПОКАЗАТЬ_возврат_подач.bat
+ПРИМЕНИТЬ_возврат_подач.bat

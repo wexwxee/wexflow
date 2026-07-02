@@ -796,6 +796,42 @@ def _submission_confirmed(page) -> bool:
     return False
 
 
+def _await_submission_outcome(page, timeout_s: float = 30.0, poll_ms: int = 1000) -> bool:
+    """Ждёт исхода отправки, ОПРАШИВАЯ страницу до timeout_s секунд.
+
+    Зачем: SAP-форма показывает квитанцию и убирает кнопку «Ansøg» с задержкой.
+    Прежняя единичная мгновенная проверка под лагом видела «ещё не готово» и
+    возвращала неуспех — заявка уходила в Salling, но applied_at НЕ записывался
+    (баг F35: потеря записи и, как следствие, повторные подачи-дубли). Теперь
+    даём форме время: успех фиксируем, как только он появился, а неуспех — лишь
+    когда за весь таймаут ни квитанции, ни ухода формы так и не случилось.
+
+    True, если: появилась страница-квитанция (_submission_confirmed) ИЛИ кнопка
+    «Ansøg» СТАБИЛЬНО исчезла (форма ушла). Иначе (после дедлайна) — False.
+    """
+    stable_needed_s = 2.0          # кнопка должна пропасть устойчиво, а не мигнуть
+    gone_for_s = None
+    elapsed_s = 0.0
+    while elapsed_s < timeout_s:
+        if _submission_confirmed(page):
+            return True
+        # поздний диалог согласия иногда всплывает уже после клика — гасим
+        try:
+            accept_consent(page)
+        except Exception:
+            pass
+        if not _ansog_present(page):
+            gone_for_s = (gone_for_s or 0.0) + poll_ms / 1000.0
+            if gone_for_s >= stable_needed_s:
+                return True
+        else:
+            gone_for_s = None       # кнопка снова видна — сброс «устойчивости»
+        page.wait_for_timeout(poll_ms)
+        elapsed_s += poll_ms / 1000.0
+    # финальная проверка на границе дедлайна
+    return _submission_confirmed(page) or not _ansog_present(page)
+
+
 def submit_application(page) -> bool:
     """Жмёт «Ansøg», подтверждает согласие и проверяет, что заявка реально ушла.
     Возвращает True ТОЛЬКО если отправка подтвердилась."""
@@ -852,8 +888,10 @@ def submit_application(page) -> bool:
             else:
                 break
         page.wait_for_timeout(2000)
-    # успех = есть подтверждение ИЛИ форма закрылась (кнопки Ansøg больше нет)
-    ok = _submission_confirmed(page) or not _ansog_present(page)
+    # успех = квитанция ИЛИ форма ушла (кнопки Ansøg больше нет). Опрашиваем с
+    # запасом по времени: SAP подтверждает с лагом, единичная проверка теряла
+    # подтверждение → applied_at не записывался (F35). См. _await_submission_outcome.
+    ok = _await_submission_outcome(page)
     print("  ✔ отправка подтверждена" if ok else "  ⚠ отправка НЕ подтвердилась — проверь вручную")
     return ok
 
@@ -928,7 +966,8 @@ def process_job(page, job, profile, submit: bool):
             _mark_applied(job.id)
             sent = True
         else:
-            print("  отправка не нажалась — проверь вручную")
+            _save_proof(page, job)   # скрин даже при неуспехе — для разбора/восстановления
+            print("  отправка не подтвердилась — проверь вручную")
     else:
         print("  Прогон без отправки — проверь форму и нажми Ansøg сам.")
     return sent
