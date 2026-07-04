@@ -18,7 +18,7 @@
   .field input.invalid { border-color:var(--err-line); box-shadow:0 0 0 3px rgba(252,165,165,.16); }
   .field .req { color:var(--err-txt); font-size:12px; margin-top:6px; display:none; }
   .field.missing .req { display:block; }
-  button { padding:10px 18px; font-size:14px; font-weight:600; }
+  /* размеры кнопок — из общей шкалы theme.css; страничных переопределений не держим */
   .actions { margin-top:6px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .ok, .err { margin:10px 0; }
   .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--glass-line); }
@@ -225,6 +225,9 @@
     border:1px solid var(--accent); color:var(--accent); background:color-mix(in srgb, var(--accent) 10%, transparent);
     font-size:13px; font-weight:700; cursor:pointer; }
   .ap-ai-btn:hover { background:color-mix(in srgb, var(--accent) 18%, transparent); }
+  /* ИИ-кнопка в hero — крупный размер из общей шкалы (44px); правило для
+     .actions > .primary живёт в theme.css и действует на всех страницах */
+  .ap-ai-btn { min-height:var(--control-h-lg); padding:10px 20px; font-size:14px; }
   .ap-ai-btn:disabled { opacity:.6; cursor:default; }
   .ap-ai-status { font-size:12.5px; color:var(--muted); }
   .ap-ai-off { margin-top:8px; }
@@ -577,18 +580,23 @@
       <label class="lbl" style="display:block;">Наборы фильтров
         <span class="hint" style="font-weight:400;">— раньше назывались правилами; можно сделать отдельный набор под каждую цель</span>
       </label>
-      <div class="ap-rule-help">
-        <div><strong>Что такое набор фильтров?</strong> Это один сценарий поиска: например «рядом с домом», «только выходные» или «любой Netto». Вакансия считается подходящей, если совпала хотя бы с одним включённым набором.</div>
-        <div class="ap-rule-flow" aria-label="Как WexFlow проверяет наборы фильтров">
-          <span class="ap-rule-step">1. Берёт вакансии</span>
-          <span class="ap-rule-arrow">→</span>
-          <span class="ap-rule-step">2. Проверяет каждый набор</span>
-          <span class="ap-rule-arrow">→</span>
-          <span class="ap-rule-step">3. Убирает исключения</span>
-          <span class="ap-rule-arrow">→</span>
-          <span class="ap-rule-step">4. Шлёт подходящие</span>
+      <details class="ap-faq" style="margin:8px 0 10px;">
+        <summary>Что такое набор фильтров и как он работает?</summary>
+        <div class="ap-faq-body">
+          <div class="ap-rule-help" style="margin:8px 0 10px;">
+            <div><strong>Что такое набор фильтров?</strong> Это один сценарий поиска: например «рядом с домом», «только выходные» или «любой Netto». Вакансия считается подходящей, если совпала хотя бы с одним включённым набором.</div>
+            <div class="ap-rule-flow" aria-label="Как WexFlow проверяет наборы фильтров">
+              <span class="ap-rule-step">1. Берёт вакансии</span>
+              <span class="ap-rule-arrow">→</span>
+              <span class="ap-rule-step">2. Проверяет каждый набор</span>
+              <span class="ap-rule-arrow">→</span>
+              <span class="ap-rule-step">3. Убирает исключения</span>
+              <span class="ap-rule-arrow">→</span>
+              <span class="ap-rule-step">4. Шлёт подходящие</span>
+            </div>
+          </div>
         </div>
-      </div>
+      </details>
       <div class="ap-profiles">
         {% for p in autopilot_profiles %}
         <a class="ap-prof {{ 'on' if p.id == autopilot_profile.id else '' }} {{ 'off' if not p.enabled else '' }}"

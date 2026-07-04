@@ -524,12 +524,29 @@ html[data-theme="dark"] ::selection { color: #041a13; }
 }
 
 /* ---------- кнопки ---------- */
+/* Единая шкала контролов: в приложении ТРИ размера кнопок, а не десять.
+   36px — обычная кнопка; 28px — компактный чип; 44px — крупный CTA.
+   Кнопки-иконки со своими габаритами (traffic-dot, theme-toggle, pwd-eye)
+   и пункты выпадающих меню явно выведены из-под общей высоты ниже. */
+:root { --control-h: 36px; --control-h-sm: 28px; --control-h-lg: 44px; }
 button {
   cursor: pointer; border: 1px solid var(--glass-line); background: var(--glass);
   color: var(--txt); border-radius: 8px; padding: 8px 14px; font-size: 13px;
   font-family: "Inter", inherit; transition: border-color .15s, background .15s, box-shadow .15s;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: var(--control-h);
 }
 button:hover { border-color: var(--hover-line); }
+/* исключения из общей высоты: иконки-кнопки и пункты меню */
+.traffic-dot, .wn-close, .pwd-eye, .theme-toggle,
+.combo-option, .ap-opt, .suggest-menu button, .preset-chip button {
+  min-height: 0;
+}
+button.large { min-height: var(--control-h-lg); }
+/* главное действие формы (блок .actions) — крупный размер шкалы */
+.actions > button.primary { min-height: var(--control-h-lg); padding: 10px 20px; font-size: 14px; }
+/* компактные чипы-варианты и пилюли наборов */
+.ap-chip, .ap-prof { min-height: var(--control-h-sm); }
 
 button.primary {
   background: var(--accent); border-color: var(--accent);

@@ -195,6 +195,13 @@
      display:flex; justify-content:space-between; gap:10px; }
   .combo-option:hover, .combo-option.active { background:var(--chip-bg); }
   .combo-option.selected { background:var(--accent); color:var(--on-accent); font-weight:600; }
+  /* «Ещё фильтры»: скрытые редкие фильтры остаются ячейками той же сетки
+     (display:contents), а [hidden] прячет их все разом */
+  .extra-filters:not([hidden]) { display:contents; }
+  .extra-toggle { color:var(--muted); }
+  .extra-toggle:hover { color:var(--txt); }
+  .extra-toggle.on { border-color:var(--accent); color:var(--accent); }
+  .extra-toggle.open::after { transform:rotate(180deg); }
   .factions {
     display:grid;
     grid-template-columns:repeat(4,minmax(135px,1fr));
@@ -538,11 +545,24 @@
         {% for city,lbl in city_suggestions %}<option value="{{city}}" label="{{lbl}}">{% endfor %}
       </datalist>
     </div>
+    {# Редкие фильтры спрятаны за «Ещё фильтры»: обычно хватает поиска и города,
+       а пять выпадающих списков делали панель громоздкой. Если какой-то из них
+       активен — блок открыт сам, чтобы применённый фильтр не оказался невидимым. #}
+    {% set extra_active = [f.brand, f.region, f.category, f.employment_type, f.job_level] | select | list | length %}
+    <div class="field">
+      <label>&nbsp;</label>
+      <button type="button" class="combo-btn extra-toggle {{ 'on' if extra_active }}" id="extraToggle"
+              data-tip-title="Ещё фильтры" data-tip-body="Бренд, регион, категория, занятость и уровень. Открываются по клику, чтобы не загромождать панель.">
+        <span>Ещё фильтры{% if extra_active %} · активно: {{ extra_active }}{% endif %}</span>
+      </button>
+    </div>
+    <div class="extra-filters" id="extraFilters" {% if not extra_active %}hidden{% endif %}>
     {{ custom_select('brand', 'Бренд', 'Все бренды', brands, f.brand, 'Фильтрует конкретную сеть. Удобно, если хочешь смотреть только Netto/Føtex/Bilka и не смешивать разные форматы магазинов.') }}
     {{ custom_select('region', 'Регион', 'Все регионы', regions, f.region, 'Широкий фильтр по части Дании. Используй, когда город не принципиален, но ехать в другой регион не хочется.') }}
     {{ custom_select('category', 'Категория', 'Все категории', cats, f.category, 'Тип работы: касса, продажи, склад, пекарня, кухня, обслуживание. Лучше комбинировать с городом или радиусом.') }}
     {{ custom_select('employment_type', 'Занятость', 'Любая', etypes, f.employment_type, 'Отсекает полную/частичную занятость. Оставь Любая, если важнее место и расстояние, чем часы.') }}
     {{ custom_select('job_level', 'Уровень', 'Любой', levels, f.job_level, 'Помогает отделить обычные позиции, under 18, менеджмент и trainee. Если не уверен, оставь Любой.') }}
+    </div>
   </div>
   <div class="factions">
     <div class="filter-status">{{ custom_select('status', 'Статус', 'Любой статус', statuses.items(), f.status, 'Быстро переключает рабочий список: новые, просмотренные, поданные, скрытые. Активные по умолчанию прячут уже поданные.') }}</div>
@@ -593,6 +613,24 @@
     {% endif %}
   </div>
 </form>
+<script>
+  // «Ещё фильтры»: раскрытие редких фильтров. Если один из них активен —
+  // сервер уже отдал блок открытым; выбор пользователя запоминается локально.
+  (function () {
+    var btn = document.getElementById('extraToggle'), box = document.getElementById('extraFilters');
+    if (!btn || !box) return;
+    var KEY = 'wexflow_extra_filters';
+    try { if (localStorage.getItem(KEY) === '1') box.removeAttribute('hidden'); } catch (e) {}
+    function upd() { btn.classList.toggle('open', !box.hasAttribute('hidden')); }
+    btn.addEventListener('click', function () {
+      if (box.hasAttribute('hidden')) box.removeAttribute('hidden');
+      else box.setAttribute('hidden', '');
+      try { localStorage.setItem(KEY, box.hasAttribute('hidden') ? '0' : '1'); } catch (e) {}
+      upd();
+    });
+    upd();
+  })();
+</script>
 </section>
 
 <div class="jobs-result-head">
