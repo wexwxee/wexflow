@@ -529,9 +529,12 @@ html[data-theme="dark"] ::selection { color: #041a13; }
    Кнопки-иконки со своими габаритами (traffic-dot, theme-toggle, pwd-eye)
    и пункты выпадающих меню явно выведены из-под общей высоты ниже. */
 :root { --control-h: 36px; --control-h-sm: 28px; --control-h-lg: 44px; }
+/* Шкала скруглений едина с размерами: контролы 10px, вложенные элементы
+   (пункты меню, кнопки внутри сегмент-баров) 7px, карточки/панели 12px,
+   чипы-пилюли 999px. Новые стили выбирают из этих четырёх значений. */
 button {
   cursor: pointer; border: 1px solid var(--glass-line); background: var(--glass);
-  color: var(--txt); border-radius: 8px; padding: 8px 14px; font-size: 13px;
+  color: var(--txt); border-radius: 10px; padding: 8px 14px; font-size: 13px;
   font-family: "Inter", inherit; transition: border-color .15s, background .15s, box-shadow .15s;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   min-height: var(--control-h);

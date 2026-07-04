@@ -49,7 +49,7 @@
   .file-card input[type="text"] { overflow:hidden; text-overflow:ellipsis; }
   .file-open {
     flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
-    min-height:34px; padding:0 10px; border-radius:8px; border:1px solid var(--line);
+    min-height:36px; padding:0 10px; border-radius:10px; border:1px solid var(--line);
     color:var(--accent); background:var(--glass); font-size:13px; font-weight:700; text-decoration:none;
   }
   .file-open:hover { border-color:var(--accent); background:var(--accent-soft); }
@@ -87,8 +87,9 @@
   .ap-field-wide { grid-column:1 / -1; }
   .ap-hint { color:var(--muted); font-size:12px; margin-top:6px; line-height:1.4; }
   .ap-select { position:relative; }
+  /* селект выглядит как ПОЛЕ (как выпадающие на главной): фон поля, радиус 10 */
   .ap-select-btn { width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px;
-    background:var(--glass); border:1px solid var(--glass-line); color:var(--txt); border-radius:8px;
+    background:var(--input-bg); border:1px solid var(--line); color:var(--txt); border-radius:10px;
     padding:11px 12px; font-size:14px; cursor:pointer; text-align:left; }
   .ap-select-btn:hover { border-color:var(--hover-line); }
   .ap-select.open .ap-select-btn { border-color:var(--accent); }
@@ -129,7 +130,7 @@
   .ap-chip.active { background:var(--accent); color:var(--on-accent); border-color:var(--accent); font-weight:650; }
   .ap-rule-help {
     display:grid; gap:8px; margin:10px 0 12px; padding:12px 14px;
-    border:1px solid var(--glass-line); border-radius:9px; background:var(--glass);
+    border:1px solid var(--glass-line); border-radius:12px; background:var(--glass);
     color:var(--muted); font-size:13px; line-height:1.45;
   }
   .ap-rule-help strong { color:var(--txt-strong); }
@@ -146,9 +147,9 @@
   .ap-city-presets .ap-chip { padding:5px 10px; }
   /* автоотправка: «на свой страх и риск» + раскрывающийся FAQ «что может произойти» */
   .ap-risk { border:1px solid var(--err-line); background:color-mix(in srgb, var(--err-txt) 8%, transparent);
-    border-radius:9px; padding:11px 13px; margin:12px 0; font-size:13px; line-height:1.5; }
+    border-radius:12px; padding:11px 13px; margin:12px 0; font-size:13px; line-height:1.5; }
   .ap-risk b { color:var(--err-txt); }
-  .ap-faq { border:1px solid var(--glass-line); border-radius:9px; background:var(--glass); margin:12px 0; overflow:hidden; }
+  .ap-faq { border:1px solid var(--glass-line); border-radius:12px; background:var(--glass); margin:12px 0; overflow:hidden; }
   .ap-faq > summary { cursor:pointer; padding:11px 13px; font-weight:650; font-size:13.5px; list-style:none;
     display:flex; align-items:center; gap:8px; }
   .ap-faq > summary::-webkit-details-marker { display:none; }
@@ -160,13 +161,13 @@
   .ap-faq-body dt:first-child { margin-top:4px; }
   .ap-faq-body dd { margin:3px 0 0; padding:0; color:var(--muted); font-size:12.5px; line-height:1.5; }
   /* исключения «не предлагать» */
-  .ap-exclude { margin-top:14px; border:1px dashed var(--glass-line); border-radius:11px; padding:12px 14px 4px; }
+  .ap-exclude { margin-top:14px; border:1px dashed var(--glass-line); border-radius:12px; padding:12px 14px 4px; }
   .ap-exclude-head { font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase;
     letter-spacing:.05em; margin-bottom:10px; display:flex; align-items:center; gap:7px; }
   /* единый селектор режима работы */
   .ap-mode { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 6px; }
   .ap-mode-opt { flex:1 1 130px; display:flex; flex-direction:column; align-items:center; gap:4px;
-    padding:11px 10px; border:1px solid var(--glass-line); border-radius:11px; background:var(--glass);
+    padding:11px 10px; border:1px solid var(--glass-line); border-radius:12px; background:var(--glass);
     color:var(--muted); font-size:18px; font-weight:650; cursor:pointer; transition:.14s; }
   .ap-mode-opt span { font-size:12.5px; }
   .ap-mode-opt:hover { border-color:var(--hover-line); color:var(--txt); }
@@ -185,15 +186,15 @@
   .ap-prof.add { border-style:dashed; color:var(--muted); }
   .ap-prof-bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
   .ap-prof-bar button { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt);
-    border-radius:8px; padding:6px 11px; font-size:12.5px; font-weight:650; cursor:pointer; }
+    border-radius:10px; padding:6px 11px; font-size:12.5px; font-weight:650; cursor:pointer; }
   .ap-prof-bar button:hover { border-color:var(--hover-line); color:var(--txt-strong); }
-  .ap-prof-bar input[type=text] { padding:6px 10px; border-radius:8px; }
+  .ap-prof-bar input[type=text] { padding:6px 10px; border-radius:10px; }
   /* быстрый старт: пресеты-шаблоны автопилота */
   .ap-presets { margin:4px 0 12px; }
   .ap-presets-label { display:block; font-size:12.5px; font-weight:700; color:var(--txt); margin-bottom:7px; }
   .ap-presets-label .hint { font-weight:400; }
   .ap-preset-row { display:flex; flex-wrap:wrap; gap:7px; }
-  .ap-preset { display:inline-flex; align-items:center; gap:6px; padding:9px 14px; border-radius:11px;
+  .ap-preset { display:inline-flex; align-items:center; gap:6px; padding:9px 14px; border-radius:10px;
     border:1px solid var(--glass-line); background:var(--glass); color:var(--txt); cursor:pointer;
     font-size:13px; font-weight:650; line-height:1; transition:border-color .12s, color .12s, background .12s; }
   .ap-preset:hover { border-color:var(--accent); color:var(--txt-strong);
@@ -201,7 +202,7 @@
   .ap-preset .ic { opacity:.92; }
   .ap-preset.reset { color:var(--muted); }
   /* живая сводка человеческим языком */
-  .ap-summary { margin:14px 0 2px; padding:12px 14px; border-radius:11px;
+  .ap-summary { margin:14px 0 2px; padding:12px 14px; border-radius:12px;
     border:1px solid var(--glass-line); background:var(--glass); }
   .ap-summary-title { font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase;
     letter-spacing:.04em; margin-bottom:6px; }
@@ -217,7 +218,7 @@
   .ap-ai-label { display:block; font-size:12.5px; font-weight:700; color:var(--txt); margin-bottom:7px; }
   .ap-ai-label .hint { font-weight:400; }
   .ap-ai textarea { width:100%; box-sizing:border-box; resize:vertical; min-height:42px;
-    padding:9px 11px; border-radius:9px; border:1px solid var(--glass-line);
+    padding:9px 11px; border-radius:10px; border:1px solid var(--glass-line);
     background:var(--bg); color:var(--txt); font:inherit; font-size:13.5px; }
   .ap-ai textarea:focus { outline:none; border-color:var(--accent); }
   .ap-ai-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:8px; }
@@ -868,11 +869,11 @@
   <!-- Telegram: подтверждение подачи (режим «по разрешению») -->
   <style>
     #tg .tg-sec { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt);
-      border-radius:9px; padding:9px 14px; font-weight:650; font-size:13.5px; cursor:pointer; text-decoration:none; }
+      border-radius:10px; padding:9px 14px; font-weight:650; font-size:13.5px; cursor:pointer; text-decoration:none; }
     #tg .tg-sec:hover { border-color:var(--hover-line); color:var(--txt-strong); }
     #tg .actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }
     #tg .tg-stats { display:grid; grid-template-columns:repeat(4, minmax(96px, 1fr)); gap:8px; margin:12px 0; }
-    #tg .tg-stat { border:1px solid var(--glass-line); background:var(--glass); border-radius:8px; padding:10px 11px; }
+    #tg .tg-stat { border:1px solid var(--glass-line); background:var(--glass); border-radius:12px; padding:10px 11px; }
     #tg .tg-stat b { display:block; font-size:18px; color:var(--txt-strong); line-height:1.1; }
     #tg .tg-stat span { display:block; margin-top:3px; color:var(--muted); font-size:12px; line-height:1.25; }
     @media (max-width:640px){ #tg .tg-stats { grid-template-columns:1fr 1fr; } }
