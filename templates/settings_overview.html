@@ -35,12 +35,11 @@
 {{ ui.shell_start('settings') }}
 <header class="wex-topbar">
   <div class="wex-title-stack">
-    <h1>{{ ui.brand('Settings') }}</h1>
+    <h1>{{ ui.brand('Настройки') }}</h1>
     <span class="wex-title-meta">Карта управления WexFlow</span>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
-    {{ ui.app_switch() }}
     {{ ui.theme_toggle() }}
   </div>
 </header>
@@ -106,7 +105,8 @@
       <div class="settings-meta">
         <span class="settings-pill {{ 'ok' if autopilot.enabled else '' }}">{{ 'включён' if autopilot.enabled else 'пауза' }}</span>
         <span class="settings-pill">{{ autopilot_count }} подходит</span>
-        <span class="settings-pill">{{ autopilot_profiles|length }} наборов</span>
+        {% set np = autopilot_profiles|length %}
+        <span class="settings-pill">{{ np }} {{ 'набор' if np % 10 == 1 and np % 100 != 11 else ('набора' if np % 10 in [2, 3, 4] and np % 100 not in [12, 13, 14] else 'наборов') }}</span>
       </div>
     </a>
 

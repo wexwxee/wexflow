@@ -39,13 +39,12 @@
 {{ ui.shell_start('jobs') }}
 <header class="wex-topbar">
   <div class="wex-title-stack">
-    <h1>{{ ui.brand('Job') }}</h1>
+    <h1>{{ ui.brand('Вакансия') }}</h1>
     <span class="wex-title-meta">{{ job.title if job else 'Вакансия не найдена' }}</span>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
     <a class="tablink" id="backToList" href="/">← к списку</a>
-    {{ ui.app_switch() }}
     {{ ui.theme_toggle() }}
   </div>
 </header>
@@ -66,7 +65,8 @@
       {% set sticons = {'applied':'check','interview':'phone','offer':'award','rejected':'x','seen':'undo'} %}
       <form method="post" action="/job/{{ job.id }}/status" style="display:inline-flex;gap:7px;flex-wrap:wrap;">
         {% for val,txt in [('applied','Подано'),('interview','Собеседование'),('offer','Оффер'),('rejected','Отказ'),('seen','Сброс')] %}
-          <button class="st {{ 'cur' if job.status==val }}" name="status" value="{{ val }}">{{ ic.i(sticons[val], 13) }} {{ txt }}</button>
+          <button class="st {{ 'cur' if job.status==val }}" name="status" value="{{ val }}"
+                  {% if val == 'applied' and job.status != 'applied' %}onclick="return confirm('Отметить как поданную ВРУЧНУЮ?\n\nЗаявка при этом НЕ отправляется — это пометка для списка. Чтобы подать по-настоящему, нажми «Подать заявку» ниже.')"{% endif %}>{{ ic.i(sticons[val], 13) }} {{ txt }}</button>
         {% endfor %}
       </form>
     </div>

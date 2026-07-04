@@ -403,15 +403,13 @@
 <header class="wex-topbar jobs-topbar">
   <div class="wex-title-group">
     <div class="wex-title-stack">
-      <h1>{{ ui.brand('Jobs') }}</h1>
+      <h1>{{ ui.brand('Вакансии') }}</h1>
       <span class="wex-title-meta">Активных: {{ total_active }} · найдено: {{ total_filtered }}{% if pages > 1 %} · стр. {{ page }}/{{ pages }}{% endif %}</span>
     </div>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
     {{ ui.freshness(data_age_min, sync_running) }}
-    <a class="tablink {{ 'active' if f.status == 'applied' }}" href="/?status=applied&sort={{ f.sort or 'published' }}">{{ check() }} Поданные ({{ applied_count }})</a>
-    {{ ui.app_switch() }}
     <form method="post" action="/refresh">
       <button class="primary" type="submit" data-tip-title="Обновление" data-tip-body="Запускает свежую синхронизацию вакансий. Обычно это не нужно: список и так обновляется в фоне примерно раз в 30 минут.">{{ ic.i('refresh', 13) }} Обновить</button>
     </form>
@@ -683,9 +681,10 @@
       <a href="/job/{{ j.id }}"><button type="button" class="ghost">Подробнее</button></a>
       <a href="{{ maps_urls[j.id] }}"><button type="button" class="ghost">{{ ic.i('map', 13) }} Маршрут</button></a>
       {% if j.status != 'applied' %}
-      <form method="post" action="/job/{{ j.id }}/status">
+      <form method="post" action="/job/{{ j.id }}/status"
+            onsubmit="return confirm('Отметить эту вакансию как поданную ВРУЧНУЮ?\n\nЗаявка при этом НЕ отправляется — это просто пометка для твоего списка (например, если подавался сам на сайте).')">
         <input type="hidden" name="status" value="applied">
-        <button type="submit" class="ghost">{{ ic.i('check', 13) }} Подано</button>
+        <button type="submit" class="ghost" data-tip-title="Ручная отметка" data-tip-body="Ничего не отправляет. Помечает вакансию как поданную, если ты подал её сам вне WexFlow.">{{ ic.i('check', 13) }} Отметить: подано</button>
       </form>
       {% endif %}
       {% if j.status == 'hidden' %}
@@ -718,7 +717,7 @@
 
 <form id="batchform" class="batchbar" method="post" action="/apply/batch">
   <div class="binfo">
-    <span class="cnt"><span id="selcount">0</span> выбрано · по 2 за раз</span>
+    <span class="cnt"><span id="selcount">0</span> выбрано · подаются по одной</span>
     <span class="files">{{ ic.i('file', 12) }} CV: {{ apply_files.cv }} · {{ ic.i('edit', 12) }} Письмо: {{ apply_files.cover }}
       <a href="#" id="changefiles">изменить файлы</a></span>
   </div>

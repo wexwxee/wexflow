@@ -942,9 +942,12 @@ def scan_and_notify() -> None:
         seen = set(rule.get("seen_ids") or [])
         fresh = [j for j in matches if j.id not in seen]
         save_rule({"seen_ids": ids})  # помним текущий набор, чистим устаревшее
-        log_event("scan", f"Проверил базу: подходящих {len(matches)}"
-                  + (f", из них новых {len(fresh)}" if fresh else ""))
+        # В ленту пишем только событие с НОВЫМИ совпадениями: при скане каждые
+        # 3 минуты записи «проверил базу, ничего нового» вытесняли из журнала
+        # (EVENT_LOG_MAX) реальные подачи и решения за считанные часы. Время
+        # последней проверки монитор берёт из last_scan, а не из ленты.
         if fresh:
+            log_event("scan", f"Проверил базу: подходящих {len(matches)}, из них новых {len(fresh)}")
             import scheduler
             titles = "; ".join(j.title for j in fresh[:5])
             scheduler.notify(f"Автопилот: новых вакансий {len(fresh)}", titles)

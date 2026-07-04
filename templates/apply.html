@@ -37,14 +37,13 @@
 {{ ui.shell_start('apply') }}
 <header class="wex-topbar">
   <div class="wex-title-stack">
-    <h1>{{ ui.brand('Apply') }}</h1>
+    <h1>{{ ui.brand('Подача') }}</h1>
     <span class="wex-title-meta">{{ job.title if job else 'Вакансия не найдена' }}</span>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
     <a class="tablink" href="{{ '/job/' ~ job.id if job else '/' }}">← назад</a>
     <a class="tablink" href="/settings/salling">{{ ic.i('sliders', 13) }} Логин и документы</a>
-    {{ ui.app_switch() }}
     {{ ui.theme_toggle() }}
   </div>
 </header>
