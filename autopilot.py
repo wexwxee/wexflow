@@ -14,6 +14,7 @@ import datetime as _dt
 import re
 import uuid
 
+import applications
 import geo
 import labels
 import settings_store
@@ -49,18 +50,23 @@ DEFAULT_RULE = {
     "daily_limit": 3,           # максимум автоотправок в день
     "submit_scope": "new",      # "new" = только появившиеся ПОСЛЕ включения; "all" = все подходящие
     "autosubmit_baseline": [],  # снимок совпадений на момент включения — их НЕ трогаем (для scope=new)
-    "submitted_ids": [],        # id, которые автоотправка уже подала
-    "submitting_ids": [],       # id, по которым подача запущена, но ещё не подтверждена status=applied
-    "submit_day": "",           # день, за который считаем счётчик
-    "submit_count_today": 0,    # сколько отправлено сегодня
-    "submit_log": [],           # журнал автоотправок [{ts,title}]
-    "submitted_total": 0,       # сколько автопилот подал всего (за всё время)
     "event_log": [],            # лента событий автопилота [{ts,kind,text}] (для монитора)
     # --- режим «по разрешению» через Telegram (по умолчанию ВЫКЛ) ---
     "tg_approval": False,       # спрашивать подтверждение в Telegram перед подачей?
-    "tg_pending": [],           # ждут ответа в TG [{job_id, message_id, ts}]
-    "tg_offered_ids": [],       # уже отправляли карточку в TG — не дублируем
-    "tg_skipped": [],           # пользователь нажал «Пропустить» — не предлагать снова
+    "tg_pending": [],           # ждут ответа в TG [{job_id, message_id, ts}] (переходное состояние)
+    # ЛЕГАСИ (шаг 3 плана): факты «подано/отправляется/предложено/пропущено»
+    # переехали в таблицу application (см. applications.py). Ключи оставлены,
+    # чтобы старые settings.json читались; applications.ensure_migrated()
+    # один раз переносит их в базу и очищает.
+    "lists_migrated_to_db": False,
+    "submitted_ids": [],
+    "submitting_ids": [],
+    "submit_day": "",
+    "submit_count_today": 0,
+    "submit_log": [],
+    "submitted_total": 0,
+    "tg_offered_ids": [],
+    "tg_skipped": [],
 }
 
 # Сколько событий держим в ленте монитора (старые отбрасываем).
@@ -87,7 +93,7 @@ def event_log() -> list:
 
 
 def submitted_total() -> int:
-    return int(get_rule().get("submitted_total") or 0)
+    return applications.submitted_total_count()
 
 
 def status() -> dict:
@@ -151,16 +157,19 @@ def save_rule(patch: dict) -> dict:
 def reset_tg_queue_for_filters() -> None:
     """Drop local Telegram offers that were built for old filters."""
     r = get_rule()
-    had_local = bool(r.get("tg_pending") or r.get("tg_offered_ids"))
+    had_local = bool(r.get("tg_pending"))
     if had_local:
-        save_rule({"tg_pending": [], "tg_offered_ids": []})
+        save_rule({"tg_pending": []})
+    # из реестра убираем только НЕрешённые предложения; пропущенные/поданные
+    # остаются историей и после смены фильтров
+    cleared_offers = applications.clear_offers()
     cleared_cloud = False
     try:
         import cloud_auth
         cleared_cloud = cloud_auth.clear_panel(timeout=3)
     except Exception:  # noqa: BLE001
         cleared_cloud = False
-    if had_local or cleared_cloud:
+    if had_local or cleared_offers or cleared_cloud:
         log_event("info", "TG: сбросил старую очередь после изменения фильтров")
 
 
@@ -535,20 +544,6 @@ def mark_prepared(ids) -> None:
 
 
 # ── Фаза 3: автоотправка (под замком) ──────────────────────────────────
-def _today() -> str:
-    return _dt.date.today().isoformat()
-
-
-def _date_key(value) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, _dt.datetime):
-        return value.date().isoformat()
-    if isinstance(value, _dt.date):
-        return value.isoformat()
-    return str(value)[:10]
-
-
 def _dedupe_ids(values) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -560,57 +555,15 @@ def _dedupe_ids(values) -> list[str]:
     return out
 
 
-def reconcile_submitted_state() -> dict:
-    """Repair old optimistic counters: only applied jobs remain counted."""
-    r = get_rule()
-    ids = _dedupe_ids(r.get("submitted_ids") or [])
-    day = _today()
-    if not ids:
-        patch = {}
-        if r.get("submitted_ids"):
-            patch["submitted_ids"] = []
-        if int(r.get("submit_count_today") or 0) != 0:
-            patch["submit_day"] = day
-            patch["submit_count_today"] = 0
-        if int(r.get("submitted_total") or 0) != 0:
-            patch["submitted_total"] = 0
-        if r.get("submit_log"):
-            patch["submit_log"] = []
-        return save_rule(patch) if patch else r
-
-    with get_session() as s:
-        jobs = list(s.exec(select(Job).where(Job.id.in_(ids))).all())
-    by_id = {str(j.id): j for j in jobs if j and (j.status == "applied" or j.applied_at is not None)}
-    valid_ids = [jid for jid in ids if jid in by_id]
-    removed_count = max(0, len(ids) - len(valid_ids))
-    today_count = sum(1 for jid in valid_ids if _date_key(by_id[jid].applied_at) == day)
-    old_total = int(r.get("submitted_total") or 0)
-    fixed_total = max(len(valid_ids), old_total - removed_count)
-
-    patch = {}
-    if ids != valid_ids:
-        patch["submitted_ids"] = valid_ids
-        valid_titles = {by_id[jid].title for jid in valid_ids}
-        patch["submit_log"] = [
-            entry for entry in (r.get("submit_log") or [])
-            if entry.get("title") in valid_titles
-        ][:50]
-    if r.get("submit_day") != day or int(r.get("submit_count_today") or 0) != today_count:
-        patch["submit_day"] = day
-        patch["submit_count_today"] = today_count
-    if old_total != fixed_total:
-        patch["submitted_total"] = fixed_total
-    return save_rule(patch) if patch else r
-
-
 def submitted_today() -> int:
-    """Сколько автоотправок сделано сегодня (счётчик сбрасывается в новый день)."""
-    r = reconcile_submitted_state()
-    return int(r.get("submit_count_today") or 0) if r.get("submit_day") == _today() else 0
+    """Сколько автоотправок сделано сегодня. Вычисляется из реестра заявок —
+    прежний ручной счётчик с «ремонтом» (reconcile) больше не нужен: строкам
+    таблицы, в отличие от списка в settings.json, нечего терять."""
+    return applications.submitted_today_count()
 
 
 def submit_log() -> list:
-    return get_rule().get("submit_log") or []
+    return applications.submit_log()
 
 
 def set_autosubmit_baseline() -> None:
@@ -624,7 +577,7 @@ def _eligible_all(rule: dict) -> list[Job]:
     - scope=new (по умолчанию): только появившиеся ПОСЛЕ включения (нет в baseline);
     - scope=all: все подходящие сейчас (baseline игнорируется).
     Уже отправленные ботом исключаются всегда. Свежие — первыми."""
-    done = set(rule.get("submitted_ids") or []) | set(rule.get("submitting_ids") or [])
+    done = applications.submitted_ids() | applications.submitting_ids()
     if (rule.get("submit_scope") or "new") == "all":
         todo = [j for j in find_matches() if j.id not in done]
     else:
@@ -653,50 +606,24 @@ def scope_all_pool(rule: dict | None = None) -> int:
     return len(_eligible_all(r))
 
 
-def mark_submitting(ids) -> None:
-    r = get_rule()
-    current = _dedupe_ids(r.get("submitting_ids") or [])
-    incoming = _dedupe_ids(ids)
-    merged = _dedupe_ids(current + incoming)
-    if merged != current:
-        save_rule({"submitting_ids": merged[-500:]})
+def mark_submitting(ids, origin: str = "autopilot") -> None:
+    """Пометить в реестре: подача запущена (браузер пошёл заполнять)."""
+    applications.mark_submitting(ids, origin=origin)
 
 
 def clear_submitting(ids) -> None:
-    remove = set(_dedupe_ids(ids))
-    if not remove:
-        return
-    r = get_rule()
-    current = _dedupe_ids(r.get("submitting_ids") or [])
-    kept = [jid for jid in current if jid not in remove]
-    if kept != current:
-        save_rule({"submitting_ids": kept})
+    """Подача не подтвердилась: строки переходят в failed. Автоотправка сможет
+    попробовать снова (как и раньше), а в TG повторно не предложим."""
+    applications.mark_failed(ids)
 
 
 def record_submitted(jobs) -> None:
-    r = get_rule()
-    day = _today()
-    count = int(r.get("submit_count_today") or 0) if r.get("submit_day") == day else 0
-    log = list(r.get("submit_log") or [])
-    done = set(r.get("submitted_ids") or [])
-    new_jobs = [j for j in jobs if j and j.id not in done]
-    if not new_jobs:
-        return
-    now = _dt.datetime.now().strftime("%d.%m %H:%M")
-    for j in new_jobs:
-        done.add(j.id)
-        log.insert(0, {"ts": now, "title": j.title})
-    total = int(r.get("submitted_total") or 0) + len(new_jobs)
-    save_rule({
-        "submit_day": day,
-        "submit_count_today": count + len(new_jobs),
-        "submit_log": log[:50],
-        "submitted_ids": list(done),
-        "submitted_total": total,
-    })
-    clear_submitting([j.id for j in new_jobs])
-    titles = "; ".join(j.title for j in new_jobs[:5])
-    log_event("submit", f"Подал заявок: {len(new_jobs)} — {titles}")
+    """Зафиксировать реально поданные в реестре. Счётчики (сегодня/всего/журнал)
+    вычисляются из реестра — им больше нечего терять. Идемпотентно."""
+    fresh = applications.record_submitted(jobs)
+    if fresh:
+        titles = "; ".join(j.title for j in fresh[:5])
+        log_event("submit", f"Подал заявок: {len(fresh)} — {titles}")
 
 
 # ── Режим «по разрешению» через Telegram ───────────────────────────────
@@ -715,8 +642,8 @@ def tg_pending_add(job_id: str, message_id) -> None:
     pend = [p for p in (r.get("tg_pending") or []) if p.get("job_id") != job_id]
     pend.append({"job_id": job_id, "message_id": message_id,
                  "ts": _dt.datetime.now().isoformat(timespec="seconds")})
-    offered = set(r.get("tg_offered_ids") or []); offered.add(job_id)
-    save_rule({"tg_pending": pend[-100:], "tg_offered_ids": list(offered)[-500:]})
+    save_rule({"tg_pending": pend[-100:]})
+    applications.mark_offered(job_id)   # гейт F27: «предложено» — навсегда в реестре
 
 
 def tg_eligible(limit: int = 5, include_existing: bool = False) -> list[Job]:
@@ -729,8 +656,8 @@ def tg_eligible(limit: int = 5, include_existing: bool = False) -> list[Job]:
     но всё равно не дублирует уже предложенные/пропущенные/поданные.
     """
     r = get_rule()
-    skip = (set(r.get("submitted_ids") or []) | set(r.get("tg_offered_ids") or [])
-            | set(r.get("tg_skipped") or []) | set(r.get("submitting_ids") or []))
+    skip = (applications.submitted_ids() | applications.offered_ids()
+            | applications.skipped_ids() | applications.submitting_ids())
     if not include_existing and (r.get("submit_scope") or "new") != "all":
         skip |= set(r.get("autosubmit_baseline") or [])
     todo = [j for j in find_matches() if j.id not in skip]
@@ -744,8 +671,8 @@ def tg_queue_stats() -> dict:
     return {
         "found": len(find_matches()),
         "pending": len(r.get("tg_pending") or []),
-        "offered": len(r.get("tg_offered_ids") or []),
-        "skipped": len(r.get("tg_skipped") or []),
+        "offered": len(applications.offered_ids()),
+        "skipped": len(applications.skipped_ids()),
         "baseline": len(r.get("autosubmit_baseline") or []),
         "eligible_new": len(tg_eligible(10000, include_existing=False)),
         "eligible_current": len(tg_eligible(10000, include_existing=True)),
@@ -762,21 +689,21 @@ def tg_decide(job_id: str, approve: bool, launcher) -> str:
     title = (job.title if job else "вакансия")
     t = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     if not approve:
-        skipped = set(r.get("tg_skipped") or []); skipped.add(job_id)
-        save_rule({"tg_skipped": list(skipped)[-1000:]})
+        applications.mark_skipped(job_id)
         log_event("info", f"TG: пропущено — {title}")
         return f"❌ <b>Пропущено</b>\n{t}"
     latest = get_rule()
-    if job_id in set(latest.get("submitted_ids") or []):
+    state = applications.state_of(job_id)
+    if state == "submitted":
         return f"ℹ️ <b>Уже подавалось ранее</b>\n{t}"
-    if job_id in set(latest.get("submitting_ids") or []):
+    if state == "submitting":
         return f"ℹ️ <b>Подача уже запущена</b>\n{t}"
     if not job:
         return "⚠️ Вакансия больше недоступна."
     if not _matches(job, latest, settings_store.get_home()):
         log_event("info", f"TG: карточка устарела и не подходит под текущие фильтры — {title}")
         return f"⚠️ <b>Карточка устарела</b>\n{t}\n\nЭта вакансия больше не подходит под текущие фильтры."
-    mark_submitting([job_id])
+    mark_submitting([job_id], origin="telegram")
     try:
         launcher([job_id])
     except Exception as e:  # noqa: BLE001
@@ -791,7 +718,7 @@ def partition_offered(job_ids, offered_ids):
 
     Защита F27: реальную (необратимую) подачу запускает решение из облака. Мы
     честим только те вакансии, карточки которых приложение само отправляло
-    пользователю (они записаны в tg_offered_ids). Решение по «непредложенной»
+    пользователю (реестр заявок хранит offered_at). Решение по «непредложенной»
     вакансии (сбой/подмена в облаке) сюда не попадёт. Чистая функция, дублирует
     dedupe и отсеивает пустые id. Порядок сохраняется."""
     offered = set(offered_ids or [])
@@ -819,7 +746,7 @@ def tg_submit_batch(job_ids, launcher) -> dict:
     r = get_rule()
     # F27: подаём только вакансии, чьи карточки приложение само отправляло.
     # Решение из облака по «непредложенной» вакансии отклоняем (сбой/подмена).
-    ids, not_offered = partition_offered(ids, r.get("tg_offered_ids") or [])
+    ids, not_offered = partition_offered(ids, applications.offered_ids())
     skipped: list[dict] = [
         {"job_id": jid, "state": "failed", "reason": "not_offered", "title": ""}
         for jid in not_offered
@@ -835,8 +762,8 @@ def tg_submit_batch(job_ids, launcher) -> dict:
 
     latest = get_rule()
     home = settings_store.get_home()
-    submitted = set(latest.get("submitted_ids") or [])
-    submitting = set(latest.get("submitting_ids") or [])
+    submitted = applications.submitted_ids()
+    submitting = applications.submitting_ids()
     started: list[str] = []
     started_jobs: list[Job] = []
 
@@ -876,7 +803,7 @@ def tg_submit_batch(job_ids, launcher) -> dict:
     if not started:
         return {"started": [], "skipped": skipped}
 
-    mark_submitting(started)
+    mark_submitting(started, origin="telegram")
     try:
         launcher(started)
     except Exception as e:  # noqa: BLE001

@@ -53,6 +53,28 @@ class Job(SQLModel, table=True):
     applied_confidence: Optional[str] = None
 
 
+class Application(SQLModel, table=True):
+    """Реестр заявок — единственный источник правды о фактах вокруг подачи.
+
+    Одна строка на (source, job_id). Раньше эти факты жили СПИСКАМИ id в
+    settings.json (submitted_ids / submitting_ids / tg_offered_ids / tg_skipped)
+    — четыре копии правды расходились и рождали баги класса F35. Теперь состояние
+    заявки — одна запись здесь; settings.json хранит только настройки.
+
+    state: offered (карточка предложена, решения нет) | skipped (пропустил) |
+           submitting (подача запущена) | submitted (подана) | failed (не подтвердилась).
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source: str = Field(default="salling", index=True)   # коннектор (пока только salling)
+    job_id: str = Field(index=True)
+    state: str = "offered"
+    origin: str = ""                       # autopilot | telegram | batch | manual | migrated
+    confidence: Optional[str] = None       # receipt | indirect | manual (для submitted)
+    offered_at: Optional[datetime] = None  # когда карточку предлагали (гейт F27)
+    submitted_at: Optional[datetime] = None
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 from sqlalchemy import event
 
 # timeout=30: ждать освобождения блокировки до 30с, а не падать сразу «database is

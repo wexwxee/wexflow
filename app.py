@@ -928,6 +928,13 @@ except Exception:  # noqa: BLE001 — без журнала изменений �
     templates.env.globals["CHANGELOG"] = []
     templates.env.globals["APP_VERSION"] = ""
 init_db()
+# Реестр заявок (шаг 3): один раз переносим старые списки id из settings.json
+# в таблицу application. Сбой миграции не должен мешать запуску приложения.
+try:
+    import applications as _applications
+    _applications.ensure_migrated()
+except Exception as _exc:  # noqa: BLE001
+    print(f"реестр заявок: миграция не удалась — {_exc}")
 
 
 def _job_address(job: Job) -> str:
