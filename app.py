@@ -236,14 +236,35 @@ _manual_apply_lock = threading.Lock()
 _last_manual_apply_ts = 0.0
 
 
+# Последний запущенный НАМИ воркер подачи (шаг 4): пока держим живой хэндл,
+# «идёт ли подача» решает сам процесс, а не возраст файла прогресса.
+_last_apply_proc = None
+_last_apply_spawn_ts = 0.0
+
+
+def _progress_started_ts(data: dict) -> float:
+    """Момент старта пачки из файла прогресса (или -1, если не разобрать)."""
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(data.get("started_at") or "")).timestamp()
+    except Exception:  # noqa: BLE001
+        return -1.0
+
+
 def _apply_progress_active() -> bool:
-    """Пишет ли прямо сейчас какой-то воркер apply.py живой прогресс (свежий, <=240с).
-    4 минуты тишины — считаем процесс оборвавшимся."""
+    """Идёт ли прямо сейчас воркер apply.py (по его живому прогрессу).
+    Шаг 4: если воркера запускали мы и держим хэндл — спрашиваем сам процесс
+    (жив/завершился), а не гадаем по возрасту файла. Правило «4 минуты тишины»
+    остаётся только страховкой для воркера-сироты: приложение перезапустили,
+    а воркер прошлого запуска ещё дописывает пачку."""
     try:
         p = config.DATA_DIR / "apply_progress.json"
         if p.exists():
             data = json.loads(p.read_text(encoding="utf-8"))
             if data.get("active"):
+                proc = _last_apply_proc
+                if proc is not None and _progress_started_ts(data) >= _last_apply_spawn_ts - 10:
+                    return proc.poll() is None
                 from datetime import datetime
                 age = (datetime.now() - datetime.fromisoformat(data.get("updated_at") or "")).total_seconds()
                 return age <= 240
@@ -319,9 +340,10 @@ def _apply_runner_loop() -> None:
                 _apply_runner_busy = False
                 return
             batch = _apply_queue.pop(0)
+        spawn_ts = time.time()  # чтобы отличить НАШ файл прогресса от файла прошлой пачки
         proc = _spawn_salling_apply(batch, submit=True, auto_close=True)
-        # следим за пачкой и шлём статусы, пока процесс жив (или до дедлайна)
-        _watch_and_report_apply_batch(batch, proc)
+        # следим за пачкой и шлём статусы, пока процесс жив
+        _watch_and_report_apply_batch(batch, proc, spawn_ts=spawn_ts)
         # гарантированно освобождаем браузер перед следующей пачкой:
         # если процесс завис, снимаем его — иначе следующая пачка снова
         # упрётся в занятый профиль браузера
@@ -334,7 +356,30 @@ def _apply_runner_loop() -> None:
         _sync_applied_to_cloud(force=True)  # сразу обновим «Поданные» в Mini App
 
 
-def _watch_and_report_apply_batch(job_ids: list[str], proc=None) -> None:
+def _worker_progress_for(spawn_ts: float) -> dict | None:
+    """Прогресс воркера из apply_progress.json, если файл написан пачкой,
+    запущенной не раньше spawn_ts. Иначе None — это ещё файл ПРОШЛОЙ пачки,
+    его итогам про наши заявки верить нельзя."""
+    try:
+        p = config.DATA_DIR / "apply_progress.json"
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if _progress_started_ts(data) >= spawn_ts - 10:
+            return data
+    except Exception:  # noqa: BLE001 — нет/битый файл → итогов ещё нет
+        pass
+    return None
+
+
+def _watch_and_report_apply_batch(job_ids: list[str], proc=None,
+                                  spawn_ts: float | None = None) -> None:
+    """Следит за пачкой подачи и разносит итоги (реестр заявок + Mini App).
+
+    Шаг 4 (Блок 1): итог каждой заявки читаем из apply_progress.json — его пишет
+    сам воркер apply.py по факту отправки («ok»/«failed»), а не угадываем по базе
+    с дедлайном «180 секунд на заявку». Ждём столько, сколько живёт процесс
+    воркера; страховка от зависшего — не тикающий дедлайн, а «прогресс не менялся
+    10 минут». Заявки, которых воркер не касался (отсеяны страховкой перед
+    запуском / воркер оборвался), в конце решаются по базе, как раньше."""
     ids = []
     seen = set()
     for raw in job_ids or []:
@@ -344,57 +389,76 @@ def _watch_and_report_apply_batch(job_ids: list[str], proc=None) -> None:
             ids.append(jid)
     if not ids:
         return
+    if spawn_ts is None:
+        spawn_ts = time.time()
 
     for jid in ids:
         _report_apply_result_safe(jid, "submitting", "WexFlow заполняет форму")
 
     pending = set(ids)
-    deadline = time.time() + max(300, 180 * len(ids))
-    while pending and time.time() < deadline and not _tg_stop.is_set():
-        submitted_jobs = []
-        try:
-            with get_session() as s:
-                for jid in list(pending):
-                    job = s.get(Job, jid)
-                    if job is not None and job.status == "applied":
-                        submitted_jobs.append(job)
-        except Exception:  # noqa: BLE001
-            submitted_jobs = []
 
-        if submitted_jobs:
-            submitted_ids = [j.id for j in submitted_jobs]
-            pending.difference_update(submitted_ids)
-            autopilot.record_submitted(submitted_jobs)
-            for jid in submitted_ids:
+    def _settle(states: dict) -> None:
+        """Разнести итоги воркера: ok → в реестр поданных, failed → в failed."""
+        ok_ids = [jid for jid in list(pending) if states.get(jid) == "ok"]
+        failed_ids = [jid for jid in list(pending) if states.get(jid) == "failed"]
+        if ok_ids:
+            pending.difference_update(ok_ids)
+            try:
+                with get_session() as s:
+                    jobs = [s.get(Job, jid) for jid in ok_ids]
+                autopilot.record_submitted([j for j in jobs if j is not None])
+            except Exception:  # noqa: BLE001 — реестр не должен ронять разбор итогов
+                pass
+            for jid in ok_ids:
                 _report_apply_result_safe(jid, "submitted", "Заявка отправлена")
+        if failed_ids:
+            pending.difference_update(failed_ids)
+            autopilot.clear_submitting(failed_ids)
+            for jid in failed_ids:
+                _report_apply_result_safe(jid, "failed", "Подача не подтверждена — проверь вручную")
 
+    last_mark = None
+    last_change = time.time()
+    while pending and not _tg_stop.is_set():
+        prog = _worker_progress_for(spawn_ts)
+        items = (prog or {}).get("items") or []
+        _settle({str(it.get("id")): str(it.get("state") or "") for it in items})
         if not pending:
             return
-
-        if proc is not None and proc.poll() is not None:
-            break
+        if proc is None or proc.poll() is not None:
+            break  # воркер завершился (или вовсе не запускался) — добор ниже
+        mark = (prog or {}).get("updated_at")
+        if mark != last_mark:
+            last_mark = mark
+            last_change = time.time()
+        elif time.time() - last_change > 600:
+            break  # воркер жив, но 10 минут не пишет прогресс — считаем зависшим
         _tg_stop.wait(3)
 
-    if pending:
-        # финальная перепроверка: процесс мог отметить «applied» в самый
-        # последний момент — как раз когда мы выходили из цикла. Не врём
-        # «не удалось» про заявку, которая на деле подалась.
-        really_failed = []
-        try:
-            with get_session() as s:
-                for jid in list(pending):
-                    job = s.get(Job, jid)
-                    if job is not None and job.status == "applied":
-                        autopilot.record_submitted([job])
-                        _report_apply_result_safe(jid, "submitted", "Заявка отправлена")
-                    else:
-                        really_failed.append(jid)
-        except Exception:  # noqa: BLE001
-            really_failed = list(pending)
-        if really_failed:
-            autopilot.clear_submitting(really_failed)
-            for jid in really_failed:
-                _report_apply_result_safe(jid, "failed", "Подача не подтверждена — проверь вручную")
+    if not pending:
+        return
+    # Добор: воркер мог дописать итог в самый последний момент — перечитываем
+    # файл ещё раз. Для заявок, которых в итогах воркера нет вовсе, решаем по
+    # базе: applied — значит подано, иначе честно «не подтверждено».
+    prog = _worker_progress_for(spawn_ts)
+    items = (prog or {}).get("items") or []
+    _settle({str(it.get("id")): str(it.get("state") or "") for it in items})
+    really_failed = []
+    try:
+        with get_session() as s:
+            for jid in list(pending):
+                job = s.get(Job, jid)
+                if job is not None and job.status == "applied":
+                    autopilot.record_submitted([job])
+                    _report_apply_result_safe(jid, "submitted", "Заявка отправлена")
+                else:
+                    really_failed.append(jid)
+    except Exception:  # noqa: BLE001
+        really_failed = list(pending)
+    if really_failed:
+        autopilot.clear_submitting(really_failed)
+        for jid in really_failed:
+            _report_apply_result_safe(jid, "failed", "Подача не подтверждена — проверь вручную")
 
 
 def _apply_result_msg(state: str, reason: str) -> str:
@@ -896,15 +960,24 @@ def api_apply_progress():
             return {"active": False}
         data = json.loads(p.read_text(encoding="utf-8"))
         if data.get("active"):
-            ts = data.get("updated_at") or ""
-            try:
-                from datetime import datetime
-                age = (datetime.now() - datetime.fromisoformat(ts)).total_seconds()
-                if age > 240:  # 4 мин тишины — воркер, видимо, оборвался
+            proc = _last_apply_proc
+            if proc is not None and _progress_started_ts(data) >= _last_apply_spawn_ts - 10:
+                # Шаг 4: это файл НАШЕГО воркера — спрашиваем сам процесс.
+                # Жив → прогресс честно активен (даже если долго ждёт логина);
+                # умер, не закрыв файл → оборвался, показываем сразу, без 4 минут.
+                if proc.poll() is not None:
                     data["active"] = False
                     data["stalled"] = True
-            except Exception:  # noqa: BLE001
-                pass
+            else:
+                ts = data.get("updated_at") or ""
+                try:
+                    from datetime import datetime
+                    age = (datetime.now() - datetime.fromisoformat(ts)).total_seconds()
+                    if age > 240:  # 4 мин тишины — воркер-сирота, видимо, оборвался
+                        data["active"] = False
+                        data["stalled"] = True
+                except Exception:  # noqa: BLE001
+                    pass
         return data
     except Exception:  # noqa: BLE001
         return {"active": False}
@@ -2695,12 +2768,15 @@ def _run_apply_worker(ids, submit: bool = False, auto_close: bool = False):
     if submit and auto_close:
         cmd.append("--auto-close")
     log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
+    global _last_apply_proc, _last_apply_spawn_ts
     try:
-        return subprocess.Popen(
+        _last_apply_spawn_ts = time.time()
+        _last_apply_proc = subprocess.Popen(
             cmd, cwd=str(config.BASE_DIR),
             stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=env,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
+        return _last_apply_proc
     except Exception as e:
         # F38: если воркер подачи не удалось ДАЖЕ запустить (нет exe/прав, заблокировал
         # антивирус) — оставляем причину в журнале подачи. Иначе apply_last.log остался

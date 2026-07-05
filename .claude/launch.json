@@ -14,6 +14,12 @@
       "port": 8012
     },
     {
+      "name": "audit-preview",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["tools\\run_preview_audit.py"],
+      "port": 8011
+    },
+    {
       "name": "seven11",
       "runtimeExecutable": "C:\\seven11-apply\\.venv\\Scripts\\python.exe",
       "runtimeArgs": ["C:\\seven11-apply\\web_app.py"],

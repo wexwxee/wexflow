@@ -1250,7 +1250,10 @@ def main(argv=None):
     ids = [a for a in args if not a.startswith("--")]
     if "--login" in args:
         run(None, login_only=True, web_mode=web_mode, keep_open=keep_open)
-    elif len(ids) > 1:
+    elif len(ids) > 1 or (submit and ids):
+        # Реальная отправка даже ОДНОГО id идёт через run_batch: только он пишет
+        # apply_progress.json с итогом по каждой заявке, который читает приложение
+        # (шаг 4 — воркер возвращает результат, а не «приложение угадывает по базе»).
         run_batch(ids, submit=submit, web_mode=web_mode, keep_open=keep_open)
     else:
         run(ids[0], web_mode=web_mode, submit=submit, keep_open=keep_open)
