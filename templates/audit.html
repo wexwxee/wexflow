@@ -50,6 +50,18 @@
   .badge.cf-receipt { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
   .badge.cf-indirect { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); }
   .badge.cf-manual { background:var(--glass); color:var(--muted); border-color:var(--glass-line); }
+  /* скрин-доказательство: кнопка-бейдж + просмотр поверх страницы */
+  .badge.cf-proof { cursor:pointer; min-height:0; padding:3px 10px; font-size:12px; }
+  .badge.cf-proof:hover { border-color:var(--accent); color:var(--accent); }
+  .proof-overlay { position:fixed; inset:0; z-index:3200; display:grid; place-items:center;
+    padding:28px; background:rgba(0,0,0,.72); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+  .proof-overlay[hidden] { display:none; }
+  .proof-box { max-width:min(920px, 94vw); max-height:88vh; display:grid; gap:8px; }
+  .proof-box img { max-width:100%; max-height:80vh; border-radius:12px;
+    border:1px solid var(--glass-line); box-shadow:0 30px 80px rgba(0,0,0,.6); background:#fff; }
+  .proof-cap { display:flex; justify-content:space-between; align-items:center; gap:12px;
+    color:#e8efe9; font-size:13px; }
+  .proof-cap button { min-height:0; padding:5px 12px; }
 </style>
 {% endblock %}
 
@@ -90,6 +102,10 @@
           <span class="audit-title">{{ r.title }}</span>
           <span class="audit-sub">{% if r.brand %}{{ brand_label(r.brand) }}{% endif %}{% if r.brand and r.city %} · {% endif %}{% if r.city %}{{ r.city }}{% endif %}</span>
         </span>
+        {% if r.proof %}
+          <button type="button" class="badge cf-proof" data-proof="/applied-proof/{{ r.proof }}"
+                  title="Открыть сохранённый снимок экрана результата подачи">{{ ic.i('file', 11) }} скрин</button>
+        {% endif %}
         {% if r.confidence == 'receipt' %}
           <span class="badge cf-receipt" title="Сайт Salling показал квитанцию о приёме заявки">{{ ic.i('check', 11) }} квитанция</span>
         {% elif r.confidence == 'indirect' %}
@@ -102,6 +118,33 @@
       {% endfor %}
     {% endfor %}
   {% endif %}
+
+  <div class="proof-overlay" id="proofOverlay" hidden>
+    <div class="proof-box">
+      <div class="proof-cap">
+        <span>Снимок результата подачи — сохранён в момент отправки</span>
+        <button type="button" id="proofClose">Закрыть</button>
+      </div>
+      <img id="proofImg" alt="Скриншот результата подачи">
+    </div>
+  </div>
+  <script>
+    (function () {
+      var overlay = document.getElementById('proofOverlay');
+      var img = document.getElementById('proofImg');
+      function close() { overlay.hidden = true; img.removeAttribute('src'); }
+      document.querySelectorAll('.cf-proof').forEach(function (b) {
+        b.addEventListener('click', function (e) {
+          e.preventDefault(); e.stopPropagation();   // не уходить по ссылке-строке
+          img.src = b.dataset.proof;
+          overlay.hidden = false;
+        });
+      });
+      document.getElementById('proofClose').addEventListener('click', close);
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !overlay.hidden) close(); });
+    })();
+  </script>
 </section>
 {{ ui.shell_end() }}
 {% endblock %}

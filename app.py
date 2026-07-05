@@ -1789,11 +1789,42 @@ def _audit_groups(entries, now):
     return groups
 
 
+def _applied_proofs() -> dict:
+    """Карта «id вакансии/requisition → имя файла-скриншота» из logs/applied.
+
+    Воркер подачи сохраняет скрин результата как YYYYmmdd_HHMMSS_<rid>.png
+    (apply._save_proof), где rid = requisition_id или job.id. Файлы отсортированы
+    по имени = по времени, поэтому последний в списке — самый свежий скрин."""
+    proof_dir = config.DATA_DIR / "logs" / "applied"
+    proofs: dict[str, str] = {}
+    try:
+        for f in sorted(proof_dir.glob("*.png")):
+            m = re.match(r"\d{8}_\d{6}_(.+)\.png$", f.name)
+            if m:
+                proofs[m.group(1)] = f.name
+    except OSError:
+        pass
+    return proofs
+
+
+@app.get("/applied-proof/{name}")
+def applied_proof(name: str):
+    """Отдаёт скрин-доказательство подачи из logs/applied. Только просмотр;
+    имя строго проверяется, чтобы нельзя было выбраться из папки скринов."""
+    if not re.fullmatch(r"[\w.\-]+\.png", name) or ".." in name:
+        raise HTTPException(status_code=404)
+    p = config.DATA_DIR / "logs" / "applied" / name
+    if not p.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(p, media_type="image/png")
+
+
 @app.get("/audit", response_class=HTMLResponse)
 def audit_log(request: Request):
     """Журнал аудита: неизменный список всего, что реально отправлено под именем
     пользователя (по applied_at). Только чтение — ничего не подаёт и не меняет."""
     from db import utcnow
+    proofs = _applied_proofs()
     with get_session() as s:
         rows = s.exec(
             select(Job).where(Job.applied_at.is_not(None)).order_by(Job.applied_at.desc())
@@ -1802,6 +1833,7 @@ def audit_log(request: Request):
             "id": j.id, "title": j.title, "city": j.city, "brand": j.brand,
             "status": j.status, "applied_at": j.applied_at,
             "confidence": j.applied_confidence or "",
+            "proof": proofs.get(str(j.requisition_id or "")) or proofs.get(str(j.id)) or "",
         } for j in rows]
     return templates.TemplateResponse("audit.html", {
         "request": request,
