@@ -91,7 +91,10 @@ def _redirect_back(
 
 # --- автообновление вакансий: каждые 30 минут + при старте, если данные устарели ---
 _sync_lock = threading.Lock()
-_sync_state = {"running": False, "last_error": "", "last_scan": 0.0}
+_sync_state = {"running": False, "last_error": "", "last_scan": 0.0,
+               # сторожа деградации (шаг 7): сколько вакансий отдал источник в
+               # последний раз (None — ещё не проверяли) и упал ли сам синк
+               "last_hits": None, "sync_failed": False}
 _scheduler = None  # BackgroundScheduler; нужен, чтобы знать время следующей проверки
 
 # частота фонового скана вакансий: автопилот включён — проверяем часто (почти в
@@ -126,7 +129,13 @@ def _sync_jobs():
         return
     _sync_state["running"] = True
     try:
-        scraper.sync()
+        try:
+            info = scraper.sync() or {}
+            _sync_state["last_hits"] = int(info.get("hits") or 0)
+            _sync_state["sync_failed"] = False
+        except Exception:
+            _sync_state["sync_failed"] = True  # источник не ответил — сторож заметит
+            raise
         _sync_state["last_error"] = ""
         autopilot.scan_and_notify()  # автопилот: уведомить о новых совпадениях
         # автоотправка (фаза 3, по умолчанию ВЫКЛ): отправляет ТОЛЬКО при явно
@@ -981,6 +990,41 @@ def api_apply_progress():
         return data
     except Exception:  # noqa: BLE001
         return {"active": False}
+
+
+def _health_warnings(last_hits, sync_failed: bool, fail_streak: int) -> list:
+    """Сторожа деградации (шаг 7): приложение стоит на чужих недокументированных
+    опорах (лента вакансий Salling, их форма подачи) — падение опоры надо хотя бы
+    ЗАМЕЧАТЬ и говорить о нём пользователю, а не молча показывать пустой список.
+    Чистая функция над снимком состояния — легко покрыть тестом."""
+    warns = []
+    if sync_failed or last_hits == 0:
+        warns.append({
+            "id": "source-down",
+            "text": "Источник вакансий не отвечает: последняя проверка не принесла "
+                    "ни одной вакансии. Обычно это временный сбой на стороне Salling. "
+                    "Если баннер висит несколько часов — напишите в поддержку @wexwxeee.",
+        })
+    if fail_streak >= 3:
+        warns.append({
+            "id": "apply-unconfirmed",
+            "text": f"Подача {fail_streak} раз подряд не подтвердилась. Возможно, "
+                    "Salling изменил сайт и WexFlow больше не видит квитанцию. "
+                    "Проверьте почту, подались ли заявки, и напишите в поддержку @wexwxeee.",
+        })
+    return warns
+
+
+@app.get("/api/health")
+def api_health():
+    """Сторожа деградации для баннера в шапке (опрашивается из base.html)."""
+    try:
+        import applications
+        streak = applications.failure_streak()
+    except Exception:  # noqa: BLE001 — сторож не должен ронять страницу
+        streak = 0
+    return {"warnings": _health_warnings(
+        _sync_state.get("last_hits"), bool(_sync_state.get("sync_failed")), streak)}
 
 
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")

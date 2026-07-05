@@ -625,6 +625,30 @@ html[data-theme="light"] .glass {
   color: var(--err-txt);
   border: 1px solid var(--err-line);
 }
+.system-response.warn {
+  background: var(--warn-bg);
+  color: var(--warn-txt);
+  border: 1px solid var(--warn-line);
+}
+/* сторожа деградации: баннер кликабелен (крестик), в отличие от тостов */
+.health-warn {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 8px;
+}
+.health-warn-close {
+  margin-left: auto;
+  flex: none;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
 .system-response-stack {
   position: fixed;
   top: calc(var(--desktop-frame-h) + 56px);

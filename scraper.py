@@ -179,6 +179,9 @@ def sync():
             print(f"  координат уточнено: {upd}")
 
     print(f"Новых: {new_count} | Активных всего: {len(seen_ids)} | Закрыто в этот раз: {closed}")
+    # Сводка для сторожей деградации (шаг 7): hits — сколько вакансий отдал
+    # источник. 0 — подозрительно (у Salling всегда сотни позиций).
+    return {"hits": len(hits), "new": new_count, "closed": closed}
 
 
 if __name__ == "__main__":

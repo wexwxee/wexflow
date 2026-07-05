@@ -21,7 +21,7 @@
     }
   })();
 </script>
-<link rel="stylesheet" href="/static/theme.css?v=20260705-style-unify">
+<link rel="stylesheet" href="/static/theme.css?v=20260705-health">
 {% block style %}{% endblock %}
 </head>
 <body>
@@ -121,6 +121,54 @@
       if (api && api.open_external) api.open_external(href);
       else window.open(href, "_blank");
     }, true);
+  })();
+</script>
+<script>
+  // Сторожа деградации (шаг 7): жёлтый баннер, когда источник вакансий не
+  // отвечает или подача несколько раз подряд не подтвердилась. Крестик прячет
+  // баннер до конца сеанса (sessionStorage), при новой проблеме он вернётся.
+  (function () {
+    var stack = null;
+    function host() {
+      if (!stack) {
+        stack = document.createElement("div");
+        stack.className = "system-response-stack health-stack";
+        stack.setAttribute("role", "status");
+        stack.setAttribute("aria-live", "polite");
+        document.body.appendChild(stack);
+      }
+      return stack;
+    }
+    function render(warns) {
+      var h = host();
+      h.querySelectorAll(".health-warn").forEach(function (el) { el.remove(); });
+      warns.forEach(function (w) {
+        try { if (sessionStorage.getItem("wf-health-" + w.id)) return; } catch (e) {}
+        var el = document.createElement("div");
+        el.className = "system-response warn health-warn";
+        var txt = document.createElement("span");
+        txt.textContent = w.text;
+        var x = document.createElement("button");
+        x.type = "button";
+        x.className = "health-warn-close";
+        x.textContent = "×";
+        x.setAttribute("aria-label", "Скрыть предупреждение");
+        x.addEventListener("click", function () {
+          try { sessionStorage.setItem("wf-health-" + w.id, "1"); } catch (e) {}
+          el.remove();
+        });
+        el.appendChild(txt);
+        el.appendChild(x);
+        h.appendChild(el);
+      });
+    }
+    function tick() {
+      fetch("/api/health").then(function (r) { return r.json(); }).then(function (d) {
+        render((d && d.warnings) || []);
+      }).catch(function () {});
+    }
+    tick();
+    setInterval(tick, 90000);
   })();
 </script>
 <script src="/static/window_chrome.js?v=20260614-drag-resize"></script>

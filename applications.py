@@ -168,6 +168,29 @@ def skipped_ids() -> set:
     return _ids_where(Application.state == "skipped")
 
 
+def _leading_failed(states) -> int:
+    """Сколько ПОДРЯД последних попыток закончились failed (свежие первыми).
+    Чистая функция над списком состояний — легко покрыть тестом."""
+    n = 0
+    for st in states:
+        if st != "failed":
+            break
+        n += 1
+    return n
+
+
+def failure_streak(limit: int = 10) -> int:
+    """Сторож деградации (шаг 7): сколько последних попыток подачи ПОДРЯД не
+    подтвердились. Попытка = строка реестра, дошедшая до исхода (submitted или
+    failed). Несколько failed подряд — вероятно, Salling изменил сайт."""
+    with get_session() as s:
+        rows = s.exec(select(Application.state).where(
+            Application.source == SOURCE,
+            Application.state.in_(("submitted", "failed")),
+        ).order_by(Application.updated_at.desc()).limit(limit)).all()
+    return _leading_failed([str(r) for r in rows])
+
+
 def submitted_today_count() -> int:
     day_start = _dt.datetime.combine(_dt.date.today(), _dt.time.min)
     with get_session() as s:
