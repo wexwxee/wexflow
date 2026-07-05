@@ -44,6 +44,13 @@ class Job(SQLModel, table=True):
     first_seen: datetime = Field(default_factory=utcnow)
     last_seen: datetime = Field(default_factory=utcnow)
     applied_at: Optional[datetime] = None
+    # Как подтверждена подача (для журнала доверия):
+    #   receipt  — сайт показал квитанцию «ansøgning modtaget» (надёжно);
+    #   indirect — форма стабильно исчезла, но квитанции не было (вероятно
+    #              подано — стоит проверить письмо от Salling);
+    #   manual   — пользователь отметил «подано» вручную (WexFlow не отправлял).
+    # None — старые записи до появления поля.
+    applied_confidence: Optional[str] = None
 
 
 from sqlalchemy import event
@@ -84,6 +91,7 @@ def _migrate():
             ("lat", "lat FLOAT"),
             ("lon", "lon FLOAT"),
             ("description_ru", "description_ru TEXT"),
+            ("applied_confidence", "applied_confidence TEXT"),
         ]:
             if name not in cols:
                 conn.execute(text(f"ALTER TABLE job ADD COLUMN {ddl}"))

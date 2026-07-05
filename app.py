@@ -1492,6 +1492,9 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
             job.status = status
             if status == "applied":
                 job.applied_at = utcnow()
+                # ручная пометка — не отправка: в журнале доверия она должна
+                # отличаться от заявок, которые WexFlow реально отправил
+                job.applied_confidence = "manual"
             s.add(job)
             s.commit()
         else:
@@ -1798,6 +1801,7 @@ def audit_log(request: Request):
         entries = [{
             "id": j.id, "title": j.title, "city": j.city, "brand": j.brand,
             "status": j.status, "applied_at": j.applied_at,
+            "confidence": j.applied_confidence or "",
         } for j in rows]
     return templates.TemplateResponse("audit.html", {
         "request": request,

@@ -1,8 +1,12 @@
 """Тесты опроса исхода отправки (apply._await_submission_outcome).
 
-Фиксируют фикс бага F35: под лагом SAP-формы подтверждение приходит с задержкой.
-Прежняя единичная мгновенная проверка возвращала неуспех — applied_at не писался.
-Новый опрос ждёт исхода до таймаута и фиксирует успех, как только он появился.
+Фиксируют фикс бага F35 и его зеркала:
+- F35: под лагом SAP-формы подтверждение приходит с задержкой; единичная
+  мгновенная проверка возвращала неуспех — applied_at не писался.
+- Зеркало F35: «кнопка Ansøg исчезла» — слабое доказательство (сбой сессии и
+  редирект выглядят так же). Теперь исходы РАЗЛИЧАЮТСЯ:
+    "receipt"  — квитанция (надёжно), "indirect" — форма ушла без квитанции
+    (вероятно подано, журнал покажет «проверь»), "none" — не подтвердилось.
 
 Браузер НЕ запускается: проверки страницы (_submission_confirmed / _ansog_present /
 accept_consent) подменяются сценарными функциями, а «страница» — заглушка без пауз.
@@ -41,35 +45,42 @@ def _run(confirmed_fn, ansog_fn, timeout_s=30.0, poll_ms=1000):
 
 
 def test_confirm_immediately():
-    # квитанция сразу → успех на первой же проверке
-    assert _run(lambda i: True, lambda i: True) is True
+    # квитанция сразу → надёжное подтверждение на первой же проверке
+    assert _run(lambda i: True, lambda i: True) == "receipt"
 
 
 def test_confirm_after_lag_is_the_F35_fix():
     # квитанция появляется поздно (лаг), кнопка всё это время видна.
-    # Прежний код проверял 1 раз в самом начале и вернул бы False (потеря F35).
-    assert _run(lambda i: i >= 10, lambda i: True, timeout_s=30) is True
+    # Прежний код проверял 1 раз в самом начале и вернул бы неуспех (потеря F35).
+    assert _run(lambda i: i >= 10, lambda i: True, timeout_s=30) == "receipt"
 
 
-def test_button_gone_stably_is_success():
-    # кнопка исчезает с опроса 2 и остаётся исчезнувшей → успех (форма ушла)
-    assert _run(lambda i: False, lambda i: i < 2) is True
+def test_button_gone_stably_is_only_indirect():
+    # кнопка исчезает с опроса 2 и остаётся исчезнувшей, квитанции нет →
+    # это НЕ надёжный успех, а «вероятно подано» (зеркало F35)
+    assert _run(lambda i: False, lambda i: i < 2) == "indirect"
+
+
+def test_receipt_beats_indirect_when_late():
+    # кнопка ушла рано, а квитанция дорисовалась чуть позже → должен победить
+    # сильный сигнал "receipt", а не поспешный "indirect"
+    assert _run(lambda i: i >= 4, lambda i: i < 2) == "receipt"
 
 
 def test_button_flicker_is_not_success():
     # кнопка «мигнула» (пропала на 1 опрос и вернулась), квитанции нет →
     # это НЕ успех: к дедлайну кнопка на месте.
-    assert _run(lambda i: False, lambda i: i != 3, timeout_s=8) is False
+    assert _run(lambda i: False, lambda i: i != 3, timeout_s=8) == "none"
 
 
-def test_never_submitted_returns_false():
+def test_never_submitted_returns_none():
     # ни квитанции, ни ухода формы за весь таймаут → неуспех
-    assert _run(lambda i: False, lambda i: True, timeout_s=5) is False
+    assert _run(lambda i: False, lambda i: True, timeout_s=5) == "none"
 
 
 def test_timeout_respected_when_unresolved():
-    # маленький таймаут: должен завершиться (не зациклиться) и вернуть False
-    assert _run(lambda i: False, lambda i: True, timeout_s=3, poll_ms=1000) is False
+    # маленький таймаут: должен завершиться (не зациклиться) и вернуть "none"
+    assert _run(lambda i: False, lambda i: True, timeout_s=3, poll_ms=1000) == "none"
 
 
 if __name__ == "__main__":

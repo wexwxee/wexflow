@@ -796,25 +796,28 @@ def _submission_confirmed(page) -> bool:
     return False
 
 
-def _await_submission_outcome(page, timeout_s: float = 30.0, poll_ms: int = 1000) -> bool:
+def _await_submission_outcome(page, timeout_s: float = 30.0, poll_ms: int = 1000) -> str:
     """Ждёт исхода отправки, ОПРАШИВАЯ страницу до timeout_s секунд.
 
     Зачем: SAP-форма показывает квитанцию и убирает кнопку «Ansøg» с задержкой.
     Прежняя единичная мгновенная проверка под лагом видела «ещё не готово» и
     возвращала неуспех — заявка уходила в Salling, но applied_at НЕ записывался
     (баг F35: потеря записи и, как следствие, повторные подачи-дубли). Теперь
-    даём форме время: успех фиксируем, как только он появился, а неуспех — лишь
-    когда за весь таймаут ни квитанции, ни ухода формы так и не случилось.
+    даём форме время и, главное, РАЗЛИЧАЕМ силу доказательства (F35-зеркало:
+    «кнопка исчезла» — не то же самое, что «сайт подтвердил приём»).
 
-    True, если: появилась страница-квитанция (_submission_confirmed) ИЛИ кнопка
-    «Ansøg» СТАБИЛЬНО исчезла (форма ушла). Иначе (после дедлайна) — False.
+    Возвращает:
+      "receipt"  — появилась страница-квитанция (надёжное подтверждение);
+      "indirect" — квитанции не было, но кнопка «Ansøg» СТАБИЛЬНО исчезла
+                   (вероятно подано: сбой сессии/редирект дают ту же картину);
+      "none"     — за весь таймаут ни квитанции, ни ухода формы.
     """
     stable_needed_s = 2.0          # кнопка должна пропасть устойчиво, а не мигнуть
     gone_for_s = None
     elapsed_s = 0.0
     while elapsed_s < timeout_s:
         if _submission_confirmed(page):
-            return True
+            return "receipt"
         # поздний диалог согласия иногда всплывает уже после клика — гасим
         try:
             accept_consent(page)
@@ -823,18 +826,28 @@ def _await_submission_outcome(page, timeout_s: float = 30.0, poll_ms: int = 1000
         if not _ansog_present(page):
             gone_for_s = (gone_for_s or 0.0) + poll_ms / 1000.0
             if gone_for_s >= stable_needed_s:
-                return True
+                # кнопка ушла надолго — но подождём квитанцию ещё немного:
+                # она сильнее, и часто дорисовывается через пару секунд
+                for _ in range(3):
+                    if _submission_confirmed(page):
+                        return "receipt"
+                    page.wait_for_timeout(poll_ms)
+                    elapsed_s += poll_ms / 1000.0
+                return "indirect"
         else:
             gone_for_s = None       # кнопка снова видна — сброс «устойчивости»
         page.wait_for_timeout(poll_ms)
         elapsed_s += poll_ms / 1000.0
     # финальная проверка на границе дедлайна
-    return _submission_confirmed(page) or not _ansog_present(page)
+    if _submission_confirmed(page):
+        return "receipt"
+    return "indirect" if not _ansog_present(page) else "none"
 
 
-def submit_application(page) -> bool:
+def submit_application(page) -> str:
     """Жмёт «Ansøg», подтверждает согласие и проверяет, что заявка реально ушла.
-    Возвращает True ТОЛЬКО если отправка подтвердилась."""
+    Возвращает исход: "receipt" (квитанция) / "indirect" (форма ушла без
+    квитанции — вероятно подано) / "none" (отправка не подтвердилась)."""
     accept_consent(page)  # вдруг согласие висит ещё до отправки
     rx = re.compile(r"^\s*(ansøg|send ansøgning|send|indsend)\s*$", re.I)
     clicked = False
@@ -860,7 +873,7 @@ def submit_application(page) -> bool:
                 break
     if not clicked:
         print("  Кнопку отправки (Ansøg) не нашёл — проверь вручную.")
-        return False
+        return "none"
     # после Ansøg вылезает согласие на обработку данных — подтверждаем (до 3 раз)
     for _ in range(3):
         if accept_consent(page):
@@ -888,12 +901,15 @@ def submit_application(page) -> bool:
             else:
                 break
         page.wait_for_timeout(2000)
-    # успех = квитанция ИЛИ форма ушла (кнопки Ansøg больше нет). Опрашиваем с
-    # запасом по времени: SAP подтверждает с лагом, единичная проверка теряла
-    # подтверждение → applied_at не записывался (F35). См. _await_submission_outcome.
-    ok = _await_submission_outcome(page)
-    print("  ✔ отправка подтверждена" if ok else "  ⚠ отправка НЕ подтвердилась — проверь вручную")
-    return ok
+    # Опрашиваем исход с запасом по времени: SAP подтверждает с лагом, единичная
+    # проверка теряла подтверждение → applied_at не записывался (F35).
+    outcome = _await_submission_outcome(page)
+    print({
+        "receipt": "  ✔ отправка подтверждена квитанцией",
+        "indirect": "  ✔ форма ушла (квитанции не видел) — вероятно подано, проверь письмо от Salling",
+        "none": "  ⚠ отправка НЕ подтвердилась — проверь вручную",
+    }[outcome])
+    return outcome
 
 
 def _save_proof(page, job):
@@ -910,8 +926,13 @@ def _save_proof(page, job):
         print("  не смог сохранить скрин:", e)
 
 
-def _mark_applied(job_id: str):
+def _mark_applied(job_id: str, confidence: str = "receipt"):
     """Отмечает вакансию как поданную после реальной отправки.
+
+    confidence — способ подтверждения для журнала доверия: "receipt" (квитанция)
+    или "indirect" (форма ушла без квитанции). Оба варианта записываются как
+    applied + applied_at: даже «вероятная» подача скорее всего дошла до Salling,
+    и повторная отправка на неё опаснее, чем лишняя пометка (дубли — хуже).
 
     Это критично: без applied_at вакансия снова станет «подходящей» и может уйти
     повторно. Поэтому при сбое (например, база кратковременно занята синком)
@@ -926,9 +947,11 @@ def _mark_applied(job_id: str):
                 if j:
                     j.status = "applied"
                     j.applied_at = utcnow()
+                    j.applied_confidence = confidence
                     s.add(j)
                     s.commit()
-            print("  ✔ отмечено «подано» в дашборде")
+            print("  ✔ отмечено «подано» в дашборде"
+                  + (" (косвенное подтверждение — проверь письмо)" if confidence == "indirect" else ""))
             return
         except Exception as e:  # noqa: BLE001 — повторяем, отметка важнее
             last_err = e
@@ -956,14 +979,14 @@ def process_job(page, job, profile, submit: bool):
         print("  warning:", e)
     if submit:
         try:
-            ok = submit_application(page)
+            outcome = submit_application(page)
         except Exception as e:
             print("  отправка сорвалась:", str(e)[:120])
-            ok = False
-        if ok:
-            print("  ОТПРАВЛЕНО ✔")
+            outcome = "none"
+        if outcome in ("receipt", "indirect"):
+            print("  ОТПРАВЛЕНО ✔" if outcome == "receipt" else "  ВЕРОЯТНО ОТПРАВЛЕНО — проверь письмо от Salling")
             _save_proof(page, job)
-            _mark_applied(job.id)
+            _mark_applied(job.id, confidence=outcome)
             sent = True
         else:
             _save_proof(page, job)   # скрин даже при неуспехе — для разбора/восстановления
@@ -1183,11 +1206,11 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                     add_job_banner(pg, job)
                     upload_documents(pg, profile)
                     if submit:
-                        ok = submit_application(pg)
-                        if ok:
-                            print("  ОТПРАВЛЕНО ✔")
+                        outcome = submit_application(pg)
+                        if outcome in ("receipt", "indirect"):
+                            print("  ОТПРАВЛЕНО ✔" if outcome == "receipt" else "  ВЕРОЯТНО ОТПРАВЛЕНО — проверь письмо")
                             _save_proof(pg, job)
-                            _mark_applied(job.id)
+                            _mark_applied(job.id, confidence=outcome)
                             submitted += 1
                         else:
                             print("  ⚠ НЕ отправилось (не отмечаю как поданное)")
