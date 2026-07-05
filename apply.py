@@ -32,7 +32,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 import config
 import profile_store
-from db import Job, get_session
+from db import Job, get_session, init_db
 
 
 def load_profile() -> dict:
@@ -1244,6 +1244,10 @@ def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
         sys.exit("Использование: python apply.py <job_id> [<job_id> ...] [--submit] [--web] [--auto-close] | python apply.py --login")
+    # Страховка: если воркер запущен раньше, чем приложение успело мигрировать
+    # базу после обновления (или вручную), — доводим схему сами, а не падаем
+    # на «no such column» посреди подачи.
+    init_db()
     web_mode = "--web" in args
     submit = "--submit" in args
     keep_open = "--auto-close" not in args
