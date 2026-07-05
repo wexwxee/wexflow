@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import json
+import secrets
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,23 +26,101 @@ CLOUD_BASE = "https://wexflow-bot.vercel.app"
 # Стабильный идентификатор этой установки (общий для всех модулей WexFlow).
 DEVICE_PATH = config.SHARED_DIR / "device.json"
 
+_device_cache: dict | None = None
+_device_lock = threading.Lock()
+
+
+def _device_record() -> dict:
+    """{id, secret, persisted}. Шаг 5: кроме id устройство хранит СЕКРЕТ —
+    им подписываются все запросы к облаку (заголовок x-device-token), чтобы
+    профиль и очереди не отдавались любому, кто подсмотрел device id.
+    У старых установок секрета в файле нет — дописываем при первом запуске."""
+    global _device_cache
+    if _device_cache is not None:
+        return _device_cache
+    with _device_lock:
+        if _device_cache is not None:
+            return _device_cache
+        rec: dict = {}
+        try:
+            if DEVICE_PATH.exists():
+                d = json.loads(DEVICE_PATH.read_text(encoding="utf-8"))
+                if isinstance(d, dict):
+                    rec = d
+        except (OSError, ValueError):
+            rec = {}
+        changed = False
+        if not rec.get("id"):
+            rec["id"] = uuid.uuid4().hex
+            changed = True
+        if not rec.get("secret"):
+            rec["secret"] = secrets.token_hex(32)
+            changed = True
+        persisted = not changed
+        if changed:
+            try:
+                DEVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                DEVICE_PATH.write_text(
+                    json.dumps({"id": rec["id"], "secret": rec["secret"]}),
+                    encoding="utf-8")
+                persisted = True
+            except OSError:
+                # секрет не сохранился: регистрировать его НЕЛЬЗЯ, иначе после
+                # перезапуска устройство навсегда останется без верного токена
+                persisted = False
+        _device_cache = {"id": str(rec["id"]), "secret": str(rec["secret"]),
+                         "persisted": persisted}
+        return _device_cache
+
 
 def device_id() -> str:
     """Уникальный id устройства. Создаётся один раз и хранится локально."""
-    try:
-        if DEVICE_PATH.exists():
-            d = json.loads(DEVICE_PATH.read_text(encoding="utf-8"))
-            if isinstance(d, dict) and d.get("id"):
-                return str(d["id"])
-    except (OSError, ValueError):
-        pass
-    did = uuid.uuid4().hex
-    try:
-        DEVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        DEVICE_PATH.write_text(json.dumps({"id": did}), encoding="utf-8")
-    except OSError:
-        pass
-    return did
+    return _device_record()["id"]
+
+
+def device_secret() -> str:
+    """Секрет устройства для заголовка x-device-token (шаг 5)."""
+    return _device_record()["secret"]
+
+
+_registered = False
+_register_lock = threading.Lock()
+
+
+def _ensure_registered(timeout: int = 6) -> None:
+    """Один раз за процесс сообщить облаку секрет устройства (шаг 5).
+    Кто первый зарегистрировал — того и устройство. Сбой сети не критичен:
+    до успешной регистрации облако пускает устройство по-старому, а мы
+    попробуем снова при следующем запросе."""
+    global _registered
+    if _registered or not _device_record()["persisted"]:
+        return
+    with _register_lock:
+        if _registered:
+            return
+        payload = json.dumps({"device": device_id(),
+                              "secret": device_secret()}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{CLOUD_BASE}/api/session", data=payload,
+            headers={"content-type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                if json.loads(r.read().decode("utf-8")).get("ok"):
+                    _registered = True
+        except (urllib.error.URLError, OSError, ValueError):
+            pass
+
+
+def _open(url: str, payload: dict | None = None, timeout: int = 10):
+    """Запрос к облаку с токеном устройства. GET — если payload is None."""
+    _ensure_registered()
+    headers = {"x-device-token": device_secret()}
+    data = None
+    if payload is not None:
+        headers["content-type"] = "application/json"
+        data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers)
+    return urllib.request.urlopen(req, timeout=timeout)
 
 
 def login_url() -> str:
@@ -56,7 +136,7 @@ def fetch_session(timeout: int = 10) -> dict | None:
     """
     url = f"{CLOUD_BASE}/api/session?device={device_id()}"
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        with _open(url, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         if data.get("loggedIn") and isinstance(data.get("user"), dict):
             return data["user"]
@@ -72,12 +152,8 @@ def push_profile(profile: dict, timeout: int = 10) -> bool:
     терялись и подтягивались на других устройствах. Ошибки сети не критичны.
     """
     url = f"{CLOUD_BASE}/api/profile"
-    payload = json.dumps({"device": device_id(), "profile": profile}).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=payload, headers={"content-type": "application/json"}
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _open(url, {"device": device_id(), "profile": profile}, timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         return bool(data.get("ok"))
     except (urllib.error.URLError, OSError, ValueError):
@@ -88,7 +164,7 @@ def pull_profile(timeout: int = 10) -> dict | None:
     """Загрузить профиль из облачного аккаунта (для нового/чистого устройства)."""
     url = f"{CLOUD_BASE}/api/profile?device={device_id()}"
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        with _open(url, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         prof = data.get("profile")
         if isinstance(prof, dict) and prof:
@@ -104,12 +180,8 @@ def _post_json(path: str, payload: dict, timeout: int = 10) -> dict:
     Сетевые ошибки не роняют вызывающего — превращаются в {"ok": False, ...}.
     """
     url = f"{CLOUD_BASE}{path}"
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, headers={"content-type": "application/json"}
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _open(url, payload, timeout) as r:
             return json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:  # 4xx/5xx с телом-ошибкой
         try:
@@ -146,14 +218,11 @@ def offer(text: str, job_id: str, timeout: int = 15, *,
     url = f"{CLOUD_BASE}/api/offer"
     job_payload = dict(job or {})
     job_payload["id"] = job_id
-    payload = json.dumps({
+    payload = {
         "deviceId": device_id(), "job": job_payload, "text": text, "panel": bool(panel),
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=payload, headers={"content-type": "application/json"}
-    )
+    }
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _open(url, payload, timeout) as r:
             return json.loads(r.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError):
         return None
@@ -170,7 +239,7 @@ def fetch_decisions(timeout: int = 15) -> list:
     Возвращает список [{jobId, action, ts}]."""
     url = f"{CLOUD_BASE}/api/decisions?deviceId={device_id()}"
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        with _open(url, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         d = data.get("decisions")
         return d if isinstance(d, list) else []
@@ -187,7 +256,7 @@ def fetch_commands(tg_id: str = "", timeout: int = 15) -> list:
         query["tgId"] = str(tg_id)
     url = f"{CLOUD_BASE}/api/decisions?{urllib.parse.urlencode(query)}"
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        with _open(url, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         cmds = data.get("commands")
         return cmds if isinstance(cmds, list) else []

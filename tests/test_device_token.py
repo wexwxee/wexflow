@@ -1,0 +1,124 @@
+"""Тесты токена устройства (шаг 5, Блок 2).
+
+Профиль и очереди в облаке больше не отдаются любому, кто знает device id:
+приложение локально придумывает секрет, один раз регистрирует его в облаке
+и подписывает каждый запрос заголовком x-device-token.
+
+Проверяем клиентскую часть (cloud_auth) без сети: urllib подменяется.
+
+Запуск:  python tests/test_device_token.py   (или pytest)
+"""
+import io
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import cloud_auth
+import config
+
+
+class _TempDevice:
+    """Временный device.json + сброс кэшей модуля."""
+    def __enter__(self):
+        self._orig_path = cloud_auth.DEVICE_PATH
+        self._orig_cache = cloud_auth._device_cache
+        self._orig_reg = cloud_auth._registered
+        self.dir = Path(tempfile.mkdtemp())
+        cloud_auth.DEVICE_PATH = self.dir / "device.json"
+        cloud_auth._device_cache = None
+        cloud_auth._registered = False
+        return self
+
+    def __exit__(self, *exc):
+        cloud_auth.DEVICE_PATH = self._orig_path
+        cloud_auth._device_cache = self._orig_cache
+        cloud_auth._registered = self._orig_reg
+
+
+class _FakeCloud:
+    """Подмена urllib.request.urlopen: пишет все запросы, отвечает ok."""
+    def __init__(self):
+        self.requests = []
+
+    def __call__(self, req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        headers = dict(getattr(req, "headers", {}) or {})
+        body = getattr(req, "data", None)
+        self.requests.append({
+            "url": url,
+            "headers": {k.lower(): v for k, v in headers.items()},
+            "body": json.loads(body.decode("utf-8")) if body else None,
+        })
+        resp = io.BytesIO(json.dumps({"ok": True, "loggedIn": False}).encode("utf-8"))
+        resp.__enter__ = lambda *a: resp
+        resp.__exit__ = lambda *a: False
+        return resp
+
+
+class _Patched:
+    def __enter__(self):
+        self._orig = cloud_auth.urllib.request.urlopen
+        self.cloud = _FakeCloud()
+        cloud_auth.urllib.request.urlopen = self.cloud
+        return self.cloud
+
+    def __exit__(self, *exc):
+        cloud_auth.urllib.request.urlopen = self._orig
+
+
+def test_device_record_created_with_secret():
+    with _TempDevice():
+        rec = cloud_auth._device_record()
+        assert rec["id"] and len(rec["secret"]) == 64 and rec["persisted"]
+        saved = json.loads(cloud_auth.DEVICE_PATH.read_text(encoding="utf-8"))
+        assert saved == {"id": rec["id"], "secret": rec["secret"]}
+
+
+def test_old_device_json_upgraded_keeps_id():
+    with _TempDevice():
+        cloud_auth.DEVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        cloud_auth.DEVICE_PATH.write_text(json.dumps({"id": "olddevice42"}), encoding="utf-8")
+        rec = cloud_auth._device_record()
+        assert rec["id"] == "olddevice42", "id старой установки потерян"
+        assert rec["secret"], "секрет не дописан старой установке"
+
+
+def test_requests_carry_token_and_register_once():
+    with _TempDevice(), _Patched() as cloud:
+        cloud_auth.fetch_session()
+        cloud_auth.fetch_decisions()
+        reg = [r for r in cloud.requests
+               if r["body"] and "secret" in r["body"]]
+        assert len(reg) == 1, f"регистраций {len(reg)}, ожидали 1"
+        assert reg[0]["body"]["secret"] == cloud_auth.device_secret()
+        others = [r for r in cloud.requests if r not in reg]
+        assert others, "рабочих запросов не было"
+        for r in others:
+            assert r["headers"].get("x-device-token") == cloud_auth.device_secret(), \
+                f"запрос без токена: {r['url']}"
+
+
+def test_no_registration_when_secret_not_persisted():
+    with _TempDevice(), _Patched() as cloud:
+        cloud_auth._device_cache = {"id": "x1", "secret": "s" * 64, "persisted": False}
+        cloud_auth.fetch_session()
+        reg = [r for r in cloud.requests if r["body"] and "secret" in r["body"]]
+        assert not reg, "нельзя регистрировать несохранённый секрет (потеряется при рестарте)"
+
+
+if __name__ == "__main__":
+    tests = [v for k, v in sorted(globals().items())
+             if k.startswith("test_") and callable(v)]
+    failures = 0
+    for fn in tests:
+        try:
+            fn()
+            print(f"OK   {fn.__name__}")
+        except AssertionError as e:
+            failures += 1
+            print(f"FAIL {fn.__name__}: {e}")
+    print("\n" + (f"ВСЕ {len(tests)} ТЕСТОВ ПРОШЛИ" if not failures else f"{failures} ТЕСТ(ОВ) УПАЛО"))
+    sys.exit(1 if failures else 0)
