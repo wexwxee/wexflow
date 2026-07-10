@@ -61,6 +61,22 @@ def mark_offered(job_id: str) -> None:
         s.commit()
 
 
+def mark_listed(ids) -> None:
+    """Вакансии показаны СПИСКОМ в панели Mini App (jobs_sync). Для гейта F27
+    это тоже «предложено пользователю» — кнопку «Подать» человек видел. Но это
+    НЕ карточка: offered_at не ставим, иначе после первого же синка очередь
+    карточек (tg_eligible исключает offered_ids) осталась бы пустой навсегда.
+    Существующие строки (offered/skipped/submitting/...) не трогаем."""
+    ids = _norm_ids(ids)
+    if not ids:
+        return
+    with get_session() as s:
+        for jid in ids:
+            if _get(s, jid) is None:
+                s.add(Application(source=SOURCE, job_id=jid, state="listed"))
+        s.commit()
+
+
 def mark_skipped(job_id: str) -> None:
     """Пользователь нажал «Пропустить» — больше не предлагать."""
     jid = str(job_id or "").strip()
@@ -162,6 +178,11 @@ def submitting_ids() -> set:
 def offered_ids() -> set:
     """Все, кому когда-либо предлагали карточку (гейт F27)."""
     return _ids_where(Application.offered_at.is_not(None))
+
+
+def listed_ids() -> set:
+    """Показанные списком в панели (без карточки) — гейт F27 пускает и их."""
+    return _ids_where(Application.state == "listed")
 
 
 def skipped_ids() -> set:

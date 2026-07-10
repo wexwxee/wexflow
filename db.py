@@ -61,7 +61,8 @@ class Application(SQLModel, table=True):
     — четыре копии правды расходились и рождали баги класса F35. Теперь состояние
     заявки — одна запись здесь; settings.json хранит только настройки.
 
-    state: offered (карточка предложена, решения нет) | skipped (пропустил) |
+    state: offered (карточка предложена, решения нет) | listed (показана списком
+           в панели Mini App, без карточки) | skipped (пропустил) |
            submitting (подача запущена) | submitted (подана) | failed (не подтвердилась).
     """
     id: Optional[int] = Field(default=None, primary_key=True)

@@ -744,9 +744,12 @@ def tg_submit_batch(job_ids, launcher) -> dict:
         return {"started": [], "skipped": []}
 
     r = get_rule()
-    # F27: подаём только вакансии, чьи карточки приложение само отправляло.
-    # Решение из облака по «непредложенной» вакансии отклоняем (сбой/подмена).
-    ids, not_offered = partition_offered(ids, applications.offered_ids())
+    # F27: подаём только вакансии, которые приложение само показывало —
+    # карточкой (offered) или списком в панели (listed, jobs_sync). Решение
+    # из облака по «непоказанной» вакансии отклоняем (сбой/подмена).
+    ids, not_offered = partition_offered(
+        ids, applications.offered_ids() | applications.listed_ids()
+    )
     skipped: list[dict] = [
         {"job_id": jid, "state": "failed", "reason": "not_offered", "title": ""}
         for jid in not_offered

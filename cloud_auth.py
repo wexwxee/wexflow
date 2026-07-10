@@ -301,6 +301,18 @@ def report_applied(items, timeout: int = 8) -> bool:
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
 
+def report_jobs(items, timeout: int = 8) -> bool:
+    """Отправить в облако текущий список подходящих вакансий для главной вкладки
+    Mini App. Это не запускает подачу: кнопка в панели всё равно идёт через
+    очередь decisions и локальный F27-гейт."""
+    payload = {
+        "kind": "jobs_sync",
+        "deviceId": device_id(),
+        "jobs": list(items or [])[:100],
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
+
+
 def report_apply_progress(progress: dict, timeout: int = 6) -> bool:
     """Сообщить облаку сводку прогресса пакетной подачи — для панели прогресса в
     Mini App («Подаю X из N», что сейчас, сколько подано/не удалось). Облако хранит

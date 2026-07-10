@@ -36,6 +36,7 @@ import cloud_auth
 import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
+import applications
 import autopilot
 import ai_filters
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -512,6 +513,7 @@ def _handle_tg_decisions(decisions: list) -> None:
 
 
 _applied_sync_last = 0.0
+_jobs_sync_last = 0.0
 
 
 def _sync_applied_to_cloud(force: bool = False) -> None:
@@ -551,6 +553,29 @@ def _sync_applied_to_cloud(force: bool = False) -> None:
         print(f"applied-sync: ошибка — {e}")
 
 
+def _sync_jobs_to_cloud(force: bool = False) -> None:
+    """Фаза 2b: телефон видит не только офферы автопилота, а полный текущий
+    список подходящих вакансий. Синк троттлим, чтобы не жечь Upstash.
+    """
+    global _jobs_sync_last
+    if not account_mod.is_signed_in():
+        return
+    now = time.time()
+    if not force and now - _jobs_sync_last < 300:
+        return
+    _jobs_sync_last = now
+    try:
+        skip = applications.submitted_ids() | applications.skipped_ids() | applications.submitting_ids()
+        jobs = [j for j in autopilot.find_matches() if j.id not in skip]
+        jobs.sort(key=lambda j: getattr(j, "first_seen", None) or utcnow(), reverse=True)
+        jobs = jobs[:100]
+        payload = [_tg_job_payload(j) for j in jobs]
+        if cloud_auth.report_jobs(payload):
+            applications.mark_listed([j.id for j in jobs])
+    except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
+        print(f"jobs-sync: ошибка — {e}")
+
+
 def _tg_poller_loop() -> None:
     """Опрашивает облако: какие решения (✅/❌) принял пользователь под карточками,
     и выполняет их локально (подать/пропустить).
@@ -563,8 +588,11 @@ def _tg_poller_loop() -> None:
             if account_mod.is_signed_in():
                 _handle_tg_decisions(cloud_auth.fetch_decisions())
                 _sync_applied_to_cloud()  # одно облако: держим «Поданные» свежими (троттлинг 30с)
+                _sync_jobs_to_cloud()     # фаза 2b: список подходящих вакансий в Mini App
             tg_id = account_mod.load().get("tg_id") if account_mod.is_signed_in() else ""
             for cmd in cloud_auth.fetch_commands(tg_id=tg_id or ""):
+                if _tg_remote_command_expired(cmd):
+                    continue
                 result_text = _handle_tg_remote_command(cmd)
                 cloud_auth.send_command_result(cmd, result_text)
         except Exception as e:  # noqa: BLE001 — слушатель не должен падать
@@ -583,6 +611,7 @@ def _ensure_tg_poller() -> None:
 
 
 TG_MAX_PER_SCAN = 3  # не больше карточек на подтверждение за один фоновый скан
+TG_REMOTE_COMMAND_TTL_MS = 10 * 60 * 1000
 
 
 _title_ru_cache: dict[str, str] = {}
@@ -842,6 +871,21 @@ def _remote_status_text(prefix: str = "") -> str:
     return "\n".join(lines)
 
 
+def _tg_remote_command_expired(command: dict) -> bool:
+    """Не выполняем старые команды из облака: пользователь мог нажать днём,
+    а ПК проснулся ночью. Новые версии облака уже фильтруют это, но ПК тоже
+    держит страховку для старого прод-сервера."""
+    try:
+        now_ms = int(time.time() * 1000)
+        exp = int(float(command.get("exp") or 0))
+        if exp:
+            return exp < now_ms
+        ts = int(float(command.get("ts") or 0))
+        return bool(ts and now_ms - ts > TG_REMOTE_COMMAND_TTL_MS)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _handle_tg_remote_command(command: dict) -> str:
     """Выполнить команду, пришедшую из Telegram-пульта, и вернуть текст ответа."""
     action = str(command.get("action") or "").strip().lower()
@@ -883,6 +927,8 @@ def _handle_tg_remote_command(command: dict) -> str:
                 autopilot.reset_tg_queue_for_filters()
             limit = 30 if is_panel else None
             result = _tg_offer_tick(include_existing=True, ignore_schedule=True, limit=limit, panel=is_panel)
+            if is_panel:
+                _sync_jobs_to_cloud(force=True)
             stats = autopilot.tg_queue_stats()
             if result.get("sent"):
                 label = "Добавил в панель" if is_panel else "Отправил карточек"
@@ -2567,6 +2613,8 @@ async def telegram_send_current(request: Request, panel: bool = False):
         limit=30 if panel else None,
         panel=panel,
     )
+    if panel:
+        _sync_jobs_to_cloud(force=True)
     stats = autopilot.tg_queue_stats()
     if result.get("sent"):
         return {"ok": True, "sent": result["sent"], "remaining": stats["eligible_current"], "panel": panel}
