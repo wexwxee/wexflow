@@ -2126,6 +2126,21 @@ def _settings_context(
     for k in autopilot._FILTER_FIELDS:
         ap_view[k] = sel_profile.get(k, autopilot.DEFAULT_RULE.get(k))
     ap_cities, ap_regions = _autopilot_geo_options(ap_view)
+    # опции для чипов «Кем работать» и «Сети» со счётчиками активных вакансий,
+    # частые сверху — чтобы выбор был осмысленным, а не вслепую
+    ap_cat_options: list = []
+    ap_brand_options: list = []
+    if section == "autopilot":
+        with get_session() as s:
+            _fc = _active_counts(s)
+        ap_cat_options = sorted(
+            ((code, lbl, int(_fc["category"].get(code, 0))) for code, lbl in labels.CATEGORY.items()),
+            key=lambda t: (-t[2], t[1]),
+        )
+        ap_brand_options = sorted(
+            ((code, lbl, int(_fc["brand"].get(code, 0))) for code, lbl in labels.BRANDS.items()),
+            key=lambda t: (-t[2], t[1]),
+        )
     titles = {
         "salling": ("Salling", "Логин, документы, домашний адрес и сброс входа"),
         "autopilot": ("Автопилот", "Наборы фильтров, режим работы и автоотправка"),
@@ -2147,6 +2162,8 @@ def _settings_context(
         "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
         "autopilot_cities": ap_cities, "autopilot_regions": ap_regions,
         "autopilot_region_labels": labels.REGION,
+        "autopilot_cat_options": ap_cat_options,
+        "autopilot_brand_options": ap_brand_options,
         "autopilot_mode": autopilot.get_mode(),
         "home_city": _home_city(settings_store.get_home()),
         "ai_available": ai_filters.available(),

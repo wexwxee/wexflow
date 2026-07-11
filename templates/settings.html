@@ -242,6 +242,30 @@
   .ap-ai-hero-sub { margin:6px 0 10px; font-size:13.5px; color:var(--muted); line-height:1.5; }
   .ap-ai-hero textarea { background:var(--bg); }
   .ap-ai-hero .ap-ai-btn { padding:11px 18px; font-size:13.5px; }
+  /* --- новая раскладка фильтров: 5 простых вопросов --- */
+  .apx-q { margin:12px 0; padding:14px 16px; border:1px solid var(--glass-line);
+    border-radius:14px; background:var(--glass); }
+  .apx-q-head { display:flex; align-items:center; gap:8px; font-size:14.5px; font-weight:750;
+    color:var(--txt-strong); margin-bottom:3px; }
+  .apx-q-head .ic { color:var(--accent); flex-shrink:0; }
+  .apx-q-sub { display:block; font-size:12px; font-weight:400; color:var(--muted);
+    margin:0 0 10px; line-height:1.4; }
+  .apx-q .ap-chips { margin-top:2px; }
+  .apx-q .ap-chip { padding:7px 13px; font-size:13px; }
+  .apx-custom { width:110px; padding:6px 10px; border-radius:999px; border:1px solid var(--glass-line);
+    background:var(--input-bg); color:var(--txt); font-size:12.5px; }
+  .apx-custom:focus { outline:none; border-color:var(--accent); }
+  .apx-range { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:10px;
+    color:var(--muted); font-size:12.5px; }
+  .apx-range input { width:74px; padding:6px 9px; border-radius:9px; }
+  .apx-cities { margin:12px 0 0; }
+  .apx-cities .lbl .hint { font-weight:400; }
+  .apx-morebtn { border:1px dashed var(--glass-line); background:transparent; color:var(--muted);
+    border-radius:999px; padding:7px 13px; font-size:12.5px; cursor:pointer; }
+  .apx-morebtn:hover { color:var(--txt); border-color:var(--hover-line); }
+  .apx-adv { margin-top:14px; }
+  .apx-adv .grid2 { margin-top:8px; }
+  .apx-adv .ap-faq-body { padding-bottom:14px; }
 </style>
 {% endblock %}
 
@@ -605,16 +629,21 @@
         {% endfor %}
         <button class="ap-prof add" type="submit" form="profAddForm">+ набор</button>
       </div>
-      <div class="ap-prof-bar">
-        <input type="text" form="profRenameForm" name="name" value="{{ autopilot_profile.name }}" maxlength="40" placeholder="например: рядом с домом" style="max-width:240px;">
-        <button type="submit" form="profRenameForm">Переименовать</button>
-        <button type="submit" form="profToggleForm">{{ 'Выключить' if autopilot_profile.enabled else 'Включить' }}</button>
-        {% if autopilot_profiles|length > 1 %}
-        <button type="submit" form="profDeleteForm" style="color:var(--err-txt);"
-                onclick="return confirm('Удалить набор «{{ autopilot_profile.name }}»?')">Удалить</button>
-        {% endif %}
-        <span class="hint" style="margin:0;">Под выбранный набор подходит: <b>{{ autopilot_profile_count }}</b></span>
-      </div>
+      <span class="hint" style="display:block;margin:2px 0 6px;">Под выбранный набор подходит: <b>{{ autopilot_profile_count }}</b></span>
+      <details class="ap-faq" style="margin:6px 0 0;">
+        <summary>Управление набором «{{ autopilot_profile.name }}»</summary>
+        <div class="ap-faq-body">
+          <div class="ap-prof-bar" style="padding-top:6px;">
+            <input type="text" form="profRenameForm" name="name" value="{{ autopilot_profile.name }}" maxlength="40" placeholder="например: рядом с домом" style="max-width:240px;">
+            <button type="submit" form="profRenameForm">Переименовать</button>
+            <button type="submit" form="profToggleForm">{{ 'Выключить' if autopilot_profile.enabled else 'Включить' }}</button>
+            {% if autopilot_profiles|length > 1 %}
+            <button type="submit" form="profDeleteForm" style="color:var(--err-txt);"
+                    onclick="return confirm('Удалить набор «{{ autopilot_profile.name }}»?')">Удалить</button>
+            {% endif %}
+          </div>
+        </div>
+      </details>
     </div>
 
     <!-- Быстрый старт: готовые шаблоны заполняют поля нормальными значениями -->
@@ -631,224 +660,181 @@
       </div>
     </div>
 
-    <div class="grid2">
-      <div class="field">
-        <label class="lbl">Расстояние от дома</label>
-        <input type="hidden" name="max_km" value="{{ autopilot.max_km or '' }}">
-        <input type="number" min="0" step="1" data-chips-custom="max_km" placeholder="своё число, напр. 12">
-        <div class="ap-chips" data-chips-for="max_km" data-chips-unit=" км">
-          <button type="button" class="ap-chip" data-val="5">5 км</button>
-          <button type="button" class="ap-chip" data-val="10">10 км</button>
-          <button type="button" class="ap-chip" data-val="15">15 км</button>
-          <button type="button" class="ap-chip" data-val="25">25 км</button>
-          <button type="button" class="ap-chip" data-val="50">50 км</button>
-          <button type="button" class="ap-chip" data-val="">без ограничения</button>
-        </div>
-        <div class="ap-hint">Популярные радиусы: рядом, по городу и с поездкой. Если выбрать 10 и 25 км, действует 25 км. Пусто = любое расстояние.</div>
+    <!-- Фильтры = пять простых вопросов. Пусто = «не важно». Тонкие ручки — в «Продвинутом». -->
+    <div class="apx-q">
+      <div class="apx-q-head">{{ ic.i('pin', 15) }} Где искать</div>
+      <span class="apx-q-sub">Расстояние от дома{% if not home %} — <a href="/settings/salling#home" style="color:var(--accent);">задай домашний адрес</a>, чтобы радиус работал{% endif %}. Пусто = вся Дания.</span>
+      <input type="hidden" name="max_km" value="{{ autopilot.max_km or '' }}">
+      <div class="ap-chips" data-one-for="max_km">
+        <button type="button" class="ap-chip" data-val="">Вся Дания</button>
+        <button type="button" class="ap-chip" data-val="5">до 5 км</button>
+        <button type="button" class="ap-chip" data-val="10">до 10 км</button>
+        <button type="button" class="ap-chip" data-val="15">до 15 км</button>
+        <button type="button" class="ap-chip" data-val="25">до 25 км</button>
+        <button type="button" class="ap-chip" data-val="50">до 50 км</button>
+        <input type="number" min="1" step="1" class="apx-custom" data-one-custom="max_km" placeholder="своё, км">
       </div>
-      <div class="field">
-        <label class="lbl">Минимум часов в неделю</label>
-        <input type="hidden" name="min_hours" value="{{ autopilot.min_hours or '' }}">
-        <input type="number" min="0" step="1" data-chips-custom="min_hours" placeholder="своё число, напр. 12">
-        <div class="ap-chips" data-chips-for="min_hours" data-chips-unit=" ч">
-          <button type="button" class="ap-chip" data-val="5">5 ч</button>
-          <button type="button" class="ap-chip" data-val="10">10 ч</button>
-          <button type="button" class="ap-chip" data-val="15">15 ч</button>
-          <button type="button" class="ap-chip" data-val="20">20 ч</button>
-          <button type="button" class="ap-chip" data-val="30">30 ч</button>
-          <button type="button" class="ap-chip" data-val="37">37 ч</button>
-          <button type="button" class="ap-chip" data-val="">любые</button>
-        </div>
-        <div class="ap-hint">Популярные варианты: короткая подработка, half-time, 30+ и датский full-time 37 ч. Если выбрать 10 и 20 ч, действует 10 ч. Если часы не указаны, вакансия всё равно попадёт.</div>
-      </div>
-      <div class="field">
-        <label class="lbl">Вакансия не старше</label>
-        <input type="hidden" name="max_age_days" value="{{ autopilot.max_age_days or '' }}">
-        <input type="number" min="0" step="1" data-chips-custom="max_age_days" placeholder="своё число, напр. 10">
-        <div class="ap-chips" data-chips-for="max_age_days" data-chips-unit=" дн">
-          <button type="button" class="ap-chip" data-val="1">1 день</button>
-          <button type="button" class="ap-chip" data-val="3">3 дня</button>
-          <button type="button" class="ap-chip" data-val="7">7 дней</button>
-          <button type="button" class="ap-chip" data-val="14">14 дней</button>
-          <button type="button" class="ap-chip" data-val="30">30 дней</button>
-          <button type="button" class="ap-chip" data-val="">любой возраст</button>
-        </div>
-        <div class="ap-hint">Фильтр по дате публикации. Если выбрать 7 и 30 дней, действует 30 дней. Если даты нет, вакансия всё равно попадёт.</div>
-      </div>
-      <div class="field">
-        <label class="lbl">Тип работы</label>
-        {% set sel_cat = autopilot.category.split(',') if autopilot.category else [] %}
-        <div class="ap-select" data-multi data-empty="Любая должность">
-          <input type="hidden" name="category" value="{{ autopilot.category or '' }}">
-          <button type="button" class="ap-select-btn">
-            <span class="ap-select-text">Любая должность</span>
-            <span class="ap-select-arrow">▼</span>
-          </button>
-          <div class="ap-menu">
-            <button type="button" class="ap-opt {{ 'sel' if not sel_cat else '' }}" data-val="">Любая должность</button>
-            {% for code, lbl in categories.items() %}
-              <button type="button" class="ap-opt {{ 'sel' if code in sel_cat else '' }}" data-val="{{ code }}">{{ lbl }}</button>
-            {% endfor %}
-          </div>
-        </div>
-        <div class="ap-hint">Категория из Salling. Несколько вариантов работают как «или»: подойдёт любая выбранная категория.</div>
-      </div>
-      <div class="field">
-        <label class="lbl">Занятость</label>
-        {% set sel_emp = autopilot.employment_type.split(',') if autopilot.employment_type else [] %}
-        <div class="ap-select" data-multi data-empty="Любая">
-          <input type="hidden" name="employment_type" value="{{ autopilot.employment_type or '' }}">
-          <button type="button" class="ap-select-btn">
-            <span class="ap-select-text">Любая</span>
-            <span class="ap-select-arrow">▼</span>
-          </button>
-          <div class="ap-menu">
-            <button type="button" class="ap-opt {{ 'sel' if not sel_emp else '' }}" data-val="">Любая</button>
-            {% for code, lbl in employments.items() %}
-              <button type="button" class="ap-opt {{ 'sel' if code in sel_emp else '' }}" data-val="{{ code }}">{{ lbl }}</button>
-            {% endfor %}
-          </div>
-        </div>
-        <div class="ap-hint">Тип занятости из вакансии. Пусто = любая занятость.</div>
-      </div>
-      <div class="field">
-        <label class="lbl">Возрастной допуск</label>
-        {% set sel_age = autopilot.age.split(',') if autopilot.age else [] %}
-        <div class="ap-select" data-multi data-empty="Любой">
-          <input type="hidden" name="age" value="{{ autopilot.age or '' }}">
-          <button type="button" class="ap-select-btn">
-            <span class="ap-select-text">Любой</span>
-            <span class="ap-select-arrow">▼</span>
-          </button>
-          <div class="ap-menu">
-            <button type="button" class="ap-opt {{ 'sel' if not sel_age else '' }}" data-val="">Любой</button>
-            <button type="button" class="ap-opt {{ 'sel' if 'under18' in sel_age else '' }}" data-val="under18">До 18 лет</button>
-            <button type="button" class="ap-opt {{ 'sel' if 'adult' in sel_age else '' }}" data-val="adult">От 18 (18+)</button>
-          </div>
-        </div>
-        <div class="ap-hint">Вакансии «до 18 лет» или «от 18» — берётся из данных Salling.</div>
-      </div>
-      <div class="field">
-        <label class="lbl">Бренд</label>
-        {% set sel_brand = autopilot.brand.split(',') if autopilot.brand else [] %}
-        <div class="ap-select" data-multi data-empty="Все бренды">
-          <input type="hidden" name="brand" value="{{ autopilot.brand or '' }}">
-          <button type="button" class="ap-select-btn">
-            <span class="ap-select-text">Все бренды</span>
-            <span class="ap-select-arrow">▼</span>
-          </button>
-          <div class="ap-menu">
-            <button type="button" class="ap-opt {{ 'sel' if not sel_brand else '' }}" data-val="">Все бренды</button>
-            {% for code, lbl in brands.items() %}
-              <button type="button" class="ap-opt {{ 'sel' if code in sel_brand else '' }}" data-val="{{ code }}">{{ lbl }}</button>
-            {% endfor %}
-          </div>
-        </div>
-        <div class="ap-hint">Можно выбрать несколько брендов сразу. Пусто = все бренды.</div>
-      </div>
-      <div class="field">
-        <label class="lbl">Максимум часов в неделю</label>
-        <input type="hidden" name="max_hours" value="{{ autopilot.max_hours or '' }}">
-        <input type="number" min="0" step="1" data-chips-custom="max_hours" placeholder="своё число, напр. 25">
-        <div class="ap-chips" data-chips-for="max_hours" data-chips-unit=" ч">
-          <button type="button" class="ap-chip" data-val="10">10 ч</button>
-          <button type="button" class="ap-chip" data-val="15">15 ч</button>
-          <button type="button" class="ap-chip" data-val="20">20 ч</button>
-          <button type="button" class="ap-chip" data-val="25">25 ч</button>
-          <button type="button" class="ap-chip" data-val="30">30 ч</button>
-          <button type="button" class="ap-chip" data-val="37">37 ч</button>
-          <button type="button" class="ap-chip" data-val="40">40 ч</button>
-          <button type="button" class="ap-chip" data-val="">без ограничения</button>
-        </div>
-        <div class="ap-hint">Популярные потолки: 20 ч для half-time, 30 ч для большой подработки, 37 ч в Дании и 40 ч как мировой full-time. Часы не указаны — вакансия всё равно попадёт. Пусто = без ограничения.</div>
-      </div>
-      <div class="field">
-        <label class="lbl">Регион Дании</label>
-        {% set sel_region = autopilot.regions.split(',') if autopilot.regions else [] %}
-        <div class="ap-select" data-multi data-empty="Любой регион">
-          <input type="hidden" name="regions" value="{{ autopilot.regions or '' }}">
-          <button type="button" class="ap-select-btn">
-            <span class="ap-select-text">Любой регион</span>
-            <span class="ap-select-arrow">▼</span>
-          </button>
-          <div class="ap-menu">
-            <button type="button" class="ap-opt {{ 'sel' if not sel_region else '' }}" data-val="">Любой регион</button>
-            {% for r in autopilot_regions %}
-              <button type="button" class="ap-opt {{ 'sel' if r in sel_region else '' }}" data-val="{{ r }}">{{ autopilot_region_labels.get(r, r|capitalize) }}</button>
-            {% endfor %}
-          </div>
-        </div>
-        <div class="ap-hint">Можно выбрать несколько. Пусто = любой регион.</div>
-      </div>
-      <div class="field ap-field-wide ap-csv-field" data-suggest='{{ autopilot_cities|tojson }}' data-suggest-kind="city" data-suggest-mode="csv">
-        <label class="lbl">Город или район</label>
-        <input type="text" name="cities" value="{{ autopilot.cities or '' }}" placeholder="любой текст: København, Aarhus, Odense" autocomplete="off" spellcheck="false">
+      <div class="field apx-cities ap-csv-field" data-suggest='{{ autopilot_cities|tojson }}' data-suggest-kind="city" data-suggest-mode="csv" style="margin-bottom:0;">
+        <label class="lbl">Только эти города <span class="hint">— не обязательно; пусто = любой город</span></label>
+        <input type="text" name="cities" value="{{ autopilot.cities or '' }}" placeholder="напр.: København, Aarhus" autocomplete="off" spellcheck="false">
         <div class="suggest-menu"></div>
         <div class="ap-chips ap-city-presets" data-csv-chip-for="cities">
-          <span class="ap-chips-label">Быстро добавить</span>
           {% if home_city %}<button type="button" class="ap-chip ap-chip-home" data-val="{{ home_city }}">{{ ic.i('pin', 12) }} Мой город: {{ home_city }}</button>{% endif %}
           <button type="button" class="ap-chip" data-val="København">København</button>
           <button type="button" class="ap-chip" data-val="Aarhus">Aarhus</button>
           <button type="button" class="ap-chip" data-val="Odense">Odense</button>
-          <button type="button" class="ap-chip" data-val="Frederiksberg">Frederiksberg</button>
         </div>
-        <div class="ap-hint">Это не закрытый список: можно написать свой город, район или часть названия. Несколько значений через запятую. «København» найдёт København K, N, SV и другие районы. Пусто = любой город.</div>
-      </div>
-      <div class="field ap-field-wide">
-        <label class="lbl">Слова, которые должны быть в вакансии</label>
-        <input type="text" name="keywords" value="{{ autopilot.keywords or '' }}" placeholder="напр. weekend, student, ungarbejder">
-        <div class="ap-hint">Дополнительный фильтр по названию, описанию, городу или улице. Несколько через запятую работают как «или». Русские слова WexFlow попробует перевести на датский. Пусто = не учитывать.</div>
       </div>
     </div>
 
-    <!-- Исключения: «не предлагать» -->
-    <div class="ap-exclude">
-      <div class="ap-exclude-head">{{ ic.i('x', 13) }} Исключения — что не предлагать даже при совпадении</div>
-      <div class="grid2">
-        <div class="field">
-          <label class="lbl">Не предлагать бренды</label>
-          {% set sel_exbrand = autopilot.exclude_brands.split(',') if autopilot.exclude_brands else [] %}
-          <div class="ap-select" data-multi data-empty="Ничего не исключать">
-            <input type="hidden" name="exclude_brands" value="{{ autopilot.exclude_brands or '' }}">
-            <button type="button" class="ap-select-btn">
-              <span class="ap-select-text">Ничего не исключать</span>
-              <span class="ap-select-arrow">▼</span>
-            </button>
-            <div class="ap-menu">
-              <button type="button" class="ap-opt {{ 'sel' if not sel_exbrand else '' }}" data-val="">Ничего не исключать</button>
-              {% for code, lbl in brands.items() %}
-                <button type="button" class="ap-opt {{ 'sel' if code in sel_exbrand else '' }}" data-val="{{ code }}">{{ lbl }}</button>
-              {% endfor %}
+    <div class="apx-q">
+      <div class="apx-q-head">{{ ic.i('clock', 15) }} Сколько часов в неделю</div>
+      <span class="apx-q-sub">Если в вакансии часы не указаны — она всё равно попадёт. Пусто = не важно.</span>
+      <input type="hidden" name="min_hours" value="{{ autopilot.min_hours or '' }}">
+      <input type="hidden" name="max_hours" value="{{ autopilot.max_hours or '' }}">
+      <div class="ap-chips" id="apxHours">
+        <button type="button" class="ap-chip" data-min="" data-max="">Не важно</button>
+        <button type="button" class="ap-chip" data-min="" data-max="10">до 10 ч</button>
+        <button type="button" class="ap-chip" data-min="10" data-max="20">10–20 ч</button>
+        <button type="button" class="ap-chip" data-min="20" data-max="30">20–30 ч</button>
+        <button type="button" class="ap-chip" data-min="30" data-max="">от 30 ч</button>
+        <button type="button" class="ap-chip" data-min="37" data-max="">37 ч — полная ставка</button>
+      </div>
+      <div class="apx-range">или свой диапазон: от
+        <input type="number" min="0" step="1" id="apxHoursMin" placeholder="—">
+        до <input type="number" min="0" step="1" id="apxHoursMax" placeholder="—"> ч/нед
+      </div>
+    </div>
+
+    <div class="apx-q">
+      <div class="apx-q-head">{{ ic.i('briefcase', 15) }} Кем работать</div>
+      <span class="apx-q-sub">Можно несколько — подойдёт любая из выбранных. Пусто = любая работа. Число — сколько таких вакансий сейчас открыто.</span>
+      <input type="hidden" name="category" value="{{ autopilot.category or '' }}">
+      {% set sel_cat = autopilot.category.split(',') if autopilot.category else [] %}
+      <div class="ap-chips" data-codes-for="category" data-codes-visible="10">
+        {% for code, lbl, cnt in autopilot_cat_options if cnt or code in sel_cat %}
+        <button type="button" class="ap-chip{{ ' active' if code in sel_cat else '' }}" data-val="{{ code }}">{{ lbl }} · {{ cnt }}</button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="apx-q">
+      <div class="apx-q-head">{{ ic.i('user', 15) }} Кому подходит по возрасту</div>
+      <span class="apx-q-sub">У Salling часть вакансий — специально для школьников до 18 лет.</span>
+      <input type="hidden" name="age" value="{{ autopilot.age or '' }}">
+      <div class="ap-chips" data-one-for="age">
+        <button type="button" class="ap-chip" data-val="">Не важно</button>
+        <button type="button" class="ap-chip" data-val="under18">Мне ещё нет 18</button>
+        <button type="button" class="ap-chip" data-val="adult">Мне 18 или больше</button>
+      </div>
+    </div>
+
+    <div class="apx-q">
+      <div class="apx-q-head">{{ ic.i('store', 15) }} В каких сетях</div>
+      <span class="apx-q-sub">Пусто = во всех сетях Salling.</span>
+      <input type="hidden" name="brand" value="{{ autopilot.brand or '' }}">
+      {% set sel_brand = autopilot.brand.split(',') if autopilot.brand else [] %}
+      <div class="ap-chips" data-codes-for="brand">
+        {% for code, lbl, cnt in autopilot_brand_options if cnt or code in sel_brand %}
+        <button type="button" class="ap-chip{{ ' active' if code in sel_brand else '' }}" data-val="{{ code }}">{{ lbl }} · {{ cnt }}</button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <details class="ap-faq apx-adv">
+      <summary>{{ ic.i('sliders', 14) }} Продвинутое — слова, исключения, регионы, расписание</summary>
+      <div class="ap-faq-body">
+        <div class="grid2">
+          <div class="field ap-field-wide">
+            <label class="lbl">Слова, которые должны быть в вакансии</label>
+            <input type="text" name="keywords" value="{{ autopilot.keywords or '' }}" placeholder="напр. weekend, student, ungarbejder">
+            <div class="ap-hint">По названию, описанию, городу. Несколько через запятую = «или». Русские слова WexFlow попробует перевести на датский.</div>
+          </div>
+          <div class="field">
+            <label class="lbl">Занятость</label>
+            {% set sel_emp = autopilot.employment_type.split(',') if autopilot.employment_type else [] %}
+            <div class="ap-select" data-multi data-empty="Любая">
+              <input type="hidden" name="employment_type" value="{{ autopilot.employment_type or '' }}">
+              <button type="button" class="ap-select-btn">
+                <span class="ap-select-text">Любая</span>
+                <span class="ap-select-arrow">▼</span>
+              </button>
+              <div class="ap-menu">
+                <button type="button" class="ap-opt {{ 'sel' if not sel_emp else '' }}" data-val="">Любая</button>
+                {% for code, lbl in employments.items() %}
+                  <button type="button" class="ap-opt {{ 'sel' if code in sel_emp else '' }}" data-val="{{ code }}">{{ lbl }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="ap-hint">Обычно достаточно фильтра по часам выше — это поле дублирует его данными Salling.</div>
+          </div>
+          <div class="field">
+            <label class="lbl">Регион Дании</label>
+            {% set sel_region = autopilot.regions.split(',') if autopilot.regions else [] %}
+            <div class="ap-select" data-multi data-empty="Любой регион">
+              <input type="hidden" name="regions" value="{{ autopilot.regions or '' }}">
+              <button type="button" class="ap-select-btn">
+                <span class="ap-select-text">Любой регион</span>
+                <span class="ap-select-arrow">▼</span>
+              </button>
+              <div class="ap-menu">
+                <button type="button" class="ap-opt {{ 'sel' if not sel_region else '' }}" data-val="">Любой регион</button>
+                {% for r in autopilot_regions %}
+                  <button type="button" class="ap-opt {{ 'sel' if r in sel_region else '' }}" data-val="{{ r }}">{{ autopilot_region_labels.get(r, r|capitalize) }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="ap-hint">Широкий фильтр «часть страны». Радиус и города выше обычно точнее.</div>
+          </div>
+          <div class="field">
+            <label class="lbl">Вакансия не старше, дней</label>
+            <input type="number" name="max_age_days" min="0" step="1" value="{{ autopilot.max_age_days or '' }}" placeholder="пусто = любой возраст">
+            <div class="ap-hint">Фильтр по дате публикации. Если даты нет — вакансия всё равно попадёт.</div>
+          </div>
+          <div class="field">
+            <label class="lbl">Не предлагать бренды</label>
+            {% set sel_exbrand = autopilot.exclude_brands.split(',') if autopilot.exclude_brands else [] %}
+            <div class="ap-select" data-multi data-empty="Ничего не исключать">
+              <input type="hidden" name="exclude_brands" value="{{ autopilot.exclude_brands or '' }}">
+              <button type="button" class="ap-select-btn">
+                <span class="ap-select-text">Ничего не исключать</span>
+                <span class="ap-select-arrow">▼</span>
+              </button>
+              <div class="ap-menu">
+                <button type="button" class="ap-opt {{ 'sel' if not sel_exbrand else '' }}" data-val="">Ничего не исключать</button>
+                {% for code, lbl in brands.items() %}
+                  <button type="button" class="ap-opt {{ 'sel' if code in sel_exbrand else '' }}" data-val="{{ code }}">{{ lbl }}</button>
+                {% endfor %}
+              </div>
             </div>
           </div>
-        </div>
-        <div class="field ap-csv-field" data-suggest='{{ autopilot_cities|tojson }}' data-suggest-kind="city" data-suggest-mode="csv">
-          <label class="lbl">Не предлагать города</label>
-          <input type="text" name="exclude_cities" value="{{ autopilot.exclude_cities or '' }}" placeholder="любой текст: Aalborg, Esbjerg" autocomplete="off" spellcheck="false">
-          <div class="suggest-menu"></div>
-          <div class="ap-hint">Можно написать свой город или часть названия. Несколько через запятую.</div>
-        </div>
-        <div class="field ap-field-wide">
-          <label class="lbl">Не предлагать, если есть слова</label>
-          <input type="text" name="exclude_keywords" value="{{ autopilot.exclude_keywords or '' }}" placeholder="напр. nat, weekend, leder">
-          <div class="ap-hint">Если хоть одно слово встретится в названии или описании, вакансия не попадёт. Через запятую.</div>
+          <div class="field ap-csv-field" data-suggest='{{ autopilot_cities|tojson }}' data-suggest-kind="city" data-suggest-mode="csv">
+            <label class="lbl">Не предлагать города</label>
+            <input type="text" name="exclude_cities" value="{{ autopilot.exclude_cities or '' }}" placeholder="любой текст: Aalborg, Esbjerg" autocomplete="off" spellcheck="false">
+            <div class="suggest-menu"></div>
+            <div class="ap-hint">Можно написать свой город или часть названия. Несколько через запятую.</div>
+          </div>
+          <div class="field ap-field-wide">
+            <label class="lbl">Не предлагать, если есть слова</label>
+            <input type="text" name="exclude_keywords" value="{{ autopilot.exclude_keywords or '' }}" placeholder="напр. nat, weekend, leder">
+            <div class="ap-hint">Если хоть одно слово встретится в названии или описании — вакансия не попадёт. Через запятую.</div>
+          </div>
+          <div class="field ap-field-wide">
+            <label class="lbl">Часы активности</label>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span class="hint" style="margin:0;">с</span>
+              <input type="number" name="active_from" min="0" max="24" style="width:90px;"
+                     value="{{ autopilot.active_from if autopilot.active_from is not none else 0 }}">
+              <span class="hint" style="margin:0;">до</span>
+              <input type="number" name="active_to" min="0" max="24" style="width:90px;"
+                     value="{{ autopilot.active_to if autopilot.active_to is not none else 24 }}">
+              <span class="hint" style="margin:0;">ч</span>
+            </div>
+            <div class="ap-hint">Карточки в Telegram и автоотправка — только в эти часы (поиск идёт всегда). 0 и 24 (или одинаковые) = круглосуточно.</div>
+          </div>
         </div>
       </div>
-    </div>
-
-    <div class="field ap-field-wide" style="margin-top:12px;">
-      <label class="lbl">Часы активности</label>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span class="hint" style="margin:0;">с</span>
-        <input type="number" name="active_from" min="0" max="24" style="width:90px;"
-               value="{{ autopilot.active_from if autopilot.active_from is not none else 0 }}">
-        <span class="hint" style="margin:0;">до</span>
-        <input type="number" name="active_to" min="0" max="24" style="width:90px;"
-               value="{{ autopilot.active_to if autopilot.active_to is not none else 24 }}">
-        <span class="hint" style="margin:0;">ч</span>
-      </div>
-      <div class="ap-hint">Карточки в Telegram и автоотправка — только в эти часы (поиск идёт всегда). 0 и 24 (или одинаковые) = круглосуточно.</div>
-    </div>
+    </details>
 
     <div class="ap-summary">
       <div class="ap-summary-title">Что ищет этот набор</div>
@@ -1176,64 +1162,102 @@
   // быстрые варианты-чипсы автопилота (вдруг не знаешь, что писать)
   (function () {
     function input(name) { return document.querySelector('#autopilot [name="' + name + '"]'); }
-    // множественный выбор: км / часы / свежесть — храним список значений через
-    // запятую в скрытом поле; сервер выберет самый мягкий порог. Чипы и «своё число».
-    document.querySelectorAll('#autopilot [data-chips-for]').forEach(function (box) {
-      var key = box.dataset.chipsFor;
-      var unit = box.dataset.chipsUnit || '';
-      var hidden = input(key);                                  // скрытое CSV-поле
-      var custom = document.querySelector('#autopilot [data-chips-custom="' + key + '"]');
-      var clearChip = box.querySelector('.ap-chip[data-val=""]');
-      if (!hidden) return;
+    // одиночный выбор (радиус, возраст): один активный чип, пустой data-val = «не важно»
+    document.querySelectorAll('#autopilot [data-one-for]').forEach(function (box) {
+      var hidden = input(box.dataset.oneFor); if (!hidden) return;
+      var custom = box.querySelector('[data-one-custom]');
+      // легаси: старое поле могло хранить несколько порогов CSV — берём самый мягкий
+      if ((hidden.value || '').indexOf(',') >= 0) {
+        var ns = hidden.value.split(',').map(parseFloat).filter(function (n) { return !isNaN(n); });
+        hidden.value = ns.length ? String(Math.max.apply(null, ns)) : '';
+      }
+      function sync() {
+        var v = (hidden.value || '').trim(), known = false;
+        box.querySelectorAll('.ap-chip').forEach(function (c) {
+          var on = (c.dataset.val || '') === v;
+          c.classList.toggle('active', on);
+          if (on) known = true;
+        });
+        if (custom) custom.value = (!known && v) ? v : '';
+      }
+      box.querySelectorAll('.ap-chip').forEach(function (c) {
+        c.addEventListener('click', function () { hidden.value = c.dataset.val || ''; sync(); });
+      });
+      if (custom) custom.addEventListener('input', function () {
+        var n = parseFloat((custom.value || '').replace(',', '.'));
+        hidden.value = (!isNaN(n) && n > 0) ? String(n) : '';
+        box.querySelectorAll('.ap-chip').forEach(function (c) {
+          c.classList.toggle('active', !custom.value && (c.dataset.val || '') === '');
+        });
+      });
+      sync();
+    });
 
-      function getSet() {
-        return (hidden.value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    // диапазон часов: пресеты-чипы + свой «от/до» — пишут min_hours/max_hours
+    (function () {
+      var box = document.getElementById('apxHours'); if (!box) return;
+      var lo = input('min_hours'), hi = input('max_hours');
+      var inLo = document.getElementById('apxHoursMin'), inHi = document.getElementById('apxHoursMax');
+      function normCsv(h, pick) {   // легаси-CSV → самый мягкий порог
+        if ((h.value || '').indexOf(',') < 0) return;
+        var ns = h.value.split(',').map(parseFloat).filter(function (n) { return !isNaN(n); });
+        h.value = ns.length ? String(pick.apply(null, ns)) : '';
       }
-      function setSet(arr) {
-        var uniq = arr.filter(function (v, i) { return arr.indexOf(v) === i; });
-        hidden.value = uniq.join(',');
-      }
-      function bindChip(c) {
-        c.addEventListener('click', function () {
-          var v = c.dataset.val, set = getSet(), i = set.indexOf(v);
-          if (v === '') set = [];                 // «без ограничения / любые» — сбрасывает
-          else if (i >= 0) set.splice(i, 1);      // повторный клик снимает
-          else set.push(v);
-          setSet(set); sync();
+      normCsv(lo, Math.min); normCsv(hi, Math.max);
+      function mark() {
+        box.querySelectorAll('.ap-chip').forEach(function (c) {
+          c.classList.toggle('active', (c.dataset.min || '') === (lo.value || '') && (c.dataset.max || '') === (hi.value || ''));
         });
       }
-      function ensureChip(val) {                  // чип для кастомного значения
-        if (box.querySelector('.ap-chip[data-val="' + val + '"]')) return;
-        var c = document.createElement('button');
-        c.type = 'button'; c.className = 'ap-chip'; c.dataset.val = val; c.dataset.custom = '1';
-        c.textContent = val + unit;
-        box.insertBefore(c, clearChip || null);
-        bindChip(c);
-      }
+      function sync() { mark(); if (inLo) inLo.value = lo.value; if (inHi) inHi.value = hi.value; }
+      box.querySelectorAll('.ap-chip').forEach(function (c) {
+        c.addEventListener('click', function () { lo.value = c.dataset.min || ''; hi.value = c.dataset.max || ''; sync(); });
+      });
+      [[inLo, lo], [inHi, hi]].forEach(function (pair) {
+        var inp = pair[0], h = pair[1];
+        if (!inp) return;
+        inp.addEventListener('input', function () {
+          var n = parseFloat((inp.value || '').replace(',', '.'));
+          h.value = (!isNaN(n) && n > 0) ? String(n) : '';
+          mark();
+        });
+      });
+      sync();
+    })();
+
+    // мультивыбор кодов чипами (категории, сети): клик добавляет/снимает
+    document.querySelectorAll('#autopilot [data-codes-for]').forEach(function (box) {
+      var hidden = input(box.dataset.codesFor); if (!hidden) return;
+      function getSet() { return (hidden.value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean); }
       function sync() {
         var set = getSet();
         box.querySelectorAll('.ap-chip').forEach(function (c) {
-          var v = c.dataset.val;
-          var on = v === '' ? set.length === 0 : set.indexOf(v) >= 0;
-          c.classList.toggle('active', on);
-          if (c.dataset.custom && !on) c.remove();   // снятый кастомный чип убираем
+          c.classList.toggle('active', set.indexOf(c.dataset.val) >= 0);
         });
       }
-      getSet().forEach(ensureChip);               // восстановить кастомные чипы из сохранённого
-      box.querySelectorAll('.ap-chip').forEach(bindChip);
-      if (custom) {
-        var commit = function () {
-          var raw = (custom.value || '').trim();
-          if (!raw) return;
-          var n = parseFloat(raw.replace(',', '.'));
-          if (isNaN(n) || n <= 0) { custom.value = ''; return; }
-          var v = String(n === Math.floor(n) ? Math.floor(n) : n);
-          ensureChip(v);
-          var set = getSet(); if (set.indexOf(v) < 0) set.push(v);
-          setSet(set); custom.value = ''; sync();
-        };
-        custom.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
-        custom.addEventListener('blur', commit);
+      box.querySelectorAll('.ap-chip').forEach(function (c) {
+        c.addEventListener('click', function () {
+          var set = getSet(), i = set.indexOf(c.dataset.val);
+          if (i >= 0) set.splice(i, 1); else set.push(c.dataset.val);
+          hidden.value = set.join(','); sync();
+        });
+      });
+      // длинный список сворачиваем: редкие варианты — за кнопкой «ещё N»
+      var limit = parseInt(box.dataset.codesVisible || '0', 10);
+      if (limit) {
+        var extra = [].slice.call(box.querySelectorAll('.ap-chip')).slice(limit)
+          .filter(function (c) { return !c.classList.contains('active'); });
+        if (extra.length > 1) {
+          extra.forEach(function (c) { c.style.display = 'none'; });
+          var more = document.createElement('button');
+          more.type = 'button'; more.className = 'apx-morebtn';
+          more.textContent = 'ещё ' + extra.length;
+          more.addEventListener('click', function () {
+            extra.forEach(function (c) { c.style.display = ''; });
+            more.remove();
+          });
+          box.appendChild(more);
+        }
       }
       sync();
     });
@@ -1321,17 +1345,42 @@
 
     function hidden(name) { return form.querySelector('input[type=hidden][name="' + name + '"]'); }
 
-    // выставить набору чипов (км/часы/свежесть) ровно заданные значения
-    function setChips(key, vals) {
-      var box = form.querySelector('[data-chips-for="' + key + '"]'); if (!box) return;
-      var clear = box.querySelector('.ap-chip[data-val=""]');
-      if (clear) clear.click();                               // сбросить всё
-      (vals || []).forEach(function (v) {
-        v = String(v);
-        var chip = box.querySelector('.ap-chip[data-val="' + v + '"]');
-        if (chip) { if (!chip.classList.contains('active')) chip.click(); return; }
-        var custom = form.querySelector('[data-chips-custom="' + key + '"]');  // своё число
-        if (custom) { custom.value = v; custom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })); }
+    // одиночный чип-выбор (радиус/возраст): выставить значение и подсветить
+    function setOne(key, val) {
+      var box = form.querySelector('[data-one-for="' + key + '"]'); if (!box) return;
+      var h = hidden(key); if (!h) return;
+      h.value = (val == null ? '' : String(val));
+      var custom = box.querySelector('[data-one-custom]'), known = false;
+      box.querySelectorAll('.ap-chip').forEach(function (c) {
+        var on = (c.dataset.val || '') === (h.value || '');
+        c.classList.toggle('active', on); if (on) known = true;
+      });
+      if (custom) custom.value = (!known && h.value) ? h.value : '';
+    }
+    // диапазон часов: выставить min/max и подсветить чип-пресет
+    function setHours(mn, mx) {
+      var lo = hidden('min_hours'), hi = hidden('max_hours');
+      if (lo) lo.value = (mn == null ? '' : String(mn));
+      if (hi) hi.value = (mx == null ? '' : String(mx));
+      var box = document.getElementById('apxHours');
+      if (box) box.querySelectorAll('.ap-chip').forEach(function (c) {
+        c.classList.toggle('active', (c.dataset.min || '') === ((lo && lo.value) || '') && (c.dataset.max || '') === ((hi && hi.value) || ''));
+      });
+      var a = document.getElementById('apxHoursMin'), b2 = document.getElementById('apxHoursMax');
+      if (a && lo) a.value = lo.value;
+      if (b2 && hi) b2.value = hi.value;
+    }
+    // мультивыбор кодов (категории/сети): выставить ровно заданный список
+    function setCodes(key, vals) {
+      var box = form.querySelector('[data-codes-for="' + key + '"]'); if (!box) return;
+      var h = hidden(key); if (!h) return;
+      var known = [].slice.call(box.querySelectorAll('.ap-chip')).map(function (c) { return c.dataset.val; });
+      h.value = (vals || []).filter(function (v) { return known.indexOf(v) >= 0; }).join(',');
+      var set = h.value ? h.value.split(',') : [];
+      box.querySelectorAll('.ap-chip').forEach(function (c) {
+        var on = set.indexOf(c.dataset.val) >= 0;
+        c.classList.toggle('active', on);
+        if (on) c.style.display = '';   // выбранный чип не должен прятаться за «ещё N»
       });
     }
     // выставить мультиселекту (возраст и т.п.) ровно заданные значения
@@ -1353,24 +1402,26 @@
     }
 
     var PRESETS = {
-      // дом рядом, лёгкая подработка, только свежее
-      near:    { max_km:[10], min_hours:[],   max_hours:[20], max_age_days:[14], age:[],          keywords:'',               exclude_keywords:'' },
+      // дом рядом, лёгкая подработка
+      near:    { km:'10', hours:['', '20'], age:'',        keywords:'',               exclude_keywords:'' },
       // школьник/до 18: ближе, мало часов, без ночных смен
-      teen:    { max_km:[15], min_hours:[],   max_hours:[15], max_age_days:[30], age:['under18'], keywords:'',               exclude_keywords:'nat' },
+      teen:    { km:'15', hours:['', '15'], age:'under18', keywords:'',               exclude_keywords:'nat' },
       // полная ставка для взрослого
-      full:    { max_km:[25], min_hours:[30], max_hours:[],   max_age_days:[30], age:['adult'],   keywords:'',               exclude_keywords:'' },
+      full:    { km:'25', hours:['30', ''], age:'adult',   keywords:'',               exclude_keywords:'' },
       // вечер и выходные
-      evening: { max_km:[15], min_hours:[],   max_hours:[],   max_age_days:[30], age:[],          keywords:'weekend, aften', exclude_keywords:'' },
-      // полный сброс фильтров (город/бренд не трогаем — это личное)
-      reset:   { max_km:[], min_hours:[], max_hours:[], max_age_days:[], age:[], keywords:'', exclude_keywords:'' }
+      evening: { km:'15', hours:['', ''],   age:'',        keywords:'weekend, aften', exclude_keywords:'' },
+      // полный сброс фильтров (города не трогаем — это личное)
+      reset:   { km:'', hours:['', ''], age:'', keywords:'', exclude_keywords:'', clearCodes: true }
     };
 
     function applyPreset(name) {
       var p = PRESETS[name]; if (!p) return;
-      ['max_km', 'min_hours', 'max_hours', 'max_age_days'].forEach(function (k) { setChips(k, p[k]); });
-      setSelect('age', p.age);
+      setOne('max_km', p.km);
+      setHours(p.hours[0], p.hours[1]);
+      setOne('age', p.age);
       setText('keywords', p.keywords);
       setText('exclude_keywords', p.exclude_keywords);
+      if (p.clearCodes) { setCodes('category', []); setCodes('brand', []); setText('max_age_days', ''); }
       renderSummary();
       var s = document.getElementById('apSummary');
       if (s) { s.style.transition = 'none'; s.style.opacity = '.35'; requestAnimationFrame(function () { s.style.transition = 'opacity .35s'; s.style.opacity = '1'; }); }
@@ -1398,21 +1449,35 @@
     }
     function b(s) { return '<b>' + s + '</b>'; }
 
+    // подписи выбранных чипов мультивыбора («Кассир · 122» → «Кассир»)
+    function codeLabels(name) {
+      var box = form.querySelector('[data-codes-for="' + name + '"]'); if (!box) return [];
+      return [].slice.call(box.querySelectorAll('.ap-chip.active')).map(function (c) {
+        return c.textContent.split('·')[0].trim();
+      });
+    }
+    // подпись активного одиночного чипа (радиус/возраст); пусто = «не важно»
+    function oneLabel(name) {
+      var box = form.querySelector('[data-one-for="' + name + '"]'); if (!box) return '';
+      var h = hidden(name); if (!h || !(h.value || '').trim()) return '';
+      var c = box.querySelector('.ap-chip.active');
+      return c ? c.textContent.trim() : h.value;
+    }
     function renderSummary() {
       var el = document.getElementById('apSummary'); if (!el) return;
       var parts = [];
-      var km = nums('max_km');     if (km.length) parts.push('рядом ' + b('≤ ' + Math.max.apply(null, km) + ' км'));
+      var km = nums('max_km');     if (km.length) parts.push('рядом ' + b('≤ ' + km[0] + ' км'));
       var mn = nums('min_hours'), mx = nums('max_hours');
-      var lo = mn.length ? Math.min.apply(null, mn) : null;   // самый мягкий нижний порог
-      var hi = mx.length ? Math.max.apply(null, mx) : null;   // самый мягкий верхний порог
+      var lo = mn.length ? mn[0] : null;
+      var hi = mx.length ? mx[0] : null;
       if (lo !== null && hi !== null) parts.push(b((lo === hi ? lo : lo + '–' + hi) + ' ч/нед'));
       else if (lo !== null) parts.push(b('от ' + lo + ' ч/нед'));
       else if (hi !== null) parts.push(b('до ' + hi + ' ч/нед'));
-      var age = nums('max_age_days'); if (age.length) parts.push('свежее ' + b(Math.max.apply(null, age) + ' дн'));
-      selLabels('age').forEach(function (l) { parts.push(b(l)); });
-      var cat = selLabels('category'); if (cat.length) parts.push('тип: ' + b(cat.join(', ')));
+      var ageL = oneLabel('age'); if (ageL) parts.push(b(ageL.toLowerCase()));
+      var cat = codeLabels('category'); if (cat.length) parts.push('работа: ' + b(cat.join(', ')));
+      var br = codeLabels('brand'); if (br.length) parts.push('сети: ' + b(br.join(', ')));
+      var ageD = textVal('max_age_days'); if (ageD) parts.push('свежее ' + b(ageD + ' дн'));
       var emp = selLabels('employment_type'); if (emp.length) parts.push('занятость: ' + b(emp.join(', ')));
-      var br = selLabels('brand'); if (br.length) parts.push('бренды: ' + b(br.join(', ')));
       var rg = selLabels('regions'); if (rg.length) parts.push('регионы: ' + b(rg.join(', ')));
       var city = textVal('cities'); if (city) parts.push('город: ' + b(city));
       var kw = textVal('keywords'); if (kw) parts.push('со словами ' + b(kw));
@@ -1458,19 +1523,27 @@
     }
 
     // применить черновик фильтров (от ИИ) к форме — через те же обработчики
+    function splitCsv(v) {
+      return (v || '').toString().split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+    function csvNums(v) {
+      return splitCsv(v).map(parseFloat).filter(function (n) { return !isNaN(n) && n > 0; });
+    }
     function applyFields(f) {
-      ['max_km', 'min_hours', 'max_hours', 'max_age_days'].forEach(function (k) {
-        var v = (f[k] || '').toString().trim();
-        setChips(k, v ? v.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : []);
-      });
-      ['category', 'employment_type', 'brand', 'regions'].forEach(function (k) {
-        var v = (f[k] || '').toString().trim();
-        setSelect(k, v ? v.split(',').map(function (s) { return s.trim(); }).filter(Boolean) : []);
-      });
-      setSelect('age', f.age ? [f.age] : []);
+      var km = csvNums(f.max_km);
+      setOne('max_km', km.length ? String(Math.max.apply(null, km)) : '');
+      var mn = csvNums(f.min_hours), mx = csvNums(f.max_hours);
+      setHours(mn.length ? String(Math.min.apply(null, mn)) : '', mx.length ? String(Math.max.apply(null, mx)) : '');
+      setCodes('category', splitCsv(f.category));
+      setCodes('brand', splitCsv(f.brand));
+      setOne('age', splitCsv(f.age)[0] || '');
+      setSelect('employment_type', splitCsv(f.employment_type));
+      setSelect('regions', splitCsv(f.regions));
       setText('cities', f.cities || '');
       setText('keywords', f.keywords || '');
       setText('exclude_keywords', f.exclude_keywords || '');
+      var ad = csvNums(f.max_age_days);
+      setText('max_age_days', ad.length ? String(Math.max.apply(null, ad)) : '');
       renderSummary(); refreshStatus();
     }
 
