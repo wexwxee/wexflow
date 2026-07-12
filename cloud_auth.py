@@ -313,6 +313,18 @@ def report_jobs(items, timeout: int = 8) -> bool:
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
 
+def report_filters(payload: dict, timeout: int = 8) -> bool:
+    """Отправить в облако текущие фильтры первого набора + варианты выбора —
+    панель Mini App показывает их и может прислать команду set_filters.
+    Автоотправка/лимиты сюда не входят и с телефона недоступны."""
+    body = {
+        "kind": "filters_sync",
+        "deviceId": device_id(),
+        "filters": dict(payload or {}),
+    }
+    return bool(_post_json("/api/decisions", body, timeout).get("ok"))
+
+
 def report_apply_progress(progress: dict, timeout: int = 6) -> bool:
     """Сообщить облаку сводку прогресса пакетной подачи — для панели прогресса в
     Mini App («Подаю X из N», что сейчас, сколько подано/не удалось). Облако хранит

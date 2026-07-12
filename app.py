@@ -576,6 +576,120 @@ def _sync_jobs_to_cloud(force: bool = False) -> None:
         print(f"jobs-sync: ошибка — {e}")
 
 
+# Фильтры, которые можно менять с телефона. Автоотправка/лимиты сюда сознательно
+# НЕ входят: включать необратимое с телефона нельзя (правило из плана автопилота).
+_REMOTE_FILTER_AGES = ("", "under18", "adult")
+
+
+def _sanitize_remote_filters(fields: dict) -> dict:
+    """Отфильтровать команду set_filters из облака до безопасного словаря.
+
+    Берём только известные ключи и только осмысленные значения; всё прочее
+    молча отбрасываем (облако — недоверенный вход, см. F27/шаг 5). Возвращаем
+    ТОЛЬКО присланные ключи: save_profile_filters дольёт остальные из профиля."""
+    if not isinstance(fields, dict):
+        return {}
+    out: dict = {}
+
+    def _num(key):
+        if key not in fields:
+            return
+        raw = str(fields.get(key) or "").strip().replace(",", ".")
+        if raw == "":
+            out[key] = ""
+            return
+        try:
+            n = float(raw)
+        except ValueError:
+            return
+        if 0 < n <= 10000:
+            out[key] = str(int(n) if n == int(n) else n)
+
+    def _codes(key, known):
+        if key not in fields:
+            return
+        vals = [v.strip() for v in str(fields.get(key) or "").split(",") if v.strip()]
+        out[key] = ",".join(v for v in vals if v in known)
+
+    _num("max_km")
+    _num("min_hours")
+    _num("max_hours")
+    if "age" in fields:
+        age = str(fields.get("age") or "").strip()
+        if age in _REMOTE_FILTER_AGES:
+            out["age"] = age
+    _codes("category", set(labels.CATEGORY))
+    _codes("brand", set(labels.BRANDS))
+    return out
+
+
+_filters_sync_last = 0.0
+
+
+def _sync_filters_to_cloud(force: bool = False) -> None:
+    """Панель Mini App показывает и меняет фильтры первого набора. Шлём текущие
+    значения + варианты (категории/сети со счётчиками), чтобы панель ничего не
+    выдумывала сама. Троттлинг — как у jobs_sync."""
+    global _filters_sync_last
+    if not account_mod.is_signed_in():
+        return
+    now = time.time()
+    if not force and now - _filters_sync_last < 300:
+        return
+    _filters_sync_last = now
+    try:
+        profs = autopilot.ensure_profiles()
+        prof = profs[0]
+
+        def _soft_num(key, pick):
+            vals = []
+            for v in str(prof.get(key) or "").split(","):
+                try:
+                    vals.append(float(v.strip()))
+                except ValueError:
+                    continue
+            if not vals:
+                return ""
+            n = pick(vals)
+            return str(int(n) if n == int(n) else n)
+
+        with get_session() as s:
+            fc = _active_counts(s)
+        cat_options = sorted(
+            ((code, lbl, int(fc["category"].get(code, 0))) for code, lbl in labels.CATEGORY.items()),
+            key=lambda t: -t[2],
+        )
+        brand_options = sorted(
+            ((code, lbl, int(fc["brand"].get(code, 0))) for code, lbl in labels.BRANDS.items()),
+            key=lambda t: -t[2],
+        )
+        sel_cats = {c.strip() for c in str(prof.get("category") or "").split(",") if c.strip()}
+        payload = {
+            "values": {
+                "max_km": _soft_num("max_km", max),
+                "min_hours": _soft_num("min_hours", min),
+                "max_hours": _soft_num("max_hours", max),
+                "age": str(prof.get("age") or "").strip(),
+                "category": str(prof.get("category") or "").strip(),
+                "brand": str(prof.get("brand") or "").strip(),
+            },
+            "options": {
+                # топ-12 категорий + все выбранные (даже редкие) — панели хватает
+                "categories": [
+                    [c, l, n] for i, (c, l, n) in enumerate(cat_options)
+                    if (i < 12 and n) or c in sel_cats
+                ],
+                "brands": [[c, l, n] for c, l, n in brand_options if n],
+            },
+            "profileName": str(prof.get("name") or "Набор 1"),
+            "profilesTotal": len(profs),
+            "matchCount": autopilot.profile_match_count(prof),
+        }
+        cloud_auth.report_filters(payload)
+    except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
+        print(f"filters-sync: ошибка — {e}")
+
+
 def _tg_poller_loop() -> None:
     """Опрашивает облако: какие решения (✅/❌) принял пользователь под карточками,
     и выполняет их локально (подать/пропустить).
@@ -589,6 +703,7 @@ def _tg_poller_loop() -> None:
                 _handle_tg_decisions(cloud_auth.fetch_decisions())
                 _sync_applied_to_cloud()  # одно облако: держим «Поданные» свежими (троттлинг 30с)
                 _sync_jobs_to_cloud()     # фаза 2b: список подходящих вакансий в Mini App
+                _sync_filters_to_cloud()  # текущие фильтры + варианты для настройки с телефона
             tg_id = account_mod.load().get("tg_id") if account_mod.is_signed_in() else ""
             for cmd in cloud_auth.fetch_commands(tg_id=tg_id or ""):
                 if _tg_remote_command_expired(cmd):
@@ -947,6 +1062,22 @@ def _handle_tg_remote_command(command: dict) -> str:
                 return "🔄 Проверка уже идёт. Скоро пришлю новые подходящие вакансии, если они появятся."
             threading.Thread(target=_sync_jobs, daemon=True).start()
             return "🔄 Запустил проверку вакансий на ПК. Если появятся новые подходящие, пришлю сюда."
+
+        if action == "set_filters":
+            # Настройка с телефона меняет только ЧТО ИЩЕМ (первый набор фильтров).
+            # Подача по-прежнему требует «Подать» (F27), автоотправку с телефона не трогаем.
+            fields = _sanitize_remote_filters(command.get("filters") or {})
+            if not fields:
+                return "⚙️ Не получил ни одного корректного фильтра — ничего не менял."
+            prof = autopilot.ensure_profiles()[0]
+            autopilot.save_profile_filters(prof["id"], fields)
+            # как при сохранении на ПК: текущие совпадения не считаем «новыми»
+            autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+            autopilot.log_event("info", "Telegram: фильтры обновлены с телефона")
+            _sync_filters_to_cloud(force=True)
+            _sync_jobs_to_cloud(force=True)
+            n = autopilot.profile_match_count(autopilot.ensure_profiles()[0])
+            return f"⚙️ Фильтры обновлены с телефона. Подходит сейчас: {n}."
 
         return "Неизвестная команда Telegram-пульта."
     except Exception as e:  # noqa: BLE001
