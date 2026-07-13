@@ -91,6 +91,13 @@
   .acct-rebind { margin-top:10px; padding-top:10px; border-top:1px solid var(--glass-line); display:grid; gap:5px; justify-items:end; }
   .acct-rebind-btn { background:transparent; border:0; color:var(--muted); font-size:12px; font-weight:600; cursor:pointer; padding:2px 0; display:inline-flex; align-items:center; gap:6px; }
   .acct-rebind-btn:hover { color:var(--txt-strong); text-decoration:underline; }
+  .privacy-card { border-color:color-mix(in srgb, var(--err-txt) 28%, var(--glass-line)); }
+  .privacy-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .privacy-copy { max-width:650px; }
+  .privacy-copy p { margin:5px 0 0; color:var(--muted); font-size:12.5px; line-height:1.5; }
+  .danger-btn { border:1px solid color-mix(in srgb, var(--err-txt) 55%, var(--glass-line));
+    background:transparent; color:var(--err-txt); }
+  .danger-btn:hover { background:color-mix(in srgb, var(--err-txt) 10%, transparent); }
   .tg-login-btn {
     position:relative; isolation:isolate; overflow:hidden;
     display:inline-flex; align-items:center; justify-content:center; gap:10px;
@@ -248,6 +255,8 @@
   <p class="sub">Аккаунт WexFlow: профиль кандидата — один на все фирмы (Salling, 7-Eleven и будущие). Заполни один раз, бот подставит нужные данные при подаче.</p>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
+  {% if deleted %}<div class="ok">{{ ic.i('check', 13) }} Облачные данные удалены. Локальные профиль, документы и журнал остались на этом компьютере.</div>{% endif %}
+  {% if delete_error %}<div class="err">Не удалось удалить облачные данные. Проверьте интернет и повторите.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
 
   <!-- Аккаунт: вход через Telegram -->
@@ -299,6 +308,21 @@
       {% endif %}
     </div>
   </div>
+  {% if account.signed_in %}
+  <div class="panel privacy-card">
+    <div class="privacy-row">
+      <div class="privacy-copy">
+        <h2>Данные в облаке</h2>
+        <p>Удалит Telegram-профиль, тариф, облачную копию анкеты, привязки устройств,
+          очереди и историю панели. Локальные документы, профиль и журнал на этом ПК не удаляются.</p>
+      </div>
+      <form method="post" action="/account/delete-cloud" style="margin:0;"
+            onsubmit="return confirm('Удалить все данные WexFlow из облака? Тариф и Telegram-привязка будут потеряны. Отменить это действие нельзя.');">
+        <button class="danger-btn" type="submit">Удалить данные из облака</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
   <script>
   (function () {
     var btn = document.getElementById('tgLoginBtn');

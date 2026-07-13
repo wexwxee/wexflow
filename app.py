@@ -2218,7 +2218,8 @@ def api_transit(job_id: str):
 
 
 @app.get("/account", response_class=HTMLResponse)
-def account_page(request: Request, saved: str = "", missing: str = ""):
+def account_page(request: Request, saved: str = "", missing: str = "",
+                 deleted: str = "", delete_error: str = ""):
     """Общие настройки приложения: единый профиль, документы и подписка."""
     # если уже вошли — освежим тариф/имя из облака (подхватит выданный Pro/Max)
     if account_mod.is_signed_in():
@@ -2235,6 +2236,7 @@ def account_page(request: Request, saved: str = "", missing: str = ""):
         "request": request, "profile": profile,
         "file_info": _profile_file_info(profile),
         "saved": saved, "missing_fields": missing_fields,
+        "deleted": deleted, "delete_error": delete_error,
         "city_options": city_options, "country_options": country_options,
         "subscription": subscription.status(),
         "account": account_mod.status(profile),
@@ -2491,6 +2493,18 @@ def account_logout():
     """Выйти из аккаунта (локально). Облачная сессия остаётся — можно войти снова."""
     account_mod.sign_out()
     return RedirectResponse("/account", status_code=303)
+
+
+@app.post("/account/delete-cloud")
+def account_delete_cloud():
+    """GDPR: удалить облачные данные, не трогая локальные файлы пользователя."""
+    if not account_mod.is_signed_in():
+        return RedirectResponse("/account?delete_error=not_signed_in", status_code=303)
+    result = cloud_auth.delete_cloud_data()
+    if not result.get("ok"):
+        return RedirectResponse("/account?delete_error=cloud", status_code=303)
+    account_mod.sign_out()
+    return RedirectResponse("/account?deleted=1", status_code=303)
 
 
 @app.post("/account/link/code")

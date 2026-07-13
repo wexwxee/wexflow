@@ -87,6 +87,29 @@ _registered = False
 _register_lock = threading.Lock()
 
 
+def _rotate_device_identity() -> bool:
+    """После GDPR-удаления заменить id+секрет отозванного устройства."""
+    global _device_cache, _registered
+    rec = {"id": uuid.uuid4().hex, "secret": secrets.token_hex(32)}
+    tmp = DEVICE_PATH.with_name(DEVICE_PATH.name + ".tmp")
+    with _register_lock:
+        try:
+            DEVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(rec), encoding="utf-8")
+            tmp.replace(DEVICE_PATH)
+        except OSError:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            _registered = False
+            return False
+        with _device_lock:
+            _device_cache = {**rec, "persisted": True}
+        _registered = False
+    return True
+
+
 def _ensure_registered(timeout: int = 6) -> None:
     """Один раз за процесс сообщить облаку секрет устройства (шаг 5).
     Кто первый зарегистрировал — того и устройство. Сбой сети не критичен:
@@ -190,6 +213,17 @@ def _post_json(path: str, payload: dict, timeout: int = 10) -> dict:
             return {"ok": False, "error": f"HTTP {e.code}"}
     except (urllib.error.URLError, OSError, ValueError):
         return {"ok": False, "error": "Нет связи с облаком"}
+
+
+def delete_cloud_data(timeout: int = 15) -> dict:
+    """Удалить облачный аккаунт/очереди и отозвать старую identity устройства."""
+    old_device = device_id()
+    result = _post_json(
+        "/api/session", {"action": "delete_data", "device": old_device}, timeout
+    )
+    if result.get("ok"):
+        result["identityRotated"] = _rotate_device_identity()
+    return result
 
 
 def link_new(timeout: int = 10) -> dict:

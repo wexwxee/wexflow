@@ -109,6 +109,21 @@ def test_no_registration_when_secret_not_persisted():
         assert not reg, "нельзя регистрировать несохранённый секрет (потеряется при рестарте)"
 
 
+def test_delete_cloud_data_rotates_device_identity():
+    with _TempDevice(), _Patched() as cloud:
+        old_id = cloud_auth.device_id()
+        old_secret = cloud_auth.device_secret()
+        result = cloud_auth.delete_cloud_data()
+        assert result["ok"] and result["identityRotated"]
+        assert cloud_auth.device_id() != old_id
+        assert cloud_auth.device_secret() != old_secret
+        saved = json.loads(cloud_auth.DEVICE_PATH.read_text(encoding="utf-8"))
+        assert saved["id"] == cloud_auth.device_id()
+        delete = next(r for r in cloud.requests if r["body"] and r["body"].get("action") == "delete_data")
+        assert delete["body"]["device"] == old_id
+        assert delete["headers"].get("x-device-token") == old_secret
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
