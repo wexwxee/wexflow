@@ -298,6 +298,28 @@ def fetch_commands(tg_id: str = "", timeout: int = 15) -> list:
         return []
 
 
+def fetch_poll(tg_id: str = "", timeout: int = 12) -> dict | None:
+    """Одним запросом получить решения + команды и обновить heartbeat.
+
+    None означает именно сбой связи/серверную ошибку; пустые списки означают
+    успешный опрос без работы. Это различие нужно для backoff и диагностики."""
+    query = {"deviceId": device_id(), "kind": "poll"}
+    if tg_id:
+        query["tgId"] = str(tg_id)
+    url = f"{CLOUD_BASE}/api/decisions?{urllib.parse.urlencode(query)}"
+    try:
+        with _open(url, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        if not data.get("ok"):
+            return None
+        return {
+            "decisions": data.get("decisions") if isinstance(data.get("decisions"), list) else [],
+            "commands": data.get("commands") if isinstance(data.get("commands"), list) else [],
+        }
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
 def send_command_result(command: dict, text: str, timeout: int = 10) -> bool:
     """Отправить результат выполнения удалённой команды обратно в Telegram."""
     payload = {

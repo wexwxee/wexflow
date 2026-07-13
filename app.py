@@ -195,12 +195,15 @@ def _data_age_minutes() -> int | None:
 _tg_thread = None
 _tg_stop = threading.Event()
 _tg_session_sync_last = 0.0
+_tg_poll_state = {"fail_streak": 0, "last_ok": 0.0, "last_error": ""}
 
 
 def _sync_account_from_cloud() -> None:
     global _tg_session_sync_last
     now = time.time()
-    if now - _tg_session_sync_last < 25:
+    if account_mod.cloud_sync_paused():
+        return
+    if now - _tg_session_sync_last < 60:
         return
     _tg_session_sync_last = now
 
@@ -514,19 +517,31 @@ def _handle_tg_decisions(decisions: list) -> None:
 
 _applied_sync_last = 0.0
 _jobs_sync_last = 0.0
+_cloud_sync_attempt_last = {"applied": 0.0, "jobs": 0.0, "filters": 0.0}
 
 
-def _sync_applied_to_cloud(force: bool = False) -> None:
+def _begin_cloud_sync(kind: str, last_success: float, interval: int,
+                      force: bool = False) -> float | None:
+    """Start a due sync without treating failed attempts as successes."""
+    now = time.time()
+    if not force and now - last_success < interval:
+        return None
+    if not force and now - _cloud_sync_attempt_last.get(kind, 0.0) < 15:
+        return None
+    _cloud_sync_attempt_last[kind] = now
+    return now
+
+
+def _sync_applied_to_cloud(force: bool = False) -> bool:
     """Одно облако: периодически шлём в облако список недавно поданных вакансий —
     чтобы раздел «Поданные» в Mini App был виден (подал на ПК → видно в телефоне),
     а поданные карточки ушли из «ждут решения». Троттлинг 30 сек."""
     global _applied_sync_last
     if not account_mod.is_signed_in():
-        return
-    now = time.time()
-    if not force and now - _applied_sync_last < 30:
-        return
-    _applied_sync_last = now
+        return False
+    attempt = _begin_cloud_sync("applied", _applied_sync_last, 30, force)
+    if attempt is None:
+        return False
     try:
         with get_session() as s:
             jobs = s.exec(
@@ -548,22 +563,24 @@ def _sync_applied_to_cloud(force: bool = False) -> None:
                 "url": job.application_link or "",
                 "ts": ts,
             })
-        cloud_auth.report_applied(items)
+        if cloud_auth.report_applied(items):
+            _applied_sync_last = attempt
+            return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"applied-sync: ошибка — {e}")
+    return False
 
 
-def _sync_jobs_to_cloud(force: bool = False) -> None:
+def _sync_jobs_to_cloud(force: bool = False) -> bool:
     """Фаза 2b: телефон видит не только офферы автопилота, а полный текущий
     список подходящих вакансий. Синк троттлим, чтобы не жечь Upstash.
     """
     global _jobs_sync_last
     if not account_mod.is_signed_in():
-        return
-    now = time.time()
-    if not force and now - _jobs_sync_last < 300:
-        return
-    _jobs_sync_last = now
+        return False
+    attempt = _begin_cloud_sync("jobs", _jobs_sync_last, 300, force)
+    if attempt is None:
+        return False
     try:
         skip = applications.submitted_ids() | applications.skipped_ids() | applications.submitting_ids()
         jobs = [j for j in autopilot.find_matches() if j.id not in skip]
@@ -572,8 +589,11 @@ def _sync_jobs_to_cloud(force: bool = False) -> None:
         payload = [_tg_job_payload(j) for j in jobs]
         if cloud_auth.report_jobs(payload):
             applications.mark_listed([j.id for j in jobs])
+            _jobs_sync_last = attempt
+            return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"jobs-sync: ошибка — {e}")
+    return False
 
 
 # Фильтры, которые можно менять с телефона. Автоотправка/лимиты сюда сознательно
@@ -657,17 +677,16 @@ def _sanitize_remote_filters(fields: dict) -> dict:
 _filters_sync_last = 0.0
 
 
-def _sync_filters_to_cloud(force: bool = False) -> None:
+def _sync_filters_to_cloud(force: bool = False) -> bool:
     """Панель Mini App показывает и меняет фильтры первого набора. Шлём текущие
     значения + варианты (категории/сети со счётчиками), чтобы панель ничего не
     выдумывала сама. Троттлинг — как у jobs_sync."""
     global _filters_sync_last
     if not account_mod.is_signed_in():
-        return
-    now = time.time()
-    if not force and now - _filters_sync_last < 300:
-        return
-    _filters_sync_last = now
+        return False
+    attempt = _begin_cloud_sync("filters", _filters_sync_last, 300, force)
+    if attempt is None:
+        return False
     try:
         profs = autopilot.ensure_profiles()
         prof = profs[0]
@@ -730,9 +749,22 @@ def _sync_filters_to_cloud(force: bool = False) -> None:
                 "submitScope": str(autopilot.get_rule().get("submit_scope") or "new"),
             },
         }
-        cloud_auth.report_filters(payload)
+        if cloud_auth.report_filters(payload):
+            _filters_sync_last = attempt
+            return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"filters-sync: ошибка — {e}")
+    return False
+
+
+def _tg_poll_delay(fail_streak: int, signed_in: bool, had_work: bool = False) -> int:
+    """Адаптивный интервал: быстрый ответ после работы, умеренный heartbeat и
+    экспоненциальный backoff при проблемах сети."""
+    if fail_streak > 0:
+        return min(60, 6 * (2 ** min(fail_streak - 1, 4)))
+    if had_work:
+        return 2
+    return 6 if signed_in else 15
 
 
 def _tg_poller_loop() -> None:
@@ -742,22 +774,43 @@ def _tg_poller_loop() -> None:
     Заменяет старый getUpdates: бот теперь общий и работает через webhook, поэтому
     нажатия кнопок собирает облако, а приложение забирает готовые решения."""
     while not _tg_stop.is_set():
+        signed_in = False
+        had_work = False
         try:
             _sync_account_from_cloud()
-            if account_mod.is_signed_in():
-                _handle_tg_decisions(cloud_auth.fetch_decisions())
+            signed_in = account_mod.is_signed_in()
+            # Явный локальный выход означает «не слушать старый Telegram».
+            # Войти снова можно только осознанно со страницы аккаунта.
+            if not signed_in:
+                _tg_poll_state.update({"fail_streak": 0, "last_error": ""})
+                _tg_stop.wait(_tg_poll_delay(0, False))
+                continue
+
+            tg_id = account_mod.load().get("tg_id") or ""
+            cycle = cloud_auth.fetch_poll(tg_id=str(tg_id))
+            if cycle is None:
+                _tg_poll_state["fail_streak"] = int(_tg_poll_state.get("fail_streak") or 0) + 1
+                _tg_poll_state["last_error"] = "Нет связи с облаком Telegram"
+            else:
+                _tg_poll_state.update({"fail_streak": 0, "last_ok": time.time(), "last_error": ""})
+                decisions = cycle.get("decisions") or []
+                commands = cycle.get("commands") or []
+                had_work = bool(decisions or commands)
+                _handle_tg_decisions(decisions)
                 _sync_applied_to_cloud()  # одно облако: держим «Поданные» свежими (троттлинг 30с)
                 _sync_jobs_to_cloud()     # фаза 2b: список подходящих вакансий в Mini App
                 _sync_filters_to_cloud()  # текущие фильтры + варианты для настройки с телефона
-            tg_id = account_mod.load().get("tg_id") if account_mod.is_signed_in() else ""
-            for cmd in cloud_auth.fetch_commands(tg_id=tg_id or ""):
-                if _tg_remote_command_expired(cmd):
-                    continue
-                result_text = _handle_tg_remote_command(cmd)
-                cloud_auth.send_command_result(cmd, result_text)
+                for cmd in commands:
+                    if _tg_remote_command_expired(cmd):
+                        continue
+                    result_text = _handle_tg_remote_command(cmd)
+                    cloud_auth.send_command_result(cmd, result_text)
         except Exception as e:  # noqa: BLE001 — слушатель не должен падать
+            _tg_poll_state["fail_streak"] = int(_tg_poll_state.get("fail_streak") or 0) + 1
+            _tg_poll_state["last_error"] = str(e)[:180]
             print(f"telegram(cloud): ошибка опроса решений — {e}")
-        _tg_stop.wait(4)
+        _tg_stop.wait(_tg_poll_delay(
+            int(_tg_poll_state.get("fail_streak") or 0), signed_in, had_work))
 
 
 def _ensure_tg_poller() -> None:
@@ -1222,7 +1275,8 @@ def api_apply_progress():
         return {"active": False}
 
 
-def _health_warnings(last_hits, sync_failed: bool, fail_streak: int) -> list:
+def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
+                     cloud_fail_streak: int = 0) -> list:
     """Сторожа деградации (шаг 7): приложение стоит на чужих недокументированных
     опорах (лента вакансий Salling, их форма подачи) — падение опоры надо хотя бы
     ЗАМЕЧАТЬ и говорить о нём пользователю, а не молча показывать пустой список.
@@ -1242,6 +1296,13 @@ def _health_warnings(last_hits, sync_failed: bool, fail_streak: int) -> list:
                     "Salling изменил сайт и WexFlow больше не видит квитанцию. "
                     "Проверьте почту, подались ли заявки, и напишите в поддержку @wexwxeee.",
         })
+    if cloud_fail_streak >= 3:
+        warns.append({
+            "id": "telegram-cloud-down",
+            "text": "Нет устойчивой связи с Telegram: команды с телефона временно "
+                    "не доходят до ПК. WexFlow продолжит попытки автоматически. "
+                    "Проверьте интернет; локальный поиск и ручная подача работают.",
+        })
     return warns
 
 
@@ -1254,7 +1315,8 @@ def api_health():
     except Exception:  # noqa: BLE001 — сторож не должен ронять страницу
         streak = 0
     return {"warnings": _health_warnings(
-        _sync_state.get("last_hits"), bool(_sync_state.get("sync_failed")), streak)}
+        _sync_state.get("last_hits"), bool(_sync_state.get("sync_failed")), streak,
+        int(_tg_poll_state.get("fail_streak") or 0))}
 
 
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
@@ -2738,13 +2800,29 @@ def autopilot_toggle(request: Request):
 
 
 # ── Telegram: привязка бота (режим «по разрешению») ─────────────────────
+def _telegram_cloud_state(signed_in: bool, fail_streak: int, last_ok: float) -> str:
+    return (
+        "paused" if not signed_in else
+        "offline" if fail_streak >= 3 else
+        "online" if last_ok > 0 else
+        "checking"
+    )
+
+
 @app.get("/api/telegram/status")
 def telegram_status():
     acc = account_mod.load()
     rule = autopilot.get_rule()
+    signed_in = account_mod.is_signed_in()
+    fail_streak = int(_tg_poll_state.get("fail_streak") or 0)
+    last_ok = float(_tg_poll_state.get("last_ok") or 0.0)
+    cloud_state = _telegram_cloud_state(signed_in, fail_streak, last_ok)
     return {
         "cloud": True,
-        "signed_in": account_mod.is_signed_in(),
+        "signed_in": signed_in,
+        "cloud_state": cloud_state,
+        "cloud_fail_streak": fail_streak,
+        "cloud_last_ok": last_ok,
         "tg_id": acc.get("tg_id") or "",
         "username": acc.get("username") or "",
         "name": acc.get("tg_name") or "",

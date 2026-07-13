@@ -55,6 +55,18 @@ def test_both_warnings_together():
     assert _ids(warns) == ["source-down", "apply-unconfirmed"]
 
 
+def test_cloud_failures_raise_telegram_warning():
+    warns = app._health_warnings(
+        last_hits=480, sync_failed=False, fail_streak=0, cloud_fail_streak=3)
+    assert _ids(warns) == ["telegram-cloud-down"]
+    assert "локальный поиск" in warns[0]["text"]
+
+
+def test_two_cloud_failures_do_not_alarm():
+    assert app._health_warnings(
+        last_hits=480, sync_failed=False, fail_streak=0, cloud_fail_streak=2) == []
+
+
 def test_leading_failed_counts_streak():
     # свежие первыми: 3 неудачи подряд, потом успех — серия равна 3
     assert applications._leading_failed(["failed", "failed", "failed", "submitted"]) == 3

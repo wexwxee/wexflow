@@ -894,10 +894,15 @@
       var sendLabel = current > batch ? ('Прислать ' + batch + ' из ' + current) : ('Прислать текущие (' + current + ')');
       var disabled = current ? '' : ' disabled';
       var telegramOn = st.mode === 'telegram' || st.approval;
+      var cloudHint = st.cloud_state === 'offline'
+        ? '<p class="hint" style="color:#b45309">⚠️ Сейчас нет связи с облаком. Команды из Telegram автоматически продолжатся после восстановления сети.</p>'
+        : st.cloud_state === 'checking'
+          ? '<p class="hint">Проверяем связь с облаком…</p>'
+          : '<p class="hint" style="color:#15803d">● Связь с облаком работает — компьютер принимает команды из Telegram.</p>';
       var startButton = telegramOn ? '' : '<button type="button" class="primary" id="tgStart">Запустить Telegram-режим</button>';
       var testClass = telegramOn ? 'primary' : 'tg-sec';
       box.innerHTML =
-        '<p class="hint">✅ Аккаунт подключён: <b>'+account+'</b>. Карточки приходят через общий бот @wexflowbot.</p>'+
+        '<p class="hint">✅ Аккаунт подключён: <b>'+account+'</b>. Карточки приходят через общий бот @wexflowbot.</p>'+cloudHint+
         '<div class="tg-stats">'+
           '<div class="tg-stat"><b>'+esc(st.found || 0)+'</b><span>подходит по фильтрам</span></div>'+
           '<div class="tg-stat"><b>'+esc(st.eligible_new || 0)+'</b><span>новых спросит сам</span></div>'+

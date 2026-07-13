@@ -20,6 +20,9 @@ DEFAULT = {
     "username": None,     # @username из Telegram
     "plan": "free",       # тариф из облака: free | pro | max
     "email": None,        # на будущее (email-вход), для обратной совместимости
+    # После явного «Выйти» фоновый poller не должен тут же залогинить человека
+    # обратно из всё ещё живой облачной сессии.
+    "cloud_sync_paused": False,
 }
 
 
@@ -72,6 +75,7 @@ def apply_session(user: dict) -> dict:
         "tg_name": (user.get("name") or "").strip() or None,
         "username": (user.get("username") or "").strip() or None,
         "plan": plan,
+        "cloud_sync_paused": False,
     })
     save(data)
     _sync_subscription(plan)
@@ -79,8 +83,14 @@ def apply_session(user: dict) -> dict:
 
 
 def sign_out() -> None:
-    save(dict(DEFAULT))
+    data = dict(DEFAULT)
+    data["cloud_sync_paused"] = True
+    save(data)
     _sync_subscription("free")
+
+
+def cloud_sync_paused() -> bool:
+    return bool(load().get("cloud_sync_paused"))
 
 
 def _initial(name: str, email: str) -> str:

@@ -101,6 +101,15 @@ def test_requests_carry_token_and_register_once():
                 f"запрос без токена: {r['url']}"
 
 
+def test_combined_poll_uses_one_authenticated_request():
+    with _TempDevice(), _Patched() as cloud:
+        result = cloud_auth.fetch_poll(tg_id="42")
+        assert result == {"decisions": [], "commands": []}
+        polls = [r for r in cloud.requests if "kind=poll" in r["url"]]
+        assert len(polls) == 1
+        assert polls[0]["headers"].get("x-device-token") == cloud_auth.device_secret()
+
+
 def test_no_registration_when_secret_not_persisted():
     with _TempDevice(), _Patched() as cloud:
         cloud_auth._device_cache = {"id": "x1", "secret": "s" * 64, "persisted": False}
