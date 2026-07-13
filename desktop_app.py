@@ -218,6 +218,24 @@ def run_worker(mode: str, rest: list) -> None:
     elif mode == "--worker-pwinstall":
         install_browser_blocking()
 
+    elif mode == "--worker-selftest":
+        # Release smoke test: import the frozen application and verify critical
+        # bundled resources without starting schedulers, browsers or network IO.
+        import app as salling_app  # noqa: F401
+        import cloud_auth as cloud  # noqa: F401
+        import version
+        required = [
+            APP_ROOT / "templates" / "settings.html",
+            APP_ROOT / "static",
+            SEVEN_DIR / "web_app.py",
+            SEVEN_DIR / "web_static",
+        ]
+        missing = [str(path) for path in required if not path.exists()]
+        if missing:
+            raise RuntimeError("missing bundled resources: " + ", ".join(missing))
+        if not version.__version__:
+            raise RuntimeError("application version is empty")
+
 
 def install_browser_blocking() -> int:
     """Скачать Chromium для Playwright (вызывается в воркере --worker-pwinstall)."""
