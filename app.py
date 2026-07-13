@@ -684,6 +684,14 @@ def _sync_filters_to_cloud(force: bool = False) -> None:
             "profileName": str(prof.get("name") or "Набор 1"),
             "profilesTotal": len(profs),
             "matchCount": autopilot.profile_match_count(prof),
+            # живое состояние автопилота — для карточки в панели (управление с телефона)
+            "autopilot": {
+                "mode": autopilot.get_mode(),
+                "found": autopilot.match_count(),
+                "submittedToday": autopilot.submitted_today(),
+                "submittedTotal": autopilot.submitted_total(),
+                "dailyLimit": int(autopilot.get_rule().get("daily_limit") or 0),
+            },
         }
         cloud_auth.report_filters(payload)
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
@@ -1012,6 +1020,7 @@ def _handle_tg_remote_command(command: dict) -> str:
             autopilot.set_mode("off")
             autopilot.log_event("info", "Telegram: автопилот поставлен на паузу")
             _reschedule_autopilot_scan()
+            _sync_filters_to_cloud(force=True)   # карточка автопилота в панели — сразу свежая
             return _remote_status_text("⏸ Автопилот поставлен на паузу.")
 
         if not account_mod.is_signed_in():
@@ -1028,6 +1037,7 @@ def _handle_tg_remote_command(command: dict) -> str:
             autopilot.log_event("info", "Telegram: включён режим подтверждения")
             _reschedule_autopilot_scan()
             threading.Thread(target=_tg_offer_tick, daemon=True).start()
+            _sync_filters_to_cloud(force=True)   # карточка автопилота в панели — сразу свежая
             return _remote_status_text(
                 "▶️ Telegram-режим включён. Новые подходящие вакансии будут приходить сюда."
             )
