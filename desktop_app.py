@@ -225,8 +225,8 @@ def run_worker(mode: str, rest: list) -> None:
         import cloud_auth as cloud  # noqa: F401
         import version
         required = [
-            APP_ROOT / "templates" / "settings.html",
-            APP_ROOT / "static",
+            BUNDLE_DIR / "templates" / "settings.html",
+            BUNDLE_DIR / "static",
             SEVEN_DIR / "web_app.py",
             SEVEN_DIR / "web_static",
         ]
@@ -1108,6 +1108,11 @@ def main():
             # лог на странице. Пишем понятную ошибку туда, а не показываем
             # страшный системный диалог «Unhandled exception in script».
             import traceback
+            try:
+                (appdata_root() / "worker_error.log").write_text(
+                    traceback.format_exc(), encoding="utf-8", errors="replace")
+            except OSError:
+                pass
             print(f"\n[WexFlow] Не получилось выполнить задачу: {exc}\n")
             traceback.print_exc()
             sys.stdout.flush()
