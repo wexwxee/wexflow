@@ -52,7 +52,9 @@ class _FakeCloud:
             "headers": {k.lower(): v for k, v in headers.items()},
             "body": json.loads(body.decode("utf-8")) if body else None,
         })
-        resp = io.BytesIO(json.dumps({"ok": True, "loggedIn": False}).encode("utf-8"))
+        payload = ({"ok": True, "decisions": [], "commands": []}
+                   if "kind=poll" in url else {"ok": True, "loggedIn": False})
+        resp = io.BytesIO(json.dumps(payload).encode("utf-8"))
         resp.__enter__ = lambda *a: resp
         resp.__exit__ = lambda *a: False
         return resp
@@ -108,6 +110,28 @@ def test_combined_poll_uses_one_authenticated_request():
         polls = [r for r in cloud.requests if "kind=poll" in r["url"]]
         assert len(polls) == 1
         assert polls[0]["headers"].get("x-device-token") == cloud_auth.device_secret()
+
+
+def test_combined_poll_falls_back_for_old_cloud():
+    class _OldCloud(_FakeCloud):
+        def __call__(self, req, timeout=None):
+            response = super().__call__(req, timeout)
+            if "kind=poll" in self.requests[-1]["url"]:
+                response = io.BytesIO(json.dumps({"ok": True, "decisions": []}).encode("utf-8"))
+                response.__enter__ = lambda *a: response
+                response.__exit__ = lambda *a: False
+            return response
+
+    with _TempDevice():
+        original = cloud_auth.urllib.request.urlopen
+        old_cloud = _OldCloud()
+        cloud_auth.urllib.request.urlopen = old_cloud
+        try:
+            result = cloud_auth.fetch_poll(tg_id="42")
+        finally:
+            cloud_auth.urllib.request.urlopen = original
+        assert result == {"decisions": [], "commands": []}
+        assert len([r for r in old_cloud.requests if "/api/decisions" in r["url"]]) == 2
 
 
 def test_no_registration_when_secret_not_persisted():

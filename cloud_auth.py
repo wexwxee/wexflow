@@ -312,9 +312,15 @@ def fetch_poll(tg_id: str = "", timeout: int = 12) -> dict | None:
             data = json.loads(r.read().decode("utf-8"))
         if not data.get("ok"):
             return None
+        # Backward compatibility during a staged rollout: an older cloud
+        # endpoint treats unknown kind=poll as the decisions-only request and
+        # omits "commands". Keep remote control working until the bot deploys.
+        commands = data.get("commands")
+        if not isinstance(commands, list):
+            commands = fetch_commands(tg_id=tg_id, timeout=timeout)
         return {
             "decisions": data.get("decisions") if isinstance(data.get("decisions"), list) else [],
-            "commands": data.get("commands") if isinstance(data.get("commands"), list) else [],
+            "commands": commands,
         }
     except (urllib.error.URLError, OSError, ValueError):
         return None
