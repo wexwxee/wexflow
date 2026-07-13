@@ -482,6 +482,11 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
     """Вакансия подходит, если совпала хотя бы с ОДНИМ включённым профилем."""
     if job.status in ("closed", "hidden", "applied"):
         return False
+    # ATS-коннекторы пока работают в безопасном assisted-режиме: форма
+    # заполняется и останавливается перед отправкой. Не передаём такие вакансии
+    # в Salling auto-submit/Telegram submit worker.
+    if getattr(job, "source", "salling") != "salling":
+        return False
     # «Подавали хоть раз» (applied_at заполнен) — навсегда исключаем из автопилота,
     # даже если статус ушёл вперёд по воронке (interview/offer/rejected). Иначе
     # после подачи и перевода в «Собеседование» вакансия снова стала бы «подходящей»

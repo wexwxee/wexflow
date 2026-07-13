@@ -8,12 +8,12 @@
 <div class="empty-state">
   {% if sync_running %}
     <div class="empty-spin"></div>
-    <h3>Загружаю вакансии с Salling…</h3>
+    <h3>Загружаю вакансии из подключённых источников…</h3>
     <p>Это первый запуск — база наполняется. Обычно занимает до минуты. Можно подождать или нажать «Обновить».</p>
   {% elif sync_error %}
     <div class="empty-ic warn">{{ ic.i('alert', 24) }}</div>
     <h3>Не удалось загрузить вакансии</h3>
-    <p>Проверь интернет и попробуй снова. Если не помогает — антивирус или файрвол может блокировать запрос к Salling.</p>
+    <p>Проверь интернет и попробуй снова. Salling и дополнительные источники обновляются независимо: временный сбой одного не удаляет вакансии другого.</p>
     <form method="post" action="/refresh"><button class="primary" type="submit">{{ ic.i('refresh', 14) }} Попробовать снова</button></form>
   {% elif f.status == 'applied' %}
     <div class="empty-ic applied">{{ ic.i('check', 24) }}</div>
@@ -545,6 +545,7 @@
         {% for city,lbl in city_suggestions %}<option value="{{city}}" label="{{lbl}}">{% endfor %}
       </datalist>
     </div>
+    {{ custom_select('source', 'Источник', 'Все источники', sources, f.source, 'Salling работает как раньше. Teamtailor — вакансии других компаний с безопасной подготовкой формы без автоматической отправки.') }}
     {# Редкие фильтры спрятаны за «Ещё фильтры»: обычно хватает поиска и города,
        а пять выпадающих списков делали панель громоздкой. Если какой-то из них
        активен — блок открыт сам, чтобы применённый фильтр не оказался невидимым. #}
@@ -584,7 +585,7 @@
     <button class="primary filter-action" type="submit" style="margin-top:18px;" data-tip-title="Применить" data-tip-body="Обновляет список по текущим фильтрам. Выпадающие фильтры применяются сразу после выбора, текстовые поля — этой кнопкой.">Применить</button>
     {# переключатель «Поданные»: сохраняет остальные фильтры, меняет только статус #}
     {% set parts = [] %}
-    {% for k in ['q','city','brand','region','category','employment_type','job_level','sort','radius','group'] %}
+    {% for k in ['q','source','city','brand','region','category','employment_type','job_level','sort','radius','group'] %}
       {% if f[k] %}{% set _ = parts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
     {% endfor %}
     {% set base_qs = parts|join('&') %}
@@ -684,7 +685,7 @@
   <div class="card job-status-{{ j.status }}" data-jobcard
        onclick="if(!event.target.closest('.row') && !event.target.closest('.selwrap')){ const cb=this.querySelector('[data-selbox]'); if(cb){ cb.checked=!cb.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); } }"
        aria-label="{{ 'Уже подано' if j.status == 'applied' else 'Нажми, чтобы выбрать вакансию' }}" style="cursor:{{ 'default' if j.status == 'applied' else 'pointer' }};">
-    {% if j.status != 'applied' %}
+    {% if j.status != 'applied' and j.source == 'salling' %}
     <label class="selwrap" aria-label="Выбрать для пакетной подачи">
       <input type="checkbox" name="job_ids" value="{{ j.id }}" form="batchform" data-selbox>
       <span class="selbox-ui"></span>
@@ -692,6 +693,7 @@
     {% endif %}
     {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','hidden':'скрыто','closed':'закрыта'} %}
     <div class="badges">
+      {% if j.source != 'salling' %}<span class="badge" style="border-color:#6b66ff;color:#9c98ff;">{{ source_labels.get(j.source, j.source) }}</span>{% endif %}
       {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
       {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно по прямой от домашнего адреса. Маршрут общественным транспортом смотри через кнопку Маршрут.">≈ {{ distances[j.id] }} км</span>{% endif %}
       <span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>
@@ -714,7 +716,11 @@
       {% if j.status == 'applied' %}
       <button type="button" class="ghost" disabled>{{ check(13) }} Уже подано</button>
       {% else %}
+      {% if j.source == 'salling' %}
       <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>
+      {% else %}
+      <form method="post" action="/job/{{ j.id }}/connector/apply"><button class="primary" type="submit">{{ ic.i('send', 13) }} Заполнить форму →</button></form>
+      {% endif %}
       {% endif %}
       <a href="/job/{{ j.id }}"><button type="button" class="ghost">Подробнее</button></a>
       <a href="{{ maps_urls[j.id] }}"><button type="button" class="ghost">{{ ic.i('map', 13) }} Маршрут</button></a>
@@ -742,7 +748,7 @@
 
 {% if pages > 1 %}
 {% set pparts = [] %}
-{% for k in ['q','city','brand','region','category','employment_type','job_level','status','sort','radius','group','show_applied'] %}
+{% for k in ['q','source','city','brand','region','category','employment_type','job_level','status','sort','radius','group','show_applied'] %}
   {% if f[k] %}{% set _ = pparts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
 {% endfor %}
 {% set pqs = pparts|join('&') %}
@@ -799,7 +805,7 @@
       {{ ui.plane(26) }}
       <h2>Привет! Это WexFlow</h2>
     </div>
-    <p class="wf-welcome-lead">Находит вакансии Salling и 7-Eleven и помогает подать заявку — быстро и в одном окне.</p>
+    <p class="wf-welcome-lead">Собирает вакансии Salling, 7-Eleven и других компаний и помогает подать заявку — быстро и в одном окне.</p>
     <ul class="wf-welcome-list">
       <li><span class="wf-ic warn">{{ ic.i('alert', 16) }}</span>
         <div><b>Заявки уходят под вашим настоящим именем.</b> Реальная отправка — только по вашему клику с подтверждением. Всегда можно сначала «Подготовить без отправки».</div></li>

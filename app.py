@@ -36,6 +36,7 @@ import cloud_auth
 import transit
 from db import Job, init_db, get_session, select, utcnow
 import scraper
+import connector_sync
 import applications
 import autopilot
 import ai_filters
@@ -53,6 +54,12 @@ PROFILE_REQUIRED = [
 ]
 
 SAFE_JOB_STATUSES = {"new", "seen", "applied", "hidden", "interview", "offer", "rejected", "closed"}
+JOB_SOURCE_LABELS = {
+    "salling": "Salling Group",
+    "teamtailor": "Другие компании · Teamtailor",
+    "greenhouse": "Другие компании · Greenhouse",
+    "ashby": "Другие компании · Ashby",
+}
 def _allowed_local_write(request: Request) -> bool:
     """Block cross-site form/fetch writes against the local desktop server.
     Единый барьер в local_guard (тот же, что в hub.py и connectors/webapp.py)."""
@@ -95,7 +102,9 @@ _sync_lock = threading.Lock()
 _sync_state = {"running": False, "last_error": "", "last_scan": 0.0,
                # сторожа деградации (шаг 7): сколько вакансий отдал источник в
                # последний раз (None — ещё не проверяли) и упал ли сам синк
-               "last_hits": None, "sync_failed": False}
+               "last_hits": None, "sync_failed": False, "connector_errors": []}
+_connector_sync_last = 0.0
+_connector_sync_attempt_last = 0.0
 _scheduler = None  # BackgroundScheduler; нужен, чтобы знать время следующей проверки
 
 # частота фонового скана вакансий: автопилот включён — проверяем часто (почти в
@@ -124,10 +133,11 @@ def _reschedule_autopilot_scan() -> None:
         print(f"автопилот: не удалось перенастроить интервал скана — {e}")
 
 
-def _sync_jobs():
+def _sync_jobs(force_connectors: bool = False):
     """Обновляет базу вакансий. Не запускается параллельно сам с собой."""
     if not _sync_lock.acquire(blocking=False):
         return
+    global _connector_sync_last, _connector_sync_attempt_last
     _sync_state["running"] = True
     try:
         try:
@@ -137,6 +147,20 @@ def _sync_jobs():
         except Exception:
             _sync_state["sync_failed"] = True  # источник не ответил — сторож заметит
             raise
+        # ATS-каталоги тяжелее одного Algolia-запроса, поэтому обновляем их не
+        # чаще раза в 30 минут. Ошибка Teamtailor не ломает рабочий Salling.
+        connector_due = time.time() - _connector_sync_last >= 30 * 60
+        retry_due = time.time() - _connector_sync_attempt_last >= 10 * 60
+        if force_connectors or (connector_due and retry_due):
+            _connector_sync_attempt_last = time.time()
+            try:
+                report = connector_sync.sync()
+                _sync_state["connector_errors"] = report.get("errors") or []
+                if not report.get("errors"):
+                    _connector_sync_last = time.time()
+            except Exception as exc:  # connector infrastructure stays isolated
+                _sync_state["connector_errors"] = [f"connector sync: {str(exc)[:180]}"]
+                print(f"дополнительные источники: ошибка — {exc}")
         _sync_state["last_error"] = ""
         autopilot.scan_and_notify()  # автопилот: уведомить о новых совпадениях
         # автоотправка (фаза 3, по умолчанию ВЫКЛ): отправляет ТОЛЬКО при явно
@@ -1278,7 +1302,7 @@ def api_apply_progress():
 
 
 def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
-                     cloud_fail_streak: int = 0) -> list:
+                     cloud_fail_streak: int = 0, connector_errors=None) -> list:
     """Сторожа деградации (шаг 7): приложение стоит на чужих недокументированных
     опорах (лента вакансий Salling, их форма подачи) — падение опоры надо хотя бы
     ЗАМЕЧАТЬ и говорить о нём пользователю, а не молча показывать пустой список.
@@ -1305,6 +1329,13 @@ def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
                     "не доходят до ПК. WexFlow продолжит попытки автоматически. "
                     "Проверьте интернет; локальный поиск и ручная подача работают.",
         })
+    if connector_errors:
+        warns.append({
+            "id": "connectors-degraded",
+            "text": "Дополнительные компании временно не обновились. Вакансии Salling "
+                    "продолжают работать, а старые вакансии других компаний сохранены. "
+                    "WexFlow повторит попытку автоматически.",
+        })
     return warns
 
 
@@ -1318,7 +1349,8 @@ def api_health():
         streak = 0
     return {"warnings": _health_warnings(
         _sync_state.get("last_hits"), bool(_sync_state.get("sync_failed")), streak,
-        int(_tg_poll_state.get("fail_streak") or 0))}
+        int(_tg_poll_state.get("fail_streak") or 0),
+        _sync_state.get("connector_errors") or [])}
 
 
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
@@ -1494,6 +1526,7 @@ def _distinct(session, column):
 def _active_counts(session):
     rows = session.exec(select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))).all()
     counts = {
+        "source": Counter(),
         "brand": Counter(),
         "region": Counter(),
         "employment": Counter(),
@@ -1502,6 +1535,7 @@ def _active_counts(session):
         "city": Counter(),
     }
     for job in rows:
+        counts["source"][getattr(job, "source", "salling") or "salling"] += 1
         if job.brand:
             counts["brand"][job.brand] += 1
         if job.region:
@@ -1604,10 +1638,46 @@ def apply_by_link():
     return RedirectResponse("http://127.0.0.1:8078/", status_code=303)
 
 
+def _launch_connector_filler(url: str) -> None:
+    parsed = urlsplit(str(url or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("У вакансии нет безопасной ссылки на форму")
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--worker-connector-apply", url]
+    else:
+        cmd = [sys.executable, "-m", "connectors.apply_dispatch", url, "--keep-open"]
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = 0x00000008 | 0x00000200
+    subprocess.Popen(cmd, **kwargs)
+
+
+@app.post("/job/{job_id}/connector/apply")
+def start_connector_apply(job_id: str, request: Request):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+    if not job:
+        return _redirect_back(request, "/", error="Вакансия больше не найдена.")
+    if getattr(job, "source", "salling") == "salling":
+        return RedirectResponse(f"/job/{job_id}/apply", status_code=303)
+    try:
+        _launch_connector_filler(job.application_link or "")
+    except Exception as exc:  # noqa: BLE001
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error=f"Не удалось открыть форму: {str(exc)[:140]}",
+        )
+    return _redirect_back(
+        request, f"/job/{job_id}",
+        notice="Форма открывается в отдельном окне. WexFlow заполнит доступные поля и остановится перед отправкой.",
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(
     request: Request,
     q: str = "",
+    source: str = "",
     city: str = "",
     brand: str = "",
     region: str = "",
@@ -1628,13 +1698,13 @@ def index(
     reset: str = "",
 ):
     # запоминаем фильтры в cookie и восстанавливаем при заходе на голую "/"
-    _fkeys = ["q", "city", "brand", "region", "employment_type", "category", "job_level", "status", "sort", "show_applied"]
+    _fkeys = ["q", "source", "city", "brand", "region", "employment_type", "category", "job_level", "status", "sort", "show_applied"]
     if not request.query_params and not reset:
         raw = request.cookies.get("saling_filters")
         if raw:
             try:
                 saved = json.loads(raw)
-                q = saved.get("q", q); city = saved.get("city", city)
+                q = saved.get("q", q); source = saved.get("source", source); city = saved.get("city", city)
                 brand = saved.get("brand", brand); region = saved.get("region", region)
                 employment_type = saved.get("employment_type", employment_type)
                 category = saved.get("category", category); job_level = saved.get("job_level", job_level)
@@ -1649,6 +1719,9 @@ def index(
         sort = "distance" if home else "published"
     with get_session() as s:
         stmt = select(Job)
+        source_key = source if source in JOB_SOURCE_LABELS else ""
+        if source_key:
+            stmt = stmt.where(Job.source == source_key)
         if status == "active":
             excluded_statuses = ["closed", "hidden"]
             if not show_applied:
@@ -1664,7 +1737,9 @@ def index(
                 c = Job.city.ilike(f"%{term.strip()}%")
                 cond = c if cond is None else (cond | c)
             stmt = stmt.where(cond)
-        brand_code = labels.resolve(labels.BRANDS, brand)
+        # Known Salling brands accept aliases; connector company names are
+        # already human-readable and filter by exact stored value.
+        brand_code = labels.resolve(labels.BRANDS, brand) or str(brand or "").strip()
         if brand_code:
             stmt = stmt.where(Job.brand == brand_code)
         region_code = labels.resolve(labels.REGION, region)
@@ -1720,6 +1795,7 @@ def index(
             jobs = [j for j in jobs if not labels.is_leadership(j.title)]
 
         cities = _distinct(s, Job.city)
+        sources = _distinct(s, Job.source)
         brands = _distinct(s, Job.brand)
         regions = _distinct(s, Job.region)
         etypes = _distinct(s, Job.employment_type)
@@ -1820,9 +1896,14 @@ def index(
 
     resp = templates.TemplateResponse("index.html", {
         "request": request, "jobs": jobs, "count": len(jobs),
+        "source_labels": JOB_SOURCE_LABELS,
         "groups": groups, "group": group,
         "total_filtered": total, "page": page, "pages": pages, "per_page": PER_PAGE,
         "cities": cities,
+        "sources": [
+            (key, labels.with_count(JOB_SOURCE_LABELS.get(key, key), counts["source"][key]))
+            for key in sources if key
+        ],
         # опции отсортированы по популярности (частые сверху) — удобнее выбирать
         "brands": [
             (b, labels.with_count(labels.brand(b), counts["brand"][b]))
@@ -1848,7 +1929,7 @@ def index(
             (city, labels.with_count(city, count))
             for city, count in counts["city"].most_common(120)
         ],
-        "f": (_f := {"q": q,
+        "f": (_f := {"q": q, "source": source_key,
               "city": city,
               "brand": brand_code,
               "region": region_code,
@@ -1924,7 +2005,7 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
 def refresh(request: Request):
     # обновление уходит в фон: страница не виснет, индикатор в шапке показывает
     # «обновляется…», список сам перезагрузится по окончании
-    threading.Thread(target=_sync_jobs, daemon=True).start()
+    threading.Thread(target=_sync_jobs, kwargs={"force_connectors": True}, daemon=True).start()
     return _redirect_back(request, "/", notice="Обновление вакансий запущено. Список сам перезагрузится, когда появятся свежие данные.")
 
 
@@ -2975,6 +3056,7 @@ def detail(request: Request, job_id: str, trerror: str = ""):
         "detail.html", {
             "request": request,
             "job": job,
+            "source_labels": JOB_SOURCE_LABELS,
             "distance": distance,
             "has_home": bool(home),
             "maps_url": maps_url,
@@ -2992,6 +3074,14 @@ def detail(request: Request, job_id: str, trerror: str = ""):
 def apply_prepare(request: Request, job_id: str, started: str = "", saved: str = "", reset: str = ""):
     with get_session() as s:
         job = s.get(Job, job_id)
+    if job and getattr(job, "source", "salling") != "salling":
+        return RedirectResponse(
+            _url_with_system_response(
+                f"/job/{job_id}",
+                notice="Для этой компании доступна безопасная подготовка формы с остановкой перед отправкой.",
+            ),
+            status_code=303,
+        )
     profile = profile_store.load_profile()
     file_info = {
         "cv_label": profile_store.file_label(profile.get("cv_path", "")),
@@ -3139,10 +3229,18 @@ def _load_jobs_snapshot(ids):
 
 def _run_apply_worker(ids, submit: bool = False, auto_close: bool = False):
     """ЕДИНСТВЕННОЕ место, запускающее воркер подачи apply.py (общая «воротина»).
-    Возвращает Popen или None. Здесь НЕТ отсева — вызывающий уже применил нужную
-    политику: авто/пакет проходят через _partition_submit_ids, а одиночная подача
-    со страницы вакансии подаёт осознанно ровно один id."""
+    Возвращает Popen или None. Здесь действует последний барьер источника;
+    остальные правила применяет вызывающий: авто/пакет проходят через
+    _partition_submit_ids, одиночная подача передаёт ровно один id."""
     ids = [str(j).strip() for j in ids if str(j or "").strip()]
+    # Last-resort source barrier: no caller (including future code) can feed an
+    # ATS connector job into the Salling-specific browser worker.
+    snapshot = _load_jobs_snapshot(ids)
+    blocked = [jid for jid, job in snapshot
+               if job is not None and getattr(job, "source", "salling") != "salling"]
+    if blocked:
+        print(f"  blocked non-Salling ids in Salling worker: {len(blocked)}")
+        ids = [jid for jid in ids if jid not in set(blocked)]
     if not ids:
         return None
     env = dict(os.environ)
@@ -3222,6 +3320,14 @@ def start_apply(
         job = s.get(Job, job_id)
     if not job:
         return RedirectResponse("/", status_code=303)
+    if getattr(job, "source", "salling") != "salling":
+        return RedirectResponse(
+            _url_with_system_response(
+                f"/job/{job_id}",
+                error="Для этой вакансии автоматическая отправка отключена. Используй «Заполнить форму» — WexFlow остановится перед отправкой.",
+            ),
+            status_code=303,
+        )
     # Защита от повторной подачи: реальную отправку на уже поданную вакансию
     # (applied_at заполнен или статус "applied") выполняем ТОЛЬКО при осознанном
     # подтверждении (resubmit_ack из диалога на странице). Иначе — назад с
@@ -3264,6 +3370,15 @@ def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: s
     ids = [j for j in job_ids if j]
     if not ids:
         return _redirect_back(request, "/", error="Сначала выбери хотя бы одну вакансию для пакетной подачи.")
+    # Коннекторы работают только assisted: пакетный Salling worker не должен
+    # получить их id даже через вручную подделанную форму.
+    snapshots = _load_jobs_snapshot(ids)
+    ids = [jid for jid, job in snapshots if getattr(job, "source", "salling") == "salling"]
+    if not ids:
+        return _redirect_back(
+            request, "/",
+            error="Вакансии других компаний заполняются по одной с остановкой перед отправкой.",
+        )
     # Страховка: руководящие и уже поданные пачкой не подаём (единый отсев).
     # Если человек правда хочет руководящую — подаёт её осознанно с её страницы.
     safe, already, leadership = _partition_submit_ids(_load_jobs_snapshot(ids))

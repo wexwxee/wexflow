@@ -67,6 +67,15 @@ def test_two_cloud_failures_do_not_alarm():
         last_hits=480, sync_failed=False, fail_streak=0, cloud_fail_streak=2) == []
 
 
+def test_connector_failure_does_not_claim_salling_is_down():
+    warns = app._health_warnings(
+        last_hits=480, sync_failed=False, fail_streak=0,
+        connector_errors=["teamtailor: timeout"],
+    )
+    assert _ids(warns) == ["connectors-degraded"]
+    assert "Salling продолжают работать" in warns[0]["text"]
+
+
 def test_leading_failed_counts_streak():
     # свежие первыми: 3 неудачи подряд, потом успех — серия равна 3
     assert applications._leading_failed(["failed", "failed", "failed", "submitted"]) == 3

@@ -15,6 +15,7 @@ def utcnow() -> datetime:
 
 class Job(SQLModel, table=True):
     id: str = Field(primary_key=True)            # objectID из Algolia
+    source: str = Field(default="salling", index=True)  # salling | teamtailor | ...
     title: str = ""
     brand: Optional[str] = None
     categories: Optional[str] = None             # CSV
@@ -111,6 +112,7 @@ def _migrate():
     with engine.connect() as conn:
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(job)"))}
         for name, ddl in [
+            ("source", "source VARCHAR NOT NULL DEFAULT 'salling'"),
             ("lat", "lat FLOAT"),
             ("lon", "lon FLOAT"),
             ("description_ru", "description_ru TEXT"),
@@ -118,6 +120,8 @@ def _migrate():
         ]:
             if name not in cols:
                 conn.execute(text(f"ALTER TABLE job ADD COLUMN {ddl}"))
+        conn.commit()
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_job_source ON job (source)"))
         conn.commit()
 
 

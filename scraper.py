@@ -104,6 +104,7 @@ def sync():
         healed = 0
         for job in s.exec(
             select(Job).where(
+                Job.source == "salling",
                 Job.applied_at.is_not(None),
                 Job.status.in_(["closed", "seen", "new"]),
             )
@@ -148,7 +149,10 @@ def sync():
         # часто снимает вакансию из ленты — это нормально, статус «подано» важнее.
         closed = 0
         active = s.exec(
-            select(Job).where(Job.status.not_in(["closed", "applied"]))
+            select(Job).where(
+                Job.source == "salling",
+                Job.status.not_in(["closed", "applied"]),
+            )
         ).all()
         for job in active:
             if job.id not in seen_ids and job.applied_at is None:
@@ -159,7 +163,9 @@ def sync():
 
         # геокодирование (DK по улице через DAWA, DE/PL по индексу; кэш — повторы мгновенны)
         import geo
-        active_jobs = s.exec(select(Job).where(Job.status != "closed")).all()
+        active_jobs = s.exec(select(Job).where(
+            Job.source == "salling", Job.status != "closed"
+        )).all()
         missing = [j for j in active_jobs if j.lat is None]
         if missing:
             print(f"Геокодирую вакансии без координат: {len(missing)}…")

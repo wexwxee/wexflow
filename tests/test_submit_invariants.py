@@ -41,6 +41,12 @@ def test_matches_regular_job_true():
     assert autopilot._matches(_job(), _permissive_rule(), None) is True
 
 
+def test_matches_connector_job_never_auto_submits():
+    job = _job()
+    job.source = "teamtailor"
+    assert autopilot._matches(job, _permissive_rule(), None) is False
+
+
 def test_matches_applied_at_never_matches():
     j = _job(applied_at=datetime.datetime(2026, 6, 11))
     assert autopilot._matches(j, _permissive_rule(), None) is False
