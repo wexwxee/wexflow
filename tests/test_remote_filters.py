@@ -43,7 +43,7 @@ def test_unknown_keys_dropped():
         "submit_scope": "all", "keywords": "x", "cities": "y",
         "max_km": "5",
     })
-    assert out == {"max_km": "5"}
+    assert out == {"max_km": "5", "keywords": "x", "cities": "y"}
 
 
 def test_garbage_numbers_dropped():
@@ -72,6 +72,33 @@ def test_decimal_comma_accepted():
     assert out == {"max_hours": "37.5"}
 
 
+def test_text_fields_sanitized():
+    out = app._sanitize_remote_filters({
+        "cities": " København , Aarhus,København,  <script>x , " + "ы" * 100,
+        "keywords": "weekend, aften",
+        "exclude_keywords": "nat",
+    })
+    assert out["cities"] == "København, Aarhus, scriptx, " + "ы" * 40
+    assert out["keywords"] == "weekend, aften"
+    assert out["exclude_keywords"] == "nat"
+
+
+def test_text_fields_item_cap():
+    out = app._sanitize_remote_filters({"cities": ",".join(f"c{i}" for i in range(30))})
+    assert len(out["cities"].split(", ")) == 10   # не больше 10 значений
+
+
+def test_schedule_hours():
+    out = app._sanitize_remote_filters({"active_from": "8", "active_to": "22"})
+    assert out == {"active_from": 8, "active_to": 22}
+    out = app._sanitize_remote_filters({"active_from": "-3", "active_to": "99"})
+    assert out == {}                                # вне 0..24 — отбрасываем
+    out = app._sanitize_remote_filters({"active_from": "abc"})
+    assert out == {}
+    out = app._sanitize_remote_filters({"active_from": "inf", "active_to": "nan"})
+    assert out == {}                                # недоверенный ввод не должен ронять обработчик
+
+
 if __name__ == "__main__":
     tests = [
         test_valid_fields_pass,
@@ -82,6 +109,9 @@ if __name__ == "__main__":
         test_unknown_codes_filtered,
         test_non_dict_input,
         test_decimal_comma_accepted,
+        test_text_fields_sanitized,
+        test_text_fields_item_cap,
+        test_schedule_hours,
     ]
     failures = 0
     for fn in tests:

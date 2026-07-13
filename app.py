@@ -600,7 +600,7 @@ def _sanitize_remote_filters(fields: dict) -> dict:
             return
         try:
             n = float(raw)
-        except ValueError:
+        except (ValueError, OverflowError):
             return
         if 0 < n <= 10000:
             out[key] = str(int(n) if n == int(n) else n)
@@ -611,6 +611,32 @@ def _sanitize_remote_filters(fields: dict) -> dict:
         vals = [v.strip() for v in str(fields.get(key) or "").split(",") if v.strip()]
         out[key] = ",".join(v for v in vals if v in known)
 
+    def _text_csv(key, max_items=10, max_len=40):
+        """Свободный текст CSV (города/слова): режем длину и число элементов,
+        выкидываем управляющие символы — дальше это только ДАННЫЕ для сравнения."""
+        if key not in fields:
+            return
+        items, seen = [], set()
+        for part in str(fields.get(key) or "").split(","):
+            item = re.sub(r"[\x00-\x1f<>]", "", part).strip()[:max_len]
+            low = item.casefold()
+            if item and low not in seen:
+                seen.add(low)
+                items.append(item)
+            if len(items) >= max_items:
+                break
+        out[key] = ", ".join(items)
+
+    def _hour(key):
+        if key not in fields:
+            return
+        try:
+            h = int(float(str(fields.get(key) or "0").strip()))
+        except (ValueError, OverflowError):
+            return
+        if 0 <= h <= 24:
+            out[key] = h
+
     _num("max_km")
     _num("min_hours")
     _num("max_hours")
@@ -620,6 +646,11 @@ def _sanitize_remote_filters(fields: dict) -> dict:
             out["age"] = age
     _codes("category", set(labels.CATEGORY))
     _codes("brand", set(labels.BRANDS))
+    _text_csv("cities")
+    _text_csv("keywords")
+    _text_csv("exclude_keywords")
+    _hour("active_from")   # rule-уровень: обработчик команды вынет их отдельно
+    _hour("active_to")
     return out
 
 
@@ -672,6 +703,11 @@ def _sync_filters_to_cloud(force: bool = False) -> None:
                 "age": str(prof.get("age") or "").strip(),
                 "category": str(prof.get("category") or "").strip(),
                 "brand": str(prof.get("brand") or "").strip(),
+                "cities": str(prof.get("cities") or "").strip(),
+                "keywords": str(prof.get("keywords") or "").strip(),
+                "exclude_keywords": str(prof.get("exclude_keywords") or "").strip(),
+                "active_from": str(int(autopilot.get_rule().get("active_from") or 0)),
+                "active_to": str(int(autopilot.get_rule().get("active_to") or 24)),
             },
             "options": {
                 # топ-12 категорий + все выбранные (даже редкие) — панели хватает
@@ -691,6 +727,7 @@ def _sync_filters_to_cloud(force: bool = False) -> None:
                 "submittedToday": autopilot.submitted_today(),
                 "submittedTotal": autopilot.submitted_total(),
                 "dailyLimit": int(autopilot.get_rule().get("daily_limit") or 0),
+                "submitScope": str(autopilot.get_rule().get("submit_scope") or "new"),
             },
         }
         cloud_auth.report_filters(payload)
@@ -1077,10 +1114,16 @@ def _handle_tg_remote_command(command: dict) -> str:
             # Настройка с телефона меняет только ЧТО ИЩЕМ (первый набор фильтров).
             # Подача по-прежнему требует «Подать» (F27), автоотправку с телефона не трогаем.
             fields = _sanitize_remote_filters(command.get("filters") or {})
-            if not fields:
+            # расписание — не поле профиля, а правило целиком (как /autopilot/save)
+            schedule = {k: fields.pop(k) for k in ("active_from", "active_to") if k in fields}
+            if not fields and not schedule:
                 return "⚙️ Не получил ни одного корректного фильтра — ничего не менял."
+            if schedule:
+                autopilot.save_rule(schedule)
+                _reschedule_autopilot_scan()
             prof = autopilot.ensure_profiles()[0]
-            autopilot.save_profile_filters(prof["id"], fields)
+            if fields:
+                autopilot.save_profile_filters(prof["id"], fields)
             # как при сохранении на ПК: текущие совпадения не считаем «новыми»
             autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
             autopilot.log_event("info", "Telegram: фильтры обновлены с телефона")

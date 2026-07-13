@@ -100,6 +100,8 @@ def _login_html(error: bool = False) -> str:
   button{{width:100%;margin-top:14px;border:0;border-radius:10px;padding:12px;
     font:600 15px 'Segoe UI';background:#6b66ff;color:#fff;cursor:pointer}}
   button:hover{{filter:brightness(1.08)}}
+  button.back{{background:transparent;border:1px solid #2b2c2c;color:#8b908c;margin-top:10px}}
+  button.back:hover{{color:#e8eae8;border-color:#3a3b3b;filter:none}}
 </style></head><body>
   <form class="box" method="post" action="/login">
     <h1>Подача по ссылке</h1>
@@ -108,6 +110,8 @@ def _login_html(error: bool = False) -> str:
            autocomplete="current-password" inputmode="numeric">
     {msg}
     <button type="submit">Открыть →</button>
+    <button type="button" class="back"
+            onclick="if(history.length>1)history.back();else window.close()">← Вернуться назад</button>
   </form>
 </body></html>"""
 
