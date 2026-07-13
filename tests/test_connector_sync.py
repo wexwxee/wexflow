@@ -37,6 +37,13 @@ def test_ingest_filters_non_danish_and_sets_source():
         assert rows[0].country == "DK"
 
 
+def test_danish_city_without_country_is_normalized_to_dk():
+    item = _item(country="")
+    item.city = "Copenhagen"
+    job = connector_sync.job_from_item(item)
+    assert job.country == "DK"
+
+
 def test_connector_closure_never_touches_salling():
     engine, sessions = _factory()
     with Session(engine) as session:
@@ -93,6 +100,38 @@ def test_sync_rejects_item_from_another_source():
     assert report["hits"] == 0
     with Session(engine) as session:
         assert session.exec(select(Job)).all() == []
+
+
+def test_connector_geocoding_is_bounded_and_persists_coordinates():
+    engine, sessions = _factory()
+    with Session(engine) as session:
+        for index in range(3):
+            session.add(Job(
+                id=f"tt:demo:{index}", source="teamtailor", title="Demo",
+                country="DK", zip="2100", status="new",
+            ))
+        session.add(Job(
+            id="salling-geo", source="salling", title="Salling",
+            country="DK", zip="2100", status="new",
+        ))
+        session.commit()
+
+    seen = []
+
+    def fake_geocoder(jobs):
+        seen.extend(job.id for job in jobs)
+        for job in jobs:
+            job.lat, job.lon = 55.7, 12.5
+        return len(jobs)
+
+    updated = connector_sync.geocode_missing(
+        "teamtailor", limit=2, session_factory=sessions, geocoder=fake_geocoder)
+    assert updated == 2 and len(seen) == 2
+    assert all(job_id.startswith("tt:") for job_id in seen)
+    with Session(engine) as session:
+        geocoded = session.exec(select(Job).where(Job.lat.is_not(None))).all()
+        assert len(geocoded) == 2
+        assert session.get(Job, "salling-geo").lat is None
 
 
 def test_update_preserves_application_state():

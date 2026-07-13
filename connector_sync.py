@@ -9,11 +9,13 @@ import datetime as dt
 from typing import Iterable
 
 import connectors
+import geo
 from connectors.base import JobItem, is_denmark
 from db import Job, get_session, init_db, select, utcnow
 
-DEFAULT_SOURCES = ("teamtailor",)
+DEFAULT_SOURCES = ("teamtailor", "greenhouse", "ashby")
 STALE_AFTER = dt.timedelta(hours=48)
+GEOCODE_BATCH = 40
 
 
 def _text(value) -> str:
@@ -37,6 +39,8 @@ def job_from_item(item: JobItem, now=None) -> Job:
     now = now or utcnow()
     country = _text(item.country)
     if country.upper() in {"DK", "DNK"} or country.casefold() in {"denmark", "danmark"}:
+        country = "DK"
+    elif not country and _is_danish(item):
         country = "DK"
     return Job(
         id=str(item.id or "")[:220],
@@ -118,6 +122,31 @@ def sync_items(source: str, items: Iterable[JobItem], session_factory=get_sessio
             "updated": updated, "closed": closed}
 
 
+def geocode_missing(source: str, limit: int = GEOCODE_BATCH,
+                    session_factory=get_session, geocoder=None) -> int:
+    """Gradually add coordinates without making a refresh wait on all rows.
+
+    A bounded batch is enough for distance sorting to improve after every sync;
+    the shared disk cache makes repeated company addresses effectively free.
+    """
+    if limit <= 0:
+        return 0
+    with session_factory() as session:
+        jobs = session.exec(
+            select(Job).where(
+                Job.source == source,
+                Job.status.not_in(["closed", "hidden"]),
+                Job.lat.is_(None),
+                (Job.zip.is_not(None) | Job.city.is_not(None)),
+            ).order_by(Job.last_seen.desc()).limit(limit)
+        ).all()
+        if not jobs:
+            return 0
+        updated = int((geocoder or geo.geocode_jobs)(jobs) or 0)
+        session.commit()
+        return updated
+
+
 def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
     init_db()
     reports, errors = [], []
@@ -127,7 +156,14 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
             errors.append(f"{source}: connector not registered")
             continue
         try:
-            reports.append(sync_items(source, conn.search()))
+            report = sync_items(source, conn.search())
+            try:
+                report["geocoded"] = geocode_missing(source)
+            except Exception as exc:  # coordinates are useful, never critical
+                report["geocoded"] = 0
+                report["geocode_error"] = str(exc)[:180]
+                print(f"  {source}: geocoding skipped — {exc}")
+            reports.append(report)
         except Exception as exc:  # one ATS must not break the working Salling feed
             errors.append(f"{source}: {str(exc)[:180]}")
     return {
@@ -135,6 +171,7 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
         "created": sum(row["created"] for row in reports),
         "updated": sum(row["updated"] for row in reports),
         "closed": sum(row["closed"] for row in reports),
+        "geocoded": sum(row.get("geocoded", 0) for row in reports),
         "sources": reports,
         "errors": errors,
     }

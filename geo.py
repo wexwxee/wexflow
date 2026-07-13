@@ -133,6 +133,36 @@ def geocode_dk_address(street: str, zip_code: str, cache: dict) -> tuple[float, 
     return None
 
 
+def geocode_dk_place(place: str, cache: dict) -> tuple[float, float] | None:
+    """Coordinates for a Danish city/location when an ATS omits street/zip."""
+    place = re.sub(r"\s+", " ", str(place or "").strip())
+    if not place:
+        return None
+    key = f"DKCITY:{place.casefold()}"
+    if key in cache:
+        value = cache[key]
+        return (value[0], value[1]) if isinstance(value, list) else None
+    try:
+        query = place if "denmark" in place.casefold() or "danmark" in place.casefold() \
+            else f"{place}, Denmark"
+        response = httpx.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": query, "format": "json", "limit": 1, "countrycodes": "dk"},
+            headers={"User-Agent": "WexFlow/1.2 (+job-distance)"},
+            timeout=15,
+        )
+        if response.status_code == 200:
+            rows = response.json() or []
+            if rows:
+                coords = float(rows[0]["lat"]), float(rows[0]["lon"])
+                cache[key] = [coords[0], coords[1]]
+                return coords
+            cache[key] = None
+    except Exception:
+        pass  # transient network failures stay retryable
+    return None
+
+
 def geocode_address(text: str) -> tuple[float, float] | None:
     """Геокодирует свободный адрес пользователя.
 
@@ -314,9 +344,16 @@ def geocode_jobs(jobs, force=False):
             # При уточнении уже сохранённой DK-вакансии не перезаписываем старые
             # координаты центром индекса, если точный адрес сейчас не ответил.
             continue
-        if not coords:  # фолбэк на центр индекса (и для DE/PL)
+        if not coords and j.country and j.zip:  # фолбэк на центр индекса (и для DE/PL)
             was_cached = f"{j.country}:{j.zip}" in cache
             coords = geocode_zip(j.country, j.zip, cache)
+            if not was_cached:
+                new_lookups += 1
+                time.sleep(0.3)
+        if not coords and is_dk and j.city:
+            city_key = f"DKCITY:{str(j.city).strip().casefold()}"
+            was_cached = city_key in cache
+            coords = geocode_dk_place(j.city, cache)
             if not was_cached:
                 new_lookups += 1
                 time.sleep(0.3)

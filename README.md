@@ -5,7 +5,7 @@ WexFlow is a Windows desktop helper for job search automation in Denmark.
 It brings job discovery, filtering, distance sorting, profile data, documents, and assisted application flows into one local app. The current build includes:
 
 - **Salling Jobs** - vacancy feed, filters, saved job states, distance/radius tools, routes, profile data, CV/cover letter handling, and assisted applications.
-- **Teamtailor Jobs** - Danish vacancies from dozens of additional employers in the same feed, with source filtering and safe assisted form filling that stops before submission.
+- **Additional ATS Jobs** - Danish vacancies from dozens of employers using Teamtailor, Greenhouse, and Ashby in the same feed, with source filtering, distance tools, and safe assisted form filling that stops before submission.
 - **7-Eleven Apply Studio** - profile tools, store selection, address/location helpers, routes, and assisted Typeform applications.
 
 The app runs on your own PC. Profile data, selected documents, local job state, browser data, and logs are stored locally, not in this repository.

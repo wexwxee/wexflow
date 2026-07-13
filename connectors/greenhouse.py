@@ -7,6 +7,7 @@ Greenhouse — международная площадка, поэтому ос�
 """
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
 
@@ -34,7 +35,10 @@ class GreenhouseConnector(Connector):
     def fetch_company(self, company: dict) -> list[JobItem]:
         token = company["token"]
         url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs"
-        r = httpx.get(url, headers=_H, timeout=_TIMEOUT, follow_redirects=True)
+        r = httpx.get(
+            url, params={"content": "true"}, headers=_H,
+            timeout=_TIMEOUT, follow_redirects=True,
+        )
         r.raise_for_status()
         name = company.get("name") or token
         out: list[JobItem] = []
@@ -50,6 +54,7 @@ class GreenhouseConnector(Connector):
                 url=j.get("absolute_url") or "",
                 city=loc or None,
                 published=j.get("updated_at"),
+                description=html.unescape(j.get("content") or "") or None,
             ))
         return out
 
