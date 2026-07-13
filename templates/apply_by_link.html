@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}WexFlow · Подача по ссылке{% endblock %}
+
+{% block style %}
+<style>
+  .link-hero { display:grid; gap:18px; padding:24px; border:1px solid var(--glass-line);
+    border-radius:var(--radius-card); background:linear-gradient(135deg,var(--card),var(--glass)); }
+  .link-safe { display:flex; align-items:flex-start; gap:10px; padding:12px 14px;
+    border:1px solid var(--ok-line); border-radius:10px; background:var(--ok-bg); color:var(--ok-txt);
+    font-size:13px; line-height:1.45; }
+  .link-form { display:flex; gap:10px; align-items:stretch; }
+  .link-form input { flex:1; min-width:0; font-size:15px; padding:13px 15px; }
+  .link-form button { flex:0 0 auto; }
+  .link-note { margin:0; color:var(--muted); font-size:13px; line-height:1.55; }
+  .link-section-title { margin:26px 0 12px; font-size:17px; }
+  .link-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+  .link-step, .source-row { border:1px solid var(--glass-line); border-radius:var(--radius-card);
+    background:var(--card); padding:15px; }
+  .link-step-num { display:grid; place-items:center; width:28px; height:28px; margin-bottom:10px;
+    border-radius:9px; background:var(--accent-soft); color:var(--accent); font-weight:800; }
+  .link-step b { display:block; margin-bottom:5px; }
+  .link-step span { color:var(--muted); font-size:12.5px; line-height:1.45; }
+  .source-list { display:grid; gap:8px; }
+  .source-row { display:flex; align-items:center; gap:12px; text-decoration:none; color:var(--txt); }
+  .source-row:hover { border-color:var(--hover-line); background:var(--card-2); }
+  .source-main { flex:1; min-width:0; }
+  .source-main b { display:block; color:var(--txt-strong); }
+  .source-main span { color:var(--muted); font-size:12.5px; }
+  .source-count { font:700 20px "Space Grotesk",system-ui,sans-serif; color:var(--accent); }
+  @media (max-width:760px) {
+    .link-form { flex-direction:column; }
+    .link-steps { grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+{{ ui.shell_start('link') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Подача по ссылке') }}</h1>
+    <span class="wex-title-meta">Для вакансий, которых ещё нет в общей ленте</span>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">{{ ui.theme_toggle() }}</div>
+</header>
+
+<section class="wex-workbench wex-narrow">
+  <div class="link-hero">
+    <div>
+      <h2 style="margin:0 0 7px;">Вставь ссылку на вакансию</h2>
+      <p class="link-note">WexFlow откроет карьерный сайт в отдельном окне и подставит доступные данные из профиля.</p>
+    </div>
+    <div class="link-safe">{{ ic.i('check', 17) }}
+      <span><b>Отправка всегда остаётся за тобой.</b> WexFlow не нажимает финальную кнопку, не принимает согласия и не отмечает такую анкету поданной автоматически.</span>
+    </div>
+    <form class="link-form" method="post" action="/apply-by-link/start">
+      <input name="url" type="url" required autocomplete="off" placeholder="https://company.teamtailor.com/jobs/…" aria-label="Ссылка на вакансию">
+      <button class="primary" type="submit">{{ ic.i('send', 14) }} Подготовить форму</button>
+    </form>
+    <p class="link-note">Поддерживаются Teamtailor, Greenhouse, Ashby, Lever, Recruitee и Workable. Для неизвестных форм WexFlow попробует универсальное заполнение.</p>
+  </div>
+
+  <h2 class="link-section-title">Как это работает</h2>
+  <div class="link-steps">
+    <div class="link-step"><span class="link-step-num">1</span><b>Проверяет ссылку</b><span>Принимаются только обычные безопасные адреса HTTP/HTTPS.</span></div>
+    <div class="link-step"><span class="link-step-num">2</span><b>Готовит анкету</b><span>Открывает видимый браузер и заполняет только распознанные поля.</span></div>
+    <div class="link-step"><span class="link-step-num">3</span><b>Останавливается</b><span>Ты проверяешь всё, принимаешь нужные согласия и решаешь, отправлять ли.</span></div>
+  </div>
+
+  <h2 class="link-section-title">Уже в общей ленте <span class="meta">· {{ total }} активных</span></h2>
+  <div class="source-list">
+    {% for source in sources %}
+    <a class="source-row" href="{{ source.href }}">
+      <span style="color:var(--accent);">{{ ic.i('briefcase', 18) }}</span>
+      <span class="source-main"><b>{{ source.label }}</b><span>Фильтры, расстояние, описание и журнал доступны в основной ленте</span></span>
+      <span class="source-count">{{ source.count }}</span>
+      <span class="meta">Открыть →</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{{ ui.shell_end() }}
+{% endblock %}

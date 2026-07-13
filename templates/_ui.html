@@ -18,6 +18,7 @@
     <nav class="wex-side-nav">
       <a class="wex-side-btn {{ 'active' if active == 'hub' }}" href="/hub" data-tip-title="Главная" data-tip-body="Стартовый экран WexFlow с быстрым входом в оба модуля.">{{ ic.i('home', 18) }}<span>Главная</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'jobs' }}" href="/" data-tip-title="Вакансии" data-tip-body="Лента вакансий Salling: фильтры, статусы и пакетная подача.">{{ ic.i('cart', 18) }}<span>Вакансии</span></a>
+      <a class="wex-side-btn {{ 'active' if active == 'link' }}" href="/apply-by-link" data-tip-title="По ссылке" data-tip-body="Безопасно подготовить анкету по ссылке с остановкой перед отправкой.">{{ ic.i('link', 18) }}<span>По ссылке</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'applied' }}" href="/?status=applied" data-tip-title="Поданные" data-tip-body="Вакансии, на которые заявка уже отправлена.">{{ ic.i('check', 18) }}<span>Поданные</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'autopilot' }}" href="/autopilot" data-tip-title="Автопилот" data-tip-body="Живой статус автопилота: что нашёл, что подал, журнал событий.">{{ ic.i('zap', 18) }}<span>Автопилот</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'audit' }}" href="/audit" data-tip-title="Журнал заявок" data-tip-body="Поданные и незавершённые анкеты с честным статусом результата.">{{ ic.i('clock', 18) }}<span>Журнал</span></a>

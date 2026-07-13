@@ -24,6 +24,7 @@ from connectors.apply_dispatch import detect, platform_name
 
 PORT = 8078
 HUB_BACK = "http://127.0.0.1:8080/hub"
+MAIN_APPLY_URL = "http://127.0.0.1:8080/__app/salling?next=/apply-by-link"
 CARD_CAP = 200
 _DETACHED = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
 
@@ -242,7 +243,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.split("?", 1)[0] in ("/", "/index.html"):
-            self._send(200, page_html() if self._authed() else _login_html())
+            # Compatibility endpoint for shortcuts left by older releases.
+            # The raw connector feed was retired in favour of the vetted,
+            # fully integrated page inside the main WexFlow application.
+            self.send_response(303)
+            self.send_header("Location", MAIN_APPLY_URL)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
         else:
             self._send(404, "not found")
 
@@ -296,7 +303,6 @@ class Handler(BaseHTTPRequestHandler):
 
 def serve(port: int = PORT, open_browser: bool = False):
     url = f"http://127.0.0.1:{port}"
-    threading.Thread(target=refresh_jobs, daemon=True).start()
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     except OSError:

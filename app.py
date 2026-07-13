@@ -1634,8 +1634,22 @@ def hub(request: Request):
 
 
 @app.get("/apply-by-link")
-def apply_by_link():
-    return RedirectResponse("http://127.0.0.1:8078/", status_code=303)
+def apply_by_link(request: Request):
+    with get_session() as session:
+        rows = session.exec(select(Job).where(
+            Job.source != "salling",
+            Job.status.not_in(["closed", "hidden"]),
+        )).all()
+    counts = Counter(job.source for job in rows)
+    sources = [
+        {"key": key, "label": JOB_SOURCE_LABELS[key],
+         "count": counts.get(key, 0), "href": f"/?source={key}"}
+        for key in ("teamtailor", "greenhouse", "ashby")
+    ]
+    return templates.TemplateResponse("apply_by_link.html", {
+        "request": request, "sources": sources,
+        "total": sum(item["count"] for item in sources),
+    })
 
 
 def _launch_connector_filler(url: str) -> None:
@@ -1650,6 +1664,28 @@ def _launch_connector_filler(url: str) -> None:
     if sys.platform == "win32":
         kwargs["creationflags"] = 0x00000008 | 0x00000200
     subprocess.Popen(cmd, **kwargs)
+
+
+@app.post("/apply-by-link/start")
+def start_apply_by_link(request: Request, url: str = Form(...)):
+    value = str(url or "").strip()
+    try:
+        _launch_connector_filler(value)
+    except Exception as exc:  # noqa: BLE001
+        return _redirect_back(
+            request, "/apply-by-link",
+            error=f"Не удалось открыть форму: {str(exc)[:160]}",
+        )
+    try:
+        from connectors.apply_dispatch import detect, platform_name
+        key = detect(value)
+        platform = platform_name(key) if key else "универсальная форма"
+    except Exception:
+        platform = "форма вакансии"
+    return _redirect_back(
+        request, "/apply-by-link",
+        notice=f"Открываю {platform}. Проверь заполненные поля и отправь анкету сам.",
+    )
 
 
 @app.post("/job/{job_id}/connector/apply")

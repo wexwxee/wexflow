@@ -63,7 +63,7 @@ if not SEVEN_PY.exists():
 SALLING_PORT = 8000
 HUB_PORT = 8080
 SEVEN_PORT = 7111
-BETA_PORT = 8078  # модуль «WexFlow — подача» (БЕТА), коннекторы ATS
+BETA_PORT = 8078  # устаревший порт: сохраняем только для очистки старого процесса
 HUB_URL = f"http://127.0.0.1:{HUB_PORT}/__app/salling?next=/hub"
 CREATE_NO_WINDOW = 0x08000000  # фоновые серверы — без чёрных консолей
 
@@ -949,15 +949,9 @@ def start_servers():
         _ensure(HUB_PORT, [PY, "-m", "uvicorn", "hub:app", "--host", "127.0.0.1",
                            "--port", str(HUB_PORT)], APP_ROOT, "Hub")
 
-    # БЕТА-модуль подачи (коннекторы ATS). Стартует ПОСЛЕ основных и полностью
-    # изолирован: любой его сбой НЕ влияет на Salling/7-Eleven/Hub.
-    try:
-        if is_frozen():
-            _ensure(BETA_PORT, _self_cmd("--worker-beta-server", str(BETA_PORT)), None, "Beta")
-        else:
-            _ensure(BETA_PORT, [PY, "-m", "connectors.webapp", str(BETA_PORT)], APP_ROOT, "Beta")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[WexFlow] бета-модуль не запустился (не критично): {exc}")
+    # Отдельный beta-сервер на 8078 больше не запускается: подача по ссылке
+    # встроена в основной интерфейс. BETA_PORT остаётся в очистке старых
+    # процессов, чтобы после обновления закрыть воркер предыдущей версии.
 
 
 def wait_for_hub(timeout=60) -> bool:
