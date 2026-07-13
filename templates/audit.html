@@ -2,7 +2,7 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}WexFlow · Журнал подач{% endblock %}
+{% block title %}WexFlow · Журнал заявок{% endblock %}
 
 {% block style %}
 <style>
@@ -50,6 +50,8 @@
   .badge.cf-receipt { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
   .badge.cf-indirect { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); }
   .badge.cf-manual { background:var(--glass); color:var(--muted); border-color:var(--glass-line); }
+  .badge.act-preparing { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
+  .badge.act-incomplete { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); }
   /* скрин-доказательство: кнопка-бейдж + просмотр поверх страницы */
   .badge.cf-proof { cursor:pointer; min-height:0; padding:3px 10px; font-size:12px; }
   .badge.cf-proof:hover { border-color:var(--accent); color:var(--accent); }
@@ -70,7 +72,7 @@
 <header class="wex-topbar">
   <div class="wex-title-stack">
     <h1>{{ ui.brand('Журнал') }}</h1>
-    <span class="wex-title-meta">Что и когда отправлено под вашим именем</span>
+    <span class="wex-title-meta">Поданные и незавершённые анкеты в одном месте</span>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
@@ -79,20 +81,21 @@
 </header>
 <section class="wex-workbench wex-narrow">
   <p class="audit-intro">{{ ic.i('clock', 16) }}
-    <span>Полный список заявок, отмеченных как поданные. У каждой видно, <b>как</b> это подтверждено:
+    <span>Здесь видна вся история работы с анкетами. <b>Анкета открыта</b> и <b>не завершено</b> — это только подготовка, заявка ещё не считается отправленной.
+    У поданных заявок видно, <b>как</b> это подтверждено:
     <b>квитанция</b> — сайт Salling подтвердил приём; <b>вероятно</b> — форма закрылась без квитанции,
     стоит проверить письмо от Salling; <b>вручную</b> — вы отметили сами, WexFlow ничего не отправлял.
-    Здесь только просмотр — ничего не подаётся.</span></p>
+    Журнал ничего не отправляет сам.</span></p>
 
   {% set st_ru = {'applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','seen':'просмотрено','closed':'закрыта','hidden':'скрыто','new':'новая'} %}
 
   {% if total == 0 %}
     <div class="audit-empty">
       {{ ic.i('check', 26) }}
-      <p>Пока ничего не отправлено под вашим именем.</p>
+      <p>Пока нет ни поданных, ни начатых анкет.</p>
     </div>
   {% else %}
-    <p class="audit-count">Всего отправлено: <b>{{ total }}</b></p>
+    <p class="audit-count">Всего записей: <b>{{ total }}</b></p>
     {% for label, rows in groups %}
       <div class="audit-day">{{ label }}</div>
       {% for r in rows %}
@@ -102,18 +105,24 @@
           <span class="audit-title">{{ r.title }}</span>
           <span class="audit-sub">{% if r.brand %}{{ brand_label(r.brand) }}{% endif %}{% if r.brand and r.city %} · {% endif %}{% if r.city %}{{ r.city }}{% endif %}</span>
         </span>
+        <span class="badge">{{ source_labels.get(r.source, r.source) }}</span>
+        {% if r.activity == 'preparing' %}
+          <span class="badge act-preparing">анкета открыта</span>
+        {% elif r.activity == 'incomplete' %}
+          <span class="badge act-incomplete">не завершено</span>
+        {% endif %}
         {% if r.proof %}
           <button type="button" class="badge cf-proof" data-proof="/applied-proof/{{ r.proof }}"
                   title="Открыть сохранённый снимок экрана результата подачи">{{ ic.i('file', 11) }} скрин</button>
         {% endif %}
-        {% if r.confidence == 'receipt' %}
+        {% if r.activity == 'submitted' and r.confidence == 'receipt' %}
           <span class="badge cf-receipt" title="Сайт Salling показал квитанцию о приёме заявки">{{ ic.i('check', 11) }} квитанция</span>
-        {% elif r.confidence == 'indirect' %}
+        {% elif r.activity == 'submitted' and r.confidence == 'indirect' %}
           <span class="badge cf-indirect" title="Форма закрылась без квитанции — вероятно подано; проверь письмо от Salling">{{ ic.i('alert', 11) }} вероятно</span>
-        {% elif r.confidence == 'manual' %}
+        {% elif r.activity == 'submitted' and r.confidence == 'manual' %}
           <span class="badge cf-manual" title="Отмечено вручную — WexFlow эту заявку не отправлял">вручную</span>
         {% endif %}
-        <span class="badge st-{{ r.status }}">{{ st_ru.get(r.status, r.status) }}</span>
+        {% if r.activity == 'submitted' %}<span class="badge st-{{ r.status }}">{{ st_ru.get(r.status, r.status) }}</span>{% endif %}
       </a>
       {% endfor %}
     {% endfor %}

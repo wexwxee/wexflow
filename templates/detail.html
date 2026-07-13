@@ -71,16 +71,32 @@
         {% endfor %}
       </form>
     </div>
-    <p style="margin-top:14px;">
+    {% if job.source != 'salling' and application_state in ['submitting', 'failed'] %}
+    <div class="notice" style="margin-top:14px;">
+      {% if application_state == 'submitting' %}
+        <b>Анкета открыта.</b> Когда закончишь на сайте компании, отметь результат — WexFlow сам ничего не считает отправленным.
+      {% else %}
+        <b>Анкета не завершена.</b> Запись сохранена в журнале, можно продолжить позже.
+      {% endif %}
+      <form method="post" action="/job/{{ job.id }}/connector/result" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+        <button class="primary" type="submit" name="outcome" value="submitted"
+                onclick="return confirm('Подтвердить, что вы сами отправили анкету на сайте компании?')">{{ ic.i('check', 13) }} Я отправил анкету</button>
+        {% if application_state == 'submitting' %}
+        <button class="secondary" type="submit" name="outcome" value="incomplete">Не завершил</button>
+        {% endif %}
+      </form>
+    </div>
+    {% endif %}
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       {% if job.source == 'salling' %}
       <a href="/job/{{ job.id }}/apply"><button class="primary">{{ ic.i('send', 14) }} Подать заявку →</button></a>
       {% else %}
       <form method="post" action="/job/{{ job.id }}/connector/apply" style="display:inline;">
-        <button class="primary" type="submit">{{ ic.i('send', 14) }} Заполнить форму →</button>
+        <button class="primary" type="submit">{{ ic.i('send', 14) }} {{ 'Продолжить заполнение' if application_state in ['submitting', 'failed'] else 'Заполнить форму' }} →</button>
       </form>
       {% endif %}
       <a href="{{ maps_url }}"><button class="secondary">{{ ic.i('map', 14) }} Маршрут в Google Maps</button></a>
-    </p>
+    </div>
     {% if has_home and job.lat is not none %}
     <p>
       <button type="button" class="secondary" id="transitBtn" data-job="{{ job.id }}" data-loading-text="Считаю маршрут…">{{ ic.i('bus', 14) }} Время в пути на транспорте</button>

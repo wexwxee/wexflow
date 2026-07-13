@@ -34,7 +34,7 @@ import subscription
 import account as account_mod
 import cloud_auth
 import transit
-from db import Job, init_db, get_session, select, utcnow
+from db import Application, Job, init_db, get_session, select, utcnow
 import scraper
 import connector_sync
 import applications
@@ -1660,9 +1660,16 @@ def start_connector_apply(job_id: str, request: Request):
         return _redirect_back(request, "/", error="Вакансия больше не найдена.")
     if getattr(job, "source", "salling") == "salling":
         return RedirectResponse(f"/job/{job_id}/apply", status_code=303)
+    if job.status == "applied" or job.applied_at is not None:
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            notice="Эта вакансия уже отмечена как поданная. Повторно форму не открываю.",
+        )
+    applications.mark_submitting([job.id], origin="assisted", source=job.source)
     try:
         _launch_connector_filler(job.application_link or "")
     except Exception as exc:  # noqa: BLE001
+        applications.mark_failed([job.id], source=job.source)
         return _redirect_back(
             request, f"/job/{job_id}",
             error=f"Не удалось открыть форму: {str(exc)[:140]}",
@@ -1670,6 +1677,37 @@ def start_connector_apply(job_id: str, request: Request):
     return _redirect_back(
         request, f"/job/{job_id}",
         notice="Форма открывается в отдельном окне. WexFlow заполнит доступные поля и остановится перед отправкой.",
+    )
+
+
+@app.post("/job/{job_id}/connector/result")
+def connector_apply_result(job_id: str, request: Request, outcome: str = Form(...)):
+    if outcome not in {"submitted", "incomplete"}:
+        return _redirect_back(request, f"/job/{job_id}", error="Неизвестный результат анкеты.")
+    with get_session() as session:
+        job = session.get(Job, job_id)
+        if not job:
+            return _redirect_back(request, "/", error="Вакансия больше не найдена.")
+        if job.source == "salling":
+            return _redirect_back(request, f"/job/{job_id}", error="Этот результат относится только к внешним анкетам.")
+        source = job.source
+        if outcome == "submitted":
+            job.status = "applied"
+            job.applied_at = job.applied_at or utcnow()
+            job.applied_confidence = "manual"
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+    if outcome == "submitted":
+        applications.record_submitted([job])
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            notice="Отмечено как поданное вручную. Запись добавлена в журнал.",
+        )
+    applications.mark_failed([job_id], source=source)
+    return _redirect_back(
+        request, f"/job/{job_id}",
+        notice="Сохранил как незавершённую анкету — к ней можно вернуться позже.",
     )
 
 
@@ -1896,6 +1934,7 @@ def index(
 
     resp = templates.TemplateResponse("index.html", {
         "request": request, "jobs": jobs, "count": len(jobs),
+        "application_states": applications.states_for_jobs(jobs),
         "source_labels": JOB_SOURCE_LABELS,
         "groups": groups, "group": group,
         "total_filtered": total, "page": page, "pages": pages, "per_page": PER_PAGE,
@@ -1996,8 +2035,11 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
                 job.applied_confidence = "manual"
             s.add(job)
             s.commit()
+            s.refresh(job)
         else:
             return _redirect_back(request, "/", error="Вакансия не найдена. Возможно, список обновился.")
+    if status == "applied":
+        applications.record_submitted([job])
     return _redirect_back(request, "/", notice=status_labels.get(status, "Статус вакансии обновлён."))
 
 
@@ -2320,8 +2362,7 @@ def applied_proof(name: str):
 
 @app.get("/audit", response_class=HTMLResponse)
 def audit_log(request: Request):
-    """Журнал аудита: неизменный список всего, что реально отправлено под именем
-    пользователя (по applied_at). Только чтение — ничего не подаёт и не меняет."""
+    """Submitted jobs plus unfinished assisted connector forms. Read-only."""
     from db import utcnow
     proofs = _applied_proofs()
     with get_session() as s:
@@ -2332,12 +2373,36 @@ def audit_log(request: Request):
             "id": j.id, "title": j.title, "city": j.city, "brand": j.brand,
             "status": j.status, "applied_at": j.applied_at,
             "confidence": j.applied_confidence or "",
+            "source": j.source, "activity": "submitted",
             "proof": proofs.get(str(j.requisition_id or "")) or proofs.get(str(j.id)) or "",
         } for j in rows]
+        pending = s.exec(select(Application).where(
+            Application.source != "salling",
+            Application.state.in_(("submitting", "failed")),
+        ).order_by(Application.updated_at.desc())).all()
+        applied_keys = {(row["source"], row["id"]) for row in entries}
+        for application in pending:
+            if (application.source, application.job_id) in applied_keys:
+                continue
+            job = s.get(Job, application.job_id)
+            entries.append({
+                "id": application.job_id,
+                "title": job.title if job else application.job_id,
+                "city": job.city if job else "",
+                "brand": job.brand if job else "",
+                "status": job.status if job else "",
+                "applied_at": application.updated_at,
+                "confidence": "",
+                "source": application.source,
+                "activity": "preparing" if application.state == "submitting" else "incomplete",
+                "proof": "",
+            })
+        entries.sort(key=lambda row: row.get("applied_at") or utcnow(), reverse=True)
     return templates.TemplateResponse("audit.html", {
         "request": request,
         "groups": _audit_groups(entries, utcnow()),
         "total": len(entries),
+        "source_labels": JOB_SOURCE_LABELS,
     })
 
 
@@ -3057,6 +3122,10 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             "request": request,
             "job": job,
             "source_labels": JOB_SOURCE_LABELS,
+            "application_state": (
+                applications.state_of(job.id, source=job.source)
+                if job and job.source != "salling" else ""
+            ),
             "distance": distance,
             "has_home": bool(home),
             "maps_url": maps_url,

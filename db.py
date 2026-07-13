@@ -67,7 +67,7 @@ class Application(SQLModel, table=True):
            submitting (подача запущена) | submitted (подана) | failed (не подтвердилась).
     """
     id: Optional[int] = Field(default=None, primary_key=True)
-    source: str = Field(default="salling", index=True)   # коннектор (пока только salling)
+    source: str = Field(default="salling", index=True)   # salling | teamtailor | greenhouse | ashby
     job_id: str = Field(index=True)
     state: str = "offered"
     origin: str = ""                       # autopilot | telegram | batch | manual | migrated

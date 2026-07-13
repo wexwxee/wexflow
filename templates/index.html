@@ -694,6 +694,9 @@
     {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','hidden':'скрыто','closed':'закрыта'} %}
     <div class="badges">
       {% if j.source != 'salling' %}<span class="badge" style="border-color:#6b66ff;color:#9c98ff;">{{ source_labels.get(j.source, j.source) }}</span>{% endif %}
+      {% set app_state = application_states.get((j.source, j.id), '') %}
+      {% if app_state == 'submitting' %}<span class="badge" style="color:var(--info-txt);border-color:var(--info-line);">анкета открыта</span>{% endif %}
+      {% if app_state == 'failed' %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);">не завершено</span>{% endif %}
       {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
       {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно по прямой от домашнего адреса. Маршрут общественным транспортом смотри через кнопку Маршрут.">≈ {{ distances[j.id] }} км</span>{% endif %}
       <span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>
@@ -719,7 +722,7 @@
       {% if j.source == 'salling' %}
       <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>
       {% else %}
-      <form method="post" action="/job/{{ j.id }}/connector/apply"><button class="primary" type="submit">{{ ic.i('send', 13) }} Заполнить форму →</button></form>
+      <form method="post" action="/job/{{ j.id }}/connector/apply"><button class="primary" type="submit">{{ ic.i('send', 13) }} {{ 'Продолжить' if app_state in ['submitting', 'failed'] else 'Заполнить форму' }} →</button></form>
       {% endif %}
       {% endif %}
       <a href="/job/{{ j.id }}"><button type="button" class="ghost">Подробнее</button></a>

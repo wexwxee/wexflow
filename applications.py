@@ -37,10 +37,10 @@ def _norm_ids(ids) -> list[str]:
     return out
 
 
-def _get(s, job_id: str):
+def _get(s, job_id: str, source: str = SOURCE):
     return s.exec(
         select(Application).where(
-            Application.source == SOURCE, Application.job_id == str(job_id)
+            Application.source == str(source or SOURCE), Application.job_id == str(job_id)
         )
     ).first()
 
@@ -93,16 +93,16 @@ def mark_skipped(job_id: str) -> None:
         s.commit()
 
 
-def mark_submitting(ids, origin: str = "") -> None:
+def mark_submitting(ids, origin: str = "", source: str = SOURCE) -> None:
     """Подача запущена (браузер пошёл заполнять форму)."""
     ids = _norm_ids(ids)
     if not ids:
         return
     with get_session() as s:
         for jid in ids:
-            row = _get(s, jid)
+            row = _get(s, jid, source)
             if row is None:
-                row = Application(source=SOURCE, job_id=jid)
+                row = Application(source=source, job_id=jid)
             if row.state != "submitted":     # уже поданную не откатываем
                 row.state = "submitting"
             if origin:
@@ -112,7 +112,7 @@ def mark_submitting(ids, origin: str = "") -> None:
         s.commit()
 
 
-def mark_failed(ids) -> None:
+def mark_failed(ids, source: str = SOURCE) -> None:
     """Подача не подтвердилась. Заявка остаётся в реестре как failed:
     к повторному предложению в TG она не вернётся (offered_at сохранён),
     а тихая автоотправка сможет попробовать снова (как и раньше)."""
@@ -121,7 +121,7 @@ def mark_failed(ids) -> None:
         return
     with get_session() as s:
         for jid in ids:
-            row = _get(s, jid)
+            row = _get(s, jid, source)
             if row is not None and row.state == "submitting":
                 row.state = "failed"
                 row.updated_at = utcnow()
@@ -139,9 +139,10 @@ def record_submitted(jobs) -> list:
             if j is None:
                 continue
             jid = str(j.id)
-            row = _get(s, jid)
+            source = str(getattr(j, "source", None) or SOURCE)
+            row = _get(s, jid, source)
             if row is None:
-                row = Application(source=SOURCE, job_id=jid)
+                row = Application(source=source, job_id=jid)
             if row.state == "submitted":
                 continue                     # уже зафиксирована
             row.state = "submitted"
@@ -154,11 +155,28 @@ def record_submitted(jobs) -> list:
     return fresh
 
 
-def state_of(job_id: str) -> str:
+def state_of(job_id: str, source: str = SOURCE) -> str:
     """Текущее состояние заявки ('' — записи нет)."""
     with get_session() as s:
-        row = _get(s, str(job_id or "").strip())
+        row = _get(s, str(job_id or "").strip(), source)
     return row.state if row else ""
+
+
+def states_for_jobs(jobs) -> dict[tuple[str, str], str]:
+    """Application states for feed cards in one query, keyed by source + id."""
+    keys = {
+        (str(getattr(job, "source", None) or SOURCE), str(getattr(job, "id", "")))
+        for job in jobs or [] if getattr(job, "id", None)
+    }
+    if not keys:
+        return {}
+    ids = {job_id for _source, job_id in keys}
+    with get_session() as session:
+        rows = session.exec(select(Application).where(Application.job_id.in_(ids))).all()
+    return {
+        (row.source, row.job_id): row.state
+        for row in rows if (row.source, row.job_id) in keys
+    }
 
 
 def _ids_where(*conds) -> set:
