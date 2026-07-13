@@ -11,10 +11,24 @@
   .link-safe { display:flex; align-items:flex-start; gap:10px; padding:12px 14px;
     border:1px solid var(--ok-line); border-radius:10px; background:var(--ok-bg); color:var(--ok-txt);
     font-size:13px; line-height:1.45; }
+  .link-ready { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+  .ready-chip { display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border:1px solid var(--glass-line);
+    border-radius:999px; background:var(--glass); color:var(--muted); font-size:12px; font-weight:700; }
+  .ready-chip.ok { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
+  .ready-chip.warn { color:var(--warn-txt); border-color:var(--warn-line); background:var(--warn-bg); }
+  .ready-link { margin-left:auto; color:var(--accent); font-size:12px; font-weight:700; text-decoration:none; }
   .link-form { display:flex; gap:10px; align-items:stretch; }
   .link-form input { flex:1; min-width:0; font-size:15px; padding:13px 15px; }
   .link-form button { flex:0 0 auto; }
   .link-note { margin:0; color:var(--muted); font-size:13px; line-height:1.55; }
+  .link-result { display:grid; gap:13px; padding:17px 18px; border:1px solid var(--info-line);
+    border-radius:var(--radius-card); background:var(--info-bg); }
+  .link-result-head { display:flex; align-items:flex-start; gap:11px; }
+  .link-result-head svg { color:var(--info-txt); margin-top:2px; }
+  .link-result-head b { display:block; color:var(--txt-strong); }
+  .link-result-head span { display:block; margin-top:3px; color:var(--muted); font-size:12.5px; }
+  .link-result-actions { display:flex; flex-wrap:wrap; gap:8px; padding-left:28px; }
+  .link-result-actions form { margin:0; }
   .link-section-title { margin:26px 0 12px; font-size:17px; }
   .link-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
   .link-step, .source-row { border:1px solid var(--glass-line); border-radius:var(--radius-card);
@@ -49,6 +63,27 @@
 </header>
 
 <section class="wex-workbench wex-narrow">
+  {% if pending_job and pending_state == 'submitting' %}
+  <div class="link-result">
+    <div class="link-result-head">{{ ic.i('clock', 17) }}<div>
+      <b>Чем закончилась анкета?</b>
+      <span>{{ pending_job.title }} · {{ pending_job.brand or 'внешний сайт' }}</span>
+    </div></div>
+    <div class="link-result-actions">
+      <form method="post" action="/job/{{ pending_job.id }}/connector/result">
+        <input type="hidden" name="outcome" value="submitted">
+        <input type="hidden" name="return_to" value="/apply-by-link">
+        <button class="primary" type="submit">{{ ic.i('check', 14) }} Я отправил анкету</button>
+      </form>
+      <form method="post" action="/job/{{ pending_job.id }}/connector/result">
+        <input type="hidden" name="outcome" value="incomplete">
+        <input type="hidden" name="return_to" value="/apply-by-link">
+        <button type="submit">Не завершил</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="link-hero">
     <div>
       <h2 style="margin:0 0 7px;">Вставь ссылку на вакансию</h2>
@@ -56,6 +91,17 @@
     </div>
     <div class="link-safe">{{ ic.i('check', 17) }}
       <span><b>Отправка всегда остаётся за тобой.</b> WexFlow не нажимает финальную кнопку, не принимает согласия и не отмечает такую анкету поданной автоматически.</span>
+    </div>
+    <div class="link-ready" aria-label="Готовность данных">
+      <span class="ready-chip {{ 'ok' if not profile_missing else 'warn' }}">
+        {{ ic.i('check' if not profile_missing else 'alert', 12) }}
+        {{ 'Профиль готов' if not profile_missing else ('Не заполнено полей: ' ~ (profile_missing|length)) }}
+      </span>
+      <span class="ready-chip {{ 'ok' if cv_ready else 'warn' }}">
+        {{ ic.i('file', 12) }} {{ 'CV готово' if cv_ready else 'CV не добавлено' }}
+      </span>
+      {% if profile_missing %}<a class="ready-link" href="/account#profile">Дополнить профиль →</a>
+      {% elif not cv_ready %}<a class="ready-link" href="/settings/salling#documents">Добавить CV →</a>{% endif %}
     </div>
     <form class="link-form" method="post" action="/apply-by-link/start">
       <input name="url" type="url" required autocomplete="off" placeholder="https://company.teamtailor.com/jobs/…" aria-label="Ссылка на вакансию">

@@ -3,6 +3,7 @@
 Запуск:  python -m uvicorn app:app --reload
 Открыть: http://127.0.0.1:8000
 """
+import hashlib
 import json
 import os
 import re
@@ -12,12 +13,13 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from collections import Counter
-from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote_plus, unquote, urlencode, urlsplit, urlunsplit
 
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import func
 
 import config
@@ -59,6 +61,7 @@ JOB_SOURCE_LABELS = {
     "teamtailor": "Другие компании · Teamtailor",
     "greenhouse": "Другие компании · Greenhouse",
     "ashby": "Другие компании · Ashby",
+    "manual_link": "Добавлено по ссылке",
 }
 def _allowed_local_write(request: Request) -> bool:
     """Block cross-site form/fetch writes against the local desktop server.
@@ -271,6 +274,8 @@ _apply_runner_busy = False
 # уйти повторно или потеряться. Двойной клик «Подать пачкой» ловится коротким окном.
 _manual_apply_lock = threading.Lock()
 _last_manual_apply_ts = 0.0
+_connector_launch_lock = threading.Lock()
+_connector_launches: dict[str, float] = {}
 
 
 # Последний запущенный НАМИ воркер подачи (шаг 4): пока держим живой хэндл,
@@ -324,6 +329,25 @@ def _claim_apply_slot() -> bool:
             return False
         _last_manual_apply_ts = time.time()
         return True
+
+
+def _claim_connector_launch(job_id: str, cooldown: float = 10.0) -> bool:
+    """Prevent a double click from opening two assisted browser windows."""
+    now = time.monotonic()
+    key = str(job_id or "")
+    with _connector_launch_lock:
+        stale = [item for item, ts in _connector_launches.items() if now - ts > 300]
+        for item in stale:
+            _connector_launches.pop(item, None)
+        if now - _connector_launches.get(key, -cooldown) < cooldown:
+            return False
+        _connector_launches[key] = now
+        return True
+
+
+def _release_connector_launch(job_id: str) -> None:
+    with _connector_launch_lock:
+        _connector_launches.pop(str(job_id or ""), None)
 
 
 def _enqueue_auto_submit(ids) -> None:
@@ -1634,12 +1658,26 @@ def hub(request: Request):
 
 
 @app.get("/apply-by-link")
-def apply_by_link(request: Request):
+def apply_by_link(request: Request, pending: str = ""):
     with get_session() as session:
         rows = session.exec(select(Job).where(
             Job.source != "salling",
             Job.status.not_in(["closed", "hidden"]),
         )).all()
+        pending_job = session.get(Job, pending) if pending else None
+        pending_application = None
+        if pending_job and pending_job.source != "salling":
+            pending_application = session.exec(select(Application).where(
+                Application.source == pending_job.source,
+                Application.job_id == pending_job.id,
+            )).first()
+    try:
+        profile = profile_store.load_profile()
+        profile_missing = _profile_missing(profile)
+        cv_ready = profile_store.file_status(profile.get("cv_path", "")) == "ok"
+    except Exception:  # noqa: BLE001 — повреждённый профиль не должен ломать страницу
+        profile_missing = [label for _key, label in PROFILE_REQUIRED]
+        cv_ready = False
     counts = Counter(job.source for job in rows)
     sources = [
         {"key": key, "label": JOB_SOURCE_LABELS[key],
@@ -1649,13 +1687,63 @@ def apply_by_link(request: Request):
     return templates.TemplateResponse("apply_by_link.html", {
         "request": request, "sources": sources,
         "total": sum(item["count"] for item in sources),
+        "pending_job": pending_job,
+        "pending_state": pending_application.state if pending_application else "",
+        "profile_missing": profile_missing,
+        "cv_ready": cv_ready,
     })
 
 
-def _launch_connector_filler(url: str) -> None:
+def _normalized_apply_url(url: str) -> str:
     parsed = urlsplit(str(url or "").strip())
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("У вакансии нет безопасной ссылки на форму")
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path or "/",
+                       parsed.query, ""))
+
+
+def _manual_link_job(url: str) -> Job:
+    """Reuse a known job or create one stable journal entry for an arbitrary link."""
+    value = _normalized_apply_url(url)
+    parsed = urlsplit(value)
+    with get_session() as session:
+        existing = session.exec(select(Job).where(Job.application_link == value)).first()
+        if existing:
+            return existing
+        slug = unquote(parsed.path.rstrip("/").rsplit("/", 1)[-1])
+        slug = re.sub(r"^\d+[-_]?", "", slug)
+        title = re.sub(r"[-_]+", " ", slug).strip().title()
+        if not title or title.lower() in {"jobs", "job", "careers", "career"}:
+            title = "Вакансия по ссылке"
+        job_id = "link:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+        stored = session.get(Job, job_id)
+        if stored:
+            return stored
+        job = Job(
+            id=job_id,
+            source="manual_link",
+            title=title[:160],
+            brand=parsed.hostname or parsed.netloc,
+            application_link=value,
+            status="new",
+        )
+        session.add(job)
+        try:
+            session.commit()
+        except IntegrityError:
+            # Two rapid clicks can race between the initial lookup and INSERT.
+            # The deterministic id makes the already-created row the winner.
+            session.rollback()
+            stored = session.get(Job, job_id)
+            if stored:
+                return stored
+            raise
+        session.refresh(job)
+        return job
+
+
+def _launch_connector_filler(url: str) -> None:
+    url = _normalized_apply_url(url)
     if getattr(sys, "frozen", False):
         cmd = [sys.executable, "--worker-connector-apply", url]
     else:
@@ -1668,10 +1756,30 @@ def _launch_connector_filler(url: str) -> None:
 
 @app.post("/apply-by-link/start")
 def start_apply_by_link(request: Request, url: str = Form(...)):
-    value = str(url or "").strip()
+    try:
+        job = _manual_link_job(url)
+    except Exception as exc:  # noqa: BLE001
+        return _redirect_back(
+            request, "/apply-by-link",
+            error=f"Не удалось открыть форму: {str(exc)[:160]}",
+        )
+    value = job.application_link or ""
+    if job.status == "applied" or job.applied_at is not None:
+        return _redirect_back(
+            request, "/apply-by-link",
+            notice="Эта ссылка уже отмечена как поданная. Повторно форму не открываю.",
+        )
+    if not _claim_connector_launch(job.id):
+        return _redirect_back(
+            request, "/apply-by-link",
+            notice="Форма уже открывается — второе окно не запускаю.",
+        )
+    applications.mark_submitting([job.id], origin="assisted", source=job.source)
     try:
         _launch_connector_filler(value)
     except Exception as exc:  # noqa: BLE001
+        _release_connector_launch(job.id)
+        applications.mark_failed([job.id], source=job.source)
         return _redirect_back(
             request, "/apply-by-link",
             error=f"Не удалось открыть форму: {str(exc)[:160]}",
@@ -1682,9 +1790,12 @@ def start_apply_by_link(request: Request, url: str = Form(...)):
         platform = platform_name(key) if key else "универсальная форма"
     except Exception:
         platform = "форма вакансии"
-    return _redirect_back(
-        request, "/apply-by-link",
-        notice=f"Открываю {platform}. Проверь заполненные поля и отправь анкету сам.",
+    return RedirectResponse(
+        _url_with_system_response(
+            f"/apply-by-link?pending={quote_plus(job.id)}",
+            notice=f"Открываю {platform}. После проверки отметь результат ниже.",
+        ),
+        status_code=303,
     )
 
 
@@ -1701,10 +1812,16 @@ def start_connector_apply(job_id: str, request: Request):
             request, f"/job/{job_id}",
             notice="Эта вакансия уже отмечена как поданная. Повторно форму не открываю.",
         )
+    if not _claim_connector_launch(job.id):
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            notice="Форма уже открывается — второе окно не запускаю.",
+        )
     applications.mark_submitting([job.id], origin="assisted", source=job.source)
     try:
         _launch_connector_filler(job.application_link or "")
     except Exception as exc:  # noqa: BLE001
+        _release_connector_launch(job.id)
         applications.mark_failed([job.id], source=job.source)
         return _redirect_back(
             request, f"/job/{job_id}",
@@ -1717,9 +1834,15 @@ def start_connector_apply(job_id: str, request: Request):
 
 
 @app.post("/job/{job_id}/connector/result")
-def connector_apply_result(job_id: str, request: Request, outcome: str = Form(...)):
+def connector_apply_result(
+    job_id: str,
+    request: Request,
+    outcome: str = Form(...),
+    return_to: str = Form(""),
+):
+    target = "/apply-by-link" if return_to == "/apply-by-link" else f"/job/{job_id}"
     if outcome not in {"submitted", "incomplete"}:
-        return _redirect_back(request, f"/job/{job_id}", error="Неизвестный результат анкеты.")
+        return _redirect_back(request, target, error="Неизвестный результат анкеты.")
     with get_session() as session:
         job = session.get(Job, job_id)
         if not job:
@@ -1734,17 +1857,18 @@ def connector_apply_result(job_id: str, request: Request, outcome: str = Form(..
             session.add(job)
             session.commit()
             session.refresh(job)
+    _release_connector_launch(job_id)
     if outcome == "submitted":
         applications.record_submitted([job])
-        return _redirect_back(
-            request, f"/job/{job_id}",
+        return RedirectResponse(_url_with_system_response(
+            target,
             notice="Отмечено как поданное вручную. Запись добавлена в журнал.",
-        )
+        ), status_code=303)
     applications.mark_failed([job_id], source=source)
-    return _redirect_back(
-        request, f"/job/{job_id}",
+    return RedirectResponse(_url_with_system_response(
+        target,
         notice="Сохранил как незавершённую анкету — к ней можно вернуться позже.",
-    )
+    ), status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)

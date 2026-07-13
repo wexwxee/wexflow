@@ -7,7 +7,7 @@ It brings job discovery, filtering, distance sorting, profile data, documents, a
 - **Salling Jobs** - vacancy feed, filters, saved job states, distance/radius tools, routes, profile data, CV/cover letter handling, and assisted applications.
 - **Additional ATS Jobs** - Danish vacancies from dozens of employers using Teamtailor, Greenhouse, and Ashby in the same feed, with source filtering, distance tools, and a native WexFlow “Apply by link” workspace that safely stops before submission.
 - **7-Eleven Apply Studio** - profile tools, store selection, address/location helpers, routes, and assisted Typeform applications.
-- **Application Journal** - submitted, currently open, and unfinished applications with honest source-aware states and manual confirmation for external forms.
+- **Application Journal** - submitted, currently open, and unfinished applications with honest source-aware states, including arbitrary job links and manual confirmation for external forms.
 
 The app runs on your own PC. Profile data, selected documents, local job state, browser data, and logs are stored locally, not in this repository.
 
