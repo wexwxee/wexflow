@@ -303,7 +303,7 @@ def fetch_poll(tg_id: str = "", timeout: int = 12) -> dict | None:
 
     None означает именно сбой связи/серверную ошибку; пустые списки означают
     успешный опрос без работы. Это различие нужно для backoff и диагностики."""
-    query = {"deviceId": device_id(), "kind": "poll"}
+    query = {"deviceId": device_id(), "kind": "poll2"}
     if tg_id:
         query["tgId"] = str(tg_id)
     url = f"{CLOUD_BASE}/api/decisions?{urllib.parse.urlencode(query)}"
@@ -321,9 +321,27 @@ def fetch_poll(tg_id: str = "", timeout: int = 12) -> dict | None:
         return {
             "decisions": data.get("decisions") if isinstance(data.get("decisions"), list) else [],
             "commands": commands,
+            "ack": bool(data.get("ack")),
         }
     except (urllib.error.URLError, OSError, ValueError):
         return None
+
+
+def acknowledge_poll(decisions: list, commands: list, timeout: int = 10) -> bool:
+    """Confirm only items the desktop has already handled.
+
+    Old cloud versions never advertise ACK mode, so callers do not invoke this
+    during a staged rollout.
+    """
+    decision_ids = [str(x.get("_deliveryId") or "") for x in decisions if isinstance(x, dict)]
+    command_ids = [str(x.get("_deliveryId") or "") for x in commands if isinstance(x, dict)]
+    payload = {
+        "kind": "poll_ack",
+        "deviceId": device_id(),
+        "decisionIds": [x for x in decision_ids if x][:200],
+        "commandIds": [x for x in command_ids if x][:200],
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
 
 def send_command_result(command: dict, text: str, timeout: int = 10) -> bool:

@@ -52,8 +52,8 @@ class _FakeCloud:
             "headers": {k.lower(): v for k, v in headers.items()},
             "body": json.loads(body.decode("utf-8")) if body else None,
         })
-        payload = ({"ok": True, "decisions": [], "commands": []}
-                   if "kind=poll" in url else {"ok": True, "loggedIn": False})
+        payload = ({"ok": True, "ack": True, "decisions": [], "commands": []}
+                   if "kind=poll2" in url else {"ok": True, "loggedIn": False})
         resp = io.BytesIO(json.dumps(payload).encode("utf-8"))
         resp.__enter__ = lambda *a: resp
         resp.__exit__ = lambda *a: False
@@ -106,8 +106,8 @@ def test_requests_carry_token_and_register_once():
 def test_combined_poll_uses_one_authenticated_request():
     with _TempDevice(), _Patched() as cloud:
         result = cloud_auth.fetch_poll(tg_id="42")
-        assert result == {"decisions": [], "commands": []}
-        polls = [r for r in cloud.requests if "kind=poll" in r["url"]]
+        assert result == {"decisions": [], "commands": [], "ack": True}
+        polls = [r for r in cloud.requests if "kind=poll2" in r["url"]]
         assert len(polls) == 1
         assert polls[0]["headers"].get("x-device-token") == cloud_auth.device_secret()
 
@@ -116,7 +116,7 @@ def test_combined_poll_falls_back_for_old_cloud():
     class _OldCloud(_FakeCloud):
         def __call__(self, req, timeout=None):
             response = super().__call__(req, timeout)
-            if "kind=poll" in self.requests[-1]["url"]:
+            if "kind=poll2" in self.requests[-1]["url"]:
                 response = io.BytesIO(json.dumps({"ok": True, "decisions": []}).encode("utf-8"))
                 response.__enter__ = lambda *a: response
                 response.__exit__ = lambda *a: False
@@ -130,8 +130,19 @@ def test_combined_poll_falls_back_for_old_cloud():
             result = cloud_auth.fetch_poll(tg_id="42")
         finally:
             cloud_auth.urllib.request.urlopen = original
-        assert result == {"decisions": [], "commands": []}
+        assert result == {"decisions": [], "commands": [], "ack": False}
         assert len([r for r in old_cloud.requests if "/api/decisions" in r["url"]]) == 2
+
+
+def test_poll_ack_sends_delivery_ids():
+    with _TempDevice(), _Patched() as cloud:
+        assert cloud_auth.acknowledge_poll(
+            [{"_deliveryId": "decision:j1:submit:1"}],
+            [{"_deliveryId": "c1"}],
+        )
+        ack = next(r for r in cloud.requests if r["body"] and r["body"].get("kind") == "poll_ack")
+        assert ack["body"]["decisionIds"] == ["decision:j1:submit:1"]
+        assert ack["body"]["commandIds"] == ["c1"]
 
 
 def test_no_registration_when_secret_not_persisted():

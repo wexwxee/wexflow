@@ -805,6 +805,8 @@ def _tg_poller_loop() -> None:
                         continue
                     result_text = _handle_tg_remote_command(cmd)
                     cloud_auth.send_command_result(cmd, result_text)
+                if cycle.get("ack"):
+                    cloud_auth.acknowledge_poll(decisions, commands)
         except Exception as e:  # noqa: BLE001 — слушатель не должен падать
             _tg_poll_state["fail_streak"] = int(_tg_poll_state.get("fail_streak") or 0) + 1
             _tg_poll_state["last_error"] = str(e)[:180]
