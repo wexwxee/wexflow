@@ -1,6 +1,9 @@
 """Connector-assisted apply must never enter the Salling submit worker."""
 import os
 import sys
+import json
+import tempfile
+from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,6 +32,53 @@ def test_connector_filler_rejects_non_http_url():
             pass
         else:
             raise AssertionError("unsafe URL accepted")
+
+
+class _LiveProcess:
+    def poll(self):
+        return None
+
+
+def test_connector_filler_waits_for_real_browser_confirmation():
+    with tempfile.TemporaryDirectory() as folder:
+        status = Path(folder) / "status.json"
+        commands = []
+
+        def spawn(cmd, **_kwargs):
+            commands.append(cmd)
+            status.write_text(json.dumps({
+                "job_id": "tt:demo:1", "state": "browser_opened",
+            }), encoding="utf-8")
+            return _LiveProcess()
+
+        with mock.patch.object(app, "_connector_status_path", return_value=status), \
+                mock.patch.object(app.subprocess, "Popen", side_effect=spawn):
+            state = app._launch_connector_filler(
+                "https://demo.teamtailor.com/jobs/1", "tt:demo:1")
+        assert state == "browser_opened"
+        assert "tt:demo:1" in commands[0]
+
+
+def test_connector_filler_surfaces_worker_error_instead_of_green_success():
+    with tempfile.TemporaryDirectory() as folder:
+        status = Path(folder) / "status.json"
+
+        def spawn(_cmd, **_kwargs):
+            status.write_text(json.dumps({
+                "job_id": "gh:demo:2", "state": "error",
+                "message": "Не найден профиль кандидата",
+            }, ensure_ascii=False), encoding="utf-8")
+            return _LiveProcess()
+
+        with mock.patch.object(app, "_connector_status_path", return_value=status), \
+                mock.patch.object(app.subprocess, "Popen", side_effect=spawn):
+            try:
+                app._launch_connector_filler(
+                    "https://boards.greenhouse.io/demo/jobs/2", "gh:demo:2")
+            except RuntimeError as exc:
+                assert "профиль кандидата" in str(exc)
+            else:
+                raise AssertionError("worker error was reported as success")
 
 
 def test_connector_crash_does_not_turn_successful_salling_sync_into_failure():

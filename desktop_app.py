@@ -196,7 +196,7 @@ def run_worker(mode: str, rest: list) -> None:
     elif mode == "--worker-connector-apply":
         # ассистированная подача по ссылке (открывает видимый браузер, без отправки)
         from connectors.apply_dispatch import run as connector_apply
-        connector_apply(rest[0], keep_open=True)
+        connector_apply(rest[0], keep_open=True, job_id=rest[1] if len(rest) > 1 else "")
 
     elif mode == "--worker-salling-apply":
         import apply as salling_apply

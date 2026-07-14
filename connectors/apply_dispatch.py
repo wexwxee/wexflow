@@ -10,8 +10,12 @@ detect(url) распознаёт платформу по адресу, prepare()
 from __future__ import annotations
 
 import re
+import json
+import os
 import sys
 import time
+
+import paths
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -28,6 +32,29 @@ _PLATFORMS = [
     ("recruitee", "Recruitee", re.compile(r"\.recruitee\.com", re.I)),
     ("workable", "Workable", re.compile(r"\.workable\.com", re.I)),
 ]
+
+def status_path(job_id: str = ""):
+    """Отдельный файл рукопожатия для каждого окна подачи."""
+    import hashlib
+    token = hashlib.sha256(str(job_id or "default").encode("utf-8")).hexdigest()[:16]
+    return paths.DATA_DIR / f"connector_apply_status_{token}.json"
+
+
+def _write_status(job_id: str, state: str, message: str = "") -> None:
+    payload = {
+        "job_id": str(job_id or ""),
+        "state": str(state or ""),
+        "message": str(message or "")[:500],
+        "updated_at": time.time(),
+    }
+    target = status_path(job_id)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, target)
+    except OSError:
+        pass
 
 
 def detect(url: str) -> str | None:
@@ -72,33 +99,45 @@ def _wait_until_closed(ctx) -> None:
         time.sleep(1.0)
 
 
-def run(url: str, keep_open: bool = False) -> None:
+def run(url: str, keep_open: bool = False, job_id: str = "") -> None:
     from connectors.fill_common import load_profile
     from connectors.browser import launch_browser
     from playwright.sync_api import sync_playwright
 
-    profile = load_profile()
-    key = detect(url)
-    print(f"платформа: {platform_name(key) if key else 'не распознана (пробую универсально)'}")
-    with sync_playwright() as p:
-        ctx = launch_browser(p)
-        page = ctx.pages[0] if ctx.pages else ctx.new_page()
-        try:
-            prepare(page, url, profile)
-        except Exception as e:
-            print("  warning:", e)
-        if keep_open:
-            _wait_until_closed(ctx)
-        else:
-            input("\nНажми Enter здесь, когда закончишь, чтобы закрыть браузер...")
-        try:
-            ctx.close()
-        except Exception:
-            pass
+    _write_status(job_id, "starting")
+    try:
+        profile = load_profile()
+        key = detect(url)
+        print(f"платформа: {platform_name(key) if key else 'не распознана (пробую универсально)'}")
+        _write_status(job_id, "opening_browser")
+        with sync_playwright() as p:
+            ctx = launch_browser(p)
+            _write_status(job_id, "browser_opened")
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            try:
+                prepare(page, url, profile)
+                _write_status(job_id, "ready")
+            except Exception as exc:
+                # Частичное заполнение лучше закрытого окна: человек сможет
+                # закончить неизвестную или изменившуюся форму вручную.
+                print("  warning:", exc)
+                _write_status(job_id, "ready", f"Часть полей оставлена вручную: {exc}")
+            if keep_open:
+                _wait_until_closed(ctx)
+            else:
+                input("\nНажми Enter здесь, когда закончишь, чтобы закрыть браузер...")
+            try:
+                ctx.close()
+            except Exception:
+                pass
+    except BaseException as exc:
+        _write_status(job_id, "error", str(exc) or exc.__class__.__name__)
+        raise
 
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if not args:
         sys.exit("Использование: python -m connectors.apply_dispatch <url> [--keep-open]")
-    run(args[0], keep_open="--keep-open" in sys.argv)
+    run(args[0], keep_open="--keep-open" in sys.argv,
+        job_id=args[1] if len(args) > 1 else "")

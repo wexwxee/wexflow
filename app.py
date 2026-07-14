@@ -1742,16 +1742,64 @@ def _manual_link_job(url: str) -> Job:
         return job
 
 
-def _launch_connector_filler(url: str) -> None:
+def _connector_status_path(job_id: str):
+    token = hashlib.sha256(str(job_id or "default").encode("utf-8")).hexdigest()[:16]
+    return config.DATA_DIR / f"connector_apply_status_{token}.json"
+
+
+def _launch_connector_filler(url: str, job_id: str = "") -> str:
+    """Запустить помощника и дождаться подтверждения реального окна браузера.
+
+    Раньше успешный ``Popen`` ошибочно считался успешным открытием формы: воркер
+    мог сразу завершиться (например, без профиля), а интерфейс всё равно показывал
+    зелёное сообщение. Теперь воркер подтверждает запуск через отдельный status-файл.
+    """
     url = _normalized_apply_url(url)
+    job_id = str(job_id or "")
+    status_path = _connector_status_path(job_id)
+    try:
+        status_path.unlink(missing_ok=True)
+    except OSError:
+        pass
     if getattr(sys, "frozen", False):
-        cmd = [sys.executable, "--worker-connector-apply", url]
+        cmd = [sys.executable, "--worker-connector-apply", url, job_id]
     else:
-        cmd = [sys.executable, "-m", "connectors.apply_dispatch", url, "--keep-open"]
+        cmd = [sys.executable, "-m", "connectors.apply_dispatch", url, job_id, "--keep-open"]
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = 0x00000008 | 0x00000200
-    subprocess.Popen(cmd, **kwargs)
+    proc = subprocess.Popen(cmd, **kwargs)
+
+    deadline = time.monotonic() + 15.0
+    last_state = ""
+    while time.monotonic() < deadline:
+        try:
+            payload = json.loads(status_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            payload = {}
+        if str(payload.get("job_id", "")) == job_id:
+            last_state = str(payload.get("state", ""))
+            if last_state in {"browser_opened", "ready"}:
+                return last_state
+            if last_state == "error":
+                message = str(payload.get("message", "")).strip()
+                if not message or message == "SystemExit":
+                    message = "профиль кандидата не найден или не заполнен"
+                raise RuntimeError(message)
+        if proc.poll() is not None:
+            # Даём status-файлу короткий шанс дойти после завершения процесса.
+            time.sleep(0.1)
+            try:
+                payload = json.loads(status_path.read_text(encoding="utf-8"))
+                message = str(payload.get("message", "")).strip()
+            except (OSError, ValueError, TypeError):
+                message = ""
+            raise RuntimeError(message or "помощник завершился до открытия браузера")
+        time.sleep(0.15)
+    raise RuntimeError(
+        "браузер не подтвердил запуск за 15 секунд"
+        + (f" (этап: {last_state})" if last_state else "")
+    )
 
 
 @app.post("/apply-by-link/start")
@@ -1776,7 +1824,7 @@ def start_apply_by_link(request: Request, url: str = Form(...)):
         )
     applications.mark_submitting([job.id], origin="assisted", source=job.source)
     try:
-        _launch_connector_filler(value)
+        _launch_connector_filler(value, job.id)
     except Exception as exc:  # noqa: BLE001
         _release_connector_launch(job.id)
         applications.mark_failed([job.id], source=job.source)
@@ -1819,7 +1867,7 @@ def start_connector_apply(job_id: str, request: Request):
         )
     applications.mark_submitting([job.id], origin="assisted", source=job.source)
     try:
-        _launch_connector_filler(job.application_link or "")
+        _launch_connector_filler(job.application_link or "", job.id)
     except Exception as exc:  # noqa: BLE001
         _release_connector_launch(job.id)
         applications.mark_failed([job.id], source=job.source)

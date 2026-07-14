@@ -83,7 +83,8 @@ def test_connector_routes_track_incomplete_then_submitted_result():
     launched = []
     with mock.patch.object(app, "get_session", sessions), \
             mock.patch.object(applications, "get_session", sessions), \
-            mock.patch.object(app, "_launch_connector_filler", launched.append):
+            mock.patch.object(app, "_launch_connector_filler",
+                              lambda url, job_id="": launched.append(url)):
         response = app.start_connector_apply(job_id, _request(f"/job/{job_id}/connector/apply"))
         assert response.status_code == 303
         assert launched == ["https://demo.teamtailor.com/jobs/1"]

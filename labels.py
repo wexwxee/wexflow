@@ -236,6 +236,62 @@ def _fold(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+def role_summary(title: str, categories: str = "", job_level: str = "") -> str:
+    """Коротко объясняет по-русски, на кого вакансия, сохраняя оригинал отдельно.
+
+    Это намеренно не машинный перевод всего заголовка: компактная классификация
+    мгновенна, стабильна и хорошо сканируется в длинной ленте.
+    """
+    raw = str(title or "").lower()
+    text = _fold(title).replace("æ", "ae").replace("ø", "o")
+    hay = f"{raw} {text}"
+    rules = (
+        (r"studentermedhj|student assistant|working student", "Студент-помощник"),
+        (r"click\s*&\s*collect.*(?:leder|lead|manager)", "Руководитель Click & Collect"),
+        (r"full[ -]?stack", "Full-stack разработчик"),
+        (r"backend|back-end", "Backend-разработчик"),
+        (r"frontend|front-end", "Frontend-разработчик"),
+        (r"cloud engineer|cloud udvikler", "Облачный инженер"),
+        (r"data engineer|analytics engineer", "Инженер данных"),
+        (r"mlops|machine learning", "ML / MLOps инженер"),
+        (r"software|udvikler|developer|app-udvikler", "Разработчик ПО"),
+        (r"security|compliance|cyber", "Информационная безопасность"),
+        (r"project controller|financial controller|controller", "Финансовый контролёр"),
+        (r"projektøkonomi|projektokonomi|project finance", "Проектные финансы"),
+        (r"forretningsanalytiker|business analyst|data analyst|analytiker|analyst", "Аналитик"),
+        (r"account executive|account manager|customer success", "Работа с клиентами"),
+        (r"marketing|content specialist|kommunikation", "Маркетинг / контент"),
+        (r"sælger|saelger|salgsassistent|sales assistant|butiksassistent", "Продавец-консультант"),
+        (r"kitchen|køkken|kok\b|cook\b", "Кухня / повар"),
+        (r"lager|warehouse|logistik", "Склад / логистика"),
+        (r"support|kundeservice|customer service", "Поддержка клиентов"),
+        (r"rådgiver|raadgiver|consultant|konsulent", "Консультант"),
+        (r"koordinator|coordinator", "Координатор"),
+        (r"recruiter|rekruttering|talent acquisition|human resources|\bhr\b", "Подбор персонала / HR"),
+        (r"regnskab|accountant|bogholder", "Бухгалтерия"),
+        (r"indkøb|indkob|procurement|purchasing", "Закупки"),
+        (r"jurist|legal counsel|lawyer", "Юрист"),
+        (r"designer|ux\b|ui\b", "Дизайнер"),
+        (r"tekniker|technician", "Технический специалист"),
+        (r"chauffør|chauffor|driver\b", "Водитель"),
+        (r"assistant|assistent", "Ассистент"),
+        (r"specialist", "Специалист"),
+        (r"ingeniør|ingenior|engineer", "Инженер"),
+        (r"leder|manager|head of|chef\b|director", "Руководитель"),
+        (r"medarbejder|employee|worker", "Сотрудник"),
+    )
+    for pattern, summary in rules:
+        if re.search(pattern, hay, re.I):
+            return summary
+    for code in str(categories or "").split(","):
+        code = code.strip()
+        if code and CATEGORY.get(code):
+            return CATEGORY[code]
+    if job_level and LEVEL.get(job_level):
+        return LEVEL[job_level]
+    return ""
+
+
 def bi(mapping: dict, key: str) -> str:
     """Подпись 'Русский · оригинал'. Если перевода нет — только оригинал."""
     ru = mapping.get(key)

@@ -60,7 +60,8 @@ def test_link_start_rejects_local_file_and_accepts_https():
 
     with mock.patch.object(app, "get_session", sessions), \
             mock.patch.object(applications, "get_session", sessions), \
-            mock.patch.object(app, "_launch_connector_filler", launched.append):
+            mock.patch.object(app, "_launch_connector_filler",
+                              lambda url, job_id="": launched.append(url)):
         response = app.start_apply_by_link(
             request, "https://demo.teamtailor.com/jobs/123")
     assert response.status_code == 303
@@ -75,7 +76,8 @@ def test_link_start_rejects_local_file_and_accepts_https():
 
     with mock.patch.object(app, "get_session", sessions), \
             mock.patch.object(applications, "get_session", sessions), \
-            mock.patch.object(app, "_launch_connector_filler", launched.append):
+            mock.patch.object(app, "_launch_connector_filler",
+                              lambda url, job_id="": launched.append(url)):
         duplicate = app.start_apply_by_link(
             request, "https://demo.teamtailor.com/jobs/123")
     assert duplicate.status_code == 303
@@ -144,7 +146,8 @@ def test_submitted_manual_link_is_not_opened_twice():
     launched = []
     with mock.patch.object(app, "get_session", sessions), \
             mock.patch.object(applications, "get_session", sessions), \
-            mock.patch.object(app, "_launch_connector_filler", launched.append):
+            mock.patch.object(app, "_launch_connector_filler",
+                              lambda url, job_id="": launched.append(url)):
         response = app.start_apply_by_link(_request("/apply-by-link/start"), url)
     assert response.status_code == 303
     assert launched == []
