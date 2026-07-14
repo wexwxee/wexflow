@@ -246,7 +246,10 @@ def role_summary(title: str, categories: str = "", job_level: str = "") -> str:
     text = _fold(title).replace("æ", "ae").replace("ø", "o")
     hay = f"{raw} {text}"
     rules = (
-        (r"studentermedhj|student assistant|working student", "Студент-помощник"),
+        (r"studentermedhj|studentermedarbejder|student assistant|working student", "Студент-помощник"),
+        (r"franchisetager|franchisee", "Франчайзи / управляющий магазином"),
+        (r"ungarbejder|young worker", "Молодой сотрудник"),
+        (r"søg uopfordret|sog uopfordret|unsolicited", "Открытая заявка"),
         (r"click\s*&\s*collect.*(?:leder|lead|manager)", "Руководитель Click & Collect"),
         (r"full[ -]?stack", "Full-stack разработчик"),
         (r"backend|back-end", "Backend-разработчик"),
@@ -290,6 +293,13 @@ def role_summary(title: str, categories: str = "", job_level: str = "") -> str:
     if job_level and LEVEL.get(job_level):
         return LEVEL[job_level]
     return ""
+
+
+def date_short(value) -> str:
+    """ISO-дата в привычном русском виде; неизвестный формат не ломаем."""
+    raw = str(value or "").strip()
+    match = re.match(r"^(\d{4})-(\d{2})-(\d{2})", raw)
+    return f"{match.group(3)}.{match.group(2)}.{match.group(1)}" if match else raw[:10]
 
 
 def bi(mapping: dict, key: str) -> str:

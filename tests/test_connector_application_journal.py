@@ -1,6 +1,7 @@
 """External assisted forms use the shared Application registry honestly."""
 import os
 import sys
+import datetime as dt
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -50,6 +51,25 @@ def test_connector_started_and_incomplete_states_are_source_scoped():
         assert applications.state_of("shared-id", "greenhouse") == "submitting"
     with Session(engine) as session:
         assert len(session.exec(select(Application)).all()) == 2
+
+
+def test_stale_assisted_window_becomes_incomplete():
+    _engine, sessions = _database()
+    now = utcnow()
+    with sessions() as session:
+        session.add(Application(
+            source="teamtailor", job_id="tt:stale", state="submitting",
+            origin="assisted", updated_at=now - dt.timedelta(hours=7),
+        ))
+        session.add(Application(
+            source="teamtailor", job_id="tt:fresh", state="submitting",
+            origin="assisted", updated_at=now - dt.timedelta(minutes=5),
+        ))
+        session.commit()
+    with mock.patch.object(applications, "get_session", sessions):
+        assert applications.expire_stale_assisted(now=now) == 1
+        assert applications.state_of("tt:stale", "teamtailor") == "failed"
+        assert applications.state_of("tt:fresh", "teamtailor") == "submitting"
 
 
 def test_manual_connector_submission_keeps_connector_source():

@@ -162,8 +162,30 @@ def state_of(job_id: str, source: str = SOURCE) -> str:
     return row.state if row else ""
 
 
+def expire_stale_assisted(hours: float = 6.0, now=None) -> int:
+    """Закрыть забытые внешние окна, чтобы «анкета открыта» не висела вечно."""
+    cutoff = (now or utcnow()) - _dt.timedelta(hours=max(float(hours), 0.1))
+    changed = 0
+    with get_session() as session:
+        rows = session.exec(select(Application).where(
+            Application.source != SOURCE,
+            Application.origin == "assisted",
+            Application.state == "submitting",
+            Application.updated_at < cutoff,
+        )).all()
+        for row in rows:
+            row.state = "failed"
+            row.updated_at = now or utcnow()
+            session.add(row)
+            changed += 1
+        if changed:
+            session.commit()
+    return changed
+
+
 def states_for_jobs(jobs) -> dict[tuple[str, str], str]:
     """Application states for feed cards in one query, keyed by source + id."""
+    expire_stale_assisted()
     keys = {
         (str(getattr(job, "source", None) or SOURCE), str(getattr(job, "id", "")))
         for job in jobs or [] if getattr(job, "id", None)

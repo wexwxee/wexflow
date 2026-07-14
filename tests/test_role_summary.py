@@ -17,6 +17,8 @@ def test_common_danish_and_english_roles_are_explained():
         "Project Controller til internationale projekter": "Финансовый контролёр",
         "Forretningsanalytiker til Kommerciel Analyse": "Аналитик",
         "Vil du stå i spidsen for DI’s projektøkonomi?": "Проектные финансы",
+        "Studentermedarbejder til CRM & Loyalty": "Студент-помощник",
+        "Franchisetager til 7-Eleven": "Франчайзи / управляющий магазином",
     }
     for title, expected in cases.items():
         assert labels.role_summary(title) == expected
@@ -25,6 +27,11 @@ def test_common_danish_and_english_roles_are_explained():
 def test_category_is_safe_fallback_and_unknown_stays_empty():
     assert labels.role_summary("Unik intern titel", "finance") == "Финансы"
     assert labels.role_summary("Unik intern titel") == ""
+
+
+def test_date_is_clear_for_russian_ui():
+    assert labels.date_short("2026-07-06T12:30:00Z") == "06.07.2026"
+    assert labels.date_short("") == ""
 
 
 if __name__ == "__main__":

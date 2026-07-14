@@ -256,12 +256,12 @@
   }
   .chip { font-size:12px; color:var(--muted); }
 
-  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(420px,100%),1fr)); gap:14px; padding:18px 22px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; padding:18px 22px; }
   .card {
     --state-line: transparent;
     --state-bg: transparent;
     position:relative; background:linear-gradient(90deg, var(--state-bg), transparent 52%), var(--card);
-    border:1px solid var(--glass-line); border-radius:14px; padding:16px; display:flex; flex-direction:column; gap:7px;
+    border:1px solid var(--glass-line); border-radius:12px; padding:14px; display:flex; flex-direction:column; gap:6px;
     overflow:hidden; transition:border-color .15s, box-shadow .15s, transform .1s;
   }
   .card[data-jobcard]::before {
@@ -275,7 +275,7 @@
   html[data-theme="light"] .card.job-status-seen { --state-bg:rgba(29,78,216,.045); }
   html[data-theme="light"] .card.job-status-applied { --state-line:#7c3aed; --state-bg:rgba(124,58,237,.075); border-color:rgba(124,58,237,.26); }
   .card:hover { border-color:var(--hover-line); transform:translateY(-1px); box-shadow:var(--shadow-sm); }
-  .card h3 { margin:2px 0 2px; font-size:15.5px; line-height:1.34; color:var(--txt-strong); }
+  .card h3 { margin:4px 0 2px; font-size:15.5px; line-height:1.3; color:var(--txt-strong); }
   .badges { display:flex; gap:6px; flex-wrap:wrap; padding-right:32px; }
   .tablink { display:inline-flex; align-items:center; gap:6px; background:var(--glass); color:var(--muted);
     border:1px solid var(--glass-line); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600; }
@@ -332,9 +332,8 @@
   .badge.st-applied { background:rgba(167,139,250,.14); color:#c4b5fd; border-color:rgba(167,139,250,.38); font-weight:800; }
   html[data-theme="light"] .badge.st-applied { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
   .badge.lead { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); font-weight:800; }
-  .role-summary { display:flex; align-items:center; gap:6px; margin:3px 0 1px; font-size:14px;
-    font-weight:750; color:var(--info-txt); letter-spacing:.005em; }
-  .role-summary span { color:var(--muted); font-size:11px; font-weight:650; text-transform:uppercase; letter-spacing:.055em; }
+  .role-summary { display:inline-flex; align-items:center; gap:5px; margin-top:1px; font-size:12.5px;
+    font-weight:700; color:var(--info-txt); letter-spacing:.005em; }
   .role-summary.lead { color:var(--warn-txt); }
   .row { display:flex; gap:7px; margin-top:12px; flex-wrap:wrap; align-items:center; }
   .row a { display:inline-flex; }
@@ -701,19 +700,19 @@
       {% set short_sources = {'teamtailor':'Teamtailor','greenhouse':'Greenhouse','ashby':'Ashby','manual_link':'По ссылке'} %}
       {% if j.source != 'salling' %}<span class="badge" style="border-color:#6b66ff;color:#9c98ff;">{{ short_sources.get(j.source, j.source) }}</span>{% endif %}
       {% set app_state = application_states.get((j.source, j.id), '') %}
-      {% if app_state == 'submitting' %}<span class="badge" style="color:var(--info-txt);border-color:var(--info-line);">анкета открыта</span>{% endif %}
-      {% if app_state == 'failed' %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);">не завершено</span>{% endif %}
+      {% if app_state == 'submitting' %}<span class="badge" style="color:var(--info-txt);border-color:var(--info-line);" data-tip-title="Анкета в работе" data-tip-body="WexFlow открыл форму, но отправка ещё не подтверждена. После завершения отметь результат на странице вакансии. Забытое состояние само сменится через 6 часов.">анкета в работе</span>{% endif %}
+      {% if app_state == 'failed' %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);" data-tip-title="Анкета не завершена" data-tip-body="Форма открывалась, но отправка не была подтверждена. Можно безопасно продолжить с того же места.">не завершено</span>{% endif %}
       {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
       {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно по прямой от домашнего адреса. Маршрут общественным транспортом смотри через кнопку Маршрут.">≈ {{ distances[j.id] }} км</span>{% endif %}
       {% if j.status != 'new' %}<span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>{% endif %}
     </div>
-    {% set role_ru = L.role_summary(j.title, j.categories, j.job_level) %}
-    {% if role_ru %}<div class="role-summary{% if L.is_leadership(j.title) %} lead{% endif %}"><span>На кого</span>{{ role_ru }}</div>{% endif %}
     <h3>{{ j.title }}</h3>
+    {% set role_ru = L.role_summary(j.title, j.categories, j.job_level) %}
+    {% if role_ru %}<div class="role-summary{% if L.is_leadership(j.title) %} lead{% endif %}" data-tip-title="Коротко по-русски" data-tip-body="Краткое объяснение должности. Оригинальное название вакансии показано строкой выше.">{{ ic.i('user', 12) }} {{ role_ru }}</div>{% endif %}
     <div class="meta">
       <div class="meta-line">{{ ic.i('pin', 13) }}<span>{% if j.street %}{{ j.street }}{% endif %}{% if j.zip or j.city %}{{ ', ' if j.street }}{{ j.zip or '' }} {{ j.city or '' }}{% endif %}{% if j.country %}, {{ j.country }}{% endif %}</span></div>
       {% if j.hours or j.employment_type or j.start_date %}<div class="meta-line">{{ ic.i('clock', 13) }}<span>{% if j.hours %}{{ j.hours }} ч/нед{% endif %}{% if j.employment_type %}{{ ' · ' if j.hours }}{{ L.EMPLOYMENT.get(j.employment_type, j.employment_type) }}{% endif %}{% if j.start_date %} · старт {{ j.start_date }}{% endif %}</span></div>{% endif %}
-      {% if j.pay_rate or j.published %}<div class="meta-line">{{ ic.i('money' if j.pay_rate else 'clock', 13) }}<span>{% if j.pay_rate %}{{ j.pay_rate }}{% endif %}{% if j.published %}{{ ' · ' if j.pay_rate }}от {{ j.published[:10] }}{% endif %}</span></div>{% endif %}
+      {% if j.pay_rate or j.published %}<div class="meta-line"{% if j.published %} data-tip-title="Дата публикации" data-tip-body="Когда вакансия появилась на сайте работодателя. Это не дата подачи заявки и не крайний срок."{% endif %}>{{ ic.i('money' if j.pay_rate else 'clock', 13) }}<span>{% if j.pay_rate %}{{ j.pay_rate }}{% endif %}{% if j.published %}{{ ' · ' if j.pay_rate }}Опубликовано {{ L.date_short(j.published) }}{% endif %}</span></div>{% endif %}
     </div>
     <div class="row{% if j.source != 'salling' %} external-actions{% endif %}">
       {% if j.status == 'applied' %}
@@ -722,17 +721,17 @@
       {% if j.source == 'salling' %}
       <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>
       {% else %}
-      <form method="post" action="/job/{{ j.id }}/connector/apply"><button class="primary" type="submit">{{ ic.i('send', 13) }} {{ 'Продолжить анкету' if app_state in ['submitting', 'failed'] else 'Открыть анкету' }} →</button></form>
+      <form method="post" action="/job/{{ j.id }}/connector/apply"><button class="primary" type="submit" data-tip-title="Помощник анкеты" data-tip-body="Откроет отдельное окно браузера, заполнит доступные поля и остановится перед отправкой. Без твоего клика заявка не уйдёт.">{{ ic.i('send', 13) }} {{ 'Продолжить' if app_state in ['submitting', 'failed'] else 'Заполнить форму' }} →</button></form>
       {% endif %}
       {% endif %}
-      <a href="/job/{{ j.id }}"><button type="button" class="ghost">О вакансии</button></a>
-      <a href="{{ maps_urls[j.id] }}"><button type="button" class="ghost" aria-label="Маршрут" title="Маршрут">{{ ic.i('map', 13) }}</button></a>
+      <a href="/job/{{ j.id }}"><button type="button" class="ghost" data-tip-title="Подробнее" data-tip-body="Полное описание, перевод, статусы и результат подачи.">Подробнее</button></a>
+      <a href="{{ maps_urls[j.id] }}"><button type="button" class="ghost" data-tip-title="Маршрут" data-tip-body="Открывает дорогу до места работы от домашнего адреса.">{{ ic.i('map', 13) }} Маршрут</button></a>
       {% if j.status == 'hidden' %}
       <form method="post" action="/job/{{ j.id }}/status">
         <input type="hidden" name="status" value="seen"><button type="submit" class="ghost" aria-label="Вернуть из скрытых">{{ ic.i('undo', 13) }}</button>
       </form>
       {% else %}
-      <button type="button" class="ghost hide-btn" data-job="{{ j.id }}" aria-label="Скрыть вакансию">{{ ic.i('eyeoff', 13) }}</button>
+      <button type="button" class="ghost hide-btn" data-job="{{ j.id }}" aria-label="Скрыть вакансию" data-tip-title="Скрыть" data-tip-body="Убирает вакансию из активного списка. Её можно вернуть через фильтр «Скрытые». ">{{ ic.i('eyeoff', 13) }}</button>
       {% endif %}
     </div>
   </div>
