@@ -2,20 +2,64 @@
 баннер-инструкция, профиль). Используют и teamtailor_apply, и generic_apply."""
 from __future__ import annotations
 
-import json
 import re
-import sys
 from pathlib import Path
 
-import paths
-
-PROFILE_PATH = paths.DATA_DIR / "profile.json"
+import profile_store
 
 
 def load_profile() -> dict:
-    if not PROFILE_PATH.exists():
-        sys.exit("Нет profile.json — заполни профиль в приложении.")
-    return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    """Read the same canonical profile that the WexFlow UI saves."""
+    profile = profile_store.load_profile()
+    if not isinstance(profile, dict):
+        return {}
+    return profile
+
+
+def _control_text(control) -> str:
+    """Accessible label plus stable attributes for a form control."""
+    try:
+        return str(control.evaluate(
+            """e => {
+                const bits = [e.name, e.id, e.getAttribute('aria-label'),
+                  e.placeholder, e.getAttribute('data-qa'), e.getAttribute('data-testid')];
+                if (e.labels) for (const label of e.labels) bits.push(label.innerText);
+                const group = e.closest('label,.field,.form-group,[data-field],fieldset');
+                if (group) {
+                  const label = group.matches('label') ? group : group.querySelector('label,legend');
+                  if (label) bits.push(label.innerText);
+                }
+                return bits.filter(Boolean).join(' ').toLowerCase();
+            }"""
+        ) or "")
+    except Exception:
+        return ""
+
+
+_CV_RX = re.compile(r"(?:^|\W)cv(?:\W|$)|r[ée]sum[ée]?|curriculum|lebenslauf", re.I)
+_COVER_RX = re.compile(r"cover|letter|motiv|ansøgning|følgebrev|application.?letter", re.I)
+_OTHER_FILE_RX = re.compile(r"photo|avatar|image|portfolio|certificate|transcript", re.I)
+
+
+def _file_input(page, kind: str):
+    """Pick a file control by its accessible label; never guess among ambiguous inputs."""
+    try:
+        controls = page.locator('input[type="file"]').all()
+    except Exception:
+        return None
+    described = [(control, _control_text(control)) for control in controls]
+    wanted = _COVER_RX if kind == "cover" else _CV_RX
+    for control, text in described:
+        if wanted.search(text):
+            return control
+    if kind == "cv":
+        neutral = [
+            control for control, text in described
+            if not _COVER_RX.search(text) and not _OTHER_FILE_RX.search(text)
+        ]
+        if len(neutral) == 1:
+            return neutral[0]
+    return None
 
 
 def dismiss_cookies(page) -> None:
@@ -44,9 +88,9 @@ def upload_cv(page, profile: dict) -> bool:
         print("  CV не найден в профиле — пропускаю загрузку.")
         return False
     try:
-        inputs = page.locator('input[type="file"]')
-        if inputs.count():
-            inputs.first.set_input_files(cv)
+        control = _file_input(page, "cv")
+        if control is not None:
+            control.set_input_files(cv)
             print(f"  CV загружен: {Path(cv).name}")
             return True
     except Exception:
@@ -77,13 +121,11 @@ def attach_cover_letter(page, profile: dict) -> bool:
     if not cl or not Path(cl).exists():
         return False
     try:
-        for fi in page.locator('input[type="file"]').all():
-            attrs = (fi.get_attribute("name") or "") + (fi.get_attribute("id") or "") + \
-                    (fi.get_attribute("aria-label") or "")
-            if re.search(r"cover|letter|motiv|ansøgning|følgebrev", attrs, re.I):
-                fi.set_input_files(cl)
-                print(f"  сопроводительное прикреплено: {Path(cl).name}")
-                return True
+        control = _file_input(page, "cover")
+        if control is not None:
+            control.set_input_files(cl)
+            print(f"  сопроводительное прикреплено: {Path(cl).name}")
+            return True
     except Exception:
         pass
     return False
@@ -97,10 +139,14 @@ def missing_required(page) -> list[str]:
                 const out=[];
                 document.querySelectorAll('input[required],textarea[required],select[required]').forEach(e=>{
                     if(e.type==='hidden'||e.offsetParent===null) return;
-                    const v=(e.value||'').trim();
-                    if(v) return;
+                    if(e.type==='checkbox' || e.type==='radio') {
+                      if(e.checked) return;
+                      if(e.type==='radio' && e.name && document.querySelector(`input[type="radio"][name="${CSS.escape(e.name)}"]:checked`)) return;
+                    } else if((e.value||'').trim()) return;
                     let lab=e.getAttribute('aria-label')||e.placeholder||'';
                     if(!lab && e.id){const l=document.querySelector(`label[for="${e.id}"]`); if(l) lab=l.innerText;}
+                    if(!lab && e.labels && e.labels.length) lab=e.labels[0].innerText;
+                    if(!lab){const g=e.closest('fieldset,.field,.form-group,[data-field]'); const l=g&&g.querySelector('legend,label'); if(l) lab=l.innerText;}
                     lab=(lab||e.name||'поле').trim().slice(0,40);
                     if(lab && !out.includes(lab)) out.push(lab);
                 });
@@ -113,29 +159,47 @@ def missing_required(page) -> list[str]:
 
 def add_banner(page, questions: int, filled: list[str], platform: str = "",
                missing: list[str] | None = None) -> None:
-    """Жёлтая плашка сверху: что сделал бот и что нужно от человека."""
-    tag = f"[{platform}] " if platform else ""
-    msg_q = f"Вопросов по вакансии: {questions}. " if questions else ""
-    msg_m = ("Дозаполни: " + ", ".join(missing) + ". ") if missing else ""
-    text = (
-        f"WexFlow {tag}заполнил: " + (", ".join(filled) if filled else "—") + ". "
-        + msg_q + msg_m
-        + "Поставь согласие и нажми «Отправить» САМ — бот этого не делает."
-    )
+    """Isolated floating summary: filled fields, remaining work and safety boundary."""
+    payload = {
+        "platform": platform or "Форма",
+        "filled": list(filled or []),
+        "missing": list(missing or []),
+        "questions": int(questions or 0),
+    }
     try:
         page.evaluate(
-            """(t) => {
+            """(data) => {
                 const id='wexflow-banner';
                 const old=document.getElementById(id); if(old) old.remove();
-                const b=document.createElement('div');
-                b.id=id; b.textContent=t;
-                b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:2147483647;'
-                  +'background:#1ed760;color:#08210f;font:600 14px/1.4 Segoe UI,sans-serif;'
-                  +'padding:12px 18px;box-shadow:0 2px 12px rgba(0,0,0,.3);text-align:center;';
-                document.body.appendChild(b);
-                document.body.style.paddingTop='52px';
+                const host=document.createElement('div'); host.id=id;
+                host.style.cssText='position:fixed;top:16px;right:16px;z-index:2147483647;'
+                  +'width:min(420px,calc(100vw - 32px));color-scheme:dark;';
+                const root=host.attachShadow({mode:'open'});
+                root.innerHTML=`<style>
+                  *{box-sizing:border-box} .card{font:13px/1.42 Inter,Segoe UI,sans-serif;color:#e9efeb;
+                    background:#111513;border:1px solid #304039;border-radius:14px;padding:14px;
+                    box-shadow:0 18px 60px rgba(0,0,0,.45)}
+                  .head{display:flex;align-items:center;gap:9px;margin-bottom:10px}.mark{color:#1ed760;font-size:17px}
+                  .title{flex:1;font-weight:800;font-size:14px}.platform{color:#96a39c;font-size:11px;font-weight:600}
+                  button{border:0;background:#222a26;color:#b9c3bd;border-radius:7px;width:27px;height:27px;cursor:pointer;font-size:17px}
+                  .row{margin-top:7px;padding:8px 10px;border-radius:9px;background:#19201c;color:#bdc7c1}
+                  .ok{border:1px solid #235f39;background:#102a1a;color:#8ff0ae}.warn{border:1px solid #66511e;background:#29230f;color:#f5d778}
+                  .label{font-weight:800}.foot{margin-top:10px;color:#aab4ae;font-size:11.5px}
+                </style><section class="card" role="status"><div class="head"><span class="mark">◆</span>
+                  <div class="title">WexFlow · форма подготовлена<div class="platform"></div></div>
+                  <button type="button" aria-label="Закрыть">×</button></div>
+                  <div class="row ok"><span class="label">Заполнено:</span> <span class="filled"></span></div>
+                  <div class="row questions" hidden></div><div class="row warn missing" hidden></div>
+                  <div class="foot">Проверь данные, поставь нужные согласия и отправь анкету сам. WexFlow не нажимает финальную кнопку.</div>
+                </section>`;
+                root.querySelector('.platform').textContent=data.platform;
+                root.querySelector('.filled').textContent=data.filled.length?data.filled.join(', '):'распознанных полей нет';
+                const q=root.querySelector('.questions'); if(data.questions){q.hidden=false;q.textContent=`Дополнительных вопросов: ${data.questions}`;}
+                const m=root.querySelector('.missing'); if(data.missing.length){m.hidden=false;m.textContent=`Осталось заполнить: ${data.missing.join(', ')}`;}
+                root.querySelector('button').addEventListener('click',()=>host.remove());
+                document.documentElement.appendChild(host);
             }""",
-            text,
+            payload,
         )
     except Exception:
         pass

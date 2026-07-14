@@ -31,7 +31,8 @@ def fill_fields(page, profile: dict) -> list[str]:
             continue
         try:
             el = page.locator(selector).first
-            if el.count() and el.is_visible():
+            if (el.count() and el.is_visible() and el.is_editable()
+                    and not (el.input_value() or "").strip()):
                 el.fill(val)
                 filled.append(key)
         except Exception:
@@ -56,8 +57,10 @@ def prepare(page, job_url: str, profile: dict) -> None:
     dismiss_cookies(page)
     filled = fill_fields(page, profile)
     print(f"  заполнено полей: {filled or '—'}")
-    upload_cv(page, profile)
-    attach_cover_letter(page, profile)
+    if upload_cv(page, profile):
+        filled.append("CV")
+    if attach_cover_letter(page, profile):
+        filled.append("cover letter")
     questions = count_questions(page)
     missing = missing_required(page)
     add_banner(page, questions, filled, platform="Teamtailor", missing=missing)
