@@ -699,6 +699,19 @@ def tg_log_cap_once(waiting: int) -> None:
                       f"ещё подходят {waiting}, пришлю завтра (или открой панель)")
 
 
+def tg_pending_clear_all() -> int:
+    """Снять с ожидания ВСЕ карточки разом (кнопка в настройках). В реестре они
+    остаются «предложенными» — повторно не пришлём; поздний ✅ по карточке из
+    чата всё равно пройдёт проверку актуальности в tg_decide."""
+    r = get_rule()
+    pend = list(r.get("tg_pending") or [])
+    if not pend:
+        return 0
+    save_rule({"tg_pending": []})
+    log_event("info", f"TG: снял с ожидания все карточки — {len(pend)} (по кнопке)")
+    return len(pend)
+
+
 def tg_pending_expire(days: int = TG_PENDING_TTL_DAYS) -> int:
     """Снять с ожидания карточки, на которые не ответили N дней. Они остаются
     «предложенными» в реестре (повторно не пришлём), а поздний ✅ по старой

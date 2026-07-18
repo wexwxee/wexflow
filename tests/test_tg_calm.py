@@ -139,6 +139,20 @@ def test_pending_expire_empty_queue_is_noop():
     _with_temp(body)
 
 
+def test_pending_clear_all_button():
+    def body():
+        ts = dt.datetime.now().isoformat(timespec="seconds")
+        autopilot.save_rule({"tg_pending": [
+            {"job_id": "a", "message_id": 1, "ts": ts},
+            {"job_id": "b", "message_id": 2, "ts": ts},
+        ]})
+        assert autopilot.tg_pending_clear_all() == 2
+        assert autopilot.get_rule()["tg_pending"] == []
+        # повторное нажатие — честный ноль, без лишней записи в журнал
+        assert autopilot.tg_pending_clear_all() == 0
+    _with_temp(body)
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

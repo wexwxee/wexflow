@@ -934,12 +934,15 @@
         '<div class="actions">'+startButton+
         '<button type="button" class="'+testClass+'" id="tgTest">Отправить проверочное</button>'+
         '<button type="button" class="tg-sec" id="tgSendCurrent"'+disabled+'>'+sendLabel+'</button>'+
+        (Number(st.pending||0) ? '<button type="button" class="tg-sec" id="tgClearPending">Снять ожидающие ('+esc(st.pending)+')</button>' : '')+
         '<a class="tg-sec" href="https://t.me/wexflowbot" target="_blank" rel="noopener">Открыть @wexflowbot</a>'+
         '<span class="hint" id="tgMsg" style="margin:0;"></span></div>';
       var start = document.getElementById('tgStart');
       if(start) start.addEventListener('click', startTelegram);
       document.getElementById('tgTest').addEventListener('click', testMsg);
       document.getElementById('tgSendCurrent').addEventListener('click', sendCurrent);
+      var clearBtn = document.getElementById('tgClearPending');
+      if(clearBtn) clearBtn.addEventListener('click', clearPending);
     }
     function startTelegram(){
       var m=document.getElementById('tgMsg');
@@ -980,6 +983,20 @@
           m.textContent='Не вышло: '+(r.error||'ничего не отправлено');
           if(btn) btn.disabled=false;
         }
+      }).catch(function(){
+        m.textContent='Ошибка сети.';
+        if(btn) btn.disabled=false;
+      });
+    }
+    function clearPending(){
+      if(!confirm('Снять с ожидания все карточки? Они не придут повторно; на уже присланные в чате всё ещё можно ответить.')) return;
+      var m=document.getElementById('tgMsg');
+      var btn=document.getElementById('tgClearPending');
+      if(btn) btn.disabled=true;
+      m.textContent='Снимаю с ожидания…';
+      api('/api/telegram/clear_pending',{method:'POST'}).then(function(r){
+        if(r.ok){ m.textContent='Снято с ожидания: '+(r.cleared||0)+'.'; load(); }
+        else { m.textContent='Не вышло.'; if(btn) btn.disabled=false; }
       }).catch(function(){
         m.textContent='Ошибка сети.';
         if(btn) btn.disabled=false;

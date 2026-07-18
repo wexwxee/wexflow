@@ -3064,6 +3064,12 @@ def settings_documents_save(
     return RedirectResponse("/settings/salling?saved=1#documents", status_code=303)
 
 
+@app.post("/api/telegram/clear_pending")
+def api_telegram_clear_pending():
+    """Снять все ожидающие Telegram-карточки разом (очередь решений)."""
+    return JSONResponse({"ok": True, "cleared": autopilot.tg_pending_clear_all()})
+
+
 @app.post("/settings/autostart")
 def settings_autostart(enable: str = Form("")):
     """Автозапуск WexFlow при входе в Windows (HKCU Run, только своя запись).
