@@ -41,6 +41,7 @@ import scraper
 import connector_sync
 import applications
 import autopilot
+import autostart
 import ai_filters
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -2881,6 +2882,7 @@ def _settings_context(
         "autopilot_scan_min": AUTOPILOT_SCAN_MIN,
         "default_radius_km": autopilot.DEFAULT_HOME_RADIUS_KM,
         "tg_daily_max": autopilot.TG_DAILY_MAX,
+        "autostart": autostart.status(),
     }
 
 
@@ -3060,6 +3062,17 @@ def settings_documents_save(
         return RedirectResponse(_url_with_system_response("/settings/salling", error=file_error), status_code=303)
     profile_store.save_profile(profile)
     return RedirectResponse("/settings/salling?saved=1#documents", status_code=303)
+
+
+@app.post("/settings/autostart")
+def settings_autostart(enable: str = Form("")):
+    """Автозапуск WexFlow при входе в Windows (HKCU Run, только своя запись).
+    Работает лишь в собранном приложении — в dev переключателя нет."""
+    if enable == "1":
+        autostart.enable()
+    else:
+        autostart.disable()
+    return RedirectResponse("/settings/autopilot?saved=1", status_code=303)
 
 
 @app.post("/autopilot/save")

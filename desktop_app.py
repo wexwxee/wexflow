@@ -1037,7 +1037,7 @@ def stop_started():
 
 
 # ── окно приложения ────────────────────────────────────────────────────
-def run_window():
+def run_window(minimized: bool = False):
     # Полностью выключаем HTTP-кэш WebView2 — иначе окно показывает страницу,
     # закэшированную от прошлой версии (старый интерфейс/баннер не исчезает).
     os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
@@ -1108,6 +1108,18 @@ def run_window():
     # родительском окне для WebView2 не работает (хиты ловит дочернее окно),
     # поэтому его не вешаем.
     _ = native_window
+    if minimized:
+        # Автозапуск с Windows: окно сворачиваем сразу после показа — серверы и
+        # автопилот работают, а окно ждёт в панели задач.
+        def _minimize_on_show():
+            try:
+                native_window.minimize()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            native_window.events.shown += _minimize_on_show
+        except Exception:  # noqa: BLE001
+            pass
     # Постоянное хранилище WebView2 (cookie/localStorage) в %AppData%\WexFlow —
     # иначе по умолчанию private_mode=True держит всё в памяти и стирает при
     # закрытии, и сохранённые фильтры/тема слетают после перезапуска.
@@ -1175,7 +1187,7 @@ def main():
             sys.stdout.flush()
             sys.exit(1)
         return
-    run_window()
+    run_window(minimized="--minimized" in args)
 
 
 if __name__ == "__main__":

@@ -545,11 +545,29 @@
   <form id="profDeleteForm" method="post" action="/autopilot/profile/delete" style="display:none;"><input type="hidden" name="profile_id" value="{{ autopilot_profile.id }}"></form>
 
   <!-- Автопилот подбора -->
+  <div class="panel" style="margin-top:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+    <div style="flex:1 1 260px;">
+      <b style="color:var(--txt-strong);">{{ ic.i('zap', 14) }} Запускать вместе с Windows</b>
+      <p class="hint" style="margin:4px 0 0;">Автопилот и обновление вакансий работают, только пока WexFlow запущен. Включи автозапуск — приложение будет стартовать при входе в Windows свёрнутым в панель задач, и «обновлено N дней назад» исчезнет.</p>
+    </div>
+    {% if autostart.supported %}
+    <form method="post" action="/settings/autostart" style="margin:0;">
+      <input type="hidden" name="enable" value="{{ '0' if autostart.enabled else '1' }}">
+      <button type="submit" class="ap-bar-btn" style="border:1px solid {{ 'var(--err-line)' if autostart.enabled else 'var(--accent)' }};background:transparent;color:{{ 'var(--err-txt)' if autostart.enabled else 'var(--accent)' }};border-radius:999px;padding:7px 16px;font-size:12.5px;font-weight:650;cursor:pointer;">
+        {{ 'Выключить автозапуск' if autostart.enabled else 'Включить автозапуск' }}
+      </button>
+    </form>
+    {% if autostart.enabled %}<span class="hint" style="color:var(--ok-txt);">включён</span>{% endif %}
+    {% else %}
+    <span class="hint">Доступно в установленном приложении (WexFlow.exe) — в режиме разработки переключатель выключен.</span>
+    {% endif %}
+  </div>
+
   <form id="autopilot" class="panel" method="post" action="/autopilot/save" style="margin-top:18px;">
     <h2>{{ ic.i('zap', 17) }} Автопилот подбора
       {% if show_billing() %}<span class="tier-pill pro">Pro</span>{% endif %}
     </h2>
-    <p class="hint">WexFlow следит за новыми вакансиями по твоим наборам фильтров и присылает уведомление, когда появляется подходящая. Подачу по-прежнему подтверждаешь ты. Работает, пока приложение запущено.</p>
+    <p class="hint">WexFlow следит за новыми вакансиями по твоим наборам фильтров и присылает уведомление, когда появляется подходящая. Подачу по-прежнему подтверждаешь ты. Работает, пока приложение запущено — а чтобы работало всегда, включи автозапуск выше.</p>
 
     {% if ai_available %}
     <div class="ap-ai ap-ai-hero">
