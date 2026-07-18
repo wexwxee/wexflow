@@ -1088,6 +1088,10 @@ def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False
         autopilot.tg_pending_expire()  # карточки без ответа не висят вечно
         cap = limit or TG_MAX_PER_SCAN
         automatic = not include_existing
+        if automatic and autopilot.tg_digest_enabled():
+            # режим дайджеста: вместо потока карточек — одно сообщение в день;
+            # ручная кнопка «прислать текущие» карточками работает как раньше
+            return _tg_digest_tick()
         if automatic:
             # дневной потолок — только для автоматического потока; ручную кнопку
             # «прислать текущие» пользователь жмёт сам и потолком не ограничен
@@ -1109,6 +1113,27 @@ def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False
     except Exception as e:  # noqa: BLE001 — не должно ронять фоновый скан
         print(f"telegram(cloud): ошибка отправки карточек — {e}")
         return {"sent": 0, "error": str(e)[:120]}
+
+
+def _tg_digest_tick() -> dict:
+    """Дневной дайджест: одно сообщение со сводкой НОВЫХ подходящих вакансий.
+    Вакансии из дайджеста помечаются «предложенными» (в реестре), чтобы завтра
+    в сводку попали только действительно новые; подача — из панели (список
+    вакансий там синхронизируется отдельно, jobs_sync)."""
+    if not autopilot.tg_digest_due():
+        return {"sent": 0, "error": "дайджест за сегодня уже отправлен"}
+    jobs = autopilot.tg_eligible(limit=50, include_existing=False)
+    if not jobs:
+        return {"sent": 0, "error": ""}
+    home = settings_store.get_home()
+    ok = cloud_auth.send_digest(autopilot.build_digest_text(jobs, home))
+    if not ok:
+        return {"sent": 0, "error": "не удалось отправить дайджест"}
+    autopilot.tg_digest_mark_sent()
+    for job in jobs:
+        applications.mark_offered(job.id)
+    autopilot.log_event("info", f"TG: дайджест — новых подходящих {len(jobs)}")
+    return {"sent": 1, "digest": True, "jobs": len(jobs)}
 
 
 def _ago_text(ts: float | int | None) -> str:
@@ -3070,6 +3095,17 @@ def api_telegram_clear_pending():
     return JSONResponse({"ok": True, "cleared": autopilot.tg_pending_clear_all()})
 
 
+@app.post("/api/telegram/digest")
+async def api_telegram_digest(request: Request):
+    """Включить/выключить дневной дайджест вместо потока карточек."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    autopilot.set_tg_digest(bool((body or {}).get("enabled")))
+    return JSONResponse({"ok": True, "digest": autopilot.tg_digest_enabled()})
+
+
 @app.post("/settings/autostart")
 def settings_autostart(enable: str = Form("")):
     """Автозапуск WexFlow при входе в Windows (HKCU Run, только своя запись).
@@ -3304,6 +3340,7 @@ def telegram_status():
         "mode": autopilot.get_mode(),
         "within_schedule": autopilot.within_schedule(rule),
         "max_per_send": TG_MAX_PER_SCAN,
+        "digest": bool(rule.get("tg_digest")),
         **autopilot.tg_queue_stats(),
     }
 

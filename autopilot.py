@@ -57,6 +57,8 @@ DEFAULT_RULE = {
     "tg_day": "",               # день, за который считаем карточки (дневной потолок)
     "tg_sent_today": 0,         # сколько карточек автопилот сам отправил сегодня
     "tg_cap_day": "",           # день, когда уже писали в журнал про достигнутый потолок
+    "tg_digest": False,         # дайджест раз в день вместо потока карточек
+    "tg_digest_day": "",        # день, за который дайджест уже отправлен
     # ЛЕГАСИ (шаг 3 плана): факты «подано/отправляется/предложено/пропущено»
     # переехали в таблицу application (см. applications.py). Ключи оставлены,
     # чтобы старые settings.json читались; applications.ensure_migrated()
@@ -697,6 +699,49 @@ def tg_log_cap_once(waiting: int) -> None:
     save_rule({"tg_cap_day": today})
     log_event("info", f"TG: дневной потолок карточек ({TG_DAILY_MAX}) достигнут — "
                       f"ещё подходят {waiting}, пришлю завтра (или открой панель)")
+
+
+# ── Дайджест: одно сообщение в день вместо потока карточек ─────────────
+def tg_digest_enabled() -> bool:
+    return bool(get_rule().get("tg_digest"))
+
+
+def set_tg_digest(on: bool) -> None:
+    save_rule({"tg_digest": bool(on)})
+    log_event("info", f"TG: дайджест {'включён — раз в день одно сообщение' if on else 'выключен — снова карточки'}")
+
+
+def tg_digest_due() -> bool:
+    """Дайджест за сегодня ещё не отправляли?"""
+    return get_rule().get("tg_digest_day") != _today_str()
+
+
+def tg_digest_mark_sent() -> None:
+    save_rule({"tg_digest_day": _today_str()})
+
+
+def _esc_html(s: str) -> str:
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def build_digest_text(jobs, home: dict | None = None, max_titles: int = 5) -> str:
+    """Текст дневного дайджеста (чистая функция — легко тестировать).
+    jobs — новые подходящие вакансии (объекты Job)."""
+    n = len(jobs)
+    lines = [f"🔎 <b>WexFlow: новых подходящих вакансий — {n}</b>"]
+    for j in jobs[:max_titles]:
+        bits = [_esc_html(j.title or "Вакансия")]
+        if getattr(j, "city", None):
+            bits.append(_esc_html(j.city))
+        if home and getattr(j, "lat", None) is not None and getattr(j, "lon", None) is not None:
+            km = geo.haversine_km(home["lat"], home["lon"], j.lat, j.lon)
+            bits.append(f"~{round(km)} км")
+        lines.append("• " + " · ".join(bits))
+    if n > max_titles:
+        lines.append(f"…и ещё {n - max_titles}.")
+    lines.append("")
+    lines.append("Открой панель, чтобы посмотреть и подать. Карточки в чат не приходят — включён дайджест.")
+    return "\n".join(lines)
 
 
 def tg_pending_clear_all() -> int:

@@ -139,6 +139,35 @@ def test_pending_expire_empty_queue_is_noop():
     _with_temp(body)
 
 
+# ── 4. дневной дайджест ────────────────────────────────────────────────
+def test_digest_text_escapes_and_truncates():
+    jobs = [_job(id=f"j{i}", title=f"Job <{i}> & Co", city="København") for i in range(7)]
+    text = autopilot.build_digest_text(jobs, HOME, max_titles=5)
+    assert "новых подходящих вакансий — 7" in text
+    assert "Job &lt;0&gt; &amp; Co" in text          # HTML экранирован
+    assert "…и ещё 2." in text                        # 7 − 5 в хвосте
+    assert "<{0}>".format(0) not in text              # сырого HTML нет
+    assert "~5 км" in text                            # расстояние от дома
+
+
+def test_digest_text_without_home_has_no_distance():
+    text = autopilot.build_digest_text([_job()], None)
+    assert "км" not in text
+
+
+def test_digest_due_once_per_day():
+    def body():
+        autopilot.set_tg_digest(True)
+        assert autopilot.tg_digest_enabled()
+        assert autopilot.tg_digest_due()
+        autopilot.tg_digest_mark_sent()
+        assert not autopilot.tg_digest_due()
+        # «вчера» в хранилище → снова пора
+        autopilot.save_rule({"tg_digest_day": "2020-01-01"})
+        assert autopilot.tg_digest_due()
+    _with_temp(body)
+
+
 def test_pending_clear_all_button():
     def body():
         ts = dt.datetime.now().isoformat(timespec="seconds")

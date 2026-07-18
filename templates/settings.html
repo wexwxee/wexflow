@@ -920,6 +920,10 @@
           : '<p class="hint" style="color:#15803d">● Связь с облаком работает — компьютер принимает команды из Telegram.</p>';
       var startButton = telegramOn ? '' : '<button type="button" class="primary" id="tgStart">Запустить Telegram-режим</button>';
       var testClass = telegramOn ? 'primary' : 'tg-sec';
+      var digestOn = !!st.digest;
+      var digestHint = digestOn
+        ? '<div class="ap-hint">Дайджест включён: раз в день одно сообщение со сводкой новых вакансий, карточки в чат не приходят. Смотреть и подавать — в панели.</div>'
+        : '';
       box.innerHTML =
         '<p class="hint">✅ Аккаунт подключён: <b>'+account+'</b>. Карточки приходят через общий бот @wexflowbot.</p>'+cloudHint+
         '<div class="tg-stats">'+
@@ -931,10 +935,12 @@
         '<div class="ap-hint">'+(telegramOn
             ? 'Режим Telegram включён. Новые подходящие вакансии будут приходить автоматически после проверок; текущие можно отправить кнопкой ниже, по несколько карточек за раз.'
             : 'Сейчас включён не Telegram-режим. Нажми запуск — WexFlow будет искать в фоне, присылать новые вакансии в Telegram и ждать твоё Да/Нет.')+'</div>'+
+        digestHint+
         '<div class="actions">'+startButton+
         '<button type="button" class="'+testClass+'" id="tgTest">Отправить проверочное</button>'+
         '<button type="button" class="tg-sec" id="tgSendCurrent"'+disabled+'>'+sendLabel+'</button>'+
         (Number(st.pending||0) ? '<button type="button" class="tg-sec" id="tgClearPending">Снять ожидающие ('+esc(st.pending)+')</button>' : '')+
+        '<button type="button" class="tg-sec" id="tgDigest">'+(digestOn ? 'Дайджест: вкл' : 'Дайджест: выкл')+'</button>'+
         '<a class="tg-sec" href="https://t.me/wexflowbot" target="_blank" rel="noopener">Открыть @wexflowbot</a>'+
         '<span class="hint" id="tgMsg" style="margin:0;"></span></div>';
       var start = document.getElementById('tgStart');
@@ -943,6 +949,7 @@
       document.getElementById('tgSendCurrent').addEventListener('click', sendCurrent);
       var clearBtn = document.getElementById('tgClearPending');
       if(clearBtn) clearBtn.addEventListener('click', clearPending);
+      document.getElementById('tgDigest').addEventListener('click', function(){ toggleDigest(!digestOn); });
     }
     function startTelegram(){
       var m=document.getElementById('tgMsg');
@@ -1001,6 +1008,19 @@
         m.textContent='Ошибка сети.';
         if(btn) btn.disabled=false;
       });
+    }
+    function toggleDigest(on){
+      if(on && !confirm('Включить дайджест? Карточки перестанут приходить в чат — раз в день будет одно сообщение со сводкой, а смотреть и подавать вакансии можно в панели.')) return;
+      var m=document.getElementById('tgMsg');
+      m.textContent = on ? 'Включаю дайджест…' : 'Возвращаю карточки…';
+      api('/api/telegram/digest',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({enabled:on})
+      }).then(function(r){
+        if(r.ok){ m.textContent = r.digest ? 'Дайджест включён — одно сообщение в день.' : 'Дайджест выключен — снова карточки.'; load(); }
+        else { m.textContent='Не вышло.'; }
+      }).catch(function(){ m.textContent='Ошибка сети.'; });
     }
     function load(){ api('/api/telegram/status').then(render).catch(function(){ box.innerHTML='<p class="hint">Не удалось загрузить статус.</p>'; }); }
     load();

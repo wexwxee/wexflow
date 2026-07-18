@@ -255,6 +255,13 @@ def offer(text: str, job_id: str, timeout: int = 15, *,
         return None
 
 
+def send_digest(text: str, timeout: int = 10) -> bool:
+    """Одно информационное сообщение в чат (без кнопок ✅/❌) — дневной дайджест.
+    Бот добавит кнопку «Открыть панель»; решения принимаются в панели."""
+    payload = {"deviceId": device_id(), "digest": True, "text": text}
+    return bool(_post_json("/api/offer", payload, timeout).get("ok"))
+
+
 def clear_panel(timeout: int = 5) -> bool:
     """Очистить сохранённые вакансии в Telegram Mini App для этого устройства."""
     payload = {"deviceId": device_id(), "clearPanel": True}
