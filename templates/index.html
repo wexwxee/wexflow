@@ -125,6 +125,17 @@
   .ap-bar-btn:hover { background:var(--accent); color:var(--on-accent); }
   .ap-bar-btn.is-on { border-color:var(--err-line); color:var(--err-txt); }
   .ap-bar-btn.is-on:hover { background:var(--err-txt); color:#fff; }
+  /* ---- «Сегодня»: три числа дня одной строкой ---- */
+  .wf-today { display:flex; align-items:stretch; gap:10px; padding:12px 22px 2px; flex-wrap:wrap; }
+  .wf-today-lbl { display:inline-flex; align-items:center; gap:6px; font-size:11px; letter-spacing:.05em;
+                  text-transform:uppercase; color:var(--muted); padding-right:2px; }
+  .wf-today-item { display:inline-flex; align-items:baseline; gap:8px; padding:9px 14px; text-decoration:none;
+                   border:1px solid var(--glass-line); border-radius:12px; background:var(--glass);
+                   transition:border-color .12s, background .12s; }
+  .wf-today-item:hover { border-color:var(--accent); }
+  .wf-today-item b { font-size:19px; font-weight:750; color:var(--txt-strong); line-height:1; }
+  .wf-today-item span { font-size:12px; color:var(--muted); }
+  @media (max-width:520px){ .wf-today { gap:7px; } .wf-today-item { padding:7px 10px; } }
   .jobs-result-head { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 22px 0; }
   .jobs-result-head .muted { font-size:12px; }
   /* ---- панель фильтров ---- */
@@ -515,6 +526,26 @@
       {% if autopilot and autopilot.enabled %}Выключить{% else %}Включить{% endif %}
     </button>
   </form>
+</div>
+
+<!-- «Сегодня»: три числа, ради которых открывают приложение. Каждая плитка — ссылка. -->
+<div class="wf-today">
+  <span class="wf-today-lbl">{{ ic.i('sun', 14) }} Сегодня</span>
+  <a class="wf-today-item" href="{{ '/?status=active&sort=published&radius=' ~ today.radius if today.has_home else '/?status=active&sort=published' }}"
+     data-tip-title="Появились за 3 дня" data-tip-body="Свежие вакансии{{ ' в ' ~ today.radius ~ ' км от дома' if today.has_home }}. Клик — показать рядом, свежие сверху.">
+    <b>{{ today.new_nearby }}</b>
+    <span>{{ 'новых рядом · 3 дня' if today.has_home else 'новых · 3 дня' }}</span>
+  </a>
+  {% if today.tg_mode %}
+  <a class="wf-today-item" href="/autopilot"
+     data-tip-title="Ждут решения" data-tip-body="Карточки в Telegram без ответа. Ответь в чате или панели; без ответа снимутся через 3 дня.">
+    <b>{{ today.awaiting }}</b><span>ждут решения в TG</span>
+  </a>
+  {% endif %}
+  <a class="wf-today-item" href="/audit"
+     data-tip-title="Журнал заявок" data-tip-body="Поданные за последние 7 дней. Клик — открыть журнал с подтверждениями.">
+    <b>{{ today.submitted_week }}</b><span>подано за неделю</span>
+  </a>
 </div>
 
 {% if presets %}

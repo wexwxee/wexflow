@@ -1971,6 +1971,44 @@ def connector_apply_result(
     ), status_code=303)
 
 
+def _today_summary(home: dict | None) -> dict:
+    """Числа для блока «Сегодня» на главной: сколько вакансий появилось за
+    последние 3 дня рядом с домом, сколько карточек ждёт решения в Telegram и
+    сколько подано за неделю. «Не открывал» (status=new) здесь не годится —
+    таких сотни, число ни о чём не говорит; «появились недавно и рядом» —
+    настоящий дневной сигнал."""
+    import datetime as _dtm
+    week_ago = utcnow() - _dtm.timedelta(days=7)
+    fresh_cutoff = utcnow() - _dtm.timedelta(days=3)
+    with get_session() as s:
+        fresh_jobs = list(s.exec(select(Job).where(
+            Job.status.not_in(["closed", "hidden", "applied"]),
+            Job.first_seen >= fresh_cutoff,
+        )).all())
+        submitted_week = s.exec(
+            select(func.count()).select_from(Job).where(Job.applied_at >= week_ago)
+        ).one()
+    radius = autopilot.DEFAULT_HOME_RADIUS_KM
+    if home:
+        new_nearby = sum(
+            1 for j in fresh_jobs
+            if j.lat is not None and j.lon is not None
+            and geo.haversine_km(home["lat"], home["lon"], j.lat, j.lon) <= radius
+        )
+    else:
+        new_nearby = len(fresh_jobs)
+    rule = autopilot.get_rule()
+    awaiting = len(rule.get("tg_pending") or []) if rule.get("tg_approval") else 0
+    return {
+        "new_nearby": new_nearby,
+        "awaiting": awaiting,
+        "submitted_week": int(submitted_week or 0),
+        "radius": radius,
+        "has_home": bool(home),
+        "tg_mode": bool(rule.get("tg_approval")),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(
     request: Request,
@@ -2251,6 +2289,7 @@ def index(
             "cover": profile_store.file_label(_profile.get("cover_letter_path", "")),
         },
         "setup": _setup,
+        "today": _today_summary(home),
         "maps_urls": maps_urls,
         "resolved": {
             "city": (
