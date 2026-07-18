@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import UniqueConstraint, event, text
 from sqlmodel import Field, SQLModel, create_engine, Session, select
 
 import config
@@ -66,6 +67,10 @@ class Application(SQLModel, table=True):
            в панели Mini App, без карточки) | skipped (пропустил) |
            submitting (подача запущена) | submitted (подана) | failed (не подтвердилась).
     """
+    __table_args__ = (
+        UniqueConstraint("source", "job_id", name="uq_application_source_job"),
+    )
+
     id: Optional[int] = Field(default=None, primary_key=True)
     source: str = Field(default="salling", index=True)   # salling | teamtailor | greenhouse | ashby
     job_id: str = Field(index=True)
@@ -76,8 +81,6 @@ class Application(SQLModel, table=True):
     submitted_at: Optional[datetime] = None
     updated_at: datetime = Field(default_factory=utcnow)
 
-
-from sqlalchemy import event
 
 # timeout=30: ждать освобождения блокировки до 30с, а не падать сразу «database is
 # locked». База открыта двумя процессами (приложение + воркер apply.py) и многими
@@ -108,7 +111,6 @@ def init_db():
 
 def _migrate():
     """Лёгкая миграция: добавляет недостающие колонки в существующую таблицу."""
-    from sqlalchemy import text
     with engine.connect() as conn:
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(job)"))}
         for name, ddl in [
@@ -122,7 +124,86 @@ def _migrate():
                 conn.execute(text(f"ALTER TABLE job ADD COLUMN {ddl}"))
         conn.commit()
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_job_source ON job (source)"))
+        _deduplicate_applications(conn)
+        # Контракт реестра — ровно одна строка на source + job_id. Закрепляем
+        # его в SQLite, чтобы параллельные потоки не создавали две истории.
+        # На новой базе UniqueConstraint уже создал sqlite_autoindex; старой
+        # базе добавляем именованный индекс только когда эквивалента ещё нет.
+        if not _has_unique_application_key(conn):
+            conn.execute(text(
+                "CREATE UNIQUE INDEX ux_application_source_job "
+                "ON application (source, job_id)"
+            ))
         conn.commit()
+
+
+def _has_unique_application_key(conn) -> bool:
+    for row in conn.exec_driver_sql("PRAGMA index_list(application)"):
+        if not bool(row[2]):
+            continue
+        name = str(row[1]).replace('"', '""')
+        columns = [info[2] for info in conn.exec_driver_sql(
+            f'PRAGMA index_info("{name}")'
+        )]
+        if columns == ["source", "job_id"]:
+            return True
+    return False
+
+
+def _deduplicate_applications(conn) -> int:
+    """Объединить старые дубли реестра перед включением уникального индекса."""
+    rows = list(conn.execute(text(
+        "SELECT id, source, job_id, state, origin, confidence, offered_at, "
+        "submitted_at, updated_at FROM application ORDER BY id"
+    )).mappings())
+    groups = {}
+    for row in rows:
+        groups.setdefault((row["source"], row["job_id"]), []).append(row)
+
+    rank = {
+        "listed": 0,
+        "offered": 1,
+        "skipped": 2,
+        "failed": 3,
+        "submitting": 4,
+        "submitted": 5,
+    }
+    removed = 0
+    for duplicates in groups.values():
+        if len(duplicates) < 2:
+            continue
+        winner = max(duplicates, key=lambda row: (
+            rank.get(str(row["state"] or ""), -1),
+            str(row["submitted_at"] or row["updated_at"] or ""),
+            int(row["id"]),
+        ))
+        offered = [row["offered_at"] for row in duplicates if row["offered_at"] is not None]
+        submitted = [row["submitted_at"] for row in duplicates if row["submitted_at"] is not None]
+        updated = [row["updated_at"] for row in duplicates if row["updated_at"] is not None]
+        origin = winner["origin"] or next(
+            (row["origin"] for row in duplicates if row["origin"]), ""
+        )
+        confidence = winner["confidence"] or next(
+            (row["confidence"] for row in duplicates if row["confidence"]), None
+        )
+        conn.execute(text(
+            "UPDATE application SET state=:state, origin=:origin, confidence=:confidence, "
+            "offered_at=:offered_at, submitted_at=:submitted_at, updated_at=:updated_at "
+            "WHERE id=:id"
+        ), {
+            "id": winner["id"],
+            "state": winner["state"],
+            "origin": origin,
+            "confidence": confidence,
+            "offered_at": min(offered) if offered else None,
+            "submitted_at": max(submitted) if submitted else None,
+            "updated_at": max(updated) if updated else winner["updated_at"],
+        })
+        for row in duplicates:
+            if row["id"] != winner["id"]:
+                conn.execute(text("DELETE FROM application WHERE id=:id"), {"id": row["id"]})
+                removed += 1
+    return removed
 
 
 def get_session() -> Session:

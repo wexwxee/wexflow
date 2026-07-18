@@ -7,9 +7,10 @@
 
 Локально состояние лежит в одном общем JSON (config.SHARED_DIR/account.json).
 """
-import json
+import threading
 
 import config
+from json_store import atomic_write_json, read_json
 
 ACCOUNT_PATH = config.SHARED_DIR / "account.json"
 
@@ -24,30 +25,25 @@ DEFAULT = {
     # обратно из всё ещё живой облачной сессии.
     "cloud_sync_paused": False,
 }
+_LOCK = threading.RLock()
 
 
 def load() -> dict:
-    data = dict(DEFAULT)
-    try:
-        if ACCOUNT_PATH.exists():
-            saved = json.loads(ACCOUNT_PATH.read_text(encoding="utf-8"))
-            if isinstance(saved, dict):
-                data.update({k: saved.get(k, data[k]) for k in DEFAULT})
-    except (OSError, ValueError):
-        pass
-    return data
+    with _LOCK:
+        data = dict(DEFAULT)
+        saved = read_json(ACCOUNT_PATH, {}, dict)
+        data.update({k: saved.get(k, data[k]) for k in DEFAULT})
+        return data
 
 
 def save(data: dict) -> None:
-    merged = dict(DEFAULT)
-    merged.update({k: data.get(k, merged[k]) for k in DEFAULT})
-    try:
-        ACCOUNT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        ACCOUNT_PATH.write_text(
-            json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-    except OSError:
-        pass
+    with _LOCK:
+        merged = dict(DEFAULT)
+        merged.update({k: data.get(k, merged[k]) for k in DEFAULT})
+        try:
+            atomic_write_json(ACCOUNT_PATH, merged, indent=2)
+        except OSError:
+            pass
 
 
 def is_signed_in() -> bool:
@@ -63,30 +59,45 @@ def _sync_subscription(plan: str) -> None:
         pass
 
 
-def apply_session(user: dict) -> dict:
-    """Сохранить результат входа из облака (cloud_auth.fetch_session)."""
+def _apply_session(user: dict, *, respect_pause: bool) -> dict | None:
     plan = user.get("plan")
     if plan not in ("free", "pro", "max"):
         plan = "free"
-    data = load()
-    data.update({
-        "signed_in": True,
-        "tg_id": str(user.get("tgId") or user.get("tg_id") or "") or None,
-        "tg_name": (user.get("name") or "").strip() or None,
-        "username": (user.get("username") or "").strip() or None,
-        "plan": plan,
-        "cloud_sync_paused": False,
-    })
-    save(data)
-    _sync_subscription(plan)
+    with _LOCK:
+        data = load()
+        # Проверка и запись находятся под тем же lock: выход не может вклиниться
+        # между ними и быть затёрт старым ответом фонового cloud-poll.
+        if respect_pause and data.get("cloud_sync_paused"):
+            return None
+        data.update({
+            "signed_in": True,
+            "tg_id": str(user.get("tgId") or user.get("tg_id") or "") or None,
+            "tg_name": (user.get("name") or "").strip() or None,
+            "username": (user.get("username") or "").strip() or None,
+            "plan": plan,
+            "cloud_sync_paused": False,
+        })
+        save(data)
+        _sync_subscription(plan)
     return data
 
 
+def apply_session(user: dict) -> dict:
+    """Применить явный новый Telegram-вход пользователя."""
+    return _apply_session(user, respect_pause=False) or dict(DEFAULT)
+
+
+def apply_cloud_session(user: dict) -> bool:
+    """Применить фоновый ответ облака, только если пользователь не вышел."""
+    return _apply_session(user, respect_pause=True) is not None
+
+
 def sign_out() -> None:
-    data = dict(DEFAULT)
-    data["cloud_sync_paused"] = True
-    save(data)
-    _sync_subscription("free")
+    with _LOCK:
+        data = dict(DEFAULT)
+        data["cloud_sync_paused"] = True
+        save(data)
+        _sync_subscription("free")
 
 
 def cloud_sync_paused() -> bool:

@@ -32,6 +32,7 @@ import shutil
 import tempfile
 import threading
 import urllib.request
+import urllib.error
 import zipfile
 import hashlib
 
@@ -68,6 +69,8 @@ HUB_URL = f"http://127.0.0.1:{HUB_PORT}/__app/salling?next=/hub"
 CREATE_NO_WINDOW = 0x08000000  # фоновые серверы — без чёрных консолей
 
 _started = []  # дочерние процессы, которые запустило именно это приложение
+_started_lock = threading.Lock()
+_stopping = False
 _autopilot_win = None  # мини-окно автопилота (чтобы не открывать дубликаты)
 
 
@@ -272,11 +275,11 @@ def ensure_browser_async() -> None:
 
     def _run():
         try:
-            _started.append(("pwinstall", subprocess.Popen(
+            _remember_started("pwinstall", subprocess.Popen(
                 _self_cmd("--worker-pwinstall"),
                 creationflags=CREATE_NO_WINDOW,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )))
+            ))
         except Exception as exc:  # noqa: BLE001
             print(f"[WexFlow] не удалось запустить загрузку браузера: {exc}")
 
@@ -858,11 +861,40 @@ def _spawn(args, cwd=None):
     )
 
 
+def _wait_stopped(proc):
+    """Завершить один дочерний процесс и не оставить его висеть после окна."""
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+            proc.wait(timeout=3)
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _remember_started(name, proc):
+    """Запомнить процесс или сразу погасить его, если окно уже закрывается."""
+    with _started_lock:
+        if not _stopping:
+            _started.append((name, proc))
+            return proc
+    _wait_stopped(proc)
+    return proc
+
+
 def _ensure(port, args, cwd, name):
     if _port_up(port):
         return
     try:
-        _started.append((name, _spawn(args, cwd)))
+        _remember_started(name, _spawn(args, cwd))
     except Exception as exc:  # noqa: BLE001
         print(f"[WexFlow] не удалось запустить {name}: {exc}")
 
@@ -958,17 +990,48 @@ def wait_for_hub(timeout=60) -> bool:
     end = time.time() + timeout
     while time.time() < end:
         try:
-            urllib.request.urlopen(HUB_URL, timeout=1)
-            return True
-        except Exception:  # noqa: BLE001
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{HUB_PORT}/__health", timeout=1
+            ) as response:
+                hub = json.loads(response.read().decode("utf-8"))
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{SALLING_PORT}/api/health", timeout=2
+            ) as response:
+                salling = json.loads(response.read().decode("utf-8"))
+            if (hub.get("service") == "wexflow-hub"
+                    and salling.get("service") == "wexflow-salling"):
+                return True
+            # Порт занят чужим/старым сервером: ждать весь таймаут бессмысленно.
+            return False
+        except urllib.error.HTTPError:
+            return False
+        except (OSError, ValueError, urllib.error.URLError):
             time.sleep(0.4)
     return False
 
 
 def stop_started():
-    for _name, proc in _started:
+    global _stopping
+    with _started_lock:
+        _stopping = True
+        processes = list(_started)
+        _started.clear()
+    # Сначала посылаем terminate всем, чтобы они завершались параллельно.
+    for _name, proc in processes:
         try:
-            proc.terminate()
+            if proc.poll() is None:
+                proc.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+    for _name, proc in processes:
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait(timeout=3)
+            except Exception:  # noqa: BLE001
+                pass
         except Exception:  # noqa: BLE001
             pass
 

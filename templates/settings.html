@@ -2,7 +2,7 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}WexFlow Settings{% endblock %}
+{% block title %}WexFlow · Настройки{% endblock %}
 
 {% block style %}
 <style>
@@ -282,7 +282,7 @@
   </div>
 </header>
 <section class="wex-workbench wex-narrow">
-  <p class="sub">{{ settings_meta }}. <a class="crosslink" href="/settings">Все настройки</a></p>
+  <p class="sub"><a class="crosslink" href="/settings">← Все настройки</a></p>
 
   <nav class="sec-nav">
     <a class="{{ 'active' if settings_section == 'salling' else '' }}" href="/settings/salling">{{ ic.i('cart', 13) }} Salling</a>
@@ -551,16 +551,17 @@
     </h2>
     <p class="hint">WexFlow следит за новыми вакансиями по твоим наборам фильтров и присылает уведомление, когда появляется подходящая. Подачу по-прежнему подтверждаешь ты. Работает, пока приложение запущено.</p>
 
-    <!-- ИИ-помощник: всегда виден, первым и крупным, чтобы его нельзя было потерять -->
+    {% if ai_available %}
     <div class="ap-ai ap-ai-hero">
       <div class="ap-ai-hero-head">{{ ic.i('sparkles', 19) }} Настроить за тебя</div>
       <div class="ap-ai-hero-sub">Не хочешь возиться с фильтрами вручную? Опиши словами или вставь резюме — ИИ сам подберёт все настройки, а ты только проверишь и сохранишь.</div>
       <textarea id="apAiText" rows="2" placeholder="напр.: ищу подработку кассиром рядом с домом, 15–20 часов в неделю, можно вечером и по выходным"></textarea>
       <div class="ap-ai-row">
         <button type="button" class="ap-ai-btn" id="apAiBtn"{{ '' if ai_available else ' disabled' }}>{{ ic.i('sparkles', 15) }} Подобрать фильтры</button>
-        <span class="ap-ai-status" id="apAiStatus">{% if not ai_available %}ИИ подключается — появится в ближайшем обновлении.{% endif %}</span>
+        <span class="ap-ai-status" id="apAiStatus"></span>
       </div>
     </div>
+    {% endif %}
 
     <div class="ap-risk">
       ⚠ <b>Про автоотправку.</b> Поиск и подготовка вакансий — безопасны, ничего не отправляют сами. Но если ниже включить <b>автоотправку</b>, WexFlow будет сам отправлять заявки от твоего имени <b>без подтверждения и без возможности отозвать</b>. Включай её только когда профиль, документы и фильтры точно верны — <b>на свой страх и риск</b>.
@@ -603,13 +604,13 @@
     <input type="hidden" name="profile_id" value="{{ autopilot_profile.id }}">
     <div class="ap-profiles-wrap">
       <label class="lbl" style="display:block;">Наборы фильтров
-        <span class="hint" style="font-weight:400;">— раньше назывались правилами; можно сделать отдельный набор под каждую цель</span>
+        <span class="hint" style="font-weight:400;">— отдельный набор под каждую цель поиска</span>
       </label>
       <details class="ap-faq" style="margin:8px 0 10px;">
         <summary>Что такое набор фильтров и как он работает?</summary>
         <div class="ap-faq-body">
           <div class="ap-rule-help" style="margin:8px 0 10px;">
-            <div><strong>Что такое набор фильтров?</strong> Это один сценарий поиска: например «рядом с домом», «только выходные» или «любой Netto». Вакансия считается подходящей, если совпала хотя бы с одним включённым набором.</div>
+            <div>Это один сценарий поиска: например «рядом с домом», «только выходные» или «любой Netto». Вакансия считается подходящей, если совпала хотя бы с одним включённым набором.</div>
             <div class="ap-rule-flow" aria-label="Как WexFlow проверяет наборы фильтров">
               <span class="ap-rule-step">1. Берёт вакансии</span>
               <span class="ap-rule-arrow">→</span>
@@ -629,7 +630,7 @@
         {% endfor %}
         <button class="ap-prof add" type="submit" form="profAddForm">+ набор</button>
       </div>
-      <span class="hint" style="display:block;margin:2px 0 6px;">Под выбранный набор подходит: <b>{{ autopilot_profile_count }}</b></span>
+      <span class="hint" style="display:block;margin:2px 0 6px;">По выбранному набору: <b>{{ autopilot_profile_count }}</b> {{ L.plural(autopilot_profile_count, 'подходящая вакансия', 'подходящие вакансии', 'подходящих вакансий') }}</span>
       <details class="ap-faq" style="margin:6px 0 0;">
         <summary>Управление набором «{{ autopilot_profile.name }}»</summary>
         <div class="ap-faq-body">
@@ -842,8 +843,8 @@
       <div class="ap-summary-status" id="apStatus"></div>
     </div>
 
-    <p class="hint" style="margin-top:10px;">Сейчас по всем включённым наборам подходит вакансий: <b>{{ autopilot_count }}</b>{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
-    <p class="hint" style="margin-top:-4px;">Для Telegram сейчас: можно прислать текущих <b>{{ autopilot_tg_stats.eligible_current }}</b>, автоматически новых <b>{{ autopilot_tg_stats.eligible_new }}</b>, ждут ответа <b>{{ autopilot_tg_stats.pending }}</b>.</p>
+    <p class="hint" style="margin-top:10px;">По всем включённым наборам: <b>{{ autopilot_count }}</b> {{ L.plural(autopilot_count, 'подходящая вакансия', 'подходящие вакансии', 'подходящих вакансий') }}{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
+    <p class="hint" style="margin-top:-4px;">Telegram: готовы к ручной отправке <b>{{ autopilot_tg_stats.eligible_current }}</b>, новых для автоуведомлений <b>{{ autopilot_tg_stats.eligible_new }}</b>, ожидают решения <b>{{ autopilot_tg_stats.pending }}</b>.</p>
 
     <div class="actions">
       <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить автопилот</button>
@@ -866,7 +867,7 @@
   </style>
   <section id="tg" class="panel" style="margin-top:14px;">
     <h2>{{ ic.i('send', 16) }} Telegram — подтверждение подачи</h2>
-    <p class="hint">Используется общий бот @wexflowbot: BotFather-токен больше не нужен. Войди через Telegram в разделе «Аккаунт» и нажми Start в боте — после этого автопилот сможет присылать вакансии, пока приложение запущено.</p>
+    <p class="hint">Используется общий бот @wexflowbot: отдельный токен не нужен. Войди через Telegram в разделе «Аккаунт» и нажми кнопку запуска в боте — после этого автопилот сможет присылать вакансии, пока приложение запущено.</p>
     <div id="tgState"><p class="hint">Загружаю…</p></div>
   </section>
   <script>
@@ -906,8 +907,8 @@
         '<div class="tg-stats">'+
           '<div class="tg-stat"><b>'+esc(st.found || 0)+'</b><span>подходит по фильтрам</span></div>'+
           '<div class="tg-stat"><b>'+esc(st.eligible_new || 0)+'</b><span>новых спросит сам</span></div>'+
-          '<div class="tg-stat"><b>'+esc(st.eligible_current || 0)+'</b><span>текущих можно прислать</span></div>'+
-          '<div class="tg-stat"><b>'+esc(st.pending || 0)+'</b><span>ждут ответа</span></div>'+
+          '<div class="tg-stat"><b>'+esc(st.eligible_current || 0)+'</b><span>готовы к отправке</span></div>'+
+          '<div class="tg-stat"><b>'+esc(st.pending || 0)+'</b><span>ожидают решения</span></div>'+
         '</div>'+
         '<div class="ap-hint">'+(telegramOn
             ? 'Режим Telegram включён. Новые подходящие вакансии будут приходить автоматически после проверок; текущие можно отправить кнопкой ниже, по несколько карточек за раз.'
@@ -1013,7 +1014,7 @@
           <dt>Уйдёт с неверными данными или старым резюме</dt>
           <dd>WexFlow берёт ровно то, что сейчас в «Профиле» и «Документах». Заявка уйдёт с этими данными как есть. Проверь профиль до включения.</dd>
           <dt>Можно ли остановить</dt>
-          <dd>Да — кнопкой «СТОП» новые отправки прекращаются мгновенно. Но уже отправленные заявки вернуть нельзя.</dd>
+          <dd>Да — кнопкой «Остановить автоотправку» новые отправки прекращаются сразу. Но уже отправленные заявки вернуть нельзя.</dd>
           <dt>Подаст дважды на одну вакансию</dt>
           <dd>Нет. Уже поданные вакансии не трогаются.</dd>
           <dt>Слетела сессия Salling / нет входа</dt>
@@ -1059,7 +1060,7 @@
   {% if autopilot.auto_submit %}
   <form class="panel" method="post" action="/autopilot/stop" style="margin-top:14px;border-color:var(--err-line);">
     <div class="actions" style="margin:0;align-items:center;">
-      <button class="primary ap-stop-btn" type="submit">⛔ СТОП — остановить автоотправку</button>
+      <button class="primary ap-stop-btn" type="submit">⛔ Остановить автоотправку</button>
       <span class="hint" style="margin:0;">Мгновенно выключает автоотправку.</span>
     </div>
   </form>
@@ -1681,9 +1682,8 @@
     });
   });
 
-  // F32: живая подсказка для РУЧНО введённого пути к документу. Показываем имя
-  // файла и предупреждаем о неверном типе ещё до сохранения — чтобы было видно,
-  // какой файл уйдёт под вашим именем (сервер всё равно проверит ещё раз).
+  // Живая подсказка для вручную введённого пути: показывает имя файла и
+  // предупреждает о неверном типе до сохранения. Сервер проверит файл ещё раз.
   const ALLOWED_DOC_EXT = ['.pdf', '.doc', '.docx'];
   function docBasename(p) {
     const s = String(p || '').trim().replace(/["']/g, '').replace(/[\\/]+$/, '');

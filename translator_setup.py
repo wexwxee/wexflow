@@ -1,38 +1,30 @@
 """Фоновая установка офлайн-переводчика из веб-интерфейса."""
-import json
 import subprocess
 import sys
 import threading
 from datetime import datetime
 
 import config
+from json_store import atomic_write_json, read_json
 
 STATUS_PATH = config.DATA_DIR / "translator_install_status.json"
 _lock = threading.Lock()
 
 
 def _write(status: str, message: str = ""):
-    STATUS_PATH.write_text(
-        json.dumps(
-            {
-                "status": status,
-                "message": message,
-                "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    atomic_write_json(STATUS_PATH, {
+        "status": status,
+        "message": message,
+        "updated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }, indent=2)
 
 
 def status() -> dict:
-    if STATUS_PATH.exists():
-        try:
-            return json.loads(STATUS_PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
-    return {"status": "idle", "message": "", "updated_at": ""}
+    return read_json(
+        STATUS_PATH,
+        {"status": "idle", "message": "", "updated_at": ""},
+        dict,
+    )
 
 
 def _run_install():

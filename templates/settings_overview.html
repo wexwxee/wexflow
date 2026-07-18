@@ -2,7 +2,7 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}WexFlow Settings{% endblock %}
+{% block title %}WexFlow · Настройки{% endblock %}
 
 {% block style %}
 <style>
@@ -36,7 +36,7 @@
 <header class="wex-topbar">
   <div class="wex-title-stack">
     <h1>{{ ui.brand('Настройки') }}</h1>
-    <span class="wex-title-meta">Карта управления WexFlow</span>
+    <span class="wex-title-meta">Профиль, модули и автоматизация</span>
   </div>
   <div class="wex-topbar-spacer"></div>
   <div class="wex-header-actions">
@@ -46,10 +46,7 @@
 
 <section class="wex-workbench wex-narrow">
   <div class="settings-head">
-    <div>
-      <h1>Настройки</h1>
-      <p>Выбери раздел, чтобы не листать одну длинную страницу.</p>
-    </div>
+    <p>Выбери раздел, чтобы не листать одну длинную страницу.</p>
   </div>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
@@ -64,9 +61,9 @@
       <p>Telegram-вход и общий профиль кандидата для всех модулей.</p>
       <div class="settings-meta">
         {% if profile.first_name or profile.email %}
-          <span class="settings-pill ok">{{ ic.i('check', 12) }} профиль есть</span>
+          <span class="settings-pill ok">{{ ic.i('check', 12) }} Профиль заполнен</span>
         {% else %}
-          <span class="settings-pill warn">{{ ic.i('x', 12) }} профиль пустой</span>
+          <span class="settings-pill warn">{{ ic.i('x', 12) }} Заполни профиль</span>
         {% endif %}
         {% if account_tg_id %}
           <span class="settings-pill ok">{{ ic.i('send', 12) }} Telegram</span>
@@ -84,14 +81,14 @@
       <p>Логин Salling, CV, мотивационное письмо, домашний адрес и сброс входа.</p>
       <div class="settings-meta">
         {% if creds.email %}
-          <span class="settings-pill ok">{{ ic.i('unlock', 12) }} логин сохранён</span>
+          <span class="settings-pill ok">{{ ic.i('unlock', 12) }} Логин сохранён</span>
         {% else %}
-          <span class="settings-pill warn">нет логина</span>
+          <span class="settings-pill warn">Добавь логин</span>
         {% endif %}
         {% if home %}
-          <span class="settings-pill ok">{{ ic.i('home', 12) }} дом задан</span>
+          <span class="settings-pill ok">{{ ic.i('home', 12) }} Дом указан</span>
         {% else %}
-          <span class="settings-pill">дом не задан</span>
+          <span class="settings-pill">Добавь адрес</span>
         {% endif %}
       </div>
     </a>
@@ -103,10 +100,10 @@
       </div>
       <p>Наборы фильтров под разные цели, режим работы, лимиты и автоотправка.</p>
       <div class="settings-meta">
-        <span class="settings-pill {{ 'ok' if autopilot.enabled else '' }}">{{ 'включён' if autopilot.enabled else 'пауза' }}</span>
-        <span class="settings-pill">{{ autopilot_count }} подходит</span>
+        <span class="settings-pill {{ 'ok' if autopilot.enabled else '' }}">{{ 'Включён' if autopilot.enabled else 'Выключен' }}</span>
+        <span class="settings-pill">Подходит: {{ autopilot_count }}</span>
         {% set np = autopilot_profiles|length %}
-        <span class="settings-pill">{{ np }} {{ 'набор' if np % 10 == 1 and np % 100 != 11 else ('набора' if np % 10 in [2, 3, 4] and np % 100 not in [12, 13, 14] else 'наборов') }}</span>
+        <span class="settings-pill">{{ np }} {{ L.plural(np, 'набор', 'набора', 'наборов') }}</span>
       </div>
     </a>
 
@@ -118,12 +115,12 @@
       <p>Проверочное сообщение и ручная отправка текущих подходящих. Вход через Telegram — в разделе «Аккаунт».</p>
       <div class="settings-meta">
         {% if account_tg_id %}
-          <span class="settings-pill ok">подключён</span>
+          <span class="settings-pill ok">Подключён</span>
         {% else %}
-          <span class="settings-pill warn">{{ ic.i('user', 12) }} подключить в «Аккаунте»</span>
+          <span class="settings-pill warn">{{ ic.i('user', 12) }} Подключи в «Аккаунте»</span>
         {% endif %}
-        <span class="settings-pill">{{ autopilot_tg_stats.eligible_current }} можно прислать</span>
-        <span class="settings-pill">{{ autopilot_tg_stats.pending }} ждут ответа</span>
+        <span class="settings-pill">Готовы к отправке: {{ autopilot_tg_stats.eligible_current }}</span>
+        <span class="settings-pill">Ожидают решения: {{ autopilot_tg_stats.pending }}</span>
       </div>
     </a>
   </div>

@@ -66,11 +66,33 @@ def test_explicit_logout_blocks_background_relogin():
         app._tg_session_sync_last = original_last
 
 
+def test_logout_while_cloud_request_is_in_flight_wins():
+    original_paused = app.account_mod.cloud_sync_paused
+    original_fetch = app.cloud_auth.fetch_session
+    original_apply = app.account_mod.apply_cloud_session
+    original_last = app._tg_session_sync_last
+    checks = iter([False, True])
+    applied = []
+    try:
+        app.account_mod.cloud_sync_paused = lambda: next(checks)
+        app.cloud_auth.fetch_session = lambda **_kw: {"tgId": "42", "plan": "pro"}
+        app.account_mod.apply_cloud_session = lambda user: applied.append(user)
+        app._tg_session_sync_last = 0
+        app._sync_account_from_cloud()
+        assert applied == []
+    finally:
+        app.account_mod.cloud_sync_paused = original_paused
+        app.cloud_auth.fetch_session = original_fetch
+        app.account_mod.apply_cloud_session = original_apply
+        app._tg_session_sync_last = original_last
+
+
 if __name__ == "__main__":
     tests = [test_normal_poll_intervals, test_poll_backoff_is_bounded,
              test_cloud_connection_state_is_honest,
              test_failed_sync_retries_soon_without_request_storm,
-             test_explicit_logout_blocks_background_relogin]
+             test_explicit_logout_blocks_background_relogin,
+             test_logout_while_cloud_request_is_in_flight_wins]
     for fn in tests:
         fn()
         print(f"OK   {fn.__name__}")

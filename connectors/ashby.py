@@ -54,7 +54,10 @@ class AshbyConnector(Connector):
         return out
 
     def search(self) -> list[JobItem]:
-        return search_companies(self.companies(), self.fetch_company)
+        errors: list[str] = []
+        items = search_companies(self.companies(), self.fetch_company, errors=errors)
+        self.last_errors = errors
+        return items
 
 
 register(AshbyConnector())

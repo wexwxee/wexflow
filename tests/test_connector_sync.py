@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlmodel import SQLModel, Session, create_engine, select
 
 import connector_sync
-from connectors.base import JobItem
+from connectors.base import JobItem, search_companies
 from db import Job
 
 
@@ -148,6 +148,24 @@ def test_update_preserves_application_state():
         job = session.get(Job, "tt:demo:1")
         assert job.title == "Updated title"
         assert job.status == "applied" and job.applied_at is not None
+
+
+def test_partial_company_failures_are_reported():
+    errors = []
+
+    def fetch(company):
+        if company["slug"] == "broken":
+            raise RuntimeError("HTTP 503")
+        return [_item("tt:healthy:1")]
+
+    items = search_companies(
+        [{"slug": "healthy"}, {"slug": "broken"}],
+        fetch,
+        workers=2,
+        errors=errors,
+    )
+    assert len(items) == 1
+    assert len(errors) == 1 and "broken" in errors[0] and "503" in errors[0]
 
 
 if __name__ == "__main__":

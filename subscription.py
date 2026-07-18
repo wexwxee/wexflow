@@ -17,9 +17,10 @@
 
 Цены ещё не финализированы — поле price=None, валюта евро (€).
 """
-import json
+import threading
 
 import config
+from json_store import atomic_write_json, read_json
 
 CURRENCY = "€"
 
@@ -121,18 +122,14 @@ DEFAULT = {
     "until": None,        # ISO-дата окончания (на будущее)
     "source": "stub",     # источник статуса: stub | manual | server
 }
+_LOCK = threading.RLock()
 
 
 def load() -> dict:
     """Текущее состояние подписки (с подстановкой значений по умолчанию)."""
     data = dict(DEFAULT)
-    try:
-        if config.LICENSE_PATH.exists():
-            saved = json.loads(config.LICENSE_PATH.read_text(encoding="utf-8"))
-            if isinstance(saved, dict):
-                data.update({k: saved.get(k, data[k]) for k in DEFAULT})
-    except (OSError, ValueError):
-        pass
+    saved = read_json(config.LICENSE_PATH, {}, dict)
+    data.update({k: saved.get(k, data[k]) for k in DEFAULT})
     if data.get("plan") not in PLANS:
         data["plan"] = "free"
     return data
@@ -142,10 +139,8 @@ def save(data: dict) -> None:
     merged = dict(DEFAULT)
     merged.update({k: data.get(k, merged[k]) for k in DEFAULT})
     try:
-        config.LICENSE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        config.LICENSE_PATH.write_text(
-            json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        with _LOCK:
+            atomic_write_json(config.LICENSE_PATH, merged, indent=2)
     except OSError:
         pass
 
@@ -188,12 +183,13 @@ def feature_enabled(name: str) -> bool:
 
 def set_plan(p: str, *, active: bool | None = None, source: str = "manual") -> dict:
     """Ручное переключение тарифа (для тестов/разработки). Реальной оплаты нет."""
-    data = load()
-    data["plan"] = p if p in PLANS else "free"
-    data["active"] = (data["plan"] != "free") if active is None else bool(active)
-    data["source"] = source
-    save(data)
-    return data
+    with _LOCK:
+        data = load()
+        data["plan"] = p if p in PLANS else "free"
+        data["active"] = (data["plan"] != "free") if active is None else bool(active)
+        data["source"] = source
+        save(data)
+        return data
 
 
 def _price_label(p: dict) -> str:
@@ -251,16 +247,12 @@ def add_waitlist(email: str, plan: str) -> bool:
     plan = plan if plan in PLANS else "pro"
     path = config.SHARED_DIR / "waitlist.json"
     try:
-        entries = []
-        if path.exists():
-            saved = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(saved, list):
-                entries = saved
-        # не плодим дубли по (email, plan)
-        if not any(e.get("email") == email and e.get("plan") == plan for e in entries):
-            entries.append({"email": email, "plan": plan})
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+        with _LOCK:
+            entries = read_json(path, [], list)
+            # не плодим дубли по (email, plan)
+            if not any(e.get("email") == email and e.get("plan") == plan for e in entries):
+                entries.append({"email": email, "plan": plan})
+                atomic_write_json(path, entries, indent=2)
         return True
     except (OSError, ValueError):
         return False

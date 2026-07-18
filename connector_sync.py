@@ -156,7 +156,15 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
             errors.append(f"{source}: connector not registered")
             continue
         try:
-            report = sync_items(source, conn.search())
+            items = conn.search()
+            company_errors = list(getattr(conn, "last_errors", []) or [])
+            report = sync_items(source, items)
+            if company_errors:
+                report["company_errors"] = company_errors[:20]
+                errors.append(
+                    f"{source}: не ответили {len(company_errors)} компаний; "
+                    f"первая ошибка: {company_errors[0]}"
+                )
             try:
                 report["geocoded"] = geocode_missing(source)
             except Exception as exc:  # coordinates are useful, never critical

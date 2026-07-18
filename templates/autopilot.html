@@ -104,14 +104,14 @@
     </div>
     <div class="ap-stats">
       <div class="ap-stat"><b id="apFound">{{ status.found }}</b><span>подходит по фильтрам</span></div>
-      <div class="ap-stat"><b id="apPrepared">{{ status.prepared }}</b><span>подготовил</span></div>
-      <div class="ap-stat"><b id="apSubToday">0</b><span>подал сегодня</span></div>
-      <div class="ap-stat"><b id="apSubTotal">{{ status.submitted_total }}</b><span>подал всего</span></div>
+      <div class="ap-stat"><b id="apPrepared">{{ status.prepared }}</b><span>подготовлено</span></div>
+      <div class="ap-stat"><b id="apSubToday">0</b><span>подано сегодня</span></div>
+      <div class="ap-stat"><b id="apSubTotal">{{ status.submitted_total }}</b><span>подано всего</span></div>
     </div>
     <div class="apx-actions">
-      <button class="hub-link" id="apPause" type="button">Пауза</button>
+      <button class="hub-link" id="apPause" type="button">Включить автопилот</button>
       <button class="hub-link" id="apScanNow" type="button">{{ ic.i('refresh', 14) }} Проверить сейчас</button>
-      <button class="hub-link" type="button" onclick="openAutopilotMonitor()">{{ ic.i('zap', 14) }} Отдельным окном</button>
+      <button class="hub-link" type="button" onclick="openAutopilotMonitor()">{{ ic.i('zap', 14) }} Открыть мини-окно</button>
       <a class="hub-link" href="/settings/autopilot">{{ ic.i('sliders', 14) }} Настройки наборов</a>
     </div>
   </section>
@@ -210,10 +210,10 @@
       var line = document.getElementById("apStatusLine");
       if (d.running) { badge.className = "ap-badge run"; badge.innerHTML = '<span class="dot"></span> Проверяет…'; }
       else if (d.enabled) { badge.className = "ap-badge on"; badge.innerHTML = '<span class="dot"></span> Работает'; }
-      else { badge.className = "ap-badge"; badge.innerHTML = '<span class="dot"></span> Пауза'; }
+      else { badge.className = "ap-badge"; badge.innerHTML = '<span class="dot"></span> Выключен'; }
 
       if (d.running) line.textContent = "Идёт проверка базы вакансий…";
-      else if (!d.enabled) line.textContent = "На паузе — нажми «Включить», чтобы автопилот снова искал сам.";
+      else if (!d.enabled) line.textContent = "Автопилот выключен — нажми «Включить», чтобы он снова искал сам.";
       else if (d.last_scan) {
         var t = "Последняя проверка: " + clock(d.last_scan) + " (" + rel(d.last_scan, now) + ")";
         if (d.next_scan) t += " · следующая " + future(d.next_scan, now);

@@ -2,6 +2,8 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
+{% block title %}WexFlow · Главная{% endblock %}
+
 {% block body %}
 <style>
   .hub-screen {
@@ -66,6 +68,9 @@
   }
   .hub-module.seven {
     --module-accent: #31c95d;
+  }
+  .hub-module.connectors {
+    --module-accent: #38b6ff;
   }
   .hub-module-head {
     display: flex;
@@ -486,8 +491,10 @@
   .hub-greeting { animation-delay: .04s; }
   .hub-module.salling { animation-delay: .10s; }
   .hub-module.seven { animation-delay: .16s; }
-  .hub-quiet-row { animation-delay: .22s; }
-  .hub-activity { animation-delay: .28s; }
+  .hub-module.connectors { animation-delay: .22s; }
+  .hub-module.apply-link { animation-delay: .28s; }
+  .hub-quiet-row { animation-delay: .34s; }
+  .hub-activity { animation-delay: .40s; }
   @media (max-width: 780px) {
     .hub-activity { grid-template-columns: 1fr; }
   }
@@ -529,9 +536,9 @@
       {% elif seven.stores == 0 %}
         {% set hint = 'Профиль 7-Eleven готов — выбери магазины и запускай' %}
       {% elif active_jobs and not applied_jobs %}
-        {% set hint = 'Всё готово: ' ~ seven.stores ~ ' магазин(ов) 7-Eleven · ' ~ active_jobs ~ ' активных вакансий Salling' %}
+        {% set hint = 'Всё готово: ' ~ seven.stores ~ ' ' ~ L.plural(seven.stores, 'магазин', 'магазина', 'магазинов') ~ ' 7-Eleven · ' ~ active_jobs ~ ' ' ~ L.plural(active_jobs, 'активная вакансия', 'активные вакансии', 'активных вакансий') ~ ' Salling' %}
       {% else %}
-        {% set hint = 'Всё настроено — ' ~ seven.stores ~ ' магазин(ов) выбрано, можно подавать' %}
+        {% set hint = 'Всё настроено — ' ~ seven.stores ~ ' ' ~ L.plural(seven.stores, 'магазин', 'магазина', 'магазинов') ~ ' 7-Eleven выбрано, можно подавать' %}
       {% endif %}
       <span class="hub-next">{{ ic.i('zap', 13) }} {{ hint }}</span>
     </div>
@@ -540,18 +547,18 @@
       <section class="hub-module salling">
         <div class="hub-module-head">
           <div class="hub-module-title">
-            <h2>Salling Jobs</h2>
+            <h2>Вакансии Salling</h2>
             <p>Лента вакансий, фильтры, статусы, маршрут и пакетная подача.</p>
           </div>
           <div class="hub-module-icon brand"><img src="/static/brand_salling.svg" alt="Salling Group"></div>
         </div>
         <div class="hub-stats">
-          <div class="hub-stat"><b>{{ active_jobs }}</b><span>active</span></div>
-          <div class="hub-stat"><b>{{ applied_jobs }}</b><span>applied</span></div>
-          <div class="hub-stat"><b>{{ total_jobs }}</b><span>total</span></div>
+          <div class="hub-stat"><b>{{ active_jobs }}</b><span>активные</span></div>
+          <div class="hub-stat"><b>{{ applied_jobs }}</b><span>подано</span></div>
+          <div class="hub-stat"><b>{{ total_jobs }}</b><span>всего</span></div>
         </div>
         <div class="hub-module-actions">
-          <a class="hub-link primary" href="/">{{ ic.i('cart', 15) }} Открыть Jobs</a>
+          <a class="hub-link primary" href="/">{{ ic.i('cart', 15) }} Открыть вакансии</a>
           <a class="hub-link" href="/settings/salling">{{ ic.i('sliders', 15) }} Настройки</a>
         </div>
       </section>
@@ -559,15 +566,15 @@
       <section class="hub-module seven">
         <div class="hub-module-head">
           <div class="hub-module-title">
-            <h2>7-Eleven Apply Studio</h2>
-            <p>Отдельный модуль для профиля, магазинов и запуска автоподачи.</p>
+            <h2>Подача в 7-Eleven</h2>
+            <p>Профиль, выбор магазинов и запуск автоподачи.</p>
           </div>
           <div class="hub-module-icon brand"><img src="/static/brand_seven11.svg" alt="7-Eleven"></div>
         </div>
         <div class="hub-stats seven-stats">
           <div class="hub-stat big">
             <b>{{ seven.stores }}</b>
-            <span>{{ 'магазин' if seven.stores == 1 else ('магазина' if 2 <= seven.stores <= 4 else 'магазинов') }} выбрано</span>
+            <span>{{ L.plural(seven.stores, 'магазин выбран', 'магазина выбрано', 'магазинов выбрано') }}</span>
           </div>
           <div class="seven-checks">
             <span class="seven-chip {{ 'ok' if seven.profile_ready else 'off' }}">
@@ -582,6 +589,24 @@
         </div>
         <div class="hub-module-actions">
           <a class="hub-link primary" href="/__app/7eleven">{{ ic.i('store', 15) }} Открыть 7-Eleven</a>
+        </div>
+      </section>
+
+      <section class="hub-module connectors">
+        <div class="hub-module-head">
+          <div class="hub-module-title">
+            <h2>Другие компании</h2>
+            <p>Вакансии из Teamtailor, Greenhouse и Ashby — в общей ленте с теми же фильтрами и журналом.</p>
+          </div>
+          <div class="hub-module-icon">{{ ic.i('briefcase', 21) }}</div>
+        </div>
+        <div class="hub-stats">
+          <div class="hub-stat"><b>{{ connector_jobs.active }}</b><span>активные</span></div>
+          <div class="hub-stat"><b>{{ connector_jobs.sources }}</b><span>{{ L.plural(connector_jobs.sources, 'источник', 'источника', 'источников') }}</span></div>
+          <div class="hub-stat"><b>{{ connector_jobs.total }}</b><span>всего</span></div>
+        </div>
+        <div class="hub-module-actions">
+          <a class="hub-link primary" href="/apply-by-link">{{ ic.i('briefcase', 15) }} Открыть компании</a>
         </div>
       </section>
 
@@ -609,9 +634,9 @@
       </div>
       <div class="ap-stats">
         <div class="ap-stat"><b id="apFound">0</b><span>подходит по фильтрам</span></div>
-        <div class="ap-stat"><b id="apPrepared">0</b><span>подготовил</span></div>
-        <div class="ap-stat"><b id="apSubToday">0</b><span>подал сегодня</span></div>
-        <div class="ap-stat"><b id="apSubTotal">0</b><span>подал всего</span></div>
+        <div class="ap-stat"><b id="apPrepared">0</b><span>подготовлено</span></div>
+        <div class="ap-stat"><b id="apSubToday">0</b><span>подано сегодня</span></div>
+        <div class="ap-stat"><b id="apSubTotal">0</b><span>подано всего</span></div>
       </div>
       <div class="ap-timeline" id="apTimeline">
         <div class="ap-empty">Событий пока нет — появятся после первой проверки.</div>
@@ -626,7 +651,7 @@
 
     <div class="hub-quiet-row">
       <span class="hub-status-dot"></span>
-      <span>Единый рабочий центр для двух локальных модулей</span>
+      <span>Вакансии и подача — в одном рабочем пространстве</span>
       {{ ui.freshness(data_age_min, sync_running) }}
       <span class="hub-version" id="hubVersion" hidden></span>
     </div>
@@ -651,7 +676,7 @@
         <span class="hub-activity-ic">{{ ic.i('store', 14) }}</span>
         <div>
           <span class="hub-activity-k">7-Eleven</span>
-          <span class="hub-activity-v">{{ seven.stores }} магазин(ов) выбрано</span>
+          <span class="hub-activity-v">{{ seven.stores }} {{ L.plural(seven.stores, 'магазин выбран', 'магазина выбрано', 'магазинов выбрано') }}</span>
         </div>
       </div>
       <div class="hub-activity-item">
@@ -743,12 +768,12 @@
       var line = document.getElementById("apStatusLine");
       if (d.running) { badge.className = "ap-badge run"; badge.innerHTML = '<span class="dot"></span> Проверяет…'; }
       else if (d.enabled) { badge.className = "ap-badge on"; badge.innerHTML = '<span class="dot"></span> Работает'; }
-      else { badge.className = "ap-badge"; badge.innerHTML = '<span class="dot"></span> Пауза'; }
+      else { badge.className = "ap-badge"; badge.innerHTML = '<span class="dot"></span> Выключен'; }
 
       if (d.running) {
         line.textContent = "Идёт проверка базы вакансий…";
       } else if (!d.enabled) {
-        line.textContent = "На паузе — включи автопилот в настройках, чтобы он искал сам.";
+        line.textContent = "Автопилот выключен — включи его в настройках, чтобы он искал сам.";
       } else if (d.last_scan) {
         var t = "Последняя проверка: " + clock(d.last_scan) + " (" + rel(d.last_scan, now) + ")";
         if (d.next_scan) t += " · следующая " + future(d.next_scan, now);

@@ -237,6 +237,10 @@ def _sync_account_from_cloud() -> None:
     user = cloud_auth.fetch_session(timeout=5)
     if not user:
         return
+    # Пользователь мог нажать «Выйти», пока сетевой запрос был в полёте.
+    # Старый ответ не должен тут же авторизовать его снова.
+    if account_mod.cloud_sync_paused():
+        return
 
     acc = account_mod.load()
     remote_tg = str(user.get("tgId") or user.get("tg_id") or "")
@@ -249,7 +253,8 @@ def _sync_account_from_cloud() -> None:
         or str(user.get("username") or "") != str(acc.get("username") or "")
     )
     if changed:
-        account_mod.apply_session(user)
+        # Внутри account проверка logout-флага и запись выполняются атомарно.
+        account_mod.apply_cloud_session(user)
 
 
 def _report_apply_result_safe(job_id: str, state: str, msg: str = "") -> None:
@@ -1344,14 +1349,14 @@ def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
             "id": "apply-unconfirmed",
             "text": f"Подача {fail_streak} раз подряд не подтвердилась. Возможно, "
                     "Salling изменил сайт и WexFlow больше не видит квитанцию. "
-                    "Проверьте почту, подались ли заявки, и напишите в поддержку @wexwxeee.",
+                "Проверь почту, подались ли заявки, и напиши в поддержку @wexwxeee.",
         })
     if cloud_fail_streak >= 3:
         warns.append({
             "id": "telegram-cloud-down",
             "text": "Нет устойчивой связи с Telegram: команды с телефона временно "
                     "не доходят до ПК. WexFlow продолжит попытки автоматически. "
-                    "Проверьте интернет; локальный поиск и ручная подача работают.",
+                "Проверь интернет; локальный поиск и ручная подача работают.",
         })
     if connector_errors:
         warns.append({
@@ -1371,7 +1376,7 @@ def api_health():
         streak = applications.failure_streak()
     except Exception:  # noqa: BLE001 — сторож не должен ронять страницу
         streak = 0
-    return {"warnings": _health_warnings(
+    return {"service": "wexflow-salling", "warnings": _health_warnings(
         _sync_state.get("last_hits"), bool(_sync_state.get("sync_failed")), streak,
         int(_tg_poll_state.get("fail_streak") or 0),
         _sync_state.get("connector_errors") or [])}
@@ -1605,17 +1610,48 @@ def _seven_eleven_state() -> dict:
 
 @app.get("/hub", response_class=HTMLResponse)
 def hub(request: Request):
+    connector_sources = ("teamtailor", "greenhouse", "ashby")
     with get_session() as s:
-        total_jobs = s.exec(select(func.count(Job.id))).one() or 0
+        total_jobs = (
+            s.exec(select(func.count(Job.id)).where(Job.source == "salling")).one() or 0
+        )
         active_jobs = (
             s.exec(
                 select(func.count(Job.id)).where(
-                    Job.status.not_in(["closed", "hidden", "applied"])
+                    Job.source == "salling",
+                    Job.status.not_in(["closed", "hidden", "applied"]),
                 )
             ).one()
             or 0
         )
-        applied_jobs = s.exec(select(func.count(Job.id)).where(Job.status == "applied")).one() or 0
+        applied_jobs = (
+            s.exec(
+                select(func.count(Job.id)).where(
+                    Job.source == "salling",
+                    Job.status == "applied",
+                )
+            ).one()
+            or 0
+        )
+        connector_jobs = {
+            "total": s.exec(
+                select(func.count(Job.id)).where(Job.source.in_(connector_sources))
+            ).one()
+            or 0,
+            "active": s.exec(
+                select(func.count(Job.id)).where(
+                    Job.source.in_(connector_sources),
+                    Job.status.not_in(["closed", "hidden", "applied"]),
+                )
+            ).one()
+            or 0,
+            "sources": s.exec(
+                select(func.count(func.distinct(Job.source))).where(
+                    Job.source.in_(connector_sources)
+                )
+            ).one()
+            or 0,
+        }
         last_applied = None
         try:
             last = s.exec(
@@ -1645,6 +1681,7 @@ def hub(request: Request):
             "total_jobs": total_jobs,
             "active_jobs": active_jobs,
             "applied_jobs": applied_jobs,
+            "connector_jobs": connector_jobs,
             "data_age_min": _data_age_minutes(),
             "sync_running": _sync_state["running"],
             "seven": seven,

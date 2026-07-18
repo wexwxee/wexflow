@@ -57,6 +57,11 @@ def switch(which: str, next: str = "/"):
     return resp
 
 
+@app.get("/__health")
+def health():
+    return {"service": "wexflow-hub"}
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"])
 async def proxy(path: str, request: Request):
     active = request.cookies.get("hub_active", "salling")

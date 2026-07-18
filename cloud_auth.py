@@ -19,6 +19,7 @@ import urllib.request
 import uuid
 
 import config
+from json_store import atomic_write_json
 
 # Базовый адрес облачного бота/сервиса. Один на всех пользователей.
 CLOUD_BASE = "https://wexflow-bot.vercel.app"
@@ -59,10 +60,9 @@ def _device_record() -> dict:
         persisted = not changed
         if changed:
             try:
-                DEVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
-                DEVICE_PATH.write_text(
-                    json.dumps({"id": rec["id"], "secret": rec["secret"]}),
-                    encoding="utf-8")
+                atomic_write_json(
+                    DEVICE_PATH, {"id": rec["id"], "secret": rec["secret"]}
+                )
                 persisted = True
             except OSError:
                 # секрет не сохранился: регистрировать его НЕЛЬЗЯ, иначе после
@@ -91,17 +91,10 @@ def _rotate_device_identity() -> bool:
     """После GDPR-удаления заменить id+секрет отозванного устройства."""
     global _device_cache, _registered
     rec = {"id": uuid.uuid4().hex, "secret": secrets.token_hex(32)}
-    tmp = DEVICE_PATH.with_name(DEVICE_PATH.name + ".tmp")
     with _register_lock:
         try:
-            DEVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_text(json.dumps(rec), encoding="utf-8")
-            tmp.replace(DEVICE_PATH)
+            atomic_write_json(DEVICE_PATH, rec)
         except OSError:
-            try:
-                tmp.unlink(missing_ok=True)
-            except OSError:
-                pass
             _registered = False
             return False
         with _device_lock:

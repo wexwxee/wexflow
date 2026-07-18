@@ -36,11 +36,33 @@ def _algolia_page(page: int) -> dict:
 def fetch_all_hits() -> list[dict]:
     """Тянет все вакансии постранично."""
     first = _algolia_page(0)
+    if not isinstance(first, dict):
+        raise RuntimeError("Algolia вернула ответ неизвестного формата")
     hits = list(first.get("hits", []))
-    nb_pages = first.get("nbPages", 1)
+    try:
+        nb_pages = int(first.get("nbPages", 1))
+        expected = int(first.get("nbHits", len(hits)))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Algolia вернула некорректные счётчики вакансий") from exc
+    if nb_pages < 1 or nb_pages > 1000 or expected < 1:
+        raise RuntimeError(
+            f"Источник вернул подозрительно пустой список вакансий (ожидалось: {expected})"
+        )
     print(f"Algolia: nbHits={first.get('nbHits')} nbPages={nb_pages}")
     for page in range(1, nb_pages):
-        hits.extend(_algolia_page(page).get("hits", []))
+        payload = _algolia_page(page)
+        if not isinstance(payload, dict) or not isinstance(payload.get("hits"), list):
+            raise RuntimeError(f"Источник вернул неполную страницу вакансий: {page + 1}/{nb_pages}")
+        hits.extend(payload["hits"])
+    valid_ids = [str(row.get("objectID") or row.get("id") or "").strip()
+                 for row in hits if isinstance(row, dict)]
+    valid_ids = [job_id for job_id in valid_ids if job_id]
+    if len(hits) != expected or len(valid_ids) != expected or len(set(valid_ids)) != expected:
+        raise RuntimeError(
+            "Источник вернул неполный список вакансий: "
+            f"ожидалось {expected}, получено {len(hits)}, "
+            f"уникальных корректных ID {len(set(valid_ids))}"
+        )
     print(f"Получено вакансий: {len(hits)}")
     return hits
 

@@ -56,12 +56,12 @@
   <p class="statusline" id="statusline">Загружаю…</p>
   <div class="stats">
     <div class="stat"><b id="found">0</b><span>подходит</span></div>
-    <div class="stat"><b id="prepared">0</b><span>подготовил</span></div>
-    <div class="stat"><b id="today">0</b><span>подал сегодня</span></div>
-    <div class="stat"><b id="total">0</b><span>подал всего</span></div>
+    <div class="stat"><b id="prepared">0</b><span>подготовлено</span></div>
+    <div class="stat"><b id="today">0</b><span>подано сегодня</span></div>
+    <div class="stat"><b id="total">0</b><span>подано всего</span></div>
   </div>
   <div class="actions">
-    <button class="btn" id="pause" type="button">Пауза</button>
+    <button class="btn" id="pause" type="button">Включить</button>
     <button class="btn" id="scan" type="button">↻ Проверить</button>
   </div>
   <div class="logbox">
@@ -91,9 +91,9 @@
     var b=document.getElementById('badge'), s=document.getElementById('statusline');
     if(d.running){b.className='badge run';b.innerHTML='<span class="dot"></span> Проверяет…';}
     else if(d.enabled){b.className='badge on';b.innerHTML='<span class="dot"></span> Работает';}
-    else{b.className='badge';b.innerHTML='<span class="dot"></span> Пауза';}
+    else{b.className='badge';b.innerHTML='<span class="dot"></span> Выключен';}
     if(d.running)s.textContent='Идёт проверка базы вакансий…';
-    else if(!d.enabled)s.textContent='На паузе. Нажми «Включить», чтобы автопилот искал сам.';
+    else if(!d.enabled)s.textContent='Автопилот выключен. Нажми «Включить», чтобы он искал сам.';
     else if(d.last_scan){var t='Проверка: '+clock(d.last_scan)+' ('+rel(d.last_scan,now)+')';if(d.next_scan)t+=' · след. '+fut(d.next_scan,now);t+=' · каждые '+(d.every_min||30)+' мин';s.textContent=t;}
     else s.textContent='Ещё не проверял — запустится автоматически.';
     document.getElementById('found').textContent=d.found||0;
@@ -101,7 +101,7 @@
     document.getElementById('today').textContent=(d.submitted_today||0)+(d.daily_limit?' / '+d.daily_limit:'');
     document.getElementById('total').textContent=d.submitted_total||0;
     var p=document.getElementById('pause');
-    if(d.enabled){p.textContent='Пауза';p.className='btn warn';}else{p.textContent='Включить';p.className='btn primary';}
+    if(d.enabled){p.textContent='Поставить на паузу';p.className='btn warn';}else{p.textContent='Включить';p.className='btn primary';}
     renderLog(d.events||[]);
     if(!!d.running!==fast){fast=!!d.running;schedule();}
   }

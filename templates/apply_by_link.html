@@ -95,10 +95,10 @@
     <div class="link-ready" aria-label="Готовность данных">
       <span class="ready-chip {{ 'ok' if not profile_missing else 'warn' }}">
         {{ ic.i('check' if not profile_missing else 'alert', 12) }}
-        {{ 'Профиль готов' if not profile_missing else ('Не заполнено полей: ' ~ (profile_missing|length)) }}
+        {{ 'Профиль готов' if not profile_missing else ('Осталось заполнить ' ~ (profile_missing|length) ~ ' ' ~ L.plural(profile_missing|length, 'поле', 'поля', 'полей')) }}
       </span>
       <span class="ready-chip {{ 'ok' if cv_ready else 'warn' }}">
-        {{ ic.i('file', 12) }} {{ 'CV готово' if cv_ready else 'CV не добавлено' }}
+        {{ ic.i('file', 12) }} {{ 'CV добавлено' if cv_ready else 'CV не добавлено' }}
       </span>
       {% if profile_missing %}<a class="ready-link" href="/account#profile">Дополнить профиль →</a>
       {% elif not cv_ready %}<a class="ready-link" href="/settings/salling#documents">Добавить CV →</a>{% endif %}
@@ -117,7 +117,7 @@
     <div class="link-step"><span class="link-step-num">3</span><b>Останавливается</b><span>Ты проверяешь всё, принимаешь нужные согласия и решаешь, отправлять ли.</span></div>
   </div>
 
-  <h2 class="link-section-title">Уже в общей ленте <span class="meta">· {{ total }} активных</span></h2>
+  <h2 class="link-section-title">Уже в общей ленте <span class="meta">· {{ total }} {{ L.plural(total, 'активная вакансия', 'активные вакансии', 'активных вакансий') }}</span></h2>
   <div class="source-list">
     {% for source in sources %}
     <a class="source-row" href="{{ source.href }}">

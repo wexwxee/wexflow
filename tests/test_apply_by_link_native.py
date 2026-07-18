@@ -45,7 +45,7 @@ def test_native_page_uses_shared_shell_and_vetted_counts():
     assert "Teamtailor" in page and "Greenhouse" in page and "Ashby" in page
     assert "127.0.0.1:8078" not in page
     assert "показаны первые" not in page  # old arbitrary card cap is gone
-    assert "Не заполнено полей: 8" in page
+    assert "Осталось заполнить 8 полей" in page
 
 
 def test_link_start_rejects_local_file_and_accepts_https():

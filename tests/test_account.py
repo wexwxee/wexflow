@@ -29,6 +29,29 @@ def test_sign_out_pauses_automatic_cloud_login():
         account._sync_subscription = original_sync
 
 
+def test_background_cloud_session_cannot_undo_logout():
+    original = account.ACCOUNT_PATH
+    original_sync = account._sync_subscription
+    try:
+        account.ACCOUNT_PATH = Path(tempfile.mkdtemp()) / "account.json"
+        account._sync_subscription = lambda _plan: None
+        account.sign_out()
+        assert account.apply_cloud_session({"tgId": "42", "plan": "pro"}) is False
+        assert account.load()["signed_in"] is False
+        assert account.load()["cloud_sync_paused"] is True
+
+        # Осознанный новый вход, в отличие от фонового poll, снимает паузу.
+        account.apply_session({"tgId": "42", "plan": "pro"})
+        assert account.load()["signed_in"] is True
+        assert account.load()["cloud_sync_paused"] is False
+    finally:
+        account.ACCOUNT_PATH = original
+        account._sync_subscription = original_sync
+
+
 if __name__ == "__main__":
-    test_sign_out_pauses_automatic_cloud_login()
-    print("OK   test_sign_out_pauses_automatic_cloud_login")
+    tests = [value for name, value in sorted(globals().items())
+             if name.startswith("test_") and callable(value)]
+    for test in tests:
+        test()
+        print(f"OK   {test.__name__}")

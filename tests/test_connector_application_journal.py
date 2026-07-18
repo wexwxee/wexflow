@@ -2,6 +2,7 @@
 import os
 import sys
 import datetime as dt
+from zoneinfo import ZoneInfo
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -151,6 +152,65 @@ def test_audit_renders_submitted_and_unfinished_connector_forms():
     assert "Pending role" in page
     assert "не завершено" in page
     assert "Другие компании · Greenhouse" in page
+
+
+def test_reconcile_repairs_both_sides_of_application_history():
+    engine, sessions = _database()
+    submitted_at = utcnow() - dt.timedelta(days=1)
+    with Session(engine) as session:
+        session.add(Job(
+            id="legacy-applied", source="salling", title="Legacy",
+            status="applied", applied_at=submitted_at, applied_confidence="receipt",
+        ))
+        session.add(Job(
+            id="journal-only", source="salling", title="Journal only", status="seen",
+        ))
+        session.add(Application(
+            source="salling", job_id="journal-only", state="submitted",
+            submitted_at=submitted_at, confidence="manual",
+        ))
+        session.commit()
+    with mock.patch.object(applications, "get_session", sessions):
+        result = applications.reconcile_applied_state()
+        assert result == {"journal": 1, "jobs": 1}
+        # Повторный проход идемпотентен.
+        assert applications.reconcile_applied_state() == {"journal": 0, "jobs": 0}
+    with Session(engine) as session:
+        rows = session.exec(select(Application)).all()
+        assert len(rows) == 2
+        recovered = session.exec(select(Application).where(
+            Application.job_id == "legacy-applied"
+        )).one()
+        assert recovered.state == "submitted" and recovered.confidence == "receipt"
+        journal_only = session.get(Job, "journal-only")
+        assert journal_only.status == "applied"
+        assert journal_only.applied_at == submitted_at
+        assert journal_only.applied_confidence == "manual"
+
+
+def test_registry_upserts_do_not_duplicate_one_application():
+    engine, sessions = _database()
+    with mock.patch.object(applications, "get_session", sessions):
+        applications.mark_submitting(["same"], origin="telegram")
+        applications.mark_submitting(["same"], origin="batch")
+        applications.record_submitted([Job(
+            id="same", source="salling", status="applied", applied_at=utcnow()
+        )])
+    with Session(engine) as session:
+        rows = session.exec(select(Application)).all()
+        assert len(rows) == 1 and rows[0].state == "submitted"
+
+
+def test_local_day_boundaries_are_converted_to_utc():
+    warsaw = ZoneInfo("Europe/Warsaw")
+    summer = dt.datetime(2026, 7, 14, 12, tzinfo=warsaw)
+    winter = dt.datetime(2026, 1, 14, 12, tzinfo=warsaw)
+    assert applications._local_day_utc_bounds(summer) == (
+        dt.datetime(2026, 7, 13, 22), dt.datetime(2026, 7, 14, 22)
+    )
+    assert applications._local_day_utc_bounds(winter) == (
+        dt.datetime(2026, 1, 13, 23), dt.datetime(2026, 1, 14, 23)
+    )
 
 
 if __name__ == "__main__":

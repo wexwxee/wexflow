@@ -14,9 +14,9 @@
 
 {% macro sidebar(active="jobs") -%}
   <aside class="wex-sidebar" aria-label="WexFlow navigation">
-    <a class="wex-side-logo" href="/hub" data-tip-title="WexFlow" data-tip-body="Единый рабочий центр для Salling и 7-Eleven.">{{ plane(28) }}</a>
+    <a class="wex-side-logo" href="/hub" data-tip-title="WexFlow" data-tip-body="Вакансии и подача в одном рабочем пространстве.">{{ plane(28) }}</a>
     <nav class="wex-side-nav">
-      <a class="wex-side-btn {{ 'active' if active == 'hub' }}" href="/hub" data-tip-title="Главная" data-tip-body="Стартовый экран WexFlow с быстрым входом в оба модуля.">{{ ic.i('home', 18) }}<span>Главная</span></a>
+      <a class="wex-side-btn {{ 'active' if active == 'hub' }}" href="/hub" data-tip-title="Главная" data-tip-body="Сводка по вакансиям, подаче и автопилоту.">{{ ic.i('home', 18) }}<span>Главная</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'jobs' }}" href="/" data-tip-title="Вакансии" data-tip-body="Лента вакансий Salling: фильтры, статусы и пакетная подача.">{{ ic.i('cart', 18) }}<span>Вакансии</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'link' }}" href="/apply-by-link" data-tip-title="По ссылке" data-tip-body="Безопасно подготовить анкету по ссылке с остановкой перед отправкой.">{{ ic.i('link', 18) }}<span>По ссылке</span></a>
       <a class="wex-side-btn {{ 'active' if active == 'applied' }}" href="/?status=applied" data-tip-title="Поданные" data-tip-body="Вакансии, на которые заявка уже отправлена.">{{ ic.i('check', 18) }}<span>Поданные</span></a>
@@ -27,7 +27,7 @@
       <a class="wex-side-btn {{ 'active' if active == 'help' }}" href="/help" data-tip-title="Справка" data-tip-body="Частые вопросы: как работает подача, автопилот, Telegram и обновления.">{{ ic.i('message', 18) }}<span>Справка</span></a>
     </nav>
     <div class="wex-side-spacer"></div>
-    <a class="wex-side-btn {{ 'active' if active == 'account' }}" href="/account" data-tip-title="Аккаунт" data-tip-body="Общие настройки: профиль кандидата, подписка и параметры приложения — не привязаны к фирме.">{{ ic.i('user', 18) }}<span>Аккаунт</span></a>
+    <a class="wex-side-btn {{ 'active' if active == 'account' }}" href="/account" data-tip-title="Аккаунт" data-tip-body="Общий профиль кандидата и вход через Telegram.">{{ ic.i('user', 18) }}<span>Аккаунт</span></a>
     {% if show_billing() %}
     <a class="wex-side-btn" href="/account#подписка" data-tip-title="Твой тариф" data-tip-body="Текущий тариф подписки. Нажми, чтобы посмотреть планы.">{{ ic.i('star', 18) }}<span>{{ plan_label() }}</span></a>
     {% endif %}

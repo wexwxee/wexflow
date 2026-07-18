@@ -11,6 +11,7 @@ JobItem специально близок по полям к модели Sallin
 from __future__ import annotations
 
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -82,16 +83,22 @@ def get(key: str) -> Optional[Connector]:
 
 
 def search_companies(companies: list[dict], fetch_one: Callable[[dict], list],
-                     workers: int = 12) -> list:
+                     workers: int = 12, errors: list[str] | None = None) -> list:
     """Опросить компании ПАРАЛЛЕЛЬНО (фирм бывают десятки → быстро). Пропускает
     enabled=false; упавшая компания не валит остальных. Используется коннекторами."""
     todo = [c for c in companies if c.get("enabled", True)]
+    error_lock = threading.Lock()
 
     def _safe(c: dict) -> list:
         try:
             return fetch_one(c)
         except Exception as e:
-            print(f"  пропуск {c.get('slug') or c.get('org') or c.get('token')}: {e}")
+            company = c.get("name") or c.get("slug") or c.get("org") or c.get("token") or "?"
+            message = f"{company}: {str(e)[:160]}"
+            if errors is not None:
+                with error_lock:
+                    errors.append(message)
+            print(f"  пропуск {message}")
             return []
 
     out: list = []

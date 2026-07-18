@@ -11,10 +11,13 @@ Windows на этой машине. Файл sf_credentials.json можно от
 """
 import base64
 import json
+import threading
 
 import config
+from json_store import atomic_write_json, read_json
 
 PATH = config.DATA_DIR / "sf_credentials.json"
+_LOCK = threading.RLock()
 
 
 # --- Windows DPAPI (без внешних зависимостей) ---
@@ -51,16 +54,12 @@ def _decrypt(token: str) -> str:
 # --- файл ---
 
 def _read() -> dict:
-    if PATH.exists():
-        try:
-            return json.loads(PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return {}
-    return {}
+    return read_json(PATH, {}, dict)
 
 
 def _write(data: dict):
-    PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    with _LOCK:
+        atomic_write_json(PATH, data, indent=2)
 
 
 def _migrate(data: dict) -> dict:
@@ -83,8 +82,7 @@ def _migrate(data: dict) -> dict:
                     data["email"] = login["username"]
                 if not data.get("password_enc") and login.get("password"):
                     data["password_enc"] = _encrypt(login["password"])
-                config.PROFILE_PATH.write_text(
-                    json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
+                atomic_write_json(config.PROFILE_PATH, profile, indent=2)
                 changed = True
     except Exception:
         pass
@@ -94,34 +92,38 @@ def _migrate(data: dict) -> dict:
 
 
 def save(email: str, password: str):
-    data = _migrate(_read())
-    if email is not None:
-        data["email"] = email.strip()
-    # пустой пароль из формы означает «не менять сохранённый»
-    if password:
-        data["password_enc"] = _encrypt(password)
-    _write(data)
+    with _LOCK:
+        data = _migrate(_read())
+        if email is not None:
+            data["email"] = email.strip()
+        # пустой пароль из формы означает «не менять сохранённый»
+        if password:
+            data["password_enc"] = _encrypt(password)
+        _write(data)
 
 
 def get() -> dict:
     """Возвращает {"email": ..., "password": ...} с расшифрованным паролем."""
-    data = _migrate(_read())
-    password = ""
-    if data.get("password_enc"):
-        try:
-            password = _decrypt(data["password_enc"])
-        except Exception:
-            password = ""
-    return {"email": data.get("email", ""), "password": password}
+    with _LOCK:
+        data = _migrate(_read())
+        password = ""
+        if data.get("password_enc"):
+            try:
+                password = _decrypt(data["password_enc"])
+            except Exception:
+                password = ""
+        return {"email": data.get("email", ""), "password": password}
 
 
 def status() -> dict:
-    data = _migrate(_read())
-    return {"email": data.get("email", ""), "has_password": bool(data.get("password_enc"))}
+    with _LOCK:
+        data = _migrate(_read())
+        return {"email": data.get("email", ""), "has_password": bool(data.get("password_enc"))}
 
 
 def clear():
-    try:
-        PATH.unlink()
-    except FileNotFoundError:
-        pass
+    with _LOCK:
+        try:
+            PATH.unlink()
+        except FileNotFoundError:
+            pass

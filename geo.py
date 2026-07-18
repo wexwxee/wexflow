@@ -5,7 +5,6 @@
 - Домашний адрес пользователя: русский город -> оригинальный, затем DAWA/Nominatim.
 - Расстояние: формула гаверсинуса (км).
 """
-import json
 import math
 import re
 import time
@@ -15,6 +14,7 @@ import httpx
 
 import config
 import labels
+from json_store import atomic_write_json, read_json
 
 CACHE_PATH = config.DATA_DIR / "geocache.json"
 _DAWA_RETRYABLE = object()
@@ -29,13 +29,16 @@ _STREET_ABBR = [
 
 
 def _load_cache() -> dict:
-    if CACHE_PATH.exists():
-        return json.loads(CACHE_PATH.read_text(encoding="utf-8"))
-    return {}
+    return read_json(CACHE_PATH, {}, dict)
 
 
 def _save_cache(cache: dict):
-    CACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=0), encoding="utf-8")
+    try:
+        atomic_write_json(CACHE_PATH, cache, indent=0)
+    except OSError:
+        # Координаты уже сохранены в jobs.db; сбой вспомогательного кэша не
+        # должен превращать успешное обновление вакансий в общее падение.
+        pass
 
 
 def geocode_zip(country: str, zip_code: str, cache: dict) -> tuple[float, float] | None:

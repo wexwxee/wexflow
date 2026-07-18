@@ -4,11 +4,12 @@
 поэтому повторно — мгновенно. Для всего списка из 2400 не вызываем (Transitous
 сериализует запросы по IP и медленный).
 """
-import json
+import threading
 
 import httpx
 
 import config
+from json_store import atomic_write_json, read_json
 
 CACHE_PATH = config.DATA_DIR / "transit_cache.json"
 URL = "https://api.transitous.org/api/v1/plan"
@@ -17,30 +18,27 @@ TRANSIT_MODES = {
     "REGIONAL_FAST_RAIL", "SUBURBAN", "HIGHSPEED_RAIL", "LONG_DISTANCE",
     "NIGHT_RAIL", "FERRY",
 }
+_CACHE_LOCK = threading.RLock()
 
 
 def _load() -> dict:
-    if CACHE_PATH.exists():
-        try:
-            return json.loads(CACHE_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
+    return read_json(CACHE_PATH, {}, dict)
 
 
 def _save(d: dict):
     try:
-        CACHE_PATH.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
-    except Exception:
+        atomic_write_json(CACHE_PATH, d)
+    except OSError:
         pass
 
 
 def summary(flat: float, flng: float, tlat: float, tlng: float) -> dict:
     """Лучший маршрут на ОТ: {ok, minutes, transfers, modes:[...]}."""
     key = f"{round(flat, 4)},{round(flng, 4)}|{round(tlat, 4)},{round(tlng, 4)}"
-    cache = _load()
-    if key in cache:
-        return cache[key]
+    with _CACHE_LOCK:
+        cache = _load()
+        if key in cache:
+            return cache[key]
     try:
         r = httpx.get(
             URL,
@@ -54,8 +52,10 @@ def summary(flat: float, flng: float, tlat: float, tlng: float) -> dict:
     its = data.get("itineraries") or []
     if not its:
         res = {"ok": False, "error": "нет маршрута"}
-        cache[key] = res
-        _save(cache)
+        with _CACHE_LOCK:
+            cache = _load()
+            cache[key] = res
+            _save(cache)
         return res
     best = min(its, key=lambda it: it.get("duration", 1e12))
     minutes = round(best.get("duration", 0) / 60)
@@ -64,6 +64,10 @@ def summary(flat: float, flng: float, tlat: float, tlng: float) -> dict:
         if leg.get("mode") in TRANSIT_MODES:
             modes.append(leg.get("routeShortName") or leg.get("routeLongName") or leg.get("mode"))
     res = {"ok": True, "minutes": minutes, "transfers": max(0, len(modes) - 1), "modes": modes[:5]}
-    cache[key] = res
-    _save(cache)
+    # Другой запрос мог сохранить свой маршрут, пока сеть отвечала: перечитываем
+    # последнюю версию и добавляем результат, не теряя соседнюю запись.
+    with _CACHE_LOCK:
+        cache = _load()
+        cache[key] = res
+        _save(cache)
     return res

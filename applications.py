@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import datetime as _dt
 
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
 from db import Application, Job, get_session, init_db, select, utcnow
 
 # Таблица application создаётся в init_db (create_all). Модуль вызывают из
@@ -45,15 +47,29 @@ def _get(s, job_id: str, source: str = SOURCE):
     ).first()
 
 
+def _get_or_create(s, job_id: str, source: str = SOURCE, *,
+                   state: str = "offered", origin: str = ""):
+    """Атомарно получить строку реестра, не оставляя окна read-then-insert."""
+    source = str(source or SOURCE)
+    job_id = str(job_id)
+    stmt = sqlite_insert(Application).values(
+        source=source,
+        job_id=job_id,
+        state=state,
+        origin=origin,
+        updated_at=utcnow(),
+    ).on_conflict_do_nothing(index_elements=["source", "job_id"])
+    s.exec(stmt)
+    return _get(s, job_id, source)
+
+
 def mark_offered(job_id: str) -> None:
     """Карточку предложили пользователю (гейт F27 запоминает это навсегда)."""
     jid = str(job_id or "").strip()
     if not jid:
         return
     with get_session() as s:
-        row = _get(s, jid)
-        if row is None:
-            row = Application(source=SOURCE, job_id=jid, state="offered")
+        row = _get_or_create(s, jid, state="offered")
         if row.offered_at is None:
             row.offered_at = utcnow()
         row.updated_at = utcnow()
@@ -72,8 +88,7 @@ def mark_listed(ids) -> None:
         return
     with get_session() as s:
         for jid in ids:
-            if _get(s, jid) is None:
-                s.add(Application(source=SOURCE, job_id=jid, state="listed"))
+            _get_or_create(s, jid, state="listed")
         s.commit()
 
 
@@ -83,9 +98,7 @@ def mark_skipped(job_id: str) -> None:
     if not jid:
         return
     with get_session() as s:
-        row = _get(s, jid)
-        if row is None:
-            row = Application(source=SOURCE, job_id=jid)
+        row = _get_or_create(s, jid)
         if row.state not in ACTIVE_STATES:   # поданную «пропустить» нельзя
             row.state = "skipped"
         row.updated_at = utcnow()
@@ -100,9 +113,7 @@ def mark_submitting(ids, origin: str = "", source: str = SOURCE) -> None:
         return
     with get_session() as s:
         for jid in ids:
-            row = _get(s, jid, source)
-            if row is None:
-                row = Application(source=source, job_id=jid)
+            row = _get_or_create(s, jid, source)
             if row.state != "submitted":     # уже поданную не откатываем
                 row.state = "submitting"
             if origin:
@@ -140,9 +151,7 @@ def record_submitted(jobs) -> list:
                 continue
             jid = str(j.id)
             source = str(getattr(j, "source", None) or SOURCE)
-            row = _get(s, jid, source)
-            if row is None:
-                row = Application(source=source, job_id=jid)
+            row = _get_or_create(s, jid, source)
             if row.state == "submitted":
                 continue                     # уже зафиксирована
             row.state = "submitted"
@@ -252,14 +261,36 @@ def failure_streak(limit: int = 10) -> int:
     return _leading_failed([str(r) for r in rows])
 
 
+def _local_day_utc_bounds(now=None) -> tuple[_dt.datetime, _dt.datetime]:
+    """Границы местного календарного дня в формате naive UTC из базы."""
+    if now is None:
+        # timestamp() для naive datetime использует правила локальной зоны ОС,
+        # включая переходы летнего времени именно для выбранной даты.
+        local_day = _dt.datetime.now().date()
+        start_local = _dt.datetime.combine(local_day, _dt.time.min)
+        end_local = start_local + _dt.timedelta(days=1)
+        start = _dt.datetime.fromtimestamp(start_local.timestamp(), _dt.timezone.utc)
+        end = _dt.datetime.fromtimestamp(end_local.timestamp(), _dt.timezone.utc)
+    else:
+        local_now = now
+        if local_now.tzinfo is None:
+            local_now = local_now.astimezone()
+        start_local = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_local = start_local + _dt.timedelta(days=1)
+        start = start_local.astimezone(_dt.timezone.utc)
+        end = end_local.astimezone(_dt.timezone.utc)
+    return start.replace(tzinfo=None), end.replace(tzinfo=None)
+
+
 def submitted_today_count() -> int:
-    day_start = _dt.datetime.combine(_dt.date.today(), _dt.time.min)
+    day_start, day_end = _local_day_utc_bounds()
     with get_session() as s:
         rows = s.exec(select(Application).where(
             Application.source == SOURCE,
             Application.state == "submitted",
             Application.submitted_at.is_not(None),
             Application.submitted_at >= day_start,
+            Application.submitted_at < day_end,
         )).all()
     return len(rows)
 
@@ -303,6 +334,61 @@ def clear_offers() -> int:
     return removed
 
 
+def reconcile_applied_state() -> dict[str, int]:
+    """Самовосстановление между Job и единым реестром заявок.
+
+    Старые версии и восстановление базы могли оставить applied_at только в
+    таблице job либо submitted только в application. При каждом запуске мягко
+    достраиваем отсутствующую сторону, не затирая этапы воронки вроде offer или
+    rejected.
+    """
+    journal_fixed = 0
+    jobs_fixed = 0
+    now = utcnow()
+    with get_session() as session:
+        applied_jobs = session.exec(select(Job).where(
+            (Job.applied_at.is_not(None)) | (Job.status == "applied")
+        )).all()
+        for job in applied_jobs:
+            source = str(job.source or SOURCE)
+            existing = _get(session, str(job.id), source)
+            row = _get_or_create(
+                session, str(job.id), source, state="submitted", origin="recovered"
+            )
+            if existing is None or row.state != "submitted":
+                journal_fixed += 1
+            row.state = "submitted"
+            row.submitted_at = job.applied_at or row.submitted_at or now
+            row.confidence = job.applied_confidence or row.confidence
+            row.origin = row.origin or "recovered"
+            row.updated_at = max(row.updated_at or now, job.applied_at or now)
+            session.add(row)
+
+        submitted_rows = session.exec(select(Application).where(
+            Application.state == "submitted"
+        )).all()
+        for row in submitted_rows:
+            job = session.get(Job, row.job_id)
+            if job is None or str(job.source or SOURCE) != str(row.source or SOURCE):
+                continue
+            changed = False
+            if job.applied_at is None:
+                job.applied_at = row.submitted_at or now
+                changed = True
+            if not job.applied_confidence and row.confidence:
+                job.applied_confidence = row.confidence
+                changed = True
+            if job.status in {"new", "seen", "closed"}:
+                job.status = "applied"
+                changed = True
+            if changed:
+                jobs_fixed += 1
+                session.add(job)
+        if journal_fixed or jobs_fixed or applied_jobs:
+            session.commit()
+    return {"journal": journal_fixed, "jobs": jobs_fixed}
+
+
 # ── Миграция старых списков из settings.json (однократная) ─────────────────
 def ensure_migrated() -> None:
     """Переносит submitted_ids/submitting_ids/tg_offered_ids/tg_skipped из
@@ -313,6 +399,7 @@ def ensure_migrated() -> None:
     data = settings_store.load()
     ap = data.get("autopilot") or {}
     if ap.get("lists_migrated_to_db"):
+        reconcile_applied_state()
         return
 
     now = utcnow()
@@ -321,9 +408,7 @@ def ensure_migrated() -> None:
             jid = str(jid or "").strip()
             if not jid:
                 return
-            row = _get(s, jid)
-            if row is None:
-                row = Application(source=SOURCE, job_id=jid, origin="migrated")
+            row = _get_or_create(s, jid, origin="migrated")
             for k, v in fields.items():
                 setattr(row, k, v)
             row.updated_at = now
@@ -355,3 +440,4 @@ def ensure_migrated() -> None:
         d["autopilot"] = rule
     settings_store.mutate(_m)
     print("реестр заявок: перенёс старые списки из settings.json в базу")
+    reconcile_applied_state()

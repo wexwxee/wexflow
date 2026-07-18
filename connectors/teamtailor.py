@@ -89,7 +89,10 @@ class TeamtailorConnector(Connector):
         return items
 
     def search(self) -> list[JobItem]:
-        return search_companies(self.companies(), self.fetch_company)
+        errors: list[str] = []
+        items = search_companies(self.companies(), self.fetch_company, errors=errors)
+        self.last_errors = errors
+        return items
 
     def verify(self) -> list[dict]:
         """Проверить каталог: какие компании живы и сколько у них вакансий.

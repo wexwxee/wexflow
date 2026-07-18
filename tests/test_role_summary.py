@@ -34,6 +34,25 @@ def test_date_is_clear_for_russian_ui():
     assert labels.date_short("") == ""
 
 
+def test_plural_handles_russian_number_forms():
+    forms = ("магазин", "магазина", "магазинов")
+    expected = {
+        0: "магазинов",
+        1: "магазин",
+        2: "магазина",
+        4: "магазина",
+        5: "магазинов",
+        11: "магазинов",
+        14: "магазинов",
+        21: "магазин",
+        22: "магазина",
+        25: "магазинов",
+        111: "магазинов",
+    }
+    for value, word in expected.items():
+        assert labels.plural(value, *forms) == word
+
+
 if __name__ == "__main__":
     for name, test in sorted(globals().items()):
         if name.startswith("test_") and callable(test):

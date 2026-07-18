@@ -69,9 +69,51 @@ def test_home_city():
     assert not bad, "разбор города изменился:\n  " + "\n  ".join(bad)
 
 
+def test_algolia_snapshot_must_not_be_empty_or_partial():
+    original = scraper._algolia_page
+    try:
+        scraper._algolia_page = lambda _page: {"hits": [], "nbPages": 1, "nbHits": 0}
+        try:
+            scraper.fetch_all_hits()
+            raise AssertionError("пустой снимок был принят как нормальный")
+        except RuntimeError:
+            pass
+
+        pages = {
+            0: {"hits": [{"objectID": "one"}], "nbPages": 2, "nbHits": 3},
+            1: {"hits": [{"objectID": "two"}], "nbPages": 2, "nbHits": 3},
+        }
+        scraper._algolia_page = lambda page: pages[page]
+        try:
+            scraper.fetch_all_hits()
+            raise AssertionError("неполный снимок был принят как нормальный")
+        except RuntimeError:
+            pass
+    finally:
+        scraper._algolia_page = original
+
+
+def test_algolia_complete_snapshot_is_accepted():
+    original = scraper._algolia_page
+    pages = {
+        0: {"hits": [{"objectID": "one"}], "nbPages": 2, "nbHits": 2},
+        1: {"hits": [{"objectID": "two"}], "nbPages": 2, "nbHits": 2},
+    }
+    try:
+        scraper._algolia_page = lambda page: pages[page]
+        assert [row["objectID"] for row in scraper.fetch_all_hits()] == ["one", "two"]
+    finally:
+        scraper._algolia_page = original
+
+
 if __name__ == "__main__":
     failures = 0
-    for fn in (test_extract_pay, test_home_city):
+    for fn in (
+        test_extract_pay,
+        test_home_city,
+        test_algolia_snapshot_must_not_be_empty_or_partial,
+        test_algolia_complete_snapshot_is_accepted,
+    ):
         try:
             fn()
             print(f"OK   {fn.__name__}")

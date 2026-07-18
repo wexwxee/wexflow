@@ -324,6 +324,21 @@ def with_count(label: str, count: int | None = None) -> str:
     return f"{label} — {count}"
 
 
+def plural(value: int | str | None, one: str, few: str, many: str) -> str:
+    """Возвращает русскую форму слова для числа: 1, 2–4 или остальные."""
+    try:
+        number = abs(int(value or 0))
+    except (TypeError, ValueError):
+        number = 0
+    if 11 <= number % 100 <= 14:
+        return many
+    if number % 10 == 1:
+        return one
+    if 2 <= number % 10 <= 4:
+        return few
+    return many
+
+
 def resolve(mapping: dict, text: str) -> str:
     """Превращает введённый пользователем текст (код / рус. название / часть) в код.
     Пусто — если ничего не подошло (фильтр тогда не применяется)."""

@@ -1,6 +1,9 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+echo Running quality checks...
+".venv\Scripts\python.exe" tools\run_quality_checks.py
+if errorlevel 1 ( echo Quality checks failed. Release stopped. & pause & exit /b 1 )
 echo Building fresh distributive (2-5 min)...
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean WexFlow_dist.spec
 if errorlevel 1 ( echo Build failed. & pause & exit /b 1 )

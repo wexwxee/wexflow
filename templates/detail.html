@@ -80,7 +80,7 @@
       {% endif %}
       <form method="post" action="/job/{{ job.id }}/connector/result" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
         <button class="primary" type="submit" name="outcome" value="submitted"
-                onclick="return confirm('Подтвердить, что вы сами отправили анкету на сайте компании?')">{{ ic.i('check', 13) }} Я отправил анкету</button>
+                  onclick="return confirm('Подтвердить, что ты сам отправил анкету на сайте компании?')">{{ ic.i('check', 13) }} Я отправил анкету</button>
         {% if application_state == 'submitting' %}
         <button class="secondary" type="submit" name="outcome" value="incomplete">Не завершил</button>
         {% endif %}

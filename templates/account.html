@@ -252,11 +252,11 @@
   </div>
 </header>
 <section class="wex-workbench wex-narrow">
-  <p class="sub">Аккаунт WexFlow: профиль кандидата — один на все фирмы (Salling, 7-Eleven и будущие). Заполни один раз, бот подставит нужные данные при подаче.</p>
+  <p class="sub">Аккаунт WexFlow: один профиль для Salling, 7-Eleven и других компаний. Заполни его один раз — WexFlow подставит нужные данные при подаче.</p>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if deleted %}<div class="ok">{{ ic.i('check', 13) }} Облачные данные удалены. Локальные профиль, документы и журнал остались на этом компьютере.</div>{% endif %}
-  {% if delete_error %}<div class="err">Не удалось удалить облачные данные. Проверьте интернет и повторите.</div>{% endif %}
+  {% if delete_error %}<div class="err">Не удалось удалить облачные данные. Проверь интернет и повтори.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
 
   <!-- Аккаунт: вход через Telegram -->
@@ -550,13 +550,13 @@
     <div class="actions" style="margin-top:16px;"><span id="autosaveStatus" class="autosave">{{ ic.i('check', 13) }} Изменения сохраняются автоматически</span></div>
   </form>
 
-  <!-- Подписка (заготовка) -->
+  <!-- Подписка показывается только после включения биллинга -->
   {% if show_billing() %}
   <div class="panel sub-panel">
     <div class="sub-top">
       <div class="sub-top-text">
         <h2>{{ ic.i('star', 17) }} Подписка</h2>
-        <p class="hint" style="margin:0;">Текущий тариф: <b>{{ subscription.current_name }}</b>. Оплата подключится позже — пока витрина.</p>
+        <p class="hint" style="margin:0;">Текущий тариф: <b>{{ subscription.current_name }}</b>. Платные планы сейчас недоступны; списаний нет.</p>
       </div>
       <div class="bill-toggle" id="billToggle" role="tablist" aria-label="Период оплаты">
         <button type="button" class="bill-opt active" data-period="мес" role="tab">Месяц</button>
@@ -581,7 +581,7 @@
           {% if p.is_free %}
             <span class="plan-price">Бесплатно</span><span class="plan-per">навсегда</span>
           {% else %}
-            <span class="plan-price-soon">Цена скоро</span><span class="plan-per">/ <span class="bill-unit">мес</span> · €</span>
+            <span class="plan-price-soon">Пока недоступно</span>
           {% endif %}
         </div>
 
@@ -595,11 +595,11 @@
 
         <div class="plan-cta">
           {% if p.is_current %}
-            <button class="ghost" type="button" disabled>{{ ic.i('check', 14) }} Ваш план</button>
+            <button class="ghost" type="button" disabled>{{ ic.i('check', 14) }} Твой план</button>
           {% else %}
             <button class="primary" type="button" disabled>Выбрать {{ p.name }}</button>
             <button class="wl-btn" type="button" data-plan="{{ p.key }}">{{ ic.i('star', 12) }} Уведомить о запуске</button>
-            <span class="plan-soon-hint">Скоро · 7 дней бесплатно</span>
+            <span class="plan-soon-hint">Сейчас выбрать нельзя</span>
           {% endif %}
         </div>
       </div>
@@ -786,7 +786,7 @@
     });
   });
 
-  // переключатель периода оплаты (заготовка): меняет подпись у цены
+  // переключатель периода оплаты меняет подпись у цены
   (function () {
     var toggle = document.getElementById('billToggle');
     if (!toggle) return;
