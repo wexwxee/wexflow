@@ -1084,10 +1084,25 @@ def _tg_offer_tick(include_existing: bool = False, ignore_schedule: bool = False
             return {"sent": 0, "error": "сейчас вне часов активности"}
         if not account_mod.is_signed_in():
             return {"sent": 0, "error": "сначала войди через Telegram в разделе Аккаунт"}
-        jobs = autopilot.tg_eligible(limit=limit or TG_MAX_PER_SCAN, include_existing=include_existing)
+        autopilot.tg_pending_expire()  # карточки без ответа не висят вечно
+        cap = limit or TG_MAX_PER_SCAN
+        automatic = not include_existing
+        if automatic:
+            # дневной потолок — только для автоматического потока; ручную кнопку
+            # «прислать текущие» пользователь жмёт сам и потолком не ограничен
+            remaining_today = autopilot.tg_daily_remaining()
+            if remaining_today <= 0:
+                waiting = len(autopilot.tg_eligible(10000, include_existing=False))
+                if waiting:
+                    autopilot.tg_log_cap_once(waiting)
+                return {"sent": 0, "error": "дневной потолок карточек достигнут"}
+            cap = min(cap, remaining_today)
+        jobs = autopilot.tg_eligible(limit=cap, include_existing=include_existing)
         if not jobs:
             return {"sent": 0, "error": ""}
         result = _tg_offer_jobs(jobs, panel=panel)
+        if automatic:
+            autopilot.tg_note_sent(int(result.get("sent") or 0))
         result["remaining"] = len(autopilot.tg_eligible(10000, include_existing=include_existing))
         return result
     except Exception as e:  # noqa: BLE001 — не должно ронять фоновый скан
@@ -2491,6 +2506,11 @@ def _autopilot_rule_summary(rule: dict) -> list[dict]:
     km = _nums(rule.get("max_km"))
     if km:
         out.append({"label": "Радиус от дома", "value": f"до {max(km)} км"})
+    elif str(rule.get("max_km") or "").strip().lower() == "all":
+        out.append({"label": "Радиус от дома", "value": "вся Дания (выбрано явно)"})
+    elif autopilot.default_radius_applies(rule, settings_store.get_home()):
+        out.append({"label": "Радиус от дома",
+                    "value": f"до {autopilot.DEFAULT_HOME_RADIUS_KM} км (по умолчанию)"})
     mh = _nums(rule.get("min_hours"))
     if mh:
         out.append({"label": "Часы в неделю", "value": f"от {min(mh)} ч"})
@@ -2820,6 +2840,8 @@ def _settings_context(
         "autopilot_tg_stats": autopilot.tg_queue_stats(),
         "autopilot_max_per_scan": autopilot.MAX_PER_SCAN,
         "autopilot_scan_min": AUTOPILOT_SCAN_MIN,
+        "default_radius_km": autopilot.DEFAULT_HOME_RADIUS_KM,
+        "tg_daily_max": autopilot.TG_DAILY_MAX,
     }
 
 
@@ -3060,8 +3082,9 @@ def autopilot_save(
         return ", ".join(out)
 
     # ФИЛЬТРЫ пишем в выбранный профиль (режим/лимиты/расписание — глобальные).
+    # max_km="all" — явный выбор «вся Дания»: отключает дефолтный радиус от дома.
     autopilot.save_profile_filters(profile_id, {
-        "max_km": _num_csv(max_km),
+        "max_km": "all" if max_km.strip().lower() == "all" else _num_csv(max_km),
         "min_hours": _num_csv(min_hours),
         "max_hours": _num_csv(max_hours),
         "max_age_days": _num_csv(max_age_days),

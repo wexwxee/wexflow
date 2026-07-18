@@ -54,6 +54,9 @@ DEFAULT_RULE = {
     # --- режим «по разрешению» через Telegram (по умолчанию ВЫКЛ) ---
     "tg_approval": False,       # спрашивать подтверждение в Telegram перед подачей?
     "tg_pending": [],           # ждут ответа в TG [{job_id, message_id, ts}] (переходное состояние)
+    "tg_day": "",               # день, за который считаем карточки (дневной потолок)
+    "tg_sent_today": 0,         # сколько карточек автопилот сам отправил сегодня
+    "tg_cap_day": "",           # день, когда уже писали в журнал про достигнутый потолок
     # ЛЕГАСИ (шаг 3 плана): факты «подано/отправляется/предложено/пропущено»
     # переехали в таблицу application (см. applications.py). Ключи оставлены,
     # чтобы старые settings.json читались; applications.ensure_migrated()
@@ -132,6 +135,11 @@ MAX_PER_SCAN = 2          # максимум автоотправок за ОД�
 SCOPE_ALL_GUARD = 25      # нельзя включить охват «все подходящие», если под
                           # правило сейчас попадает больше этого числа (защита
                           # от «подалось на всё подряд» — заставляет сузить фильтры)
+DEFAULT_HOME_RADIUS_KM = 15  # радиус не выбран, а дом задан → ищем в этом радиусе;
+                             # «вся страна» — только явным выбором (max_km="all")
+TG_DAILY_MAX = 15         # потолок карточек-запросов в Telegram за календарный день —
+                          # чтобы чат не превращался во второй почтовый ящик
+TG_PENDING_TTL_DAYS = 3   # карточка без ответа столько дней — снимаем с ожидания
 
 
 def get_rule() -> dict:
@@ -361,7 +369,22 @@ def _profile_matches(job: Job, rule: dict, home: dict | None) -> bool:
             return False
         if geo.haversine_km(home["lat"], home["lon"], job.lat, job.lon) > max_km:
             return False
+    elif default_radius_applies(rule, home):
+        # Радиус не выбран вовсе → мягкий дефолт: без него набор «категория и всё»
+        # предлагал вакансии за 300 км от дома и заливал Telegram. Мягкий — значит
+        # вакансии без координат НЕ отбрасываем (в отличие от явного радиуса).
+        if job.lat is not None and job.lon is not None:
+            if geo.haversine_km(home["lat"], home["lon"], job.lat, job.lon) > DEFAULT_HOME_RADIUS_KM:
+                return False
     return _keyword_match(job, rule.get("keywords"))
+
+
+def default_radius_applies(rule: dict, home: dict | None) -> bool:
+    """Дефолтный радиус включается, только когда у профиля нет НИКАКОГО указания
+    места: ни радиуса (в т.ч. явного «вся Дания» = max_km="all"), ни городов,
+    ни регионов — и при этом дом задан."""
+    return bool(home) and not _csv(rule, "max_km") \
+        and not _csv(rule, "cities") and not _csv(rule, "regions")
 
 
 # ── Несколько правил (профили подбора) ─────────────────────────────────
@@ -641,6 +664,66 @@ def tg_pending_ids() -> set:
     return {p.get("job_id") for p in (get_rule().get("tg_pending") or [])}
 
 
+# ── Дневной потолок карточек (чтобы чат не заливало) ────────────────────
+def _today_str() -> str:
+    return _dt.date.today().isoformat()
+
+
+def tg_sent_today() -> int:
+    """Сколько карточек автопилот САМ отправил сегодня (ручные кнопки не считаем)."""
+    r = get_rule()
+    return int(r.get("tg_sent_today") or 0) if r.get("tg_day") == _today_str() else 0
+
+
+def tg_daily_remaining() -> int:
+    return max(0, TG_DAILY_MAX - tg_sent_today())
+
+
+def tg_note_sent(n: int) -> None:
+    """Учесть n автоматически отправленных карточек (с переходом через полночь)."""
+    if n <= 0:
+        return
+    today = _today_str()
+    base = tg_sent_today()
+    save_rule({"tg_day": today, "tg_sent_today": base + int(n)})
+
+
+def tg_log_cap_once(waiting: int) -> None:
+    """Записать в журнал про достигнутый дневной потолок — не чаще раза в день
+    (скан идёт каждые 3 минуты, иначе журнал зальёт одной и той же строкой)."""
+    today = _today_str()
+    if get_rule().get("tg_cap_day") == today:
+        return
+    save_rule({"tg_cap_day": today})
+    log_event("info", f"TG: дневной потолок карточек ({TG_DAILY_MAX}) достигнут — "
+                      f"ещё подходят {waiting}, пришлю завтра (или открой панель)")
+
+
+def tg_pending_expire(days: int = TG_PENDING_TTL_DAYS) -> int:
+    """Снять с ожидания карточки, на которые не ответили N дней. Они остаются
+    «предложенными» в реестре (повторно не пришлём), а поздний ✅ по старой
+    карточке всё равно пройдёт проверку актуальности в tg_decide."""
+    r = get_rule()
+    pend = list(r.get("tg_pending") or [])
+    if not pend:
+        return 0
+    cutoff = _dt.datetime.now() - _dt.timedelta(days=days)
+    keep, dropped = [], 0
+    for p in pend:
+        try:
+            ts = _dt.datetime.fromisoformat(str(p.get("ts") or ""))
+        except ValueError:
+            ts = None
+        if ts is not None and ts < cutoff:
+            dropped += 1
+        else:
+            keep.append(p)
+    if dropped:
+        save_rule({"tg_pending": keep})
+        log_event("info", f"TG: снял с ожидания карточки без ответа — {dropped} (старше {days} дн)")
+    return dropped
+
+
 def tg_pending_add(job_id: str, message_id) -> None:
     """Запомнить, что по вакансии отправлен запрос в TG и ждём ответа."""
     r = get_rule()
@@ -681,6 +764,8 @@ def tg_queue_stats() -> dict:
         "baseline": len(r.get("autosubmit_baseline") or []),
         "eligible_new": len(tg_eligible(10000, include_existing=False)),
         "eligible_current": len(tg_eligible(10000, include_existing=True)),
+        "sent_today": tg_sent_today(),
+        "daily_max": TG_DAILY_MAX,
     }
 
 

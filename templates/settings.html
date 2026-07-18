@@ -664,10 +664,10 @@
     <!-- Фильтры = пять простых вопросов. Пусто = «не важно». Тонкие ручки — в «Продвинутом». -->
     <div class="apx-q">
       <div class="apx-q-head">{{ ic.i('pin', 15) }} Где искать</div>
-      <span class="apx-q-sub">Расстояние от дома{% if not home %} — <a href="/settings/salling#home" style="color:var(--accent);">задай домашний адрес</a>, чтобы радиус работал{% endif %}. Пусто = вся Дания.</span>
+      <span class="apx-q-sub">Расстояние от дома{% if not home %} — <a href="/settings/salling#home" style="color:var(--accent);">задай домашний адрес</a>, чтобы радиус работал{% endif %}. Если ничего не выбрано — ищу до {{ default_radius_km }} км от дома, чтобы Telegram не заливало вакансиями с другого конца страны. «Вся Дания» — только явным выбором.</span>
       <input type="hidden" name="max_km" value="{{ autopilot.max_km or '' }}">
       <div class="ap-chips" data-one-for="max_km">
-        <button type="button" class="ap-chip" data-val="">Вся Дания</button>
+        <button type="button" class="ap-chip" data-val="all">Вся Дания</button>
         <button type="button" class="ap-chip" data-val="5">до 5 км</button>
         <button type="button" class="ap-chip" data-val="10">до 10 км</button>
         <button type="button" class="ap-chip" data-val="15">до 15 км</button>
@@ -844,7 +844,7 @@
     </div>
 
     <p class="hint" style="margin-top:10px;">По всем включённым наборам: <b>{{ autopilot_count }}</b> {{ L.plural(autopilot_count, 'подходящая вакансия', 'подходящие вакансии', 'подходящих вакансий') }}{% if autopilot_count %} · <a href="/" style="color:var(--accent);">посмотреть на главной</a>{% endif %}</p>
-    <p class="hint" style="margin-top:-4px;">Telegram: готовы к ручной отправке <b>{{ autopilot_tg_stats.eligible_current }}</b>, новых для автоуведомлений <b>{{ autopilot_tg_stats.eligible_new }}</b>, ожидают решения <b>{{ autopilot_tg_stats.pending }}</b>.</p>
+    <p class="hint" style="margin-top:-4px;">Telegram: готовы к ручной отправке <b>{{ autopilot_tg_stats.eligible_current }}</b>, новых для автоуведомлений <b>{{ autopilot_tg_stats.eligible_new }}</b>, ожидают решения <b>{{ autopilot_tg_stats.pending }}</b>. Карточек сегодня: <b>{{ autopilot_tg_stats.sent_today }}</b> из {{ autopilot_tg_stats.daily_max }} (дневной потолок, чтобы чат не заливало; карточки без ответа снимаются с ожидания через 3 дня).</p>
 
     <div class="actions">
       <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить автопилот</button>
