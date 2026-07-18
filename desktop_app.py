@@ -238,6 +238,12 @@ def run_worker(mode: str, rest: list) -> None:
             raise RuntimeError("missing bundled resources: " + ", ".join(missing))
         if not version.__version__:
             raise RuntimeError("application version is empty")
+        # Трей обязан работать в сборке: без pystray/Pillow закрытие окна
+        # снова молча убивало бы фоновый поиск.
+        import pystray  # noqa: F401
+        from pystray import _win32  # noqa: F401
+        from PIL import Image
+        Image.open(BUNDLE_DIR / "app.ico").close()
 
 
 def install_browser_blocking() -> int:
