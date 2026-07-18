@@ -1036,6 +1036,88 @@ def stop_started():
             pass
 
 
+# ── трей: «закрыть окно = свернуть в фон» ──────────────────────────────
+_tray_icon = None      # pystray.Icon, пока приложение живо
+_tray_quit = False     # пользователь выбрал «Выйти» в меню трея
+_tray_hint_shown = False  # уведомление «работаю в фоне» — только при первом сворачивании
+
+
+def _start_tray(window) -> bool:
+    """Иконка в области уведомлений: «Открыть» и «Выйти». False — библиотек
+    нет (например, урезанная сборка) → закрытие окна работает по-старому."""
+    global _tray_icon
+    try:
+        import pystray
+        from PIL import Image
+        icon_path = (BUNDLE_DIR if is_frozen() else APP_ROOT) / "app.ico"
+        image = Image.open(icon_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WexFlow] трей недоступен ({exc}) — закрытие окна завершает приложение")
+        return False
+
+    def _show(icon, item):
+        try:
+            window.show()
+            window.restore()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _quit(icon, item):
+        global _tray_quit
+        _tray_quit = True
+        try:
+            icon.visible = False
+            icon.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            window.destroy()   # выход из webview.start → finally гасит серверы
+        except Exception:  # noqa: BLE001
+            pass
+
+    _tray_icon = pystray.Icon(
+        "WexFlow", image, "WexFlow — поиск вакансий работает в фоне",
+        menu=pystray.Menu(
+            pystray.MenuItem("Открыть WexFlow", _show, default=True),
+            pystray.MenuItem("Выйти совсем", _quit),
+        ),
+    )
+    threading.Thread(target=_tray_icon.run, daemon=True).start()
+    return True
+
+
+def _stop_tray():
+    global _tray_icon
+    icon, _tray_icon = _tray_icon, None
+    if icon is not None:
+        try:
+            icon.visible = False
+            icon.stop()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _on_window_closing(window):
+    """Обработчик закрытия окна: True — закрыть по-настоящему, False — спрятать
+    в трей (серверы и автопилот продолжают работать)."""
+    global _tray_hint_shown
+    if _tray_quit or _tray_icon is None:
+        return True
+    try:
+        window.hide()
+    except Exception:  # noqa: BLE001
+        return True     # спрятать не вышло — честно закрываемся
+    if not _tray_hint_shown:
+        _tray_hint_shown = True
+        try:
+            _tray_icon.notify(
+                "WexFlow продолжает искать вакансии в фоне. "
+                "Открыть окно или выйти совсем — через иконку в трее.", "WexFlow")
+        except Exception:  # noqa: BLE001
+            pass
+    return False
+
+
 # ── окно приложения ────────────────────────────────────────────────────
 def run_window(minimized: bool = False):
     # Полностью выключаем HTTP-кэш WebView2 — иначе окно показывает страницу,
@@ -1120,6 +1202,13 @@ def run_window(minimized: bool = False):
             native_window.events.shown += _minimize_on_show
         except Exception:  # noqa: BLE001
             pass
+    # Трей: закрытие окна прячет его, поиск продолжается. Если pystray
+    # недоступен — обработчик не вешаем, закрытие работает как раньше.
+    if _start_tray(native_window):
+        try:
+            native_window.events.closing += (lambda: _on_window_closing(native_window))
+        except Exception:  # noqa: BLE001
+            _stop_tray()
     # Постоянное хранилище WebView2 (cookie/localStorage) в %AppData%\WexFlow —
     # иначе по умолчанию private_mode=True держит всё в памяти и стирает при
     # закрытии, и сохранённые фильтры/тема слетают после перезапуска.
@@ -1147,6 +1236,7 @@ def run_window(minimized: bool = False):
         except Exception:
             raise
     finally:
+        _stop_tray()
         stop_started()
 
 
