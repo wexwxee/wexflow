@@ -1735,6 +1735,91 @@ def hub(request: Request):
     )
 
 
+def _age_label(minutes: int | None) -> str:
+    """«N мин / N ч / N дней назад» — одно правило для всех страниц."""
+    if minutes is None:
+        return "нет данных"
+    if minutes < 1:
+        return "только что"
+    if minutes < 60:
+        return f"{minutes} мин назад"
+    if minutes < 1440:
+        return f"{minutes // 60} ч назад"
+    days = minutes // 1440
+    return f"{days} {labels.plural(days, 'день', 'дня', 'дней')} назад"
+
+
+@app.get("/status", response_class=HTMLResponse)
+def system_status(request: Request):
+    """Страница «Состояние системы»: всё ли работает, одним экраном.
+
+    Собирает уже существующие сторожа и статусы (ничего нового не меряет):
+    свежесть базы, ошибки синка, серию неподтверждённых подач, связь с
+    Telegram-облаком, готовность профиля/документов, автопилот и 7-Eleven."""
+    with get_session() as s:
+        active_jobs = s.exec(
+            select(func.count()).select_from(Job).where(
+                Job.status.not_in(["closed", "hidden", "applied"]))
+        ).one()
+
+    try:
+        streak = applications.failure_streak()
+    except Exception:  # noqa: BLE001
+        streak = 0
+
+    age_min = _data_age_minutes()
+    _profile = profile_store.load_profile()
+    _creds = credentials_store.status()
+    setup = {
+        "profile": all(str(_profile.get(k) or "").strip() for k, _ in PROFILE_REQUIRED),
+        "login": bool(_creds.get("email")),
+        "docs": bool(str(_profile.get("cv_path") or "").strip()),
+        "home": bool(settings_store.get_home()),
+    }
+
+    tg_linked = bool(account_mod.load().get("tg_id"))
+    cloud_fail = int(_tg_poll_state.get("fail_streak") or 0)
+    cloud_last_ok = float(_tg_poll_state.get("last_ok") or 0.0)
+    cloud = {
+        "linked": tg_linked,
+        "ok": tg_linked and cloud_fail == 0,
+        "fail_streak": cloud_fail,
+        "last_ok_label": _age_label(int((time.time() - cloud_last_ok) // 60)) if cloud_last_ok else "",
+        "error": str(_tg_poll_state.get("last_error") or ""),
+    }
+
+    ap = _autopilot_status_payload()
+    ap_last_min = None
+    if ap.get("last_scan"):
+        ap_last_min = max(0, int((time.time() - float(ap["last_scan"])) // 60))
+    ap_stale = (ap.get("enabled") and ap_last_min is not None
+                and ap_last_min > max(3 * int(ap.get("every_min") or 30), 30))
+
+    return templates.TemplateResponse("system_status.html", {
+        "request": request,
+        "active_jobs": active_jobs,
+        "age_min": age_min,
+        "age_label": _age_label(age_min),
+        "sync_running": _sync_state["running"],
+        "sync_failed": bool(_sync_state.get("sync_failed")),
+        "sync_error": str(_sync_state.get("last_error") or ""),
+        "last_hits": _sync_state.get("last_hits"),
+        "connector_errors": _sync_state.get("connector_errors") or [],
+        "streak": streak,
+        "setup": setup,
+        "cloud": cloud,
+        "autopilot": {
+            "enabled": bool(ap.get("enabled")),
+            "auto_submit": bool(ap.get("auto_submit")),
+            "found": int(ap.get("found") or 0),
+            "last_label": _age_label(ap_last_min),
+            "stale": bool(ap_stale),
+            "every_min": int(ap.get("every_min") or 30),
+        },
+        "seven": _seven_eleven_state(),
+    })
+
+
 @app.get("/apply-by-link")
 def apply_by_link(request: Request, pending: str = ""):
     with get_session() as session:

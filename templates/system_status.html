@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}WexFlow · Состояние системы{% endblock %}
+
+{% block style %}
+<style>
+  .st-grid { display:grid; grid-template-columns:repeat(2, minmax(240px, 1fr)); gap:14px; }
+  .st-card {
+    display:grid; gap:10px; padding:18px; border:1px solid var(--glass-line); border-radius:var(--radius-card);
+    background:var(--card); color:var(--txt); align-content:start;
+  }
+  .st-card h2 { margin:0; font-size:16px; color:var(--txt-strong); display:flex; align-items:center; gap:8px; }
+  .st-card p { margin:0; color:var(--muted); font-size:13px; line-height:1.45; }
+  .st-meta { display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+  .st-pill {
+    display:inline-flex; align-items:center; gap:5px; min-height:26px; padding:4px 9px; border-radius:999px;
+    border:1px solid var(--glass-line); background:var(--glass); color:var(--muted); font-size:12px; font-weight:650;
+  }
+  .st-pill.ok { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
+  .st-pill.warn { color:var(--err-txt); border-color:var(--err-line); background:var(--err-bg); }
+  .st-err { color:var(--err-txt); background:var(--err-bg); border:1px solid var(--err-line); border-radius:9px; padding:8px 10px; font-size:12.5px; }
+  .st-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; }
+  .st-actions a, .st-actions button {
+    display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:9px; font-size:12.5px;
+    font-weight:650; text-decoration:none; color:var(--txt); border:1px solid var(--glass-line); background:var(--glass); cursor:pointer;
+  }
+  .st-actions a:hover, .st-actions button:hover { border-color:var(--hover-line); color:var(--txt-strong); }
+  .st-checks { display:grid; gap:5px; }
+  .st-check { display:flex; align-items:center; gap:9px; font-size:13px; color:var(--txt); text-decoration:none; padding:5px 7px; border-radius:8px; }
+  .st-check:hover { background:var(--glass); }
+  .st-check .dot { flex:0 0 auto; width:9px; height:9px; border-radius:99px; background:var(--err-txt); }
+  .st-check.ok .dot { background:var(--ok-txt); }
+  .st-check.ok { color:var(--muted); }
+  .st-check .go { margin-left:auto; color:var(--accent); font-size:12px; font-weight:650; }
+  @media (max-width:760px) { .st-grid { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+
+{% block body %}
+{{ ui.shell_start('settings') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Состояние системы') }}</h1>
+    <span class="wex-title-meta">Всё ли работает — одним экраном</span>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">
+    {{ ui.theme_toggle() }}
+  </div>
+</header>
+
+<section class="wex-workbench wex-narrow">
+  <p class="sub">Если что-то не так — здесь видно, что именно, и куда идти чинить. Страница ничего не меняет сама.</p>
+
+  <div class="st-grid">
+
+    <div class="st-card">
+      <h2>{{ ic.i('cart', 17) }} Вакансии Salling</h2>
+      <div class="st-meta">
+        {% if sync_running %}
+          <span class="st-pill">{{ ic.i('refresh', 12) }} обновляется сейчас…</span>
+        {% elif sync_failed or last_hits == 0 %}
+          <span class="st-pill warn">{{ ic.i('alert', 12) }} источник не отвечает</span>
+        {% elif age_min is not none and age_min < 120 %}
+          <span class="st-pill ok">{{ ic.i('check', 12) }} база свежая</span>
+        {% else %}
+          <span class="st-pill warn">{{ ic.i('alert', 12) }} база устарела</span>
+        {% endif %}
+        <span class="st-pill">обновлено {{ age_label }}</span>
+        <span class="st-pill">активных: {{ active_jobs }}</span>
+      </div>
+      {% if age_min is not none and age_min >= 120 and not sync_running %}
+        <p>База обновляется, только пока WexFlow запущен. Если она устарела — приложение
+        было выключено; включи автозапуск в настройках автопилота или нажми «Обновить сейчас».</p>
+      {% endif %}
+      {% if sync_error %}<div class="st-err">Последняя ошибка: {{ sync_error }}</div>{% endif %}
+      <div class="st-actions">
+        <form method="post" action="/refresh" style="margin:0;"><button type="submit">{{ ic.i('refresh', 13) }} Обновить сейчас</button></form>
+        <a href="/">{{ ic.i('cart', 13) }} Открыть ленту</a>
+      </div>
+    </div>
+
+    <div class="st-card">
+      <h2>{{ ic.i('send', 17) }} Подача заявок</h2>
+      <div class="st-meta">
+        {% if streak >= 3 %}
+          <span class="st-pill warn">{{ ic.i('alert', 12) }} {{ streak }} подряд не подтвердились</span>
+        {% elif streak > 0 %}
+          <span class="st-pill">последняя не подтвердилась ({{ streak }})</span>
+        {% else %}
+          <span class="st-pill ok">{{ ic.i('check', 12) }} подтверждаются нормально</span>
+        {% endif %}
+      </div>
+      {% if streak >= 3 %}
+        <p>Возможно, Salling изменил сайт и WexFlow не видит квитанцию. Проверь письма от
+        Salling и журнал; если продолжается — напиши в поддержку @wexwxeee.</p>
+      {% else %}
+        <p>Считается по реестру заявок: серия подач без подтверждения — признак того,
+        что сайт работодателя изменился.</p>
+      {% endif %}
+      <div class="st-actions">
+        <a href="/audit">{{ ic.i('file', 13) }} Открыть журнал</a>
+      </div>
+    </div>
+
+    <div class="st-card">
+      <h2>{{ ic.i('send', 17) }} Telegram и облако</h2>
+      <div class="st-meta">
+        {% if not cloud.linked %}
+          <span class="st-pill">не подключён — это необязательно</span>
+        {% elif cloud.ok %}
+          <span class="st-pill ok">{{ ic.i('check', 12) }} на связи</span>
+        {% else %}
+          <span class="st-pill warn">{{ ic.i('alert', 12) }} обрыв связи с облаком</span>
+        {% endif %}
+        {% if cloud.linked and cloud.last_ok_label %}
+          <span class="st-pill">последний ответ: {{ cloud.last_ok_label }}</span>
+        {% endif %}
+      </div>
+      {% if cloud.linked and not cloud.ok %}
+        <p>Команды с телефона и карточки временно не ходят. Обычно это интернет или
+        временный сбой облака — WexFlow сам переподключится.</p>
+        {% if cloud.error %}<div class="st-err">{{ cloud.error }}</div>{% endif %}
+      {% else %}
+        <p>Через Telegram приходят карточки вакансий и работает панель с телефона.</p>
+      {% endif %}
+      <div class="st-actions">
+        <a href="/settings/telegram">{{ ic.i('sliders', 13) }} Настройки Telegram</a>
+        {% if not cloud.linked %}<a href="/account">{{ ic.i('user', 13) }} Подключить</a>{% endif %}
+      </div>
+    </div>
+
+    <div class="st-card">
+      <h2>{{ ic.i('briefcase', 17) }} Другие компании</h2>
+      <div class="st-meta">
+        {% if connector_errors %}
+          <span class="st-pill warn">{{ ic.i('alert', 12) }} сбоят: {{ connector_errors|length }}</span>
+        {% else %}
+          <span class="st-pill ok">{{ ic.i('check', 12) }} работают</span>
+        {% endif %}
+        <span class="st-pill">Teamtailor · Greenhouse · Ashby</span>
+      </div>
+      {% if connector_errors %}
+        {% for e in connector_errors[:3] %}<div class="st-err">{{ e }}</div>{% endfor %}
+        <p>Сбой одного источника не трогает остальные и не задевает Salling.</p>
+      {% else %}
+        <p>Вакансии других компаний приходят в общую ленту вместе с Salling.</p>
+      {% endif %}
+      <div class="st-actions">
+        <a href="/apply-by-link">{{ ic.i('link', 13) }} Подача по ссылке</a>
+      </div>
+    </div>
+
+    <div class="st-card">
+      <h2>{{ ic.i('user', 17) }} Профиль и документы</h2>
+      <div class="st-checks">
+        {% for ok, label, href in [
+          (setup.profile, 'Профиль кандидата', '/account'),
+          (setup.login, 'Вход в аккаунт Salling', '/settings/salling'),
+          (setup.docs, 'CV / резюме', '/settings/salling'),
+          (setup.home, 'Домашний адрес — для расстояний', '/settings/salling#home'),
+        ] %}
+        <a class="st-check {{ 'ok' if ok }}" href="{{ href }}">
+          <span class="dot"></span>{{ label }}
+          {% if not ok %}<span class="go">заполнить →</span>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="st-card">
+      <h2>{{ ic.i('zap', 17) }} Автопилот</h2>
+      <div class="st-meta">
+        {% if autopilot.enabled and autopilot.stale %}
+          <span class="st-pill warn">{{ ic.i('alert', 12) }} давно не проверял</span>
+        {% elif autopilot.enabled %}
+          <span class="st-pill ok">{{ ic.i('check', 12) }} работает</span>
+        {% else %}
+          <span class="st-pill">выключен</span>
+        {% endif %}
+        <span class="st-pill">проверка: {{ autopilot.last_label }}</span>
+        {% if autopilot.enabled %}<span class="st-pill">подходит: {{ autopilot.found }}</span>{% endif %}
+        {% if autopilot.auto_submit %}<span class="st-pill warn">автоотправка ВКЛ</span>{% endif %}
+      </div>
+      {% if autopilot.enabled and autopilot.stale %}
+        <p>Последняя проверка сильно старше интервала ({{ autopilot.every_min }} мин) —
+        похоже, WexFlow был выключен. После запуска проверка стартует сама.</p>
+      {% else %}
+        <p>Следит за новыми вакансиями, пока приложение запущено.</p>
+      {% endif %}
+      <div class="st-actions">
+        <a href="/autopilot">{{ ic.i('zap', 13) }} Открыть автопилот</a>
+        <a href="/settings/autopilot">{{ ic.i('sliders', 13) }} Настройки</a>
+      </div>
+    </div>
+
+    <div class="st-card">
+      <h2>{{ ic.i('store', 17) }} 7-Eleven</h2>
+      <div class="st-meta">
+        {% if seven.profile_ready %}
+          <span class="st-pill ok">{{ ic.i('check', 12) }} профиль готов</span>
+        {% else %}
+          <span class="st-pill">профиль не заполнен</span>
+        {% endif %}
+        <span class="st-pill">магазинов выбрано: {{ seven.stores }}</span>
+      </div>
+      <p>Отдельный модуль подачи в магазины 7-Eleven со своим профилем и историей.</p>
+      <div class="st-actions">
+        <a href="/__app/7eleven">{{ ic.i('store', 13) }} Открыть 7-Eleven</a>
+      </div>
+    </div>
+
+    <div class="st-card">
+      <h2>{{ ic.i('sparkles', 17) }} Приложение</h2>
+      <div class="st-meta">
+        <span class="st-pill">версия v{{ APP_VERSION }}</span>
+        <span class="st-pill" id="stUpdatePill">проверяю обновления…</span>
+      </div>
+      <p>Обновления приходят с GitHub и проверяются по контрольной сумме перед установкой.</p>
+      <div class="st-actions">
+        <a href="/help">{{ ic.i('message', 13) }} Справка</a>
+      </div>
+    </div>
+
+  </div>
+</section>
+<script>
+  // версия: последняя или доступно обновление (тот же /api/version, что и на главной)
+  (function () {
+    var pill = document.getElementById("stUpdatePill");
+    if (!pill) return;
+    fetch("/api/version").then(function (r) { return r.json(); }).then(function (info) {
+      if (info && info.update && info.update.url) {
+        pill.textContent = "доступно обновление " + (info.update.version || "");
+        pill.className = "st-pill warn";
+      } else {
+        pill.textContent = "это последняя версия";
+        pill.className = "st-pill ok";
+      }
+    }).catch(function () { pill.textContent = "не удалось проверить обновления"; });
+  })();
+</script>
+{{ ui.shell_end() }}
+{% endblock %}
