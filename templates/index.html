@@ -703,11 +703,11 @@
       <span class="badge st-interview">{{ ic.i('store', 12) }} {{ g.jobs|length }} {{ L.plural(g.jobs|length, 'вакансия', 'вакансии', 'вакансий') }}</span>
     </div>
     <h3>{{ ic.i('pin') }} {{ g.street or '' }}{% if g.zip or g.city %}{{ ', ' if g.street }}{{ g.zip or '' }} {{ g.city or '' }}{% endif %}{% if g.country %}, {{ g.country }}{% endif %}</h3>
-    {% if g.region %}<div class="meta">{{ L.REGION.get(g.region, g.region) }}</div>{% endif %}
+    {% if g.region %}<div class="meta">{{ L.label_or_pretty(L.REGION, g.region) }}</div>{% endif %}
     <div class="group-jobs">
       {% for j in g.jobs[:12] %}
       {% set cat0 = (j.categories or '').split(',')[0] %}
-      <a class="gjob" href="/job/{{ j.id }}">{% if cat0 %}<b>{{ L.CATEGORY.get(cat0, cat0) }}</b> · {% endif %}{{ j.title }}</a>
+      <a class="gjob" href="/job/{{ j.id }}">{% if cat0 %}<b>{{ L.label_or_pretty(L.CATEGORY, cat0) }}</b> · {% endif %}{{ j.title }}</a>
       {% endfor %}
       {% if g.jobs|length > 12 %}<span class="gmore">…ещё {{ g.jobs|length - 12 }}</span>{% endif %}
     </div>

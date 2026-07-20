@@ -97,6 +97,52 @@ def event_log() -> list:
     return get_rule().get("event_log") or []
 
 
+# Префиксы событий вида «<префикс> — <название вакансии>», серии которых можно
+# честно свернуть в «— по N вакансиям». Другие тексты с тире (например
+# «TG: не отправилось — <ошибка>») так сворачивать нельзя — исказится смысл.
+_GROUPABLE_PREFIXES = (
+    "TG: спросил разрешение",
+    "TG-панель: добавил вакансию",
+    "TG: пропущено",
+    "TG: карточка устарела и не подходит под текущие фильтры",
+)
+
+
+def grouped_events(log: list, min_run: int = 3) -> list:
+    """Сжимает серии однотипных событий подряд для монитора.
+
+    Ночной скан может дать 40+ строк «TG: спросил разрешение — <вакансия>»
+    подряд — журнал становится нечитаем. Серию из min_run и больше событий
+    с одинаковым началом (текст до « — ») сворачиваем в одну строку с
+    количеством, дословные повторы — в «текст · ×N»; ts берём от самого
+    свежего события серии. Исходный event_log не меняется — только вид
+    для интерфейса."""
+    out: list = []
+    i = 0
+    while i < len(log):
+        ev = log[i]
+        text = str(ev.get("text") or "")
+        prefix = text.split(" — ")[0]
+        j = i
+        while (j + 1 < len(log)
+               and log[j + 1].get("kind") == ev.get("kind")
+               and str(log[j + 1].get("text") or "").split(" — ")[0] == prefix):
+            j += 1
+        n = j - i + 1
+        if n >= min_run and all(str(e.get("text") or "") == text for e in log[i:j + 1]):
+            # дословные повторы («Проверил базу: подходящих 122» × 9) — одной строкой
+            out.append({"ts": ev.get("ts"), "kind": ev.get("kind"),
+                        "text": f"{text} · ×{n}"})
+        elif n >= min_run and prefix in _GROUPABLE_PREFIXES:
+            word = labels.plural(n, "вакансии", "вакансиям", "вакансиям")
+            out.append({"ts": ev.get("ts"), "kind": ev.get("kind"),
+                        "text": f"{prefix} — по {n} {word}"})
+        else:
+            out.extend(log[i:j + 1])
+        i = j + 1
+    return out
+
+
 def submitted_total() -> int:
     return applications.submitted_total_count()
 
@@ -122,7 +168,7 @@ def status() -> dict:
         "submitted_total": submitted_total(),
         "daily_limit": int(r.get("daily_limit") or 0),
         "submit_scope": r.get("submit_scope") or "new",
-        "events": event_log()[:50],
+        "events": grouped_events(event_log())[:50],
     }
     payload.update({f"tg_{k}": v for k, v in tg_queue_stats().items()})
     return payload

@@ -58,7 +58,7 @@
     <div>
       <span class="badge">{{ st_ru.get(job.status, job.status) }}</span>
       {% if job.source != 'salling' %}<span class="badge" style="border-color:#6b66ff;color:#9c98ff;">{{ source_labels.get(job.source, job.source) }}</span>{% endif %}
-      {% if cat0 %}<span class="badge" style="color:var(--info-txt);">{{ L.CATEGORY.get(cat0, cat0) }}</span>{% endif %}
+      {% if cat0 %}<span class="badge" style="color:var(--info-txt);">{{ L.label_or_pretty(L.CATEGORY, cat0) }}</span>{% endif %}
       {% if L.is_leadership(job.title) %}<span class="badge lead" title="Автопилот и пакетная подача такие не отправляют — подать можно только вручную">{{ ic.i('alert', 12) }} руководящая</span>{% endif %}
     </div>
     <div class="status-row">

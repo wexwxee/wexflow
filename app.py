@@ -1539,7 +1539,7 @@ def _job_facts(job: Job, distance: float | None) -> list[dict]:
     if address:
         facts.append({"label": "Адрес", "value": address, "kind": "place"})
     if job.region:
-        facts.append({"label": "Регион", "value": labels.REGION.get(job.region, job.region), "kind": ""})
+        facts.append({"label": "Регион", "value": labels.label_or_pretty(labels.REGION, job.region), "kind": ""})
     if distance is not None:
         facts.append({"label": "От дома", "value": f"≈ {distance} км по прямой", "kind": "distance"})
     if job.hours:
@@ -1555,21 +1555,21 @@ def _job_facts(job: Job, distance: float | None) -> list[dict]:
     if job.job_level == "employeeUnder18" or "under 18" in (job.title or "").lower():
         facts.append({"label": "Возраст", "value": "позиция для сотрудников до 18 лет", "kind": "important"})
     if job.start_date:
-        facts.append({"label": "Старт", "value": job.start_date, "kind": "date"})
+        facts.append({"label": "Старт", "value": labels.date_short(job.start_date), "kind": "date"})
     if job.published:
-        facts.append({"label": "Опубликовано", "value": job.published[:10], "kind": "muted"})
+        facts.append({"label": "Опубликовано", "value": labels.date_short(job.published), "kind": "muted"})
     if job.modified:
-        facts.append({"label": "Обновлено", "value": job.modified[:10], "kind": "muted"})
+        facts.append({"label": "Обновлено", "value": labels.date_short(job.modified), "kind": "muted"})
     if job.requisition_id:
         facts.append({"label": "ID вакансии", "value": job.requisition_id, "kind": "muted"})
     if job.first_seen:
-        facts.append({"label": "Найдено WexFlow", "value": job.first_seen.strftime("%Y-%m-%d"), "kind": "muted"})
+        facts.append({"label": "Найдено WexFlow", "value": labels.date_short(job.first_seen.strftime("%Y-%m-%d")), "kind": "muted"})
     if job.pay_rate:
         facts.append({"label": "Ставка", "value": job.pay_rate, "kind": "money"})
     else:
         facts.append({"label": "Ставка", "value": "не указана в объявлении", "kind": "muted"})
     if job.categories:
-        cat_labels = [labels.CATEGORY.get(c, c) for c in job.categories.split(",") if c]
+        cat_labels = [labels.label_or_pretty(labels.CATEGORY, c) for c in job.categories.split(",") if c]
         if cat_labels:
             facts.append({"label": "Категория", "value": ", ".join(cat_labels[:3]), "kind": "category"})
 
@@ -2267,26 +2267,34 @@ def index(
             (key, labels.with_count(JOB_SOURCE_LABELS.get(key, key), counts["source"][key]))
             for key in sources if key
         ],
-        # опции отсортированы по популярности (частые сверху) — удобнее выбирать
+        # Опции отсортированы по популярности (частые сверху). Варианты без
+        # активных вакансий скрываем — кроме выбранного сейчас, иначе его
+        # нельзя было бы снять.
         "brands": [
             (b, labels.with_count(labels.brand(b), counts["brand"][b]))
             for b in sorted(brands, key=lambda k: -counts["brand"][k])
+            if counts["brand"][b] > 0 or b == brand_code
         ],
+        # Регионы: сначала датские, заграничные (Германия/Польша) — после них.
         "regions": [
-            (r, labels.with_count(labels.REGION.get(r, r), counts["region"][r]))
-            for r in sorted(regions, key=lambda k: -counts["region"][k])
+            (r, labels.with_count(labels.label_or_pretty(labels.REGION, r), counts["region"][r]))
+            for r in sorted(regions, key=lambda k: (k not in labels.DANISH_REGIONS, -counts["region"][k]))
+            if counts["region"][r] > 0 or r == region_code
         ],
         "etypes": [
             (e, labels.with_count(labels.EMPLOYMENT.get(e, e), counts["employment"][e]))
             for e in sorted(etypes, key=lambda k: -counts["employment"][k])
+            if counts["employment"][e] > 0 or e == employment_code
         ],
         "levels": [
             (l, labels.with_count(labels.LEVEL.get(l, l), counts["level"][l]))
             for l in sorted(levels, key=lambda k: -counts["level"][k])
+            if counts["level"][l] > 0 or l == level_code
         ],
         "cats": [
-            (c, labels.with_count(labels.CATEGORY.get(c, c), counts["category"][c]))
+            (c, labels.with_count(labels.label_or_pretty(labels.CATEGORY, c), counts["category"][c]))
             for c in sorted(cats, key=lambda k: -counts["category"][k])
+            if counts["category"][c] > 0 or c == category_code
         ],
         "city_suggestions": [
             (city, labels.with_count(city, count))
@@ -2614,7 +2622,7 @@ def autopilot_page(request: Request):
         {
             "request": request,
             "status": _autopilot_status_payload(),
-            "events": autopilot.event_log(),
+            "events": autopilot.grouped_events(autopilot.event_log()),
             "rule_summary": _autopilot_profiles_summary(autopilot.get_profiles(rule)),
             "enabled": bool(rule.get("enabled")),
             "auto_submit": bool(rule.get("auto_submit")),

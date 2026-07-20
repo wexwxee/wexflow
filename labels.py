@@ -18,6 +18,7 @@ LEVEL = {
     "apprentice": "Стажёр / ученик",
     "employee": "Сотрудник",
     "employeeUnder18": "Сотрудник до 18 лет",
+    "internship": "Стажировка",
     "manager": "Менеджер",
 }
 
@@ -52,24 +53,31 @@ def is_leadership(title: str) -> bool:
     sales assistant …). Проверка инварианта — tests/test_is_leadership.py."""
     return bool(_LEADERSHIP_RX.search(title or ""))
 
+# Датские регионы показываем первыми и без пометки; у заграничных — страна в
+# скобках, иначе «Мазовецкое» рядом с «Зеландией» сбивает с толку.
+DANISH_REGIONS = {"hovedstaden", "midtjylland", "nordjylland", "sjaelland", "syddanmark"}
+
 REGION = {
     # Дания
     "hovedstaden": "Столичный регион", "midtjylland": "Центральная Ютландия",
     "nordjylland": "Северная Ютландия", "sjaelland": "Зеландия",
     "syddanmark": "Южная Дания",
     # Германия
-    "berlin": "Берлин", "brandenburg": "Бранденбург",
-    "mecklenburgVorpommern": "Мекленбург-Передняя Померания",
-    "sachsen": "Саксония", "sachsenAnhalt": "Саксония-Анхальт",
-    "schleswigHolstein": "Шлезвиг-Гольштейн",
+    "berlin": "Берлин (Германия)", "brandenburg": "Бранденбург (Германия)",
+    "hamburg": "Гамбург (Германия)",
+    "mecklenburgVorpommern": "Мекленбург (Германия)",
+    "niedersachsen": "Нижняя Саксония (Германия)",
+    "sachsen": "Саксония (Германия)", "sachsenAnhalt": "Саксония-Анхальт (Германия)",
+    "schleswigHolstein": "Шлезвиг-Гольштейн (Германия)",
     # Польша
-    "dolnoslaskie": "Нижнесилезское", "kujawskoPomorskie": "Куявско-Поморское",
-    "lodzkie": "Лодзинское", "lubelskie": "Люблинское", "lubuskie": "Любушское",
-    "malopolskie": "Малопольское", "mazowieckie": "Мазовецкое",
-    "opolskie": "Опольское", "podkarpackie": "Подкарпатское",
-    "pomorskie": "Поморское", "slaskie": "Силезское",
-    "swietokrzyskie": "Свентокшиское", "warminskoMazurskie": "Варминьско-Мазурское",
-    "wielkopolskie": "Великопольское", "zachodniopomorskie": "Западнопоморское",
+    "dolnoslaskie": "Нижнесилезское (Польша)", "kujawskoPomorskie": "Куявско-Поморское (Польша)",
+    "lodzkie": "Лодзинское (Польша)", "lubelskie": "Люблинское (Польша)",
+    "lubuskie": "Любушское (Польша)",
+    "malopolskie": "Малопольское (Польша)", "mazowieckie": "Мазовецкое (Польша)",
+    "opolskie": "Опольское (Польша)", "podkarpackie": "Подкарпатское (Польша)",
+    "pomorskie": "Поморское (Польша)", "slaskie": "Силезское (Польша)",
+    "swietokrzyskie": "Свентокшиское (Польша)", "warminskoMazurskie": "Варминьско-Мазурское (Польша)",
+    "wielkopolskie": "Великопольское (Польша)", "zachodniopomorskie": "Западнопоморское (Польша)",
 }
 
 CATEGORY = {
@@ -89,6 +97,12 @@ CATEGORY = {
     "salesNonfood": "Продажи: нон-фуд", "salesOperations": "Продажи: операции",
     "salesTextile": "Продажи: текстиль",
     "warehouseGoodsHandling": "Склад: обработка товаров",
+    # Ключи из вакансий других компаний (Teamtailor/Greenhouse/Ashby)
+    "customerInsight": "Аналитика клиентов",
+    "legal": "Юристы",
+    "propertyDevelopment": "Недвижимость",
+    "spaceManagementAndPromotion": "Выкладка и промо",
+    "procurementAndPurchasingFreshFood": "Закупки: свежие продукты",
 }
 
 # Частые города Salling/Salling Group и варианты, которые удобно вводить по-русски.
@@ -300,6 +314,23 @@ def date_short(value) -> str:
     raw = str(value or "").strip()
     match = re.match(r"^(\d{4})-(\d{2})-(\d{2})", raw)
     return f"{match.group(3)}.{match.group(2)}.{match.group(1)}" if match else raw[:10]
+
+
+def pretty_key(key: str) -> str:
+    """Читаемый вид для ключа без перевода: camelCase → «Camel case».
+
+    Внешние источники (Teamtailor/Greenhouse/Ashby) присылают произвольные
+    категории — все не переведёшь, но «Customer insight» лучше «customerInsight»."""
+    raw = str(key or "").strip()
+    if not raw:
+        return raw
+    spaced = re.sub(r"(?<=[a-zа-яё0-9])(?=[A-ZА-ЯЁ])", " ", raw).replace("_", " ")
+    return spaced[:1].upper() + spaced[1:]
+
+
+def label_or_pretty(mapping: dict, key: str) -> str:
+    """Перевод из словаря, а без него — хотя бы опрятный ключ."""
+    return mapping.get(key) or pretty_key(key)
 
 
 def bi(mapping: dict, key: str) -> str:

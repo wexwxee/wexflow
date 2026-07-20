@@ -94,7 +94,10 @@
     else{b.className='badge';b.innerHTML='<span class="dot"></span> Выключен';}
     if(d.running)s.textContent='Идёт проверка базы вакансий…';
     else if(!d.enabled)s.textContent='Автопилот выключен. Нажми «Включить», чтобы он искал сам.';
-    else if(d.last_scan){var t='Проверка: '+clock(d.last_scan)+' ('+rel(d.last_scan,now)+')';if(d.next_scan)t+=' · след. '+fut(d.next_scan,now);t+=' · каждые '+(d.every_min||30)+' мин';s.textContent=t;}
+    else if(d.last_scan){
+      if(now-d.last_scan>Math.max(3*(d.every_min||30)*60,1800)){s.textContent='Проверка: '+rel(d.last_scan,now)+' — похоже, WexFlow был выключен.';}
+      else{var t='Проверка: '+clock(d.last_scan)+' ('+rel(d.last_scan,now)+')';if(d.next_scan)t+=' · след. '+fut(d.next_scan,now);t+=' · каждые '+(d.every_min||30)+' мин';s.textContent=t;}
+    }
     else s.textContent='Ещё не проверял — запустится автоматически.';
     document.getElementById('found').textContent=d.found||0;
     document.getElementById('prepared').textContent=d.prepared||0;

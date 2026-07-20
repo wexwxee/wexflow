@@ -215,10 +215,17 @@
       if (d.running) line.textContent = "Идёт проверка базы вакансий…";
       else if (!d.enabled) line.textContent = "Автопилот выключен — нажми «Включить», чтобы он снова искал сам.";
       else if (d.last_scan) {
-        var t = "Последняя проверка: " + clock(d.last_scan) + " (" + rel(d.last_scan, now) + ")";
-        if (d.next_scan) t += " · следующая " + future(d.next_scan, now);
-        t += " · каждые " + (d.every_min || 30) + " мин";
-        line.textContent = t;
+        var everySec = (d.every_min || 30) * 60;
+        if (now - d.last_scan > Math.max(3 * everySec, 1800)) {
+          // проверка сильно старше интервала — не врём «следующая через ~1 мин»
+          line.textContent = "Последняя проверка: " + rel(d.last_scan, now) +
+            " — похоже, WexFlow был выключен. Проверка запустится в ближайшие минуты.";
+        } else {
+          var t = "Последняя проверка: " + clock(d.last_scan) + " (" + rel(d.last_scan, now) + ")";
+          if (d.next_scan) t += " · следующая " + future(d.next_scan, now);
+          t += " · каждые " + (d.every_min || 30) + " мин";
+          line.textContent = t;
+        }
       } else line.textContent = "Ещё не проверял — запустится автоматически.";
 
       document.getElementById("apFound").textContent = d.found || 0;
