@@ -20,6 +20,12 @@
       "port": 8011
     },
     {
+      "name": "e2e-preview",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["tools\\run_preview_e2e.py"],
+      "port": 8013
+    },
+    {
       "name": "seven11",
       "runtimeExecutable": "C:\\seven11-apply\\.venv\\Scripts\\python.exe",
       "runtimeArgs": ["C:\\seven11-apply\\web_app.py"],
