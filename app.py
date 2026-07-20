@@ -1048,6 +1048,9 @@ def _tg_job_payload(job) -> dict:
         "mapsUrl": _maps_url(job, home) if (address or job.lat is not None) else "",
         "lat": job.lat,
         "lon": job.lon,
+        # Панель показывает один и тот же полный список подходящих — без этой
+        # пометки не видно, что появилось недавно, а что висит давно.
+        "isNew": bool(job.first_seen and (utcnow() - job.first_seen).days < 3),
     }
 
 
@@ -1234,8 +1237,10 @@ def _handle_tg_remote_command(command: dict) -> str:
             # из Mini App-панели присылаем МНОГО (до 30 за раз), в чат — скромно,
             # чтобы не залить переписку. panel=True ставит панель при постановке команды.
             is_panel = bool(command.get("panel"))
-            if is_panel:
-                autopilot.reset_tg_queue_for_filters()
+            # Раньше панельная кнопка сбрасывала «предложено» (reset_tg_queue_for_filters)
+            # и слала одни и те же вакансии заново при каждом нажатии. Теперь гейт
+            # «предложено — навсегда» держится, а полный список панель получает
+            # через jobs_sync ниже.
             limit = 30 if is_panel else None
             result = _tg_offer_tick(include_existing=True, ignore_schedule=True, limit=limit, panel=is_panel)
             if is_panel:
@@ -1246,6 +1251,11 @@ def _handle_tg_remote_command(command: dict) -> str:
                 return (
                     f"📨 {label}: {result['sent']}.\n"
                     f"Осталось доступных текущих: {stats.get('eligible_current', 0)}."
+                )
+            if is_panel:
+                return (
+                    "📨 Новых предложений нет — всё текущее уже показывал.\n"
+                    "Полный список подходящих обновил во вкладке «Вакансии»."
                 )
             return (
                 "📨 Сейчас нечего прислать.\n"
@@ -3502,8 +3512,8 @@ async def telegram_send_current(request: Request, panel: bool = False):
         pass
     autopilot.set_mode("telegram")
     _reschedule_autopilot_scan()
-    if panel:
-        autopilot.reset_tg_queue_for_filters()
+    # Сброса «предложено» здесь больше нет: он заставлял каждую ручную отправку
+    # слать те же вакансии заново (гейт F27 «предложено — навсегда»).
     result = _tg_offer_tick(
         include_existing=True,
         ignore_schedule=True,

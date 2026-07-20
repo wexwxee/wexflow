@@ -211,22 +211,26 @@ def save_rule(patch: dict) -> dict:
 
 
 def reset_tg_queue_for_filters() -> None:
-    """Drop local Telegram offers that were built for old filters."""
+    """Смена фильтров: снять ожидающие карточки и очистить облачную панель.
+
+    «Предложено» в реестре НЕ трогаем — гейт F27: предложено — навсегда.
+    Раньше здесь стоял clear_offers(), который забывал все нерешённые
+    предложения; из-за этого каждая смена фильтров отправляла те же самые
+    вакансии в Telegram заново — «по кругу одни и те же». Вакансии, ставшие
+    подходящими при НОВЫХ фильтрах, и так уйдут сами: их ещё не предлагали,
+    и tg_eligible пропустит их без сброса истории."""
     r = get_rule()
     had_local = bool(r.get("tg_pending"))
     if had_local:
         save_rule({"tg_pending": []})
-    # из реестра убираем только НЕрешённые предложения; пропущенные/поданные
-    # остаются историей и после смены фильтров
-    cleared_offers = applications.clear_offers()
     cleared_cloud = False
     try:
         import cloud_auth
         cleared_cloud = cloud_auth.clear_panel(timeout=3)
     except Exception:  # noqa: BLE001
         cleared_cloud = False
-    if had_local or cleared_offers or cleared_cloud:
-        log_event("info", "TG: сбросил старую очередь после изменения фильтров")
+    if had_local or cleared_cloud:
+        log_event("info", "TG: снял ожидающие карточки после изменения фильтров")
 
 
 # ── Единый режим работы (вместо трёх пересекающихся тумблеров) ──────────
@@ -1063,9 +1067,17 @@ def scan_and_notify() -> None:
             return
         matches = find_matches()
         ids = [j.id for j in matches]
-        seen = set(rule.get("seen_ids") or [])
+        seen_list = list(rule.get("seen_ids") or [])
+        seen = set(seen_list)
         fresh = [j for j in matches if j.id not in seen]
-        save_rule({"seen_ids": ids})  # помним текущий набор, чистим устаревшее
+        # Просмотренные КОПИМ, а не перезаписываем текущим набором: вакансия,
+        # мигнувшая из выдачи (сузили фильтр, задержка расстояния) и вернувшаяся,
+        # не должна считаться «новой» повторно. Чтобы список не рос вечно,
+        # выбрасываем id, которых больше нет в базе, и держим потолок.
+        with get_session() as s:
+            existing = set(s.exec(select(Job.id)).all())
+        merged = [i for i in seen_list if i in existing] + [i for i in ids if i not in seen]
+        save_rule({"seen_ids": merged[-4000:]})
         # В ленту пишем только событие с НОВЫМИ совпадениями: при скане каждые
         # 3 минуты записи «проверил базу, ничего нового» вытесняли из журнала
         # (EVENT_LOG_MAX) реальные подачи и решения за считанные часы. Время
