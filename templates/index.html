@@ -899,13 +899,17 @@
         const r = await fetch('/api/apply/progress', { cache: 'no-store' });
         d = await r.json();
       } catch (e) { return; }
+      const dry = d && d.mode === 'dry';
       if (!d || !d.active) {
         // недавно завершилась — покажем краткий итог, потом скроем
         if (d && d.total && d.finished_at) {
           box.style.display = 'flex';
           const failTxt = d.failed ? ` · не удалось ${d.failed}` : '';
-          const head = d.stalled ? '⚠ Подача прервалась' : '✓ Подача завершена';
-          box.innerHTML = `<div><b>${head}:</b> подано ${d.ok || 0} из ${d.total}${failTxt}</div>`;
+          const head = d.stalled ? (dry ? '⚠ Подготовка прервалась' : '⚠ Подача прервалась')
+                                 : (dry ? '✓ Подготовка завершена — проверь формы и отправь сам' : '✓ Подача завершена');
+          box.innerHTML = dry
+            ? `<div><b>${head}:</b> подготовлено ${d.done || 0} из ${d.total}</div>`
+            : `<div><b>${head}:</b> подано ${d.ok || 0} из ${d.total}${failTxt}</div>`;
         } else { box.style.display = 'none'; }
         return;
       }
@@ -915,8 +919,8 @@
       const failTxt = d.failed ? ` · <span style="color:var(--err-txt);">не удалось ${d.failed}</span>` : '';
       box.innerHTML =
         `<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">` +
-          `<b>Подаю ${d.done} из ${d.total}</b>` +
-          `<span>подано ${d.ok || 0}${failTxt}</span></div>` +
+          `<b>${dry ? 'Готовлю (без отправки)' : 'Подаю'} ${d.done} из ${d.total}</b>` +
+          (dry ? `<span>заявки не отправляются</span>` : `<span>подано ${d.ok || 0}${failTxt}</span>`) + `</div>` +
         `<div style="height:9px;background:rgba(0,0,0,.18);border-radius:6px;overflow:hidden;">` +
           `<div style="height:100%;width:${pct}%;background:var(--ok-txt,#16a34a);transition:width .4s;"></div></div>` +
         (cur ? `<div style="opacity:.85;font-size:.92em;">Сейчас: ${cur}</div>` : '');

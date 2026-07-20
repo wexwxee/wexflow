@@ -1254,10 +1254,12 @@ def main(argv=None):
     ids = [a for a in args if not a.startswith("--")]
     if "--login" in args:
         run(None, login_only=True, web_mode=web_mode, keep_open=keep_open)
-    elif len(ids) > 1 or (submit and ids):
-        # Реальная отправка даже ОДНОГО id идёт через run_batch: только он пишет
-        # apply_progress.json с итогом по каждой заявке, который читает приложение
-        # (шаг 4 — воркер возвращает результат, а не «приложение угадывает по базе»).
+    elif len(ids) > 1 or (ids and (submit or web_mode)):
+        # Любой запуск из приложения (web_mode) и реальная отправка даже ОДНОГО id
+        # идут через run_batch: только он пишет apply_progress.json, который читает
+        # полоска прогресса (шаг 4 — воркер возвращает результат, а не «приложение
+        # угадывает по базе»). Раньше одиночный dry шёл через run() — прогресс
+        # в интерфейсе оставался пустым.
         run_batch(ids, submit=submit, web_mode=web_mode, keep_open=keep_open)
     else:
         run(ids[0], web_mode=web_mode, submit=submit, keep_open=keep_open)
