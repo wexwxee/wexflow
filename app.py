@@ -571,7 +571,9 @@ def _handle_tg_decisions(decisions: list) -> None:
 
 _applied_sync_last = 0.0
 _jobs_sync_last = 0.0
-_cloud_sync_attempt_last = {"applied": 0.0, "jobs": 0.0, "filters": 0.0}
+_jobtexts_sync_last = 0.0
+_jobtexts_sent = {}   # jobId -> отпечаток последнего отправленного текста (не гонять то же)
+_cloud_sync_attempt_last = {"applied": 0.0, "jobs": 0.0, "filters": 0.0, "jobtexts": 0.0}
 
 
 def _begin_cloud_sync(kind: str, last_success: float, interval: int,
@@ -647,6 +649,53 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
             return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"jobs-sync: ошибка — {e}")
+    return False
+
+
+def _sync_job_texts_to_cloud(force: bool = False) -> bool:
+    """Полные тексты вакансий (перевод + оригинал) в облако — для экрана детали
+    в Mini App. Переведённые уходят как st=done, ещё непереведённые — как
+    pending (панель покажет датский + «готовится»), а если переводчик совсем
+    недоступен — unavailable. Отпечатки отправленного не гоняем повторно."""
+    global _jobtexts_sync_last
+    if not account_mod.is_signed_in():
+        return False
+    attempt = _begin_cloud_sync("jobtexts", _jobtexts_sync_last, 300, force)
+    if attempt is None:
+        return False
+    try:
+        import translate_worker
+        skip = applications.submitted_ids() | applications.skipped_ids() | applications.submitting_ids()
+        jobs = [j for j in autopilot.find_matches() if j.id not in skip]
+        jobs.sort(key=lambda j: getattr(j, "first_seen", None) or utcnow(), reverse=True)
+        down = translate_worker.is_translator_down()
+        items, batch = [], 0
+        for job in jobs:
+            if batch >= 12:
+                break
+            if not (job.description or "").strip():
+                continue
+            ru = translator._plain_text(job.description_ru or "")
+            if ru:
+                st, orig = "done", translator._plain_text(job.description)
+            else:
+                st, orig = ("unavailable" if down else "pending"), translator._plain_text(job.description)
+            item = {"id": job.id, "ru": ru[:6000], "orig": orig[:6000], "st": st}
+            fp = f"{st}:{len(item['ru'])}:{len(item['orig'])}"
+            if _jobtexts_sent.get(job.id) == fp:
+                continue   # уже отправляли ровно это — не гоняем
+            items.append(item)
+            batch += 1
+        if not items:
+            _jobtexts_sync_last = attempt
+            return True
+        if cloud_auth.report_job_texts(items):
+            for it in items:
+                _jobtexts_sent[it["id"]] = f"{it['st']}:{len(it['ru'])}:{len(it['orig'])}"
+            _jobtexts_sync_last = attempt
+            return True
+    except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
+        print(f"jobtexts-sync: ошибка — {e}")
     return False
 
 
@@ -853,6 +902,7 @@ def _tg_poller_loop() -> None:
                 _handle_tg_decisions(decisions)
                 _sync_applied_to_cloud()  # одно облако: держим «Поданные» свежими (троттлинг 30с)
                 _sync_jobs_to_cloud()     # фаза 2b: список подходящих вакансий в Mini App
+                _sync_job_texts_to_cloud()  # полные тексты вакансий для экрана детали в панели
                 _sync_filters_to_cloud()  # текущие фильтры + варианты для настройки с телефона
                 for cmd in commands:
                     if _tg_remote_command_expired(cmd):
@@ -1245,6 +1295,7 @@ def _handle_tg_remote_command(command: dict) -> str:
             result = _tg_offer_tick(include_existing=True, ignore_schedule=True, limit=limit, panel=is_panel)
             if is_panel:
                 _sync_jobs_to_cloud(force=True)
+                _sync_job_texts_to_cloud(force=True)
             stats = autopilot.tg_queue_stats()
             if result.get("sent"):
                 label = "Добавил в панель" if is_panel else "Отправил карточек"
@@ -1305,6 +1356,11 @@ async def _lifespan(app):
     _scheduler = sched
     _reschedule_autopilot_scan()  # подстроить интервал под текущее состояние автопилота
     _ensure_tg_poller()           # слушатель Telegram (привязка + кнопки ✅/❌)
+    try:                          # фоновый перевод описаний для детали в Mini App
+        import translate_worker
+        translate_worker.start(sync_fn=_sync_job_texts_to_cloud, busy_fn=_submit_in_progress)
+    except Exception as _exc:  # noqa: BLE001 — перевод не критичен для запуска
+        print(f"translate-worker: не запустился — {_exc}")
     age = _data_age_minutes()
     if age is None or age >= 30:  # данные устарели — обновить сразу, в фоне
         threading.Thread(target=_sync_jobs, daemon=True).start()
@@ -1314,6 +1370,11 @@ async def _lifespan(app):
         threading.Thread(target=_tg_offer_tick, daemon=True).start()
     yield
     _tg_stop.set()
+    try:
+        import translate_worker
+        translate_worker.stop()
+    except Exception:  # noqa: BLE001
+        pass
     sched.shutdown(wait=False)
 
 

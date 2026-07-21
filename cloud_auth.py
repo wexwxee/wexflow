@@ -393,6 +393,18 @@ def report_jobs(items, timeout: int = 8) -> bool:
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
 
+def report_job_texts(items, timeout: int = 8) -> bool:
+    """Отправить в облако полные тексты вакансий (перевод + оригинал + статус)
+    для экрана детали в Mini App. items: [{id, ru, orig, st}]. Неуспех не фатален
+    (старое облако не знает kind jobtext_sync — просто вернёт ok:false)."""
+    payload = {
+        "kind": "jobtext_sync",
+        "deviceId": device_id(),
+        "texts": list(items or [])[:40],
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
+
+
 def report_filters(payload: dict, timeout: int = 8) -> bool:
     """Отправить в облако текущие фильтры первого набора + варианты выбора —
     панель Mini App показывает их и может прислать команду set_filters.
