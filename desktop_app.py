@@ -1181,6 +1181,33 @@ def _on_window_closing(window):
     return False
 
 
+def _error_page(title: str, body_html: str, download_url: str) -> str:
+    """HTML экрана ошибки с кнопкой «Скачать свежую версию» (открывает GitHub в
+    браузере) и видимой ссылкой — на случай, если приложение сломалось и
+    обновиться изнутри нельзя. Кнопки зовут js_api окна (open_external/close)."""
+    safe_url = str(download_url or "").replace("'", "%27").replace('"', "%22")
+    return (
+        "<body style='font:16px system-ui;background:#101111;color:#e6e8e6;"
+        "display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;"
+        "text-align:center'>"
+        "<div style='max-width:480px;padding:24px'>"
+        f"<h2 style='margin:0 0 12px'>{title}</h2>"
+        f"<p style='color:#9aa0a6;line-height:1.6;text-align:left'>{body_html}</p>"
+        "<div style='display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:18px'>"
+        "<button onclick=\"try{window.pywebview.api.open_external('" + safe_url + "')}catch(e){}\" "
+        "style='background:#1ed760;color:#0e1011;border:none;border-radius:10px;padding:12px 18px;"
+        "font-weight:800;font-size:14px;cursor:pointer'>⬇ Скачать свежую версию</button>"
+        "<button onclick=\"try{window.pywebview.api.close()}catch(e){}\" "
+        "style='background:#2a2d2f;color:#fff;border:1px solid #3a3d3f;border-radius:10px;"
+        "padding:12px 18px;font-weight:700;font-size:14px;cursor:pointer'>Закрыть</button>"
+        "</div>"
+        "<p style='color:#6b7075;font-size:12.5px;margin-top:16px;word-break:break-all'>"
+        "Или открой вручную:<br>"
+        f"<span style='color:#9aa0a6;user-select:all'>{download_url}</span></p>"
+        "</div></body>"
+    )
+
+
 # ── окно приложения ────────────────────────────────────────────────────
 def run_window(minimized: bool = False):
     # Полностью выключаем HTTP-кэш WebView2 — иначе окно показывает страницу,
@@ -1231,24 +1258,25 @@ def run_window(minimized: bool = False):
         # Серверы не поднялись. ВАЖНО: показываем HTML через html=, а НЕ через
         # data:-URL — иначе pywebview принимает его за локальный путь, поднимает
         # свой http-сервер и отдаёт «404 / File does not exist» (путанее некуда).
-        fallback_html = (
-            "<body style='font:16px system-ui;background:#101111;color:#e6e8e6;"
-            "display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"
-            "text-align:center'>"
-            "<div style='max-width:460px;padding:24px'>"
-            "<h2 style='margin:0 0 10px'>WexFlow не смог запустить серверы</h2>"
-            "<p style='color:#9aa0a6;line-height:1.6;text-align:left'>"
-            "Чаще всего это бывает при <b>первом запуске</b>: антивирус проверяет свежие файлы, "
-            "и они стартуют медленнее обычного.<br><br>"
-            "<b>Что сделать:</b><br>"
-            "1. Закрой это окно полностью.<br>"
-            "2. Подожди примерно минуту.<br>"
-            "3. Запусти WexFlow снова — обычно со второго раза всё стартует.<br><br>"
-            "Если повторяется — добавь папку WexFlow в исключения антивируса "
-            "или переустанови приложение свежим установщиком (WexFlow-Setup.exe)."
-            "</p></div></body>"
-        )
-        native_window = webview.create_window("WexFlow", html=fallback_html, **win_kwargs)
+        try:
+            import version as _v
+            _repo = (getattr(_v, "GITHUB_REPO", "") or "").strip() or "wexwxee/wexflow"
+        except Exception:  # noqa: BLE001
+            _repo = "wexwxee/wexflow"
+        _rel = f"https://github.com/{_repo}/releases/latest"
+        native_window = webview.create_window(
+            "WexFlow", html=_error_page(
+                "WexFlow не смог запустить серверы",
+                "Чаще всего это бывает при <b>первом запуске</b> (антивирус проверяет свежие файлы) "
+                "или если порт занят другим приложением (например, Docker/WSL).<br><br>"
+                "<b>Что сделать:</b><br>"
+                "1. Закрой это окно полностью.<br>"
+                "2. Подожди примерно минуту.<br>"
+                "3. Запусти WexFlow снова — обычно со второго раза всё стартует.<br><br>"
+                "Если повторяется — переустанови приложение свежей версией с GitHub "
+                "(кнопка ниже) или добавь папку WexFlow в исключения антивируса.",
+                _rel),
+            **win_kwargs)
     # перетаскивание — через pywebview drag-region (класс .desktop-drag),
     # ресайз — через window_chrome.js + resize_window. Нативный WndProc-хук на
     # родительском окне для WebView2 не работает (хиты ловит дочернее окно),
@@ -1287,12 +1315,20 @@ def run_window(minimized: bool = False):
         try:
             fallback_log = appdata_root() / "native_window_error.log"
             fallback_log.write_text(str(exc), encoding="utf-8", errors="replace")
+            try:
+                import version as _v
+                _repo = (getattr(_v, "GITHUB_REPO", "") or "").strip() or "wexwxee/wexflow"
+            except Exception:  # noqa: BLE001
+                _repo = "wexwxee/wexflow"
+            _rel = f"https://github.com/{_repo}/releases/latest"
             import ctypes
             ctypes.windll.user32.MessageBoxW(
                 None,
                 "WexFlow не смог открыть окно приложения на этом ПК.\n\n"
-                "Запусти WexFlow Setup заново: он установит нужные компоненты Windows "
-                "(.NET Framework 4.8 и WebView2 Runtime), после этого приложение должно открыться.\n\n"
+                "Скачай свежую версию и запусти WexFlow-Setup.exe — он установит нужные "
+                "компоненты Windows (.NET Framework 4.8 и WebView2 Runtime), после этого "
+                "приложение должно открыться:\n\n"
+                f"{_rel}\n\n"
                 f"Технический лог: {fallback_log}",
                 "WexFlow",
                 0x10,

@@ -476,9 +476,19 @@ def gui_main():
                 elif kind == "error":
                     state["phase"] = "error"
                     cv.itemconfig(sub_id, text="Ошибка установки", fill=C_ERR)
-                    cv.itemconfig(status_id, text=rest[0], fill=C_ERR)
+                    cv.itemconfig(status_id,
+                                  text=rest[0] + "\n\nСкачать свежую версию вручную:\n"
+                                  f"github.com/{REPO}/releases",
+                                  fill=C_ERR)
                     set_progress(0)
-                    set_button("Закрыть", root.destroy)
+
+                    def _open_releases():
+                        try:
+                            import webbrowser
+                            webbrowser.open(f"https://github.com/{REPO}/releases/latest")
+                        except Exception:
+                            pass
+                    set_button("Скачать свежую версию", _open_releases)
         except queue.Empty:
             pass
         root.after(80, poll)
