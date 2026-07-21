@@ -11,6 +11,8 @@
 Запуск:  python -m uvicorn hub:app --host 127.0.0.1 --port 8080
 (оба бэкенда — Salling на 8000 и 7-Eleven на 7111 — должны быть подняты)
 """
+import os
+
 import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse
@@ -19,9 +21,14 @@ import local_guard
 
 app = FastAPI(title="Job Apply Hub")
 
+# Порты бэкендов приходят из окружения: рабочий стол мог выбрать НЕ 8000/7111,
+# если те заняты чужим софтом (Docker/WSL на 8080 сдвигает всю тройку). Дефолты
+# сохранены для запуска hub напрямую в dev.
+_SALLING_PORT = os.environ.get("WEXFLOW_SALLING_PORT", "8000")
+_SEVEN_PORT = os.environ.get("WEXFLOW_SEVEN_PORT", "7111")
 BACKENDS = {
-    "salling": "http://127.0.0.1:8000",
-    "7e": "http://127.0.0.1:7111",
+    "salling": f"http://127.0.0.1:{_SALLING_PORT}",
+    "7e": f"http://127.0.0.1:{_SEVEN_PORT}",
 }
 _DROP_REQ = {"host", "content-length", "connection"}
 _DROP_RESP = {"content-length", "content-encoding", "transfer-encoding", "connection"}

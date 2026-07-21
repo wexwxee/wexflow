@@ -857,6 +857,56 @@ def _port_up(port: int) -> bool:
         return False
 
 
+def _bind_free(port: int) -> bool:
+    """True, если порт СВОБОДЕН (можно занять). На Windows bind к занятому порту
+    падает без SO_REUSEADDR — то, что нужно для честной проверки."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _port_clean(port: int) -> bool:
+    """Порт «чистый» для нашего сервера: можно занять (bind) И на нём НЕ отвечает
+    чужой сервер (connect). Docker/WSL держат 8080 так, что bind на 127.0.0.1
+    проходит, но connect отвечает им — на таком порту loopback-трафик может уйти
+    не туда, поэтому берём порт, где никого нет вообще."""
+    return _bind_free(port) and not _port_up(port)
+
+
+def _pick_port(default: int, used: set) -> int:
+    """Чистый порт: сам default, если чистый; иначе ближайший выше. Нужно, когда
+    default занят ЧУЖИМ приложением (частый случай — Docker/WSL держат 8080, и
+    Hub-сервер WexFlow не мог подняться → «серверы не запустились»)."""
+    if default not in used and _port_clean(default):
+        return default
+    for p in range(default + 1, default + 60):
+        if p not in used and _port_clean(p):
+            return p
+    return default  # не нашли — вернём дефолт, пусть падёт с понятной ошибкой
+
+
+def _resolve_ports() -> None:
+    """Выбрать реально свободные порты для трёх серверов и сообщить их Hub-у через
+    окружение (дочерние воркеры наследуют env). Вызывать ОДИН раз перед первым
+    start_servers(), после _free_our_ports() (тот уже снял наши зависшие процессы)."""
+    global SALLING_PORT, HUB_PORT, SEVEN_PORT
+    used: set = set()
+    SALLING_PORT = _pick_port(8000, used); used.add(SALLING_PORT)
+    SEVEN_PORT = _pick_port(7111, used); used.add(SEVEN_PORT)
+    HUB_PORT = _pick_port(8080, used); used.add(HUB_PORT)
+    # Hub проксирует на Salling/7-Eleven — он читает их порты из окружения.
+    os.environ["WEXFLOW_SALLING_PORT"] = str(SALLING_PORT)
+    os.environ["WEXFLOW_SEVEN_PORT"] = str(SEVEN_PORT)
+    if (SALLING_PORT, SEVEN_PORT, HUB_PORT) != (8000, 7111, 8080):
+        print(f"[WexFlow] порты заняты чужими — выбрал свободные: "
+              f"salling={SALLING_PORT}, 7e={SEVEN_PORT}, hub={HUB_PORT}")
+
+
 def _spawn(args, cwd=None):
     return subprocess.Popen(
         [str(a) for a in args],
@@ -897,7 +947,13 @@ def _remember_started(name, proc):
 
 
 def _ensure(port, args, cwd, name):
-    if _port_up(port):
+    # Решаем по BIND, а не по CONNECT. Чужой сервер (Docker/WSL на 8080) ОТВЕЧАЕТ
+    # на connect — раньше из-за этого наш Hub считался «уже поднятым» и не
+    # запускался («серверы не запустились»). Bind на 127.0.0.1:порт при этом
+    # свободен, и наш сервер спокойно занимает loopback (в Windows более точный
+    # 127.0.0.1-bind выигрывает у 0.0.0.0). Не свободен → порт держит НАШ сервер
+    # (перезапуск) — второй не плодим.
+    if not _port_clean(port):
         return
     try:
         _remember_started(name, _spawn(args, cwd))
@@ -1007,12 +1063,13 @@ def wait_for_hub(timeout=60) -> bool:
             if (hub.get("service") == "wexflow-hub"
                     and salling.get("service") == "wexflow-salling"):
                 return True
-            # Порт занят чужим/старым сервером: ждать весь таймаут бессмысленно.
-            return False
-        except urllib.error.HTTPError:
-            return False
-        except (OSError, ValueError, urllib.error.URLError):
-            time.sleep(0.4)
+            # Порт отвечает, но это ещё НЕ наш сервер (например, наш Hub только
+            # поднимается, а на 8080 пока отвечает чужой Docker/WSL). Раньше здесь
+            # был мгновенный выход — из-за него окно «серверы не запустились».
+            # Теперь ждём: как только ответит наш сервис, вернём True.
+        except (OSError, ValueError, urllib.error.URLError, urllib.error.HTTPError):
+            pass
+        time.sleep(0.4)
     return False
 
 
@@ -1133,6 +1190,7 @@ def run_window(minimized: bool = False):
     )
     set_playwright_env()
     _free_our_ports()
+    _resolve_ports()   # чужой софт на 8080 (Docker/WSL) и т.п. — берём свободные порты
     start_servers()
     ensure_browser_async()
     ready = wait_for_hub(90)
