@@ -119,6 +119,41 @@ def _rm(path):
         pass
 
 
+def _stop_running_wexflow() -> None:
+    """Закрыть уже запущенный WexFlow перед подменой файлов.
+
+    Без этого os.rename(папка → .old) падает с [WinError 32] «файл занят другим
+    процессом»: работающий WexFlow.exe (и его серверы-воркеры) держат свою папку.
+    Установщик называется WexFlow-Setup.exe — себя этим не убьёт."""
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "WexFlow.exe", "/T"],
+            creationflags=PS_HIDE,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+    time.sleep(2.0)  # дать ОС отпустить хендлы папки/файлов
+
+
+def _rename_with_retry(src: str, dst: str, attempts: int = 6, delay: float = 1.0) -> None:
+    """os.rename с повторами: антивирус/индексатор Windows держат свежую папку
+    короткими блокировками; одной попытки мало (та же причина WinError 32)."""
+    last = None
+    for i in range(attempts):
+        try:
+            os.rename(src, dst)
+            return
+        except OSError as exc:
+            last = exc
+            _stop_running_wexflow() if i == 0 else time.sleep(delay)
+    raise RuntimeError(
+        "Не удалось обновить: папка WexFlow занята. Закрой WexFlow полностью "
+        "(правый клик по иконке у часов → «Выйти совсем»), затем запусти "
+        "установщик снова."
+    ) from last
+
+
 def safe_extract_zip(zip_path: str, dest: str) -> None:
     """Extract a release zip without allowing absolute or parent paths."""
     root = Path(dest).resolve()
@@ -157,7 +192,11 @@ def install_from_zip(tmp_zip: str) -> None:
         if os.path.exists(backup):
             shutil.rmtree(backup, ignore_errors=True)
         if os.path.exists(APP_DIR):
-            os.rename(APP_DIR, backup)
+            # ВАЖНО: сначала закрыть работающий WexFlow, иначе rename папки падает
+            # с [WinError 32] «файл занят другим процессом» (его exe/воркеры держат
+            # свою папку). Затем — с повторами против блокировок антивируса.
+            _stop_running_wexflow()
+            _rename_with_retry(APP_DIR, backup)
         try:
             shutil.move(new_app, APP_DIR)
         except Exception:
