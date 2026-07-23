@@ -152,6 +152,75 @@ def suggest_filters(
     return {"ok": False, "error": last_error}
 
 
+def _chat_system(categories, brands, employments, regions) -> str:
+    return (
+        "Ты дружелюбный помощник по настройке поиска вакансий в сети Salling Group "
+        "в Дании (Netto, Føtex, Bilka и др.). Веди короткий живой диалог ПО-РУССКИ: "
+        "задавай по ОДНОМУ простому вопросу за раз (где искать и как далеко от дома, "
+        "кем хочет работать, сколько часов в неделю, возраст, важны ли бренды). "
+        "Можешь отвечать и на обычные вопросы пользователя своими словами. Как только "
+        "данных хватает для поиска — заполни фильтры и поставь done=true.\n\n"
+        "Коды справочника (в fields используй ТОЛЬКО эти коды):\n"
+        f"{_catalog(categories, brands, employments, regions)}\n\n"
+        "Отвечай СТРОГО JSON-объектом без текста вокруг: "
+        '{"reply": "строка для пользователя (вопрос или комментарий)", '
+        '"done": true если фильтры готовы иначе false, '
+        '"fields": объект фильтров или null}. '
+        "Поля fields: max_km/min_hours/max_hours/max_age_days — числа или null; "
+        "category/brand/employment_type/regions — массивы КОДОВ из справочника; "
+        'age — "under18"/"adult"/null; cities/keywords/exclude_keywords — строки '
+        "(датские города, напр. København). Не выдумывай ограничений, которых нет в диалоге."
+    )
+
+
+def chat(messages, categories, brands, employments, regions) -> dict:
+    """Многоходовый диалог настройки фильтров. messages: [{"role":"user"|"model","text":str}].
+    Возвращает {"ok":True,"reply":str,"done":bool,"fields":dict|None} или {"ok":False,"error":str}."""
+    key = api_key()
+    if not key:
+        return {"ok": False, "error": "ИИ не подключён: добавь ключ Gemini в secrets.json (gemini_api_key)."}
+    msgs = [m for m in (messages or [])
+            if isinstance(m, dict) and str(m.get("text") or "").strip()][-16:]
+    if not msgs:
+        return {"ok": False, "error": "Напиши, что ищешь."}
+    contents = [{"role": ("user" if m.get("role") == "user" else "model"),
+                 "parts": [{"text": str(m.get("text"))[:2000]}]} for m in msgs]
+    body = {
+        "systemInstruction": {"parts": [{"text": _chat_system(categories, brands, employments, regions)}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.3, "responseMimeType": "application/json"},
+    }
+    last_error = "Не удалось получить ответ Gemini."
+    for mdl in _models_to_try():
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent"
+        try:
+            r = httpx.post(url, headers={"x-goog-api-key": key}, json=body, timeout=30)
+        except Exception as e:  # noqa: BLE001
+            last_error = f"Не вышло связаться с Gemini: {e}"
+            continue
+        if r.status_code == 200:
+            try:
+                raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                data = json.loads(raw)
+            except Exception:  # noqa: BLE001
+                last_error = "Не удалось разобрать ответ Gemini."
+                continue
+            reply = str(data.get("reply") or "").strip()[:1200]
+            done = bool(data.get("done"))
+            fields = None
+            if done and isinstance(data.get("fields"), dict):
+                fields, _ = _sanitize(data["fields"], categories, brands, employments, regions)
+            return {"ok": True, "reply": reply or "Хорошо.", "done": done, "fields": fields}
+        try:
+            detail = (r.json().get("error", {}) or {}).get("message", "")
+        except Exception:  # noqa: BLE001
+            detail = r.text[:200]
+        last_error = f"Gemini вернул ошибку {r.status_code}: {detail}"
+        if r.status_code not in (429, 503):
+            return {"ok": False, "error": last_error}
+    return {"ok": False, "error": last_error}
+
+
 def _sanitize(data: dict, categories, brands, employments, regions) -> tuple[dict, str]:
     """Оставляем только валидные значения: коды — из справочника, числа — положительные."""
     valid = {

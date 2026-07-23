@@ -405,6 +405,21 @@ def report_job_texts(items, timeout: int = 8) -> bool:
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
 
+def report_ai_reply(req_id: str, reply: str, done: bool, fields, error: str = "", timeout: int = 8) -> bool:
+    """Ответ ИИ-помощника фильтров для диалога в панели: ПК посчитал через Gemini,
+    кладём в облако (ai_reply:<device>), панель забирает по reqId."""
+    payload = {
+        "kind": "ai_reply",
+        "deviceId": device_id(),
+        "reqId": str(req_id or ""),
+        "reply": str(reply or ""),
+        "done": bool(done),
+        "fields": fields if isinstance(fields, dict) else None,
+        "error": str(error or ""),
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
+
+
 def report_filters(payload: dict, timeout: int = 8) -> bool:
     """Отправить в облако текущие фильтры первого набора + варианты выбора —
     панель Mini App показывает их и может прислать команду set_filters.

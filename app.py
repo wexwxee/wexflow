@@ -574,6 +574,17 @@ _jobs_sync_last = 0.0
 _jobtexts_sync_last = 0.0
 _jobtexts_sent = {}   # jobId -> отпечаток последнего отправленного текста (не гонять то же)
 _cloud_sync_attempt_last = {"applied": 0.0, "jobs": 0.0, "filters": 0.0, "jobtexts": 0.0}
+_cloud_sync_sent_hash = {}   # kind -> отпечаток последнего УСПЕШНО отправленного тела
+
+
+def _sync_digest(payload) -> str:
+    """Отпечаток тела синка. Если он не изменился с прошлой отправки — не гоним то
+    же самое в облако повторно (пустая трата команд бесплатного Redis)."""
+    try:
+        blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    except Exception:  # noqa: BLE001
+        return ""
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
 
 def _begin_cloud_sync(kind: str, last_success: float, interval: int,
@@ -619,8 +630,14 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
                 "url": job.application_link or "",
                 "ts": ts,
             })
+        digest = _sync_digest(items)
+        if not force and digest and _cloud_sync_sent_hash.get("applied") == digest:
+            _applied_sync_last = attempt   # список «Поданных» не изменился — не шлём
+            return False
         if cloud_auth.report_applied(items):
             _applied_sync_last = attempt
+            if digest:
+                _cloud_sync_sent_hash["applied"] = digest
             return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"applied-sync: ошибка — {e}")
@@ -860,14 +877,22 @@ def _sync_filters_to_cloud(force: bool = False) -> bool:
     return False
 
 
+# Холостой «пульс» на бесплатном облачном Redis: у него жёсткий лимит команд за
+# период, и частый пульс (6 c) выедал его за ~3 дня → «команды не доходят до ПК».
+# 40 c берегут лимит; сразу после действия интервал сам падает до 2 c (had_work),
+# поэтому серия нажатий в приложении остаётся отзывчивой. Если однажды перейдём на
+# платный Redis — верни сюда 6 c и окно онлайна ONLINE_WINDOW_MS в боте к ~45 c.
+TG_IDLE_POLL_SEC = 40
+
+
 def _tg_poll_delay(fail_streak: int, signed_in: bool, had_work: bool = False) -> int:
-    """Адаптивный интервал: быстрый ответ после работы, умеренный heartbeat и
-    экспоненциальный backoff при проблемах сети."""
+    """Адаптивный интервал: быстрый ответ после работы, редкий холостой heartbeat
+    (бережём лимит облачного Redis) и экспоненциальный backoff при сбоях сети."""
     if fail_streak > 0:
-        return min(60, 6 * (2 ** min(fail_streak - 1, 4)))
+        return min(120, 10 * (2 ** min(fail_streak - 1, 4)))
     if had_work:
         return 2
-    return 6 if signed_in else 15
+    return TG_IDLE_POLL_SEC if signed_in else 20
 
 
 def _tg_poller_loop() -> None:
@@ -908,8 +933,12 @@ def _tg_poller_loop() -> None:
                     if _tg_remote_command_expired(cmd):
                         continue
                     result_text = _handle_tg_remote_command(cmd)
-                    cloud_auth.send_command_result(cmd, result_text)
-                if cycle.get("ack"):
+                    if result_text:  # пустой ответ (напр. ИИ-диалог) в чат не шлём
+                        cloud_auth.send_command_result(cmd, result_text)
+                # Подтверждаем (и тем «сливаем» очередь) только когда реально что-то
+                # пришло. Пустой ack на каждом холостом пульсе = лишний HTTP-запрос и
+                # лишние команды Redis — именно это доедало бесплатный лимит облака.
+                if cycle.get("ack") and (decisions or commands):
                     cloud_auth.acknowledge_poll(decisions, commands)
         except Exception as e:  # noqa: BLE001 — слушатель не должен падать
             _tg_poll_state["fail_streak"] = int(_tg_poll_state.get("fail_streak") or 0) + 1
@@ -1261,6 +1290,25 @@ def _handle_tg_remote_command(command: dict) -> str:
             _reschedule_autopilot_scan()
             _sync_filters_to_cloud(force=True)   # карточка автопилота в панели — сразу свежая
             return _remote_status_text("⏸ Автопилот поставлен на паузу.")
+
+        if action == "ai_chat":
+            # ИИ-диалог настройки фильтров: панель шлёт реплики, ПК спрашивает
+            # Gemini своим ключом и кладёт ответ в облако (панель заберёт по reqId).
+            # В чат ничего не шлём (return "") — общение идёт в панели.
+            req_id = str(command.get("reqId") or "")
+            messages = command.get("messages") or []
+            try:
+                res = ai_filters.chat(messages, labels.CATEGORY, labels.BRANDS,
+                                      labels.EMPLOYMENT, labels.REGION)
+            except Exception as e:  # noqa: BLE001
+                res = {"ok": False, "error": str(e)[:200]}
+            if res.get("ok"):
+                cloud_auth.report_ai_reply(req_id, res.get("reply", ""),
+                                           bool(res.get("done")), res.get("fields"))
+            else:
+                cloud_auth.report_ai_reply(req_id, "", False, None,
+                                           error=res.get("error", "ИИ недоступен"))
+            return ""
 
         if not account_mod.is_signed_in():
             return (

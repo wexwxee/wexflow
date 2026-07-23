@@ -7,14 +7,17 @@ import app
 
 
 def test_normal_poll_intervals():
-    assert app._tg_poll_delay(0, signed_in=True) == 6
-    assert app._tg_poll_delay(0, signed_in=False) == 15
+    # Холостой пульс намеренно редкий (TG_IDLE_POLL_SEC) — он жёг лимит команд
+    # облачного Redis. Сверяемся с константой, чтобы тест не устаревал при её смене.
+    assert app._tg_poll_delay(0, signed_in=True) == app.TG_IDLE_POLL_SEC
+    assert app._tg_poll_delay(0, signed_in=False) == 20
+    # сразу после работы отвечаем быстро — отзывчивость там, где она нужна
     assert app._tg_poll_delay(0, signed_in=True, had_work=True) == 2
 
 
 def test_poll_backoff_is_bounded():
-    assert [app._tg_poll_delay(n, True) for n in range(1, 6)] == [6, 12, 24, 48, 60]
-    assert app._tg_poll_delay(100, True) == 60
+    assert [app._tg_poll_delay(n, True) for n in range(1, 6)] == [10, 20, 40, 80, 120]
+    assert app._tg_poll_delay(100, True) == 120
 
 
 def test_cloud_connection_state_is_honest():
