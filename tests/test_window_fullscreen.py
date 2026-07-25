@@ -101,6 +101,7 @@ def test_frontend_installs_once_and_routes_both_gestures_through_guard():
     assert "WexFlowWindowChrome.toggleMaximize" in base
     assert "window.toggle_fullscreen()" in desktop
     assert "_native_set_rect" not in desktop
+    assert "shadow=False" in desktop
 
 
 if __name__ == "__main__":

@@ -1210,7 +1210,11 @@ def run_window(minimized: bool = False):
         resizable=True,
         frameless=True,
         easy_drag=False,
-        shadow=True,
+        # DWM's native shadow is drawn outside a frameless window. In real
+        # fullscreen Windows leaves its 6–7 px offset visible at the left and
+        # bottom edges even with the border colour disabled. Our UI already has
+        # its own card shadows, so disabling the outer native shadow is cleaner.
+        shadow=False,
         background_color="#101111",
     )
 
