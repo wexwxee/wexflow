@@ -416,12 +416,282 @@
     <a class="{{ 'active' if settings_section == 'autopilot' else '' }}" href="/settings/autopilot">{{ ic.i('zap', 13) }} Автопилот</a>
     <a class="{{ 'active' if settings_section == 'telegram' else '' }}" href="/settings/telegram">{{ ic.i('send', 13) }} Telegram</a>
     <a class="{{ 'active' if settings_section == 'forms' else '' }}" href="/settings/forms">{{ ic.i('sparkles', 13) }} Анкеты и ИИ</a>
+    <a class="{{ 'active' if settings_section == 'ai' else '' }}" href="/settings/ai">{{ ic.i('zap', 13) }} ИИ и лимиты</a>
     <a href="/account#profile">{{ ic.i('user', 13) }} Аккаунт</a>
   </nav>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить в профиле: {{ missing_fields|join(', ') }}.</div>{% endif %}
   {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее (улица, город или индекс).</div>{% endif %}
+
+  {% if settings_section == 'ai' %}
+  <!-- ═══ ИИ и лимиты: провайдеры, мастер Groq, раздельные лимиты ═══ -->
+  <style>
+    .ai-prov-grid{display:grid;gap:12px}
+    .ai-prov{border:1px solid var(--border,rgba(255,255,255,.12));border-radius:14px;padding:14px}
+    .ai-prov .head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .ai-prov .title{font-weight:700;display:flex;align-items:center;gap:8px}
+    .ai-prov .badge{font-size:11px;border:1px solid var(--border,rgba(255,255,255,.16));border-radius:999px;padding:2px 9px;color:var(--muted)}
+    .ai-prov .badge.on{color:#0b1220;background:#2ecc71;border-color:transparent}
+    .ai-prov .badge.role{background:var(--accent,#7cc4ff);color:#0b1220;border-color:transparent}
+    .ai-prov .mask{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12.5px}
+    .ai-prov .bar{height:7px;border-radius:7px;background:var(--border,rgba(255,255,255,.12));overflow:hidden;margin:10px 0 6px}
+    .ai-prov .bar>i{display:block;height:100%;border-radius:7px}
+    .ai-prov .meta{font-size:12px;color:var(--muted);line-height:1.55}
+    .ai-prov .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    .ai-wizard{border:1px dashed var(--border,rgba(255,255,255,.2));border-radius:14px;padding:16px;margin-top:14px}
+    .ai-wizard ol{margin:8px 0 12px 18px;padding:0;line-height:1.7}
+    .ai-step{display:none} .ai-step.on{display:block}
+    .ai-key-row{display:flex;gap:8px;align-items:center}
+    .ai-key-row input{flex:1}
+    .ai-progress{font-size:12.5px;color:var(--muted);margin:8px 0}
+    .ai-progress b{color:var(--fg)}
+    .ai-err{color:var(--err-txt,#ef5b67);font-size:13px;margin-top:8px}
+    .ai-ok{color:#2ecc71;font-size:13px;margin-top:8px}
+    .ai-consent{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin:10px 0}
+  </style>
+  <section class="panel">
+    <h2>{{ ic.i('zap', 17) }} ИИ и лимиты</h2>
+    <p class="hint">WexFlow использует ИИ, чтобы помогать с фильтрами, разбором документов и дозаполнением анкет.
+      Подключается <b>твой личный бесплатный ключ</b> — он хранится только на этом компьютере, зашифрованно, и не уходит в облако.
+      Лимит не делится с другими пользователями.</p>
+
+    {% if ai_legacy_gemini %}
+    <div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">
+      Найдено старое подключение Gemini. Привязать его к текущему аккаунту (другие аккаунты на этом ПК не смогут им пользоваться)?
+      <button type="button" class="btn-small" id="aiMigrateGemini">Привязать к моему аккаунту</button>
+    </div>
+    {% endif %}
+
+    <div class="ai-prov-grid" id="aiProvGrid"><!-- карточки провайдеров рендерит JS --></div>
+
+    <div class="ai-wizard" id="aiGroqWizard" hidden>
+      <div class="ai-step on" data-step="1">
+        <h3 style="margin:0 0 4px;">Подключи бесплатный ИИ за несколько минут</h3>
+        <p class="hint" style="margin:0 0 8px;">
+          Groq запускает модель <b>Qwen</b> для функций WexFlow. Нужен бесплатный личный API-ключ — он работает только для
+          твоих запросов и его лимит не делится с другими. Банковская карта не требуется.
+          Ключ похож на пароль: никому его не отправляй.</p>
+        <p class="hint" style="margin:0 0 10px;">
+          <b>Важно:</b> создай <b>свой личный</b> аккаунт Groq. Не используй чужой ключ и не вступай в общую организацию —
+          иначе лимит будет общим.</p>
+        <div class="actions">
+          <a class="btn primary" href="{{ ai_groq_keys_url }}" target="_blank" rel="noopener">Перейти в Groq →</a>
+          <button type="button" class="btn" data-goto="2">Уже открыл — дальше</button>
+        </div>
+      </div>
+      <div class="ai-step" data-step="2">
+        <h3 style="margin:0 0 4px;">Что сделать на сайте Groq</h3>
+        <ol>
+          <li>Войди или создай аккаунт Groq.</li>
+          <li>Открой страницу <b>API Keys</b>.</li>
+          <li>Нажми <b>Create API Key</b>.</li>
+          <li>В названии напиши <b>WexFlow</b>.</li>
+          <li>Создай ключ.</li>
+          <li>Скопируй ключ — Groq показывает его только один раз.</li>
+          <li>Вернись сюда и вставь ключ ниже.</li>
+        </ol>
+        <div class="actions">
+          <button type="button" class="btn" data-goto="1">← Назад</button>
+          <button type="button" class="btn primary" data-goto="3">Я создал ключ — продолжить</button>
+        </div>
+      </div>
+      <div class="ai-step" data-step="3">
+        <h3 style="margin:0 0 6px;">Вставь ключ</h3>
+        <div class="ai-key-row">
+          <input type="password" id="aiGroqKey" placeholder="gsk_…" autocomplete="off" spellcheck="false">
+          <button type="button" class="btn" id="aiGroqReveal" aria-label="Показать ключ">Показать</button>
+        </div>
+        <label class="ai-consent">
+          <input type="checkbox" id="aiGroqConsent">
+          <span>Для заполнения анкет WexFlow передаёт выбранному ИИ только необходимые поля профиля, текст вопроса и
+            допустимые варианты ответа. Документы передаются лишь при запуске соответствующей функции.
+            <a class="crosslink" href="{{ ai_groq_privacy_url }}" target="_blank" rel="noopener">Политика Groq по данным ↗</a></span>
+        </label>
+        <div class="actions">
+          <button type="button" class="btn" data-goto="2">← Назад</button>
+          <button type="button" class="btn primary" id="aiGroqConnect">Проверить и подключить</button>
+        </div>
+        <div class="ai-progress" id="aiGroqProgress" hidden></div>
+        <div class="ai-err" id="aiGroqError" hidden></div>
+      </div>
+      <div class="ai-step" data-step="5">
+        <div class="ai-ok" style="font-size:15px;font-weight:700;">✓ ИИ подключён</div>
+        <p class="hint" id="aiGroqSuccessMeta" style="margin:6px 0 10px;"></p>
+        <div class="actions">
+          <button type="button" class="btn" id="aiGroqTest">Сделать тестовый запрос</button>
+          <a class="btn" href="#stats">К статистике</a>
+          <button type="button" class="btn primary" id="aiGroqReturn" hidden>Вернуться к функции</button>
+        </div>
+        <div class="ai-progress" id="aiGroqTestOut" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="stats">
+    <h3 style="margin:0 0 8px;">{{ ic.i('sliders', 15) }} Подробные лимиты</h3>
+    <p class="hint" style="margin:0 0 10px;">Проценты каждого провайдера считаются отдельно и не складываются.
+      Где данные точные (заголовки аккаунта) — так и помечено; где WexFlow оценивает локально — тоже честно указано.</p>
+    <div id="aiStatsBody" class="meta">Загрузка…</div>
+    <div class="actions" style="margin-top:10px;">
+      <a class="crosslink" href="/settings/forms#ai-budget">Настройки Gemini RPD (1.3.21) →</a>
+    </div>
+  </section>
+
+  <script>
+  (function () {
+    var KEYS_URL = {{ ai_groq_keys_url | tojson }};
+    var grid = document.getElementById("aiProvGrid");
+    var wizard = document.getElementById("aiGroqWizard");
+    var statsBody = document.getElementById("aiStatsBody");
+    var COLORS = { green:"#2ecc71", normal:"#7cc4ff", yellow:"#f5a623", red:"#ef5b67", exhausted:"#ef5b67", error:"#c0392b" };
+    var returnUrl = new URLSearchParams(location.search).get("return") || "";
+
+    function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+    function providerLabel(p){ return p==="groq"?"Groq":(p==="gemini"?"Gemini":"ИИ"); }
+    function modelShort(m){ if(!m) return ""; if(m.indexOf("qwen")>=0) return "Qwen 3.6"; if(m.indexOf("gpt-oss")>=0) return "GPT-OSS"; if(m.indexOf("gemini")>=0) return "Gemini"; return m; }
+    function safeErr(c){ var map={invalid_key:"ключ не принят",permission_denied:"нет доступа к модели",rate_limit_rpm:"минутный лимит запросов",rate_limit_rpd:"дневной лимит запросов",rate_limit_tpm:"минутный лимит токенов",rate_limit_tpd:"дневной лимит токенов",provider_timeout:"таймаут",provider_unavailable:"провайдер недоступен",model_not_found:"модель недоступна",invalid_request:"некорректный запрос",offline:"нет связи",not_connected:"не подключён"}; return map[c]||c||"ошибка"; }
+
+    function cardHtml(name, card){
+      var connected = card && card.connected;
+      var role = card && (card.role==="primary"?"основной":(card.role==="secondary"?"резервный":""));
+      var head = '<div class="head"><div class="title">'+ providerLabel(name) + (connected?' · '+esc(modelShort(card.model)):'') +'</div><div>' +
+        (connected?'<span class="badge on">подключён</span>':'<span class="badge">не подключён</span>') +
+        (role?' <span class="badge role">'+role+'</span>':'') + '</div></div>';
+      if(!connected){
+        var msg = name==="groq" ? "Бесплатный личный ключ Qwen — за пару минут, без карты." : "Для обычного пользователя не обязателен.";
+        var btn = name==="groq" ? '<button type="button" class="btn primary" id="aiOpenWizard">Подключить Groq</button>' :
+                   '<a class="btn" href="/settings/forms#ai-budget">Про Gemini</a>';
+        return '<div class="ai-prov">'+head+'<div class="meta">'+msg+'</div><div class="actions">'+btn+'</div></div>';
+      }
+      var u = card.usage || {}; var pct = Math.max(0,Math.min(100,(u.percent_remaining|0))); var color = COLORS[u.color]||COLORS.green;
+      var req = u.requests || {}; var meta = "Маска ключа: <span class='mask'>"+esc(card.mask||"—")+"</span>";
+      meta += "<br>Запросы за день: "+ (req.remaining!=null?req.remaining:"—") +" из "+ (req.limit||"—") +" ("+(req.precise?"точно из заголовков":"локальная оценка")+")";
+      if(u.tokens_minute) meta += "<br>Токены/мин (TPM): "+u.tokens_minute.remaining+" из "+u.tokens_minute.limit;
+      var tl=u.tokens_day_local||{}; if(tl.total) meta += "<br>Токены за день (лок. оценка): ~"+tl.total;
+      if(u.limiting==="tokens_day") meta += "<br><b>Ограничивают дневные токены</b>";
+      if(u.reset_at) meta += "<br>Сброс: "+new Date(u.reset_at*1000).toLocaleString("ru-RU");
+      if(u.last_error_code) meta += "<br>Последняя ошибка: "+safeErr(u.last_error_code);
+      var acts = '<button type="button" class="btn" data-check="'+name+'">Проверить</button>' +
+                 (name==="groq"?'<button type="button" class="btn" id="aiReplaceGroq">Заменить ключ</button>':'') +
+                 '<button type="button" class="btn" data-disc="'+name+'">Отключить</button>' +
+                 (name==="groq"?'<a class="btn" href="'+esc(KEYS_URL)+'" target="_blank" rel="noopener">Ключи Groq / отозвать</a>':'');
+      return '<div class="ai-prov"><div style="border-left:4px solid '+color+';margin-left:-14px;padding-left:10px">'+head+
+        '<div class="bar"><i style="width:'+pct+'%;background:'+color+'"></i></div>'+
+        '<div class="meta">Осталось '+pct+'%<br>'+meta+'</div>'+
+        '<div class="actions">'+acts+'</div></div></div>';
+    }
+
+    function render(ai){
+      var providers = (ai && ai.providers) || {};
+      grid.innerHTML = cardHtml("groq", providers.groq) + cardHtml("gemini", providers.gemini);
+      // статистика
+      statsBody.innerHTML = "";
+      ["groq","gemini"].forEach(function(n){
+        var c = providers[n]; if(!c || !c.connected || !c.usage) return;
+        var u=c.usage, req=u.requests||{};
+        var line = "<div style='margin-bottom:8px'><b>"+providerLabel(n)+" · "+esc(modelShort(c.model))+"</b> — осталось "+
+          (u.percent_remaining|0)+"% · запросы "+(req.remaining!=null?req.remaining:"—")+"/"+(req.limit||"—")+
+          " ("+(req.precise?"точно":"оценка")+")";
+        if(u.tokens_minute) line += " · TPM "+u.tokens_minute.remaining+"/"+u.tokens_minute.limit;
+        line += "</div>";
+        statsBody.insertAdjacentHTML("beforeend", line);
+      });
+      if(!statsBody.innerHTML) statsBody.textContent = "Пока нет подключённых провайдеров.";
+      wireCards(ai);
+    }
+
+    function wireCards(ai){
+      var openW = document.getElementById("aiOpenWizard");
+      if(openW) openW.addEventListener("click", function(){ wizard.hidden=false; goto("1"); wizard.scrollIntoView({behavior:"smooth"}); });
+      var repl = document.getElementById("aiReplaceGroq");
+      if(repl) repl.addEventListener("click", function(){ wizard.hidden=false; goto("3"); wizard.scrollIntoView({behavior:"smooth"}); });
+      grid.querySelectorAll("[data-check]").forEach(function(b){ b.addEventListener("click", function(){ checkProvider(b.getAttribute("data-check"), b); }); });
+      grid.querySelectorAll("[data-disc]").forEach(function(b){ b.addEventListener("click", function(){ disconnect(b.getAttribute("data-disc")); }); });
+    }
+    function showWizard(){ wizard.hidden=false; }
+
+    function goto(step){ wizard.querySelectorAll(".ai-step").forEach(function(s){ s.classList.toggle("on", s.getAttribute("data-step")===step); }); }
+    wizard.addEventListener("click", function(e){ var g=e.target.closest("[data-goto]"); if(g) goto(g.getAttribute("data-goto")); });
+
+    // показать/скрыть ключ
+    document.getElementById("aiGroqReveal").addEventListener("click", function(){
+      var inp=document.getElementById("aiGroqKey"); var on=inp.type==="text"; inp.type=on?"password":"text"; this.textContent=on?"Показать":"Скрыть";
+    });
+
+    function connect(){
+      var key=document.getElementById("aiGroqKey").value.trim();
+      var consent=document.getElementById("aiGroqConsent").checked;
+      var err=document.getElementById("aiGroqError"); var prog=document.getElementById("aiGroqProgress");
+      err.hidden=true;
+      if(!key){ err.textContent="Вставь ключ."; err.hidden=false; return; }
+      if(!consent){ err.textContent="Отметь согласие на передачу необходимых полей."; err.hidden=false; return; }
+      prog.hidden=false;
+      var steps=["Проверяем ключ","Проверяем доступ к Qwen","Получаем состояние лимита","Сохраняем зашифрованно"]; var i=0;
+      prog.innerHTML="<b>"+steps[0]+"…</b>"; var tick=setInterval(function(){ i=Math.min(i+1,steps.length-1); prog.innerHTML="<b>"+steps[i]+"…</b>"; },700);
+      fetch("/api/ai/connect",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({provider:"groq",key:key,consent:true})})
+        .then(function(r){return r.json();}).then(function(d){
+          clearInterval(tick); prog.hidden=true;
+          document.getElementById("aiGroqKey").value="";
+          if(d && d.ok){
+            var meta = "Groq · "+modelShort(d.model||"qwen")+(d.info&&d.info.mask?" · "+d.info.mask:"");
+            document.getElementById("aiGroqSuccessMeta").textContent = meta + " — готов к работе.";
+            if(returnUrl){ var rb=document.getElementById("aiGroqReturn"); rb.hidden=false; rb.onclick=function(){ location.href=returnUrl; }; }
+            goto("5");
+            if(d.usage) render(d.usage);
+            if(window.refreshAiIndicator) window.refreshAiIndicator();
+          } else {
+            err.textContent = connectError(d);
+            err.hidden=false;
+          }
+        }).catch(function(){ clearInterval(tick); prog.hidden=true; err.textContent="Не удалось связаться с Groq. Ключ не удалён. Проверь интернет и повтори."; err.hidden=false; });
+    }
+    function connectError(d){
+      var c=d&&d.error_code;
+      if(c==="invalid_key") return "Ключ не принят. Проверь, что скопировал его полностью. Можно создать новый ключ в Groq и попробовать снова.";
+      if(c==="permission_denied") return "У аккаунта нет доступа к выбранной модели.";
+      if(c==="rate_limit_rpd"||c==="rate_limit_rpm"||c==="rate_limit_tpm"||c==="rate_limit_tpd") return "Ключ работает, но временный лимит сейчас исчерпан"+(d.retry_after?" (повтор через ~"+Math.round(d.retry_after)+" c)":"")+".";
+      if(c==="model_not_found") return "Ключ работает, но Qwen временно недоступен. WexFlow проверит резервную модель.";
+      if(c==="provider_timeout"||c==="offline") return "Не удалось связаться с Groq. Ключ не удалён. Проверь интернет и повтори.";
+      return (d&&d.error)||"Не удалось подключить.";
+    }
+    document.getElementById("aiGroqConnect").addEventListener("click", connect);
+
+    document.getElementById("aiGroqTest").addEventListener("click", function(){
+      var out=document.getElementById("aiGroqTestOut"); out.hidden=false; out.innerHTML="<b>Отправляю тестовый запрос…</b>";
+      fetch("/api/ai/validate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:"groq",use_generation:true})})
+        .then(function(r){return r.json();}).then(function(d){ out.textContent=d&&d.ok?"Ответ получен ✓ — всё работает.":"Проблема: "+safeErr(d&&d.error_code); if(d&&d.usage) render(d.usage); if(window.refreshAiIndicator) window.refreshAiIndicator(); })
+        .catch(function(){ out.textContent="Не удалось выполнить тест."; });
+    });
+
+    function checkProvider(name, btn){
+      var t=btn.textContent; btn.disabled=true; btn.textContent="Проверяю…";
+      fetch("/api/ai/validate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:name})})
+        .then(function(r){return r.json();}).then(function(d){ if(d&&d.usage) render(d.usage); btn.textContent=d&&d.ok?"OK ✓":"Ошибка"; if(window.refreshAiIndicator) window.refreshAiIndicator(); setTimeout(function(){btn.disabled=false;btn.textContent=t;},1200); })
+        .catch(function(){ btn.textContent="Сбой"; setTimeout(function(){btn.disabled=false;btn.textContent=t;},1200); });
+    }
+    function disconnect(name){
+      if(!confirm("Отключить и удалить локальный ключ "+providerLabel(name)+"? Действие можно отменить, подключив ключ заново.")) return;
+      fetch("/api/ai/disconnect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:name})})
+        .then(function(r){return r.json();}).then(function(d){ if(d&&d.usage) render(d.usage); if(window.refreshAiIndicator) window.refreshAiIndicator(); });
+    }
+
+    var mig=document.getElementById("aiMigrateGemini");
+    if(mig) mig.addEventListener("click", function(){
+      if(!confirm("Привязать существующее подключение Gemini к текущему аккаунту? Другие аккаунты на этом компьютере не смогут им пользоваться.")) return;
+      fetch("/settings/ai/migrate-gemini",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})})
+        .then(function(r){return r.json();}).then(function(d){ if(d&&d.usage) render(d.usage); if(window.refreshAiIndicator) window.refreshAiIndicator(); });
+    });
+
+    // первичные данные с сервера + авто-открытие мастера, если пришли из «ИИ не подключён»
+    render({{ ai_providers | tojson }});
+    if(!(({{ ai_providers | tojson }}).connected) && (returnUrl || new URLSearchParams(location.search).get("connect")==="groq")){
+      wizard.hidden=false; goto("1");
+    }
+  })();
+  </script>
+  {% endif %}
 
   {% if settings_section == 'salling' %}
   <!-- Профиль кандидата живёт в Аккаунте (общий, заполняется один раз) -->
