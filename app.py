@@ -64,6 +64,47 @@ JOB_SOURCE_LABELS = {
     "ashby": "Другие компании · Ashby",
     "manual_link": "Добавлено по ссылке",
 }
+JOB_FILTER_KEYS = (
+    "q", "source", "city", "brand", "region", "category",
+    "employment_type", "job_level", "status", "sort", "radius",
+    "group", "show_applied", "period",
+)
+
+
+def _clean_filter_query(raw_query: str) -> str:
+    """Оставить в профиле поиска только известные безопасные параметры."""
+    values: dict[str, str] = {}
+    for key, value in parse_qsl(str(raw_query or ""), keep_blank_values=False):
+        if key not in JOB_FILTER_KEYS:
+            continue
+        value = str(value).strip()[:240]
+        if not value:
+            continue
+        if key in {"group", "show_applied"}:
+            value = "1" if value in {"1", "true", "on"} else ""
+        elif key == "status" and value not in SAFE_JOB_STATUSES | {"active"}:
+            value = ""
+        elif key == "sort" and value not in {"published", "distance", "title", "city"}:
+            value = ""
+        elif key == "period" and value not in {"today", "3d", "all"}:
+            value = ""
+        if value:
+            values[key] = value
+    return urlencode([(key, values[key]) for key in JOB_FILTER_KEYS if key in values])
+
+
+def _filter_query(filters: dict, drop: str = "") -> str:
+    """Каноническая строка текущего поиска для профилей, вкладок и chips."""
+    pairs = []
+    for key in JOB_FILTER_KEYS:
+        if key == drop:
+            continue
+        value = filters.get(key)
+        if value:
+            pairs.append((key, str(value)))
+    return _clean_filter_query(urlencode(pairs))
+
+
 def _allowed_local_write(request: Request) -> bool:
     """Block cross-site form/fetch writes against the local desktop server.
     Единый барьер в local_guard (тот же, что в hub.py и connectors/webapp.py)."""
@@ -2244,19 +2285,28 @@ def connector_apply_result(
 
 
 def _today_summary(home: dict | None) -> dict:
-    """Числа для блока «Сегодня» на главной: сколько вакансий появилось за
-    последние 3 дня рядом с домом, сколько карточек ждёт решения в Telegram и
-    сколько подано за неделю. «Не открывал» (status=new) здесь не годится —
-    таких сотни, число ни о чём не говорит; «появились недавно и рядом» —
-    настоящий дневной сигнал."""
+    """Числа для временных вкладок и компактного дневного статуса.
+
+    «Сегодня» считается по first_seen — когда WexFlow впервые обнаружил
+    вакансию в любом подключённом интернет-источнике. Это честнее published:
+    сайты нередко отдают старую дату публикации у заново появившейся позиции.
+    """
     import datetime as _dtm
     week_ago = utcnow() - _dtm.timedelta(days=7)
     fresh_cutoff = utcnow() - _dtm.timedelta(days=3)
+    day_start, day_end = applications._local_day_utc_bounds()
     with get_session() as s:
         fresh_jobs = list(s.exec(select(Job).where(
             Job.status.not_in(["closed", "hidden", "applied"]),
             Job.first_seen >= fresh_cutoff,
         )).all())
+        today_new = s.exec(
+            select(func.count()).select_from(Job).where(
+                Job.status.not_in(["closed", "hidden", "applied"]),
+                Job.first_seen >= day_start,
+                Job.first_seen < day_end,
+            )
+        ).one()
         submitted_week = s.exec(
             select(func.count()).select_from(Job).where(Job.applied_at >= week_ago)
         ).one()
@@ -2272,6 +2322,8 @@ def _today_summary(home: dict | None) -> dict:
     rule = autopilot.get_rule()
     awaiting = len(rule.get("tg_pending") or []) if rule.get("tg_approval") else 0
     return {
+        "new_today": int(today_new or 0),
+        "new_3d": len(fresh_jobs),
         "new_nearby": new_nearby,
         "awaiting": awaiting,
         "submitted_week": int(submitted_week or 0),
@@ -2297,6 +2349,8 @@ def index(
     radius: str = "",
     group: str = "",
     show_applied: str = "",
+    period: str = "all",
+    profile: str = "",
     page: str = "1",
     geoerror: str = "",
     batch: str = "",
@@ -2306,7 +2360,6 @@ def index(
     reset: str = "",
 ):
     # запоминаем фильтры в cookie и восстанавливаем при заходе на голую "/"
-    _fkeys = ["q", "source", "city", "brand", "region", "employment_type", "category", "job_level", "status", "sort", "show_applied"]
     if not request.query_params and not reset:
         raw = request.cookies.get("saling_filters")
         if raw:
@@ -2319,9 +2372,12 @@ def index(
                 status = saved.get("status", status); sort = saved.get("sort", sort)
                 show_applied = saved.get("show_applied", show_applied)
                 radius = saved.get("radius", radius); group = saved.get("group", group)
+                period = saved.get("period", period)
             except Exception:
                 pass
 
+    period = period if period in {"today", "3d", "all"} else "all"
+    profile = str(profile or "").strip()[:80]
     home = settings_store.get_home()
     if not sort:
         sort = "distance" if home else "published"
@@ -2337,6 +2393,12 @@ def index(
             stmt = stmt.where(Job.status.not_in(excluded_statuses))
         elif status:
             stmt = stmt.where(Job.status == status)
+        if period == "today":
+            day_start, day_end = applications._local_day_utc_bounds()
+            stmt = stmt.where(Job.first_seen >= day_start, Job.first_seen < day_end)
+        elif period == "3d":
+            import datetime as _dtm
+            stmt = stmt.where(Job.first_seen >= utcnow() - _dtm.timedelta(days=3))
         city_lookup = labels.city_query(city)
         city_terms = labels.city_terms(city)
         if city_terms:  # русский/англ/датский алиас, район или агломерация
@@ -2502,6 +2564,90 @@ def index(
     _ap_rule = autopilot.get_rule()
     _ap_count = autopilot.match_count() if _ap_rule.get("enabled") else 0
 
+    _f = {
+        "q": q,
+        "source": source_key,
+        "city": city,
+        "brand": brand_code,
+        "region": region_code,
+        "category": category_code,
+        "employment_type": employment_code,
+        "job_level": level_code,
+        "status": status,
+        "sort": sort,
+        "radius": radius,
+        "group": group,
+        "show_applied": show_applied,
+        "period": period,
+    }
+    _current_filter_query = _filter_query(_f)
+    _preset_views = []
+    for saved_preset in settings_store.get_presets():
+        saved_query = _clean_filter_query(saved_preset.get("query", ""))
+        preset_view = {
+            **saved_preset,
+            "query": saved_query,
+            "url": "/?" + (
+                saved_query + "&" if saved_query else ""
+            ) + "profile=" + quote_plus(saved_preset["id"]),
+            "active": saved_preset["id"] == profile,
+        }
+        _preset_views.append(preset_view)
+    _active_preset = next((p for p in _preset_views if p["active"]), None)
+    _active_profile_modified = bool(
+        _active_preset and _active_preset["query"] != _current_filter_query
+    )
+
+    _scope_urls = {}
+    for scope in ("today", "3d", "all"):
+        scoped = {**_f, "status": "active", "period": scope}
+        _scope_urls[scope] = "/?" + _filter_query(scoped)
+    _scope_urls["applied"] = "/?" + _filter_query(
+        {**_f, "status": "applied", "period": "all"}
+    )
+
+    _status_labels = {
+        "new": "Новые (не просмотрены)",
+        "seen": "Просмотренные",
+        "applied": "Поданные",
+        "interview": "Собеседование",
+        "offer": "Оффер",
+        "rejected": "Отказ",
+        "hidden": "Скрытые",
+        "closed": "Закрытые",
+    }
+    _chip_values = {
+        "q": ("Поиск", q),
+        "city": ("Город", city),
+        "source": ("Источник", JOB_SOURCE_LABELS.get(source_key, source_key)),
+        "brand": ("Бренд", labels.brand(brand_code) if brand_code else ""),
+        "region": ("Регион", labels.bi(labels.REGION, region_code) if region_code else ""),
+        "category": ("Категория", labels.bi(labels.CATEGORY, category_code) if category_code else ""),
+        "employment_type": (
+            "Занятость",
+            labels.bi(labels.EMPLOYMENT, employment_code) if employment_code else "",
+        ),
+        "job_level": ("Уровень", labels.bi(labels.LEVEL, level_code) if level_code else ""),
+        "radius": ("Радиус", f"{radius} км" if radius else ""),
+        "group": ("Вид", "По магазинам" if group else ""),
+        "show_applied": ("Поданные", "Показывать в активных" if show_applied else ""),
+        "status": (
+            "Статус",
+            _status_labels.get(status, "") if status not in {"", "active"} else "",
+        ),
+    }
+    _filter_chips = [
+        {
+            "key": key,
+            "label": label,
+            "value": value,
+            "url": "/?" + _filter_query(_f, drop=key),
+        }
+        for key, (label, value) in _chip_values.items()
+        if value
+    ]
+
+    _today = _today_summary(home)
     resp = templates.TemplateResponse("index.html", {
         "request": request, "jobs": jobs, "count": len(jobs),
         "application_states": applications.states_for_jobs(jobs),
@@ -2546,15 +2692,7 @@ def index(
             (city, labels.with_count(city, count))
             for city, count in counts["city"].most_common(120)
         ],
-        "f": (_f := {"q": q, "source": source_key,
-              "city": city,
-              "brand": brand_code,
-              "region": region_code,
-              "category": category_code,
-              "employment_type": employment_code,
-              "job_level": level_code,
-              "status": status, "sort": sort, "radius": radius, "group": group,
-              "show_applied": show_applied}),
+        "f": _f,
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
         "autopilot": _ap_rule,
         "autopilot_count": _ap_count,
@@ -2562,14 +2700,19 @@ def index(
         "sync_running": _sync_state["running"],
         "sync_error": _sync_state["last_error"],
         "home": home, "distances": distances, "geoerror": geoerror,
-        "presets": settings_store.get_presets(),
+        "presets": _preset_views,
+        "active_preset": _active_preset,
+        "active_profile_modified": _active_profile_modified,
+        "filter_chips": _filter_chips,
+        "active_filter_count": len(_filter_chips),
+        "scope_urls": _scope_urls,
         "batch": batch, "batch_mode": mode, "skipped": skipped, "dup": dup,
         "apply_files": {
             "cv": profile_store.file_label(_profile.get("cv_path", "")),
             "cover": profile_store.file_label(_profile.get("cover_letter_path", "")),
         },
         "setup": _setup,
-        "today": _today_summary(home),
+        "today": _today,
         "maps_urls": maps_urls,
         "resolved": {
             "city": (
@@ -2631,15 +2774,48 @@ def refresh(request: Request):
 
 
 @app.post("/presets/save")
-def save_preset(request: Request, name: str = Form(...), query: str = Form("")):
-    settings_store.add_preset(name, query)
-    return _redirect_back(request, "/", notice=f"Фильтр «{name.strip() or 'без названия'}» сохранён.")
+def save_preset(
+    request: Request,
+    name: str = Form(...),
+    query: str = Form(""),
+    profile_id: str = Form(""),
+):
+    name = str(name or "").strip()[:50]
+    if not name:
+        return _redirect_back(request, "/", error="Напиши название профиля поиска.")
+    clean_query = _clean_filter_query(query)
+    saved = settings_store.add_preset(name, clean_query, profile_id)
+    if not saved:
+        return _redirect_back(request, "/", error="Не удалось сохранить профиль поиска.")
+    target = "/?" + (
+        clean_query + "&" if clean_query else ""
+    ) + "profile=" + quote_plus(saved["id"])
+    return RedirectResponse(
+        _url_with_system_response(target, notice=f"Профиль «{saved['name']}» сохранён."),
+        status_code=303,
+    )
 
 
 @app.post("/presets/delete")
-def delete_preset(request: Request, name: str = Form(...)):
-    settings_store.delete_preset(name)
-    return _redirect_back(request, "/", notice=f"Фильтр «{name.strip() or 'без названия'}» удалён.")
+def delete_preset(
+    request: Request,
+    name: str = Form(""),
+    profile_id: str = Form(""),
+):
+    shown_name = str(name or "").strip() or "без названия"
+    settings_store.delete_preset(name=name, preset_id=profile_id)
+    ref = request.headers.get("referer") or "/"
+    parts = urlsplit(ref)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    query.pop("profile", None)
+    target = urlunsplit(("", "", parts.path or "/", urlencode(query), ""))
+    return RedirectResponse(
+        _url_with_system_response(
+            target,
+            notice=f"Профиль «{shown_name}» удалён.",
+        ),
+        status_code=303,
+    )
 
 
 @app.post("/set-home")

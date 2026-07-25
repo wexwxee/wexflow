@@ -392,6 +392,163 @@
     .batchbar .bactions button { flex:1 1 150px; }
   }
   .notice-line { padding:8px 22px; font-size:13px; }
+
+  /* ---- Рабочая область поиска: временные вкладки + профили + фильтры ---- */
+  .jobs-workspace {
+    margin:14px 22px 4px; border:1px solid var(--glass-line); border-radius:16px;
+    background:linear-gradient(145deg, rgba(30,215,96,.045), transparent 36%), var(--card);
+    box-shadow:0 12px 34px rgba(0,0,0,.12); overflow:visible;
+  }
+  .jobs-scope-head {
+    display:flex; align-items:flex-start; justify-content:space-between; gap:18px;
+    padding:16px 16px 0;
+  }
+  .jobs-scope-copy h2 { margin:0; color:var(--txt-strong); font-size:15px; }
+  .jobs-scope-copy p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.4; }
+  .jobs-daily-brief {
+    display:flex; gap:12px; flex-wrap:wrap; justify-content:flex-end; color:var(--muted);
+    font-size:11.5px; line-height:1.35;
+  }
+  .jobs-daily-brief a { color:inherit; text-decoration:none; }
+  .jobs-daily-brief a:hover { color:var(--accent); }
+  .jobs-scope-tabs {
+    display:grid; grid-template-columns:repeat(4,minmax(130px,1fr)); gap:7px; padding:14px 16px;
+    border-bottom:1px solid var(--glass-line);
+  }
+  .jobs-scope-tab {
+    min-width:0; display:flex; align-items:center; justify-content:space-between; gap:10px;
+    min-height:43px; padding:8px 11px; color:var(--muted); text-decoration:none;
+    border:1px solid var(--line); border-radius:11px; background:var(--input-bg);
+    transition:background .14s,border-color .14s,color .14s,transform .14s;
+  }
+  .jobs-scope-tab:hover { color:var(--txt); border-color:var(--hover-line); transform:translateY(-1px); }
+  .jobs-scope-tab.active {
+    color:var(--ok-txt); border-color:var(--ok-line);
+    background:linear-gradient(135deg, var(--ok-bg), rgba(30,215,96,.035));
+  }
+  .jobs-scope-tab span { min-width:0; font-size:12px; font-weight:750; }
+  .jobs-scope-tab b {
+    min-width:26px; height:26px; display:grid; place-items:center; padding:0 7px;
+    border-radius:8px; color:var(--txt-strong); background:var(--glass); font-size:12px;
+  }
+  .jobs-scope-tab.active b { color:var(--ok-txt); background:rgba(30,215,96,.12); }
+  .profile-strip {
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:11px 16px;
+    border-bottom:1px solid var(--glass-line);
+  }
+  .profile-strip-label {
+    display:inline-flex; align-items:center; gap:6px; margin-right:2px;
+    color:var(--muted); font-size:11px; font-weight:750; text-transform:uppercase; letter-spacing:.045em;
+  }
+  .profile-empty { color:var(--muted); font-size:12px; }
+  .search-profile {
+    display:inline-flex; align-items:stretch; overflow:hidden; border:1px solid var(--line);
+    border-radius:9px; background:var(--input-bg); transition:border-color .14s,background .14s;
+  }
+  .search-profile:hover { border-color:var(--hover-line); }
+  .search-profile.active { border-color:var(--accent); background:var(--accent-soft); }
+  .search-profile > a {
+    display:inline-flex; align-items:center; gap:6px; color:var(--txt); text-decoration:none;
+    padding:6px 10px; font-size:12px; font-weight:650;
+  }
+  .search-profile.active > a { color:var(--accent); }
+  .profile-modified {
+    display:inline-flex; width:6px; height:6px; border-radius:50%; background:var(--warn-txt);
+  }
+  .search-profile form { display:flex; margin:0; border-left:1px solid var(--line); }
+  .search-profile button {
+    width:29px; border:0; border-radius:0; padding:0; background:transparent; color:var(--muted);
+    cursor:pointer; font-size:13px;
+  }
+  .search-profile button:hover { color:var(--err-txt); background:var(--err-bg); }
+  .profile-save-btn {
+    display:inline-flex; align-items:center; gap:6px; min-height:30px; margin-left:auto;
+    padding:6px 10px; border:1px dashed var(--hover-line); border-radius:9px;
+    background:transparent; color:var(--accent); cursor:pointer; font-size:12px; font-weight:700;
+  }
+  .profile-save-btn:hover { border-style:solid; background:var(--accent-soft); }
+  .search-filter-form { padding:14px 16px 15px; }
+  .filter-quick-grid {
+    display:grid; grid-template-columns:minmax(240px,2fr) minmax(160px,1fr) minmax(160px,1fr) minmax(155px,.9fr) auto;
+    gap:10px; align-items:end;
+  }
+  .filter-quick-grid .filter-apply { min-height:36px; padding:7px 18px; white-space:nowrap; }
+  .filter-tools {
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-height:32px; margin-top:10px;
+  }
+  .advanced-toggle {
+    display:inline-flex; align-items:center; gap:7px; min-height:30px; padding:5px 10px;
+    border:1px solid var(--line); border-radius:9px; background:var(--input-bg);
+    color:var(--muted); cursor:pointer; font-size:12px; font-weight:700;
+  }
+  .advanced-toggle:hover, .advanced-toggle.open { color:var(--txt); border-color:var(--hover-line); }
+  .advanced-toggle.open svg { transform:rotate(180deg); }
+  .advanced-count {
+    display:inline-grid; min-width:19px; height:19px; place-items:center; padding:0 5px;
+    border-radius:6px; background:var(--accent-soft); color:var(--accent); font-size:10px;
+  }
+  .active-filter-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; min-width:0; }
+  .active-filter-chip {
+    display:inline-flex; align-items:center; gap:6px; max-width:230px; min-height:28px; padding:4px 8px;
+    border:1px solid var(--glass-line); border-radius:8px; background:var(--glass);
+    color:var(--muted); text-decoration:none; font-size:11px;
+  }
+  .active-filter-chip b { color:var(--txt); font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .active-filter-chip i { color:var(--muted); font-style:normal; font-size:13px; }
+  .active-filter-chip:hover { border-color:var(--err-line); }
+  .active-filter-chip:hover i { color:var(--err-txt); }
+  .filters-clear { color:var(--muted); text-decoration:none; font-size:11.5px; margin-left:auto; }
+  .filters-clear:hover { color:var(--txt); }
+  .advanced-filters[hidden] { display:none; }
+  .advanced-filters {
+    margin-top:12px; padding-top:12px; border-top:1px solid var(--glass-line);
+  }
+  .advanced-grid {
+    display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:10px 12px; align-items:end;
+  }
+  .advanced-options { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .advanced-options .grpchk { min-height:34px; padding:7px 10px; font-size:12px; }
+  .profile-dialog {
+    position:fixed; inset:0; z-index:3600; display:flex; align-items:center; justify-content:center;
+    padding:20px; background:rgba(0,0,0,.58); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+  }
+  .profile-dialog[hidden] { display:none; }
+  .profile-dialog-card {
+    width:min(430px,100%); padding:20px; border:1px solid var(--glass-line); border-radius:15px;
+    background:var(--card); box-shadow:var(--shadow);
+  }
+  .profile-dialog-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .profile-dialog-head h3 { margin:0; color:var(--txt-strong); font-size:18px; }
+  .profile-dialog-head p { margin:5px 0 0; color:var(--muted); font-size:12px; line-height:1.45; }
+  .profile-dialog-close { border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:20px; }
+  .profile-dialog .field { margin-top:16px; }
+  .profile-dialog-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; flex-wrap:wrap; }
+  .profile-dialog-actions button { min-height:36px; }
+  @media (max-width:1180px) {
+    .filter-quick-grid { grid-template-columns:minmax(220px,2fr) repeat(2,minmax(150px,1fr)); }
+    .filter-quick-grid .filter-sort { grid-column:auto; }
+    .filter-quick-grid .filter-apply { grid-column:span 2; }
+    .advanced-grid { grid-template-columns:repeat(3,minmax(150px,1fr)); }
+  }
+  @media (max-width:760px) {
+    .jobs-workspace { margin:10px 12px 2px; }
+    .jobs-scope-head { display:block; }
+    .jobs-daily-brief { justify-content:flex-start; margin-top:8px; }
+    .jobs-scope-tabs { grid-template-columns:1fr 1fr; }
+    .filter-quick-grid { grid-template-columns:1fr 1fr; }
+    .filter-quick-grid > * { grid-column:auto !important; }
+    .filter-quick-grid > .field:first-child { grid-column:1 / -1 !important; }
+    .filter-quick-grid .filter-apply { grid-column:1 / -1 !important; }
+    .advanced-grid { grid-template-columns:1fr 1fr; }
+    .profile-save-btn { margin-left:0; }
+  }
+  @media (max-width:520px) {
+    .jobs-scope-tabs { grid-template-columns:1fr 1fr; }
+    .filter-quick-grid, .advanced-grid { grid-template-columns:1fr; }
+    .filter-quick-grid > * { grid-column:1 !important; }
+    .profile-strip { align-items:flex-start; }
+    .jobs-scope-tab { min-height:39px; }
+  }
 </style>
 {% endblock %}
 
@@ -528,52 +685,81 @@
   </form>
 </div>
 
-<!-- «Сегодня»: три числа, ради которых открывают приложение. Каждая плитка — ссылка. -->
-<div class="wf-today">
-  <span class="wf-today-lbl">{{ ic.i('sun', 14) }} Сегодня</span>
-  <a class="wf-today-item" href="{{ '/?status=active&sort=published&radius=' ~ today.radius if today.has_home else '/?status=active&sort=published' }}"
-     data-tip-title="Появились за 3 дня" data-tip-body="Свежие вакансии{{ ' в ' ~ today.radius ~ ' км от дома' if today.has_home }}. Клик — показать рядом, свежие сверху.">
-    <b>{{ today.new_nearby }}</b>
-    <span>{{ 'новых рядом · 3 дня' if today.has_home else 'новых · 3 дня' }}</span>
-  </a>
-  {% if today.tg_mode %}
-  <a class="wf-today-item" href="/autopilot"
-     data-tip-title="Ждут решения" data-tip-body="Карточки в Telegram без ответа. Ответь в чате или панели; без ответа снимутся через 3 дня.">
-    <b>{{ today.awaiting }}</b><span>ждут решения в TG</span>
-  </a>
-  {% endif %}
-  <a class="wf-today-item" href="/audit"
-     data-tip-title="Журнал заявок" data-tip-body="Поданные за последние 7 дней. Клик — открыть журнал с подтверждениями.">
-    <b>{{ today.submitted_week }}</b><span>подано за неделю</span>
-  </a>
-</div>
+<div class="jobs-workspace">
+  <div class="jobs-scope-head">
+    <div class="jobs-scope-copy">
+      <h2>{{ ic.i('search', 15) }} Лента вакансий</h2>
+      <p>Сначала выбери свежесть, потом уточни поиск. «Сегодня» — вакансии, впервые найденные WexFlow с начала дня.</p>
+    </div>
+    <div class="jobs-daily-brief">
+      {% if today.tg_mode %}
+      <a href="/autopilot">{{ ic.i('send', 12) }} В Telegram ждут решения: <b>{{ today.awaiting }}</b></a>
+      {% endif %}
+      <a href="/audit">{{ ic.i('check', 12) }} Подано за 7 дней: <b>{{ today.submitted_week }}</b></a>
+    </div>
+  </div>
 
-{% if presets %}
-<div class="presets">
-  <span class="presets-lbl">{{ ic.i('star', 13) }} Мои фильтры:</span>
-  {% for p in presets %}
-  <span class="preset-chip">
-    <a href="/?{{ p.query }}">{{ p.name }}</a>
-    <form method="post" action="/presets/delete" onsubmit="return confirm('Удалить пресет «{{ p.name }}»?')">
-      <input type="hidden" name="name" value="{{ p.name }}"><button type="submit" aria-label="Удалить фильтр">✕</button>
-    </form>
-  </span>
-  {% endfor %}
-</div>
-{% endif %}
+  <nav class="jobs-scope-tabs" aria-label="Свежесть вакансий">
+    <a class="jobs-scope-tab {{ 'active' if f.status == 'active' and f.period == 'today' }}"
+       href="{{ scope_urls.today }}"
+       data-tip-title="Сегодня" data-tip-body="Вакансии из всех подключённых источников, которые WexFlow впервые обнаружил с начала сегодняшнего дня.">
+      <span>Сегодня</span><b>{{ today.new_today }}</b>
+    </a>
+    <a class="jobs-scope-tab {{ 'active' if f.status == 'active' and f.period == '3d' }}"
+       href="{{ scope_urls['3d'] }}"
+       data-tip-title="Новые за 3 дня" data-tip-body="Свежие вакансии из интернета, впервые замеченные WexFlow за последние 72 часа.">
+      <span>Новые · 3 дня</span><b>{{ today.new_3d }}</b>
+    </a>
+    <a class="jobs-scope-tab {{ 'active' if f.status == 'active' and f.period == 'all' }}"
+       href="{{ scope_urls.all }}">
+      <span>Все активные</span><b>{{ total_active }}</b>
+    </a>
+    <a class="jobs-scope-tab {{ 'active' if f.status == 'applied' }}"
+       href="{{ scope_urls.applied }}">
+      <span>Уже поданные</span><b>{{ applied_count }}</b>
+    </a>
+  </nav>
 
-<form id="filterform" class="filterbar" method="get" action="/">
-  {% if f.show_applied %}<input type="hidden" name="show_applied" value="1">{% endif %}
+  <div class="profile-strip">
+    <span class="profile-strip-label">{{ ic.i('star', 13) }} Профили поиска</span>
+    {% if presets %}
+      {% for p in presets %}
+      <span class="search-profile {{ 'active' if p.active }}">
+        <a href="{{ p.url }}" title="Применить профиль «{{ p.name }}»">
+          {{ p.name }}
+          {% if p.active and active_profile_modified %}
+            <i class="profile-modified" title="Текущие фильтры отличаются от сохранённых"></i>
+          {% endif %}
+        </a>
+        <form method="post" action="/presets/delete"
+              onsubmit="return confirm('Удалить профиль «{{ p.name }}»?')">
+          <input type="hidden" name="profile_id" value="{{ p.id }}">
+          <input type="hidden" name="name" value="{{ p.name }}">
+          <button type="submit" aria-label="Удалить профиль «{{ p.name }}»">×</button>
+        </form>
+      </span>
+      {% endfor %}
+    {% else %}
+      <span class="profile-empty">Пока пусто — сохрани, например, «Рядом с домом» или «Работа на выходные».</span>
+    {% endif %}
+    <button type="button" id="savePreset" class="profile-save-btn">
+      {{ ic.i('save', 13) }} Сохранить текущий поиск
+    </button>
+  </div>
+
+<form id="filterform" class="search-filter-form" method="get" action="/">
+  <input type="hidden" name="period" value="{{ f.period }}">
+  {% if active_preset %}<input type="hidden" name="profile" value="{{ active_preset.id }}">{% endif %}
   {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','hidden':'Скрытые','closed':'Закрытые'} %}
   {% set sorts = {'published':'↓ по дате','distance':'по расстоянию','title':'по названию','city':'по городу'} %}
-  <div class="fgrid">
+  <div class="filter-quick-grid">
     <div class="field">
       <label>Поиск {{ tip('Умный поиск', 'Ищет по названию, описанию, адресу и городу. Можно писать по-русски: например кассир, пекарь, склад.') }}</label>
-      <input name="q" value="{{ f.q }}" placeholder="можно по-русски: кассир, пекарь, склад…">
+      <input name="q" value="{{ f.q }}" placeholder="Кассир, склад, пекарь…" autocomplete="off">
     </div>
     <div class="field">
-      <label>Город {{ ic.i('edit', 11) }} {{ tip('Город или район', 'Понимает русские и датские названия. Копенгаген мапится на København и ближайшие районы, если они есть в базе.') }}</label>
-      <input name="city" list="dl_city" value="{{ f.city }}" placeholder="Напиши по-русски: Копенгаген" autocomplete="off">
+      <label>Город или район {{ tip('Город или район', 'Понимает русские и датские названия. Копенгаген мапится на København и ближайшие районы, если они есть в базе.') }}</label>
+      <input name="city" list="dl_city" value="{{ f.city }}" placeholder="Например, Копенгаген" autocomplete="off">
       <datalist id="dl_city">
         <option value="Копенгаген"><option value="Орхус"><option value="Оденсе"><option value="Ольборг">
         <option value="Фредериксберг"><option value="Броннбю"><option value="Хвидовре"><option value="Херлев">
@@ -581,28 +767,43 @@
       </datalist>
     </div>
     {{ custom_select('source', 'Источник', 'Все источники', sources, f.source, 'Salling работает как раньше. Teamtailor — вакансии других компаний с безопасной подготовкой формы без автоматической отправки.') }}
-    {# Редкие фильтры спрятаны за «Ещё фильтры»: обычно хватает поиска и города,
-       а пять выпадающих списков делали панель громоздкой. Если какой-то из них
-       активен — блок открыт сам, чтобы применённый фильтр не оказался невидимым. #}
-    {% set extra_active = [f.brand, f.region, f.category, f.employment_type, f.job_level] | select | list | length %}
-    <div class="field">
-      <label>&nbsp;</label>
-      <button type="button" class="combo-btn extra-toggle {{ 'on' if extra_active }}" id="extraToggle"
-              data-tip-title="Ещё фильтры" data-tip-body="Бренд, регион, категория, занятость и уровень. Открываются по клику, чтобы не загромождать панель.">
-        <span>Ещё фильтры{% if extra_active %} · активно: {{ extra_active }}{% endif %}</span>
-      </button>
+    <div class="filter-sort">
+      {{ custom_select('sort', 'Сначала показывать', 'по дате', sorts.items(), f.sort, 'Меняет порядок карточек. По расстоянию работает, когда задан домашний адрес.') }}
     </div>
-    <div class="extra-filters" id="extraFilters" {% if not extra_active %}hidden{% endif %}>
+    <button class="primary filter-apply" type="submit">{{ ic.i('search', 13) }} Показать</button>
+  </div>
+
+  {% set advanced_active = [f.brand, f.region, f.category, f.employment_type, f.job_level, f.radius, f.group, f.show_applied] | select | list | length %}
+  {% if f.status not in ['', 'active', 'applied'] %}{% set advanced_active = advanced_active + 1 %}{% endif %}
+  <div class="filter-tools">
+    <button type="button" class="advanced-toggle {{ 'open' if advanced_active }}" id="extraToggle"
+            aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="extraFilters">
+      {{ ic.i('sliders', 13) }} Все фильтры
+      {% if advanced_active %}<span class="advanced-count">{{ advanced_active }}</span>{% endif %}
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    {% if filter_chips %}
+    <div class="active-filter-chips" aria-label="Активные фильтры">
+      {% for chip in filter_chips %}
+      <a class="active-filter-chip" href="{{ chip.url }}" title="Убрать фильтр «{{ chip.label }}»">
+        <span>{{ chip.label }}:</span><b>{{ chip.value }}</b><i>×</i>
+      </a>
+      {% endfor %}
+    </div>
+    <a class="filters-clear" href="/?reset=1">Очистить</a>
+    {% else %}
+    <span class="profile-empty">Дополнительных ограничений нет</span>
+    {% endif %}
+  </div>
+
+  <div class="advanced-filters" id="extraFilters" {% if not advanced_active %}hidden{% endif %}>
+    <div class="advanced-grid">
+    {{ custom_select('status', 'Статус вакансии', 'Любой статус', statuses.items(), f.status, 'Рабочий статус вакансии: не просмотрена, подана, скрыта и другие. Для обычного поиска оставь «Активные».') }}
     {{ custom_select('brand', 'Бренд', 'Все бренды', brands, f.brand, 'Фильтрует конкретную сеть. Удобно, если хочешь смотреть только Netto/Føtex/Bilka и не смешивать разные форматы магазинов.') }}
     {{ custom_select('region', 'Регион', 'Все регионы', regions, f.region, 'Широкий фильтр по части Дании. Используй, когда город не принципиален, но ехать в другой регион не хочется.') }}
     {{ custom_select('category', 'Категория', 'Все категории', cats, f.category, 'Тип работы: касса, продажи, склад, пекарня, кухня, обслуживание. Лучше комбинировать с городом или радиусом.') }}
     {{ custom_select('employment_type', 'Занятость', 'Любая', etypes, f.employment_type, 'Отсекает полную/частичную занятость. Оставь Любая, если важнее место и расстояние, чем часы.') }}
     {{ custom_select('job_level', 'Уровень', 'Любой', levels, f.job_level, 'Помогает отделить обычные позиции, under 18, менеджмент и trainee. Если не уверен, оставь Любой.') }}
-    </div>
-  </div>
-  <div class="factions">
-    <div class="filter-status">{{ custom_select('status', 'Статус', 'Любой статус', statuses.items(), f.status, 'Быстро переключает рабочий список: новые, просмотренные, поданные, скрытые. Активные по умолчанию прячут уже поданные.') }}</div>
-    <div class="filter-sort">{{ custom_select('sort', 'Сортировка', 'по умолчанию', sorts.items(), f.sort, 'Меняет приоритет карточек. По расстоянию работает только когда задан домашний адрес в настройках.') }}</div>
     {% if home %}
     <div class="field filter-radius">
       <label>Радиус, км {{ tip('Радиус от дома', 'Оставь пустым или ∞, чтобы не ограничивать выдачу. Расстояние считается от домашнего адреса в настройках.') }}</label>
@@ -613,31 +814,17 @@
       </div>
     </div>
     {% endif %}
-    <label class="grpchk" style="margin-top:18px;" data-tip-title="Группировка" data-tip-body="Собирает вакансии одного магазина в одну карточку. Полезно, когда один Netto/Føtex публикует много похожих позиций.">
-      <input type="checkbox" name="group" value="1" {{ 'checked' if f.group }} onchange="this.form.submit()"> {{ ic.i('store') }} По магазинам {{ tip('По магазинам', 'Сжимает список: сначала видишь магазин и адрес, а внутри уже все позиции этого места.') }}
-    </label>
-    <div class="filter-actions">
-    <button class="primary filter-action" type="submit" style="margin-top:18px;" data-tip-title="Применить" data-tip-body="Обновляет список по текущим фильтрам. Выпадающие фильтры применяются сразу после выбора, текстовые поля — этой кнопкой.">Применить</button>
-    {# переключатель «Поданные»: сохраняет остальные фильтры, меняет только статус #}
-    {% set parts = [] %}
-    {% for k in ['q','source','city','brand','region','category','employment_type','job_level','sort','radius','group'] %}
-      {% if f[k] %}{% set _ = parts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
-    {% endfor %}
-    {% set base_qs = parts|join('&') %}
-    {% if f.status == 'active' and f.show_applied %}
-      <a class="toggle-applied on" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active" data-tip-title="Поданные" data-tip-body="Убирает уже отправленные вакансии из общего активного списка, чтобы они не мешали новым.">{{ check() }} Скрыть поданные</a>
-    {% elif f.status == 'active' %}
-      <a class="toggle-applied" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active&show_applied=1" data-tip-title="Поданные вместе" data-tip-body="Показывает отправленные вакансии рядом с активными. Они подсвечены отдельным цветом и не выбираются для повторной подачи.">{{ check() }} Поданные ({{ applied_count }})</a>
-    {% elif f.status == 'applied' %}
-      <a class="toggle-applied on" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=active" data-tip-title="Назад к активным" data-tip-body="Вернёт обычную выдачу активных вакансий с теми же поисковыми фильтрами.">← К списку вакансий</a>
-    {% else %}
-      <a class="toggle-applied" style="margin-top:18px;" href="/?{{ base_qs }}{{ '&' if base_qs }}status=applied" data-tip-title="Архив подач" data-tip-body="Открывает отдельный список вакансий, куда ты уже отправлял заявку.">{{ check() }} Показать поданные ({{ applied_count }})</a>
-    {% endif %}
-    <button type="button" id="savePreset" class="ghost filter-action" style="margin-top:18px;" data-tip-title="Сохранить набор" data-tip-body="Запоминает текущие фильтры как быстрый пресет над списком. Удобно для разных сценариев поиска.">{{ ic.i('save', 13) }} Сохранить</button>
-    <a class="filter-reset" href="/?reset=1" style="margin-top:18px;" data-tip-title="Сброс фильтров" data-tip-body="Очищает все фильтры и возвращает обычную активную выдачу. Статусы вакансий не меняет.">Сброс</a>
     </div>
+    <div class="advanced-options">
+    <label class="grpchk" data-tip-title="Группировка" data-tip-body="Собирает вакансии одного магазина в одну карточку.">
+      <input type="checkbox" name="group" value="1" {{ 'checked' if f.group }}> {{ ic.i('store') }} Группировать по магазинам
+    </label>
+    <label class="grpchk" data-tip-title="Поданные в общей ленте" data-tip-body="Показывает уже поданные вакансии среди активных, с отдельной подсветкой.">
+      <input type="checkbox" name="show_applied" value="1" {{ 'checked' if f.show_applied }}> {{ ic.i('check', 13) }} Показывать поданные вместе
+    </label>
+    <button class="primary filter-apply" type="submit">{{ ic.i('search', 13) }} Применить фильтры</button>
     {% if resolved.city or resolved.brand or resolved.region or resolved.category or resolved.employment_type or resolved.job_level %}
-      <span class="chip" style="margin-top:18px;">
+      <span class="chip">
         Понял:
         {% if resolved.city %}город → {{ resolved.city }}{% endif %}
         {% if resolved.brand %} бренд → {{ resolved.brand }}{% endif %}
@@ -647,21 +834,53 @@
         {% if resolved.job_level %} уровень → {{ resolved.job_level }}{% endif %}
       </span>
     {% endif %}
+    </div>
   </div>
 </form>
+</div>
+
+<div class="profile-dialog" id="profileDialog" hidden>
+  <form class="profile-dialog-card" id="profileSaveForm" method="post" action="/presets/save">
+    <div class="profile-dialog-head">
+      <div>
+        <h3>Сохранить профиль поиска</h3>
+        <p>Все текущие фильтры и выбранная вкладка сохранятся. Потом этот поиск откроется одним кликом.</p>
+      </div>
+      <button type="button" class="profile-dialog-close" id="profileDialogClose" aria-label="Закрыть">×</button>
+    </div>
+    <div class="field">
+      <label for="profileName">Название</label>
+      <input id="profileName" name="name" maxlength="50" required
+             value="{{ active_preset.name if active_preset else '' }}"
+             placeholder="Например, рядом с домом">
+    </div>
+    <input type="hidden" name="query" id="profileQuery">
+    <input type="hidden" name="profile_id" id="profileId">
+    <div class="profile-dialog-actions">
+      <button type="button" class="ghost" id="profileDialogCancel">Отмена</button>
+      {% if active_preset %}
+      <button type="submit" class="ghost" data-profile-mode="new">Сохранить как новый</button>
+      <button type="submit" class="primary" data-profile-mode="update">Обновить «{{ active_preset.name }}»</button>
+      {% else %}
+      <button type="submit" class="primary" data-profile-mode="new">Сохранить профиль</button>
+      {% endif %}
+    </div>
+  </form>
+</div>
 <script>
-  // «Ещё фильтры»: раскрытие редких фильтров. Если один из них активен —
-  // сервер уже отдал блок открытым; выбор пользователя запоминается локально.
+  // Расширенные фильтры раскрываются отдельно, чтобы основной поиск оставался
+  // компактным. Активные параметры сервер раскрывает сам.
   (function () {
     var btn = document.getElementById('extraToggle'), box = document.getElementById('extraFilters');
     if (!btn || !box) return;
-    var KEY = 'wexflow_extra_filters';
-    try { if (localStorage.getItem(KEY) === '1') box.removeAttribute('hidden'); } catch (e) {}
-    function upd() { btn.classList.toggle('open', !box.hasAttribute('hidden')); }
+    function upd() {
+      var open = !box.hasAttribute('hidden');
+      btn.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
     btn.addEventListener('click', function () {
       if (box.hasAttribute('hidden')) box.removeAttribute('hidden');
       else box.setAttribute('hidden', '');
-      try { localStorage.setItem(KEY, box.hasAttribute('hidden') ? '0' : '1'); } catch (e) {}
       upd();
     });
     upd();
@@ -670,7 +889,10 @@
 </section>
 
 <div class="jobs-result-head">
-  {% set result_title = 'Поданные вакансии' if f.status == 'applied' else ('Группировка по магазинам' if group else 'Вакансии') %}
+  {% set result_title = 'Поданные вакансии' if f.status == 'applied'
+    else ('Найдены сегодня' if f.period == 'today'
+    else ('Новые за 3 дня' if f.period == '3d'
+    else ('Группировка по магазинам' if group else 'Все активные вакансии'))) %}
   <span class="muted">{{ result_title }} · {{ total_filtered }} {{ L.plural(total_filtered, 'найдена', 'найдены', 'найдено') }}</span>
   <span class="muted">
     {% if f.status == 'applied' %}
@@ -774,9 +996,10 @@
 
 {% if pages > 1 %}
 {% set pparts = [] %}
-{% for k in ['q','source','city','brand','region','category','employment_type','job_level','status','sort','radius','group','show_applied'] %}
+{% for k in ['q','source','city','brand','region','category','employment_type','job_level','status','sort','radius','group','show_applied','period'] %}
   {% if f[k] %}{% set _ = pparts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
 {% endfor %}
+{% if active_preset %}{% set _ = pparts.append('profile=' ~ (active_preset.id|urlencode)) %}{% endif %}
 {% set pqs = pparts|join('&') %}
 <div class="pager">
   {% if page > 1 %}<a href="/?{{ pqs }}{{ '&' if pqs }}page={{ page-1 }}">← Назад</a>{% else %}<span class="dis">← Назад</span>{% endif %}
@@ -991,20 +1214,49 @@
     window.addEventListener('beforeunload', save);
   })();
 
-  // --- сохранить текущие фильтры как пресет ---
-  const savePresetBtn = document.getElementById('savePreset');
-  if (savePresetBtn) savePresetBtn.addEventListener('click', () => {
-    const name = prompt('Название набора фильтров:');
-    if (!name) return;
-    const fd = new FormData(document.getElementById('filterform'));
-    const params = new URLSearchParams();
-    for (const [k, v] of fd.entries()) { if (v) params.append(k, v); }
-    const f = document.createElement('form');
-    f.method = 'post'; f.action = '/presets/save';
-    const add = (n, val) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = n; i.value = val; f.appendChild(i); };
-    add('name', name); add('query', params.toString());
-    document.body.appendChild(f); f.submit();
-  });
+  // --- профиль поиска: нормальный диалог вместо системного prompt ---
+  (function () {
+    const openBtn = document.getElementById('savePreset');
+    const dialog = document.getElementById('profileDialog');
+    const form = document.getElementById('profileSaveForm');
+    const filterForm = document.getElementById('filterform');
+    const nameInput = document.getElementById('profileName');
+    const queryInput = document.getElementById('profileQuery');
+    const idInput = document.getElementById('profileId');
+    const activeId = {{ (active_preset.id if active_preset else '') | tojson }};
+    const activeName = {{ (active_preset.name if active_preset else '') | tojson }};
+    if (!openBtn || !dialog || !form || !filterForm) return;
+
+    function currentQuery() {
+      const fd = new FormData(filterForm);
+      const params = new URLSearchParams();
+      for (const [key, value] of fd.entries()) {
+        if (key !== 'profile' && value) params.set(key, value);
+      }
+      return params.toString();
+    }
+    function close() { dialog.hidden = true; }
+    openBtn.addEventListener('click', () => {
+      queryInput.value = currentQuery();
+      idInput.value = '';
+      dialog.hidden = false;
+      setTimeout(() => { nameInput.focus(); nameInput.select(); }, 20);
+    });
+    document.getElementById('profileDialogClose')?.addEventListener('click', close);
+    document.getElementById('profileDialogCancel')?.addEventListener('click', close);
+    dialog.addEventListener('click', (event) => { if (event.target === dialog) close(); });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !dialog.hidden) close();
+    });
+    form.addEventListener('submit', (event) => {
+      const mode = event.submitter?.dataset.profileMode || 'new';
+      queryInput.value = currentQuery();
+      idInput.value = mode === 'update' ? activeId : '';
+      if (mode === 'new' && activeId && nameInput.value.trim().toLocaleLowerCase() === activeName.toLocaleLowerCase()) {
+        nameInput.value = `${activeName} — копия`;
+      }
+    });
+  })();
 
   // --- кастомный числовой степпер ---
   document.querySelectorAll('.num-stepper').forEach((st) => {
@@ -1144,9 +1396,16 @@
         options.forEach((item) => item.classList.remove("selected"));
         option.classList.add("selected");
         combo.classList.remove("open");
-        // авто-применение: выбрал в списке — сразу применяем фильтры
+        // Несколько фильтров можно настроить подряд и применить одним кликом:
+        // страница больше не прыгает после каждого выбора.
         const form = combo.closest("form");
-        if (form && form.id === "filterform") form.submit();
+        if (form && form.id === "filterform") {
+          form.classList.add("is-dirty");
+          form.querySelectorAll(".filter-apply").forEach((apply) => {
+            apply.classList.add("is-dirty");
+            apply.title = "Есть неприменённые изменения";
+          });
+        }
       });
     });
   });

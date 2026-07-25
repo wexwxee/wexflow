@@ -13,6 +13,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import config
@@ -78,27 +79,98 @@ def get_home() -> dict | None:
     return load().get("home")
 
 
-# --- сохранённые пресеты фильтров ---
-def get_presets() -> list:
-    return load().get("presets", [])
+# --- сохранённые профили поиска вакансий ---
+def _normalise_preset(preset: dict) -> dict | None:
+    """Привести старый пресет к новому формату профиля поиска.
 
-
-def add_preset(name: str, query: str):
-    name = (name or "").strip()
+    До 1.3.15 пресеты состояли только из name/query. Детерминированный legacy-id
+    позволяет показать и удалить их без отдельной миграции settings.json.
+    """
+    if not isinstance(preset, dict):
+        return None
+    name = str(preset.get("name") or "").strip()[:50]
     if not name:
-        return
+        return None
+    query = str(preset.get("query") or "")[:4000]
+    preset_id = str(preset.get("id") or "").strip()
+    if not preset_id:
+        import hashlib
+        preset_id = "legacy-" + hashlib.sha256(
+            f"{name}\0{query}".encode("utf-8")
+        ).hexdigest()[:12]
+    return {
+        "id": preset_id[:80],
+        "name": name,
+        "query": query,
+        "updated_at": int(preset.get("updated_at") or 0),
+    }
+
+
+def get_presets() -> list:
+    return [
+        normalised
+        for preset in load().get("presets", [])
+        if (normalised := _normalise_preset(preset)) is not None
+    ][:20]
+
+
+def add_preset(name: str, query: str, preset_id: str = "") -> dict | None:
+    """Создать профиль или обновить существующий и вернуть сохранённую запись."""
+    name = (name or "").strip()[:50]
+    if not name:
+        return None
+    query = str(query or "")[:4000]
+    wanted_id = str(preset_id or "").strip()[:80]
+    result: dict = {}
 
     def _m(d):
-        presets = [p for p in d.get("presets", []) if p.get("name") != name]
-        presets.append({"name": name, "query": query})
-        d["presets"] = presets[:20]
+        presets = [
+            normalised
+            for preset in d.get("presets", [])
+            if (normalised := _normalise_preset(preset)) is not None
+        ]
+        existing = next(
+            (
+                p for p in presets
+                if (wanted_id and p["id"] == wanted_id)
+                or (not wanted_id and p["name"].casefold() == name.casefold())
+            ),
+            None,
+        )
+        saved = {
+            "id": (existing or {}).get("id") or uuid.uuid4().hex,
+            "name": name,
+            "query": query,
+            "updated_at": int(time.time()),
+        }
+        result.update(saved)
+        remaining = [p for p in presets if p["id"] != saved["id"]]
+        # Последний созданный/обновлённый профиль показываем первым.
+        d["presets"] = [saved, *remaining][:20]
 
     mutate(_m)
+    return result or None
 
 
-def delete_preset(name: str):
-    mutate(lambda d: d.__setitem__(
-        "presets", [p for p in d.get("presets", []) if p.get("name") != name]))
+def delete_preset(name: str = "", preset_id: str = ""):
+    name = str(name or "").strip()
+    preset_id = str(preset_id or "").strip()
+
+    def _m(data):
+        kept = []
+        for raw in data.get("presets", []):
+            preset = _normalise_preset(raw)
+            if preset is None:
+                continue
+            matches = (
+                (preset_id and preset["id"] == preset_id)
+                or (not preset_id and name and preset["name"] == name)
+            )
+            if not matches:
+                kept.append(preset)
+        data["presets"] = kept
+
+    mutate(_m)
 
 
 # --- БЕТА: ИИ-дозаполнение форм (по умолчанию ВЫКЛ) ---

@@ -72,6 +72,31 @@ def test_no_temp_file_left_after_save():
     _with_temp(body)
 
 
+def test_filter_profiles_migrate_update_and_delete_by_id():
+    def body():
+        settings_store.save({
+            "presets": [{"name": "Старый поиск", "query": "city=Herlev"}],
+        })
+        legacy = settings_store.get_presets()
+        assert len(legacy) == 1
+        assert legacy[0]["id"].startswith("legacy-")
+
+        created = settings_store.add_preset("Рядом", "radius=5&period=today")
+        assert created and created["id"]
+        assert settings_store.get_presets()[0]["name"] == "Рядом"
+
+        updated = settings_store.add_preset(
+            "Совсем рядом", "radius=2&period=today", created["id"]
+        )
+        assert updated["id"] == created["id"]
+        assert settings_store.get_presets()[0]["query"] == "radius=2&period=today"
+
+        settings_store.delete_preset(preset_id=created["id"])
+        remaining = settings_store.get_presets()
+        assert [p["name"] for p in remaining] == ["Старый поиск"]
+    _with_temp(body)
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]
