@@ -62,15 +62,37 @@
   .back-btn:hover { transform:translateY(-1px); border-color:var(--hover-line); color:var(--txt-strong); background:var(--card); }
   .back-btn svg { color:var(--accent); flex:0 0 auto; }
 
-  /* ── Аккаунт ──────────────────────────────────────────────── */
-  .acct-card {
-    display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap;
-    background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 55%), var(--card);
+  /* ── Аккаунт и пошаговое подключение Telegram ─────────────── */
+  .tg-setup-card {
+    position:relative; overflow:hidden; padding:24px;
+    border-color:color-mix(in srgb, #2aabee 48%, var(--glass-line));
+    background:
+      radial-gradient(circle at 100% 0, rgba(42,171,238,.16), transparent 38%),
+      linear-gradient(145deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 55%),
+      var(--card);
   }
+  .tg-setup-card::before {
+    content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+    background:linear-gradient(180deg,#2aabee,#21d86b);
+  }
+  .tg-setup-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+  .tg-setup-title { min-width:0; max-width:680px; }
+  .tg-eyebrow { display:block; margin-bottom:6px; color:#2aabee; font-size:11px; font-weight:900;
+    letter-spacing:.11em; text-transform:uppercase; }
+  .tg-setup-title h2 { margin:0; font-size:21px; }
+  .tg-setup-title p { margin:7px 0 0; color:var(--muted); font-size:13.5px; line-height:1.5; }
+  .tg-connect-state { display:inline-flex; align-items:center; gap:7px; padding:7px 11px;
+    border:1px solid var(--glass-line); border-radius:999px; background:var(--glass);
+    color:var(--muted); font-size:12px; font-weight:800; white-space:nowrap; }
+  .tg-connect-state::before { content:""; width:8px; height:8px; border-radius:50%; background:#8b9690; }
+  .tg-connect-state.on { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
+  .tg-connect-state.on::before { background:#21d86b; box-shadow:0 0 0 4px rgba(33,216,107,.13); }
+  .tg-account-strip { display:flex; align-items:center; gap:12px; margin-top:18px; padding:12px;
+    border:1px solid var(--glass-line); border-radius:13px; background:color-mix(in srgb,var(--glass) 78%,transparent); }
   .acct-id { display:flex; align-items:center; gap:14px; min-width:0; }
   .acct-avatar {
-    flex:0 0 auto; width:52px; height:52px; border-radius:50%; display:grid; place-items:center;
-    font-size:22px; font-weight:800; color:#07100b;
+    flex:0 0 auto; width:44px; height:44px; border-radius:50%; display:grid; place-items:center;
+    font-size:19px; font-weight:800; color:#07100b;
     background:linear-gradient(135deg, var(--accent), #2f9bff);
     box-shadow:0 6px 16px color-mix(in srgb, var(--accent) 30%, transparent);
   }
@@ -85,10 +107,38 @@
   }
   .acct-plan.pro { color:#8b7bff; border-color:color-mix(in srgb, #8b7bff 40%, var(--glass-line)); background:color-mix(in srgb, #8b7bff 12%, transparent); }
   .acct-plan.max { color:#f5a623; border-color:color-mix(in srgb, #f5a623 40%, var(--glass-line)); background:color-mix(in srgb, #f5a623 12%, transparent); }
-  .acct-cta { display:grid; gap:8px; justify-items:end; text-align:right; max-width:360px; }
-  .acct-cta button:disabled { opacity:.8; cursor:not-allowed; }
   .acct-hint { color:var(--muted); font-size:11.5px; line-height:1.4; }
-  .acct-rebind { margin-top:10px; padding-top:10px; border-top:1px solid var(--glass-line); display:grid; gap:5px; justify-items:end; }
+  .tg-steps { list-style:none; display:grid; gap:10px; margin:18px 0 0; padding:0; }
+  .tg-step { position:relative; display:grid; grid-template-columns:36px minmax(0,1fr); gap:12px;
+    padding:14px; border:1px solid var(--glass-line); border-radius:13px; background:var(--glass); }
+  .tg-step-num { width:36px; height:36px; border-radius:11px; display:grid; place-items:center;
+    border:1px solid var(--glass-line); background:var(--card); color:var(--muted); font-weight:900; }
+  .tg-step.active { border-color:color-mix(in srgb,#2aabee 55%,var(--glass-line)); background:rgba(42,171,238,.055); }
+  .tg-step.active .tg-step-num { color:#06151d; border-color:#2aabee; background:#2aabee; }
+  .tg-step.done { border-color:var(--ok-line); background:var(--ok-bg); }
+  .tg-step.done .tg-step-num { color:#06150b; border-color:#21d86b; background:#21d86b; }
+  .tg-step.locked { opacity:.58; }
+  .tg-step-copy h3 { margin:0; color:var(--txt-strong); font-size:14px; }
+  .tg-step-copy p { margin:4px 0 0; color:var(--muted); font-size:12.5px; line-height:1.45; }
+  .tg-step-actions { display:flex; flex-wrap:wrap; gap:9px; align-items:center; margin-top:11px; }
+  .tg-step-actions .ghost, .tg-step-actions .primary, .tg-step-actions .tg-login-btn { min-height:40px; }
+  .tg-login-wait { margin-top:11px; padding:10px 11px; border-radius:10px; background:var(--glass);
+    border:1px solid var(--glass-line); color:var(--muted); font-size:12px; }
+  .tg-login-wait[hidden] { display:none; }
+  .tg-poll-track { height:5px; margin-top:8px; border-radius:999px; overflow:hidden; background:var(--line); }
+  .tg-poll-bar { width:42%; height:100%; border-radius:inherit; background:linear-gradient(90deg,#2aabee,#21d86b);
+    animation:tgPoll 1.35s ease-in-out infinite alternate; }
+  @keyframes tgPoll { from{transform:translateX(-55%)} to{transform:translateX(190%)} }
+  .tg-setup-msg { margin:12px 0 0; font-size:12.5px; color:var(--muted); }
+  .tg-setup-msg.ok { color:var(--ok-txt); }.tg-setup-msg.err { color:var(--err-txt); }
+  .tg-setup-msg.working { color:var(--accent); }
+  .tg-setup-msg a { color:inherit; font-weight:800; }
+  .tg-advanced { margin-top:14px; padding-top:12px; border-top:1px solid var(--glass-line); }
+  .tg-advanced summary { color:var(--muted); font-size:12.5px; font-weight:700; cursor:pointer; }
+  .tg-advanced-body { display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+    flex-wrap:wrap; margin-top:12px; padding:12px; border-radius:11px; background:var(--glass); }
+  .tg-advanced-copy { max-width:520px; color:var(--muted); font-size:12px; line-height:1.45; }
+  .acct-rebind { display:grid; gap:5px; }
   .acct-rebind-btn { background:transparent; border:0; color:var(--muted); font-size:12px; font-weight:600; cursor:pointer; padding:2px 0; display:inline-flex; align-items:center; gap:6px; }
   .acct-rebind-btn:hover { color:var(--txt-strong); text-decoration:underline; }
   .privacy-card { border-color:color-mix(in srgb, var(--err-txt) 28%, var(--glass-line)); }
@@ -128,13 +178,16 @@
   .tg-login-btn .tg-login-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tg-login-btn svg { stroke-width:2.25; }
   @media (max-width:640px){
-    .acct-card { flex-direction:column; align-items:flex-start; }
-    .acct-cta { justify-items:start; text-align:left; max-width:none; }
+    .tg-setup-card { padding:19px; }
+    .tg-setup-head { display:grid; }
+    .tg-connect-state { justify-self:start; }
   }
   @media (max-width:420px){
     .tg-login-btn { width:100%; padding:0 14px; }
     .tg-login-btn .tg-login-text { white-space:normal; line-height:1.2; }
+    .tg-step-actions > * { width:100%; justify-content:center; }
   }
+  @media(prefers-reduced-motion:reduce){ .tg-poll-bar{animation:none;width:100%;} }
 
   /* ── Подписка ─────────────────────────────────────────────── */
   .sub-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
@@ -235,6 +288,36 @@
   .cmp-table thead th.max { color:#f5a623; }
   .cmp-table .yes { color:var(--accent); display:inline-flex; }
   .cmp-table .no { color:var(--muted); opacity:.6; }
+
+  /* ── Доп-поля для ИИ + тумблер беты ──────────────────────── */
+  .ai-extra { margin-top:16px; border-top:1px solid var(--glass-line); padding-top:12px; }
+  .ai-extra > summary {
+    cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px;
+    font-weight:700; font-size:14px; color:var(--txt); padding:2px 0;
+  }
+  .ai-extra > summary::-webkit-details-marker { display:none; }
+  .ai-extra > summary::after { content:"▸"; margin-left:auto; color:var(--muted); transition:transform .15s; }
+  .ai-extra[open] > summary::after { transform:rotate(90deg); }
+  .ai-extra > summary:hover { color:var(--txt-strong); }
+  .ai-extra-tag { font-size:11px; font-weight:700; color:var(--muted); padding:2px 8px;
+    border:1px solid var(--glass-line); border-radius:999px; }
+  .ai-extra textarea { width:100%; padding:11px 13px; border-radius:10px; border:1px solid var(--glass-line);
+    background:var(--glass); color:var(--txt); font:inherit; font-size:14px; resize:vertical; min-height:74px; }
+  .ai-extra textarea:focus { outline:none; border-color:var(--accent); }
+
+  .ai-toggle-card { background:linear-gradient(135deg, color-mix(in srgb, #8b7bff 8%, transparent), transparent 55%), var(--card); }
+  .ai-toggle-row { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+  .ai-toggle-copy { max-width:640px; }
+  .ai-beta { font-size:11px; font-weight:800; color:#8b7bff; padding:2px 8px; border-radius:999px;
+    border:1px solid color-mix(in srgb, #8b7bff 40%, var(--glass-line)); background:color-mix(in srgb, #8b7bff 12%, transparent); }
+  .switch { position:relative; flex:0 0 auto; display:inline-block; width:52px; height:30px; cursor:pointer; }
+  .switch input { position:absolute; opacity:0; width:0; height:0; }
+  .switch-track { position:absolute; inset:0; border-radius:999px; background:var(--glass);
+    border:1px solid var(--glass-line); transition:.18s; }
+  .switch-thumb { position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%;
+    background:var(--muted); transition:.18s; }
+  .switch input:checked + .switch-track { background:color-mix(in srgb, var(--accent) 30%, transparent); border-color:var(--accent); }
+  .switch input:checked + .switch-track .switch-thumb { left:25px; background:var(--accent); }
 </style>
 {% endblock %}
 
@@ -256,57 +339,127 @@
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if deleted %}<div class="ok">{{ ic.i('check', 13) }} Облачные данные удалены. Локальные профиль, документы и журнал остались на этом компьютере.</div>{% endif %}
   {% if delete_error %}<div class="err">Не удалось удалить облачные данные. Проверь интернет и повтори.</div>{% endif %}
+  {% if unlinked %}<div class="ok">{{ ic.i('check', 13) }} Компьютер отвязан от Telegram. Профиль и тариф сохранены — позже можно войти снова.</div>{% endif %}
+  {% if unlink_warning %}<div class="err">На этом ПК Telegram отключён, но облако не подтвердило очистку привязки. В Telegram компьютер может временно отображаться как офлайн; команды выполняться не будут.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
 
-  <!-- Аккаунт: вход через Telegram -->
-  <div class="panel acct-card">
-    <div class="acct-id">
+  <!-- Заметный пошаговый вход и привязка Telegram -->
+  <section class="panel tg-setup-card" id="telegram-setup" data-signed-in="{{ '1' if account.signed_in else '0' }}">
+    <div class="tg-setup-head">
+      <div class="tg-setup-title">
+        <span class="tg-eyebrow">Telegram · вход и управление</span>
+        <h2>{% if account.signed_in %}Telegram подключён к WexFlow{% else %}Подключи Telegram за 3 шага{% endif %}</h2>
+        <p>{% if account.signed_in %}
+          Аккаунт подтверждён. Осталось убедиться, что бот запущен, и выбрать режим уведомлений.
+        {% else %}
+          Без входа Telegram-функции заблокированы: WexFlow не знает, куда присылать вакансии и подтверждения.
+        {% endif %}</p>
+      </div>
+      <span class="tg-connect-state {{ 'on' if account.signed_in else '' }}" id="tgConnectState">
+        {{ 'Подключено' if account.signed_in else 'Требуется вход' }}
+      </span>
+    </div>
+
+    <div class="tg-account-strip">
       <span class="acct-avatar">{{ account.initial }}</span>
       <div class="acct-meta">
         <span class="acct-name">{{ account.display_name }}</span>
         <span class="acct-line">
           {% if account.signed_in %}
-            {% if account.username %}@{{ account.username }}{% else %}вход через Telegram{% endif %}
+            {% if account.username %}@{{ account.username }}{% else %}Telegram ID {{ account_tg_id }}{% endif %}
           {% else %}
-            вход не выполнен
+            Локальный профиль · Telegram ещё не привязан
           {% endif %}
           <span class="acct-plan {{ subscription.plan }}">{{ ic.i('star', 11) }} {{ subscription.current_name }}</span>
         </span>
       </div>
     </div>
-    <div class="acct-cta">
-      {% if account.signed_in %}
-      <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
-        <form method="post" action="/account/logout" style="margin:0;"><button class="ghost" type="submit">{{ ic.i('unlock', 14) }} Выйти</button></form>
-      </div>
-      <span class="acct-hint">Выход не удаляет данные — можно войти снова тем же Telegram.</span>
-      <div class="acct-rebind">
-        <button class="acct-rebind-btn" type="button" id="rebindOpen" data-tg-id="{{ account_tg_id }}">{{ ic.i('send', 13) }} Перенести аккаунт на другой Telegram</button>
-        <span class="acct-hint">Перенесёт тариф и все данные на другой Telegram. Этот аккаунт потеряет к ним доступ — отменить нельзя.</span>
-      </div>
-      {% else %}
-      <span class="acct-hint" style="margin-bottom:8px;">Вход через Telegram нужен, чтобы получать новые подходящие вакансии и подтверждать подачу прямо с телефона, а тариф и профиль не терялись.</span>
-      <a class="tg-login-btn" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">
-        <span class="tg-login-ic">{{ ic.i('send', 15) }}</span>
-        <span class="tg-login-text">Войти через Telegram</span>
-      </a>
-      <span class="acct-hint">Откроется страница входа Telegram. После подтверждения вернись сюда — приложение само тебя узнает.</span>
 
-      <div class="link-id">
-        <div class="link-id-or"><span>или без браузера</span></div>
-        <button class="ghost link-id-btn" type="button" id="linkIdBtn">{{ ic.i('send', 14) }} Привязать по ID</button>
-        <div class="link-id-box" id="linkIdBox" hidden>
-          <p class="acct-hint" style="margin:0 0 8px;">Отправь этот код боту <b>@wexflowbot</b> со своего Telegram — и ты в системе:</p>
-          <div class="link-id-code-row">
-            <span class="link-id-code" id="linkIdCode">······</span>
-            <button class="ghost" type="button" id="linkIdCopy">Копировать</button>
+    <ol class="tg-steps">
+      <li class="tg-step {{ 'done' if account.signed_in else 'active' }}" id="tgStep1">
+        <span class="tg-step-num">{{ '✓' if account.signed_in else '1' }}</span>
+        <div class="tg-step-copy">
+          <h3>Войди и привяжи этот компьютер</h3>
+          {% if account.signed_in %}
+          <p>Личность Telegram подтверждена. Профиль и тариф могут синхронизироваться между устройствами.</p>
+          {% else %}
+          <p>Основной способ — безопасная страница входа. Если браузерный вход не откроется, используй одноразовый код.</p>
+          <div class="tg-step-actions">
+            <a class="tg-login-btn" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">
+              <span class="tg-login-ic">{{ ic.i('send', 15) }}</span>
+              <span class="tg-login-text">Шаг 1 · Войти через Telegram</span>
+            </a>
+            <button class="ghost link-id-btn" type="button" id="linkIdBtn">Получить код привязки</button>
           </div>
-          <p class="acct-hint link-id-wait" id="linkIdWait" hidden>Жду привязку… как подтвердишь в боте, страница обновится сама.</p>
+          <div class="tg-login-wait" id="tgLoginWait" hidden>
+            <span id="tgLoginWaitText">Жду подтверждение входа в Telegram…</span>
+            <div class="tg-poll-track" aria-hidden="true"><div class="tg-poll-bar"></div></div>
+          </div>
+          <div class="link-id-box" id="linkIdBox" hidden>
+            <p class="acct-hint" style="margin:0 0 8px;">Открой <b>@wexflowbot</b> и отправь ему этот одноразовый код:</p>
+            <div class="link-id-code-row">
+              <span class="link-id-code" id="linkIdCode">······</span>
+              <button class="ghost" type="button" id="linkIdCopy">Копировать</button>
+            </div>
+            <div class="tg-step-actions">
+              <a class="ghost" href="https://t.me/wexflowbot" target="_blank" rel="noopener">Открыть @wexflowbot</a>
+            </div>
+            <p class="acct-hint link-id-wait" id="linkIdWait" hidden>Жду код в боте — после подтверждения страница обновится сама.</p>
+          </div>
+          {% endif %}
+        </div>
+      </li>
+
+      <li class="tg-step {{ 'active' if account.signed_in else 'locked' }}" id="tgStep2">
+        <span class="tg-step-num">2</span>
+        <div class="tg-step-copy">
+          <h3>Открой @wexflowbot и нажми Start</h3>
+          <p>{% if account.signed_in %}Это разрешит боту отправить первое сообщение. Без запуска Telegram сам блокирует сообщения от бота.{% else %}Сначала заверши вход — тогда этот шаг станет доступен.{% endif %}</p>
+          {% if account.signed_in %}
+          <div class="tg-step-actions">
+            <a class="primary" href="https://t.me/wexflowbot?start=wexflow" target="_blank" rel="noopener">Открыть бота и нажать Start</a>
+          </div>
+          {% endif %}
+        </div>
+      </li>
+
+      <li class="tg-step {{ 'active' if account.signed_in else 'locked' }}" id="tgStep3">
+        <span class="tg-step-num">3</span>
+        <div class="tg-step-copy">
+          <h3>Проверь сообщение и включи нужный режим</h3>
+          <p>{% if account.signed_in %}WexFlow пришлёт короткое проверочное сообщение. Только после успешной проверки переходи к уведомлениям и подтверждению подачи.{% else %}Проверка и настройки заблокированы до входа.{% endif %}</p>
+          {% if account.signed_in %}
+          <div class="tg-step-actions">
+            <button class="primary" type="button" id="tgSetupTest">Отправить проверочное</button>
+            <a class="ghost" href="/settings/telegram">Настроить Telegram →</a>
+          </div>
+          {% endif %}
+        </div>
+      </li>
+    </ol>
+
+    <p class="tg-setup-msg" id="tgSetupMsg" hidden></p>
+
+    {% if account.signed_in %}
+    <details class="tg-advanced">
+      <summary>Управление привязкой</summary>
+      <div class="tg-advanced-body">
+        <div class="tg-advanced-copy">
+          Отвязка остановит Telegram-режим и уберёт этот компьютер из Telegram-панели,
+          но не удалит профиль, тариф и облачные данные.
+          Для переноса на другой Telegram сначала потребуется код из текущего аккаунта.
+        </div>
+        <div class="acct-rebind">
+          <button class="acct-rebind-btn" type="button" id="rebindOpen" data-tg-id="{{ account_tg_id }}">{{ ic.i('send', 13) }} Перенести на другой Telegram</button>
+          <form method="post" action="/account/logout" style="margin:0;"
+                onsubmit="return confirm('Отвязать Telegram от этого компьютера? Telegram-режим будет остановлен, локальные данные останутся.');">
+            <button class="ghost" type="submit">{{ ic.i('unlock', 14) }} Отвязать от этого ПК</button>
+          </form>
         </div>
       </div>
-      {% endif %}
-    </div>
-  </div>
+    </details>
+    {% endif %}
+  </section>
   {% if account.signed_in %}
   <div class="panel privacy-card">
     <div class="privacy-row">
@@ -326,15 +479,29 @@
   (function () {
     var btn = document.getElementById('tgLoginBtn');
     if (!btn) return;            // уже вошли — опрашивать нечего
+    var wait = document.getElementById('tgLoginWait');
+    var waitText = document.getElementById('tgLoginWaitText');
     var timer = null;
+    function showWait(text) {
+      if (waitText && text) waitText.textContent = text;
+      if (wait) wait.hidden = false;
+      btn.setAttribute('aria-busy', 'true');
+    }
     function poll() {
       fetch('/account/login/poll', { cache: 'no-store' })
         .then(function (r) { return r.json(); })
-        .then(function (d) { if (d && d.signed_in) { clearInterval(timer); location.reload(); } })
+        .then(function (d) {
+          if (d && d.signed_in) {
+            clearInterval(timer);
+            showWait('Вход подтверждён — открываю следующие шаги…');
+            location.reload();
+          }
+        })
         .catch(function () {});
     }
     // как только человек открыл страницу входа — начинаем спрашивать облако
     btn.addEventListener('click', function () {
+      showWait('Страница входа открыта. Жду подтверждение в Telegram…');
       if (timer) return;
       timer = setInterval(poll, 3000);
       setTimeout(poll, 1500);
@@ -346,7 +513,7 @@
     .link-id { margin-top: 14px; }
     .link-id-or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px; margin-bottom:12px; }
     .link-id-or::before, .link-id-or::after { content:""; flex:1; height:1px; background:var(--glass-line); }
-    .link-id-btn { width:100%; justify-content:center; }
+    .link-id-btn { width:auto; justify-content:center; }
     .link-id-box { margin-top:12px; }
     .link-id-code-row { display:flex; align-items:center; gap:10px; }
     .link-id-code { flex:1; font-size:26px; font-weight:700; letter-spacing:.32em; text-align:center;
@@ -362,6 +529,8 @@
     var codeEl = document.getElementById('linkIdCode');
     var copyBtn = document.getElementById('linkIdCopy');
     var waitEl = document.getElementById('linkIdWait');
+    var loginWait = document.getElementById('tgLoginWait');
+    var loginWaitText = document.getElementById('tgLoginWaitText');
     var timer = null;
     function startPoll() {
       if (timer) return;
@@ -382,6 +551,8 @@
             codeEl.textContent = d.code;
             box.hidden = false;
             if (waitEl) waitEl.hidden = false;
+            if (loginWaitText) loginWaitText.textContent = 'Код создан. Жду, когда ты отправишь его боту…';
+            if (loginWait) loginWait.hidden = false;
             btn.hidden = true;
             startPoll();
           } else {
@@ -399,6 +570,84 @@
         else { done(); }
       });
     }
+  })();
+  </script>
+
+  <script>
+  (function () {
+    var btn = document.getElementById('tgSetupTest');
+    if (!btn) return;                  // проверка доступна только после входа
+    var msg = document.getElementById('tgSetupMsg');
+    var step2 = document.getElementById('tgStep2');
+    var step3 = document.getElementById('tgStep3');
+
+    function setMsg(text, kind, botUrl) {
+      if (!msg) return;
+      msg.hidden = false;
+      msg.className = 'tg-setup-msg ' + (kind || '');
+      msg.textContent = text;
+      if (botUrl) {
+        msg.appendChild(document.createTextNode(' '));
+        var link = document.createElement('a');
+        link.href = botUrl;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = 'Открыть @wexflowbot →';
+        msg.appendChild(link);
+      }
+    }
+
+    function complete(step) {
+      if (!step) return;
+      step.classList.remove('active', 'locked');
+      step.classList.add('done');
+      var num = step.querySelector('.tg-step-num');
+      if (num) num.textContent = '✓';
+    }
+
+    btn.addEventListener('click', function () {
+      var old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Отправляю…';
+      setMsg('Проверяю связь с Telegram и отправляю сообщение…', 'working');
+      fetch('/api/telegram/setup-test', { method: 'POST' })
+        .then(function (r) {
+          return r.json().then(function (data) {
+            data = data || {};
+            data.httpOk = r.ok;
+            data.status = r.status;
+            return data;
+          });
+        })
+        .then(function (d) {
+          btn.disabled = false;
+          btn.textContent = old;
+          if (d.ok) {
+            complete(step2);
+            complete(step3);
+            setMsg('Готово: проверочное сообщение отправлено. Telegram подключён к этому компьютеру.', 'ok');
+            return;
+          }
+          if (d.needsBotStart) {
+            if (step2) {
+              step2.classList.remove('locked', 'done');
+              step2.classList.add('active');
+            }
+            setMsg(d.error || 'Telegram ещё не разрешил боту писать. Открой бота, нажми Start и повтори проверку.', 'err', d.botUrl);
+            return;
+          }
+          if (d.status === 401 || d.code === 'login_required') {
+            setMsg('Сессия входа закончилась. Обнови страницу и войди ещё раз.', 'err');
+            return;
+          }
+          setMsg(d.error || 'Не удалось отправить сообщение. Проверь интернет и повтори.', 'err');
+        })
+        .catch(function () {
+          btn.disabled = false;
+          btn.textContent = old;
+          setMsg('Нет связи с облаком. Проверь интернет и повтори проверку.', 'err');
+        });
+    });
   })();
   </script>
 
@@ -546,8 +795,59 @@
       <div class="field"><label class="lbl">LinkedIn (необязательно)</label><input type="text" name="linkedin" value="{{ profile.linkedin or '' }}"></div>
     </div>
 
+    <details class="ai-extra">
+      <summary>{{ ic.i('sparkles', 14) if ic else '' }} Дополнительно для умного ИИ-заполнения <span class="ai-extra-tag">необязательно</span></summary>
+      <p class="hint" style="margin:10px 0 14px;">Чем больше здесь заполнено, тем больше полей на анкетах ИИ закроет сам. Пусто — просто оставит эти вопросы тебе. Всё по желанию.</p>
+      <div class="grid2">
+        <div class="field"><label class="lbl">Право на работу в Дании</label>
+          <input type="text" name="work_authorization" list="waOpts" value="{{ profile.work_authorization or '' }}" placeholder="напр. гражданин ЕС / есть разрешение / нужна виза">
+          <datalist id="waOpts">
+            <option value="Гражданин ЕС/Дании"></option>
+            <option value="Есть вид на жительство / разрешение на работу"></option>
+            <option value="Нужна спонсорская виза"></option>
+          </datalist></div>
+        <div class="field"><label class="lbl">Языки</label><input type="text" name="languages" value="{{ profile.languages or '' }}" placeholder="напр. английский — свободно, датский — базовый"></div>
+        <div class="field"><label class="lbl">Опыт работы (лет)</label><input type="text" name="experience_years" value="{{ profile.experience_years or '' }}" placeholder="напр. 3"></div>
+        <div class="field"><label class="lbl">Текущая/последняя должность</label><input type="text" name="current_role" value="{{ profile.current_role or '' }}" placeholder="напр. продавец-консультант"></div>
+        <div class="field"><label class="lbl">Образование</label><input type="text" name="education" value="{{ profile.education or '' }}" placeholder="напр. среднее / бакалавр"></div>
+        <div class="field"><label class="lbl">Когда можешь начать</label><input type="text" name="available_from" value="{{ profile.available_from or '' }}" placeholder="напр. сразу / через 2 недели"></div>
+        <div class="field"><label class="lbl">Дата рождения</label><input type="date" name="date_of_birth" value="{{ profile.date_of_birth or '' }}"></div>
+      </div>
+      <div class="field"><label class="lbl">Коротко о себе</label><textarea name="about" rows="3" placeholder="1–2 предложения о себе — ИИ переформулирует их под вопрос анкеты, ничего не выдумывая">{{ profile.about or '' }}</textarea></div>
+    </details>
+
     <div class="actions" style="margin-top:16px;"><span id="autosaveStatus" class="autosave">{{ ic.i('check', 13) }} Изменения сохраняются автоматически</span></div>
   </form>
+
+  <!-- БЕТА: ИИ-дозаполнение форм -->
+  <div class="panel ai-toggle-card">
+    <div class="ai-toggle-row">
+      <div class="ai-toggle-copy">
+        <h2>{{ ic.i('sparkles', 17) if ic else '' }} Умное ИИ-заполнение форм <span class="ai-beta">бета</span></h2>
+        <p class="hint" style="margin:6px 0 0;">Когда скрипт не узнаёт короткое поле анкеты по шаблону, Google Gemini сопоставляет его с конкретным фактом профиля, а приложение подставляет <b>точное сохранённое значение</b>. Произвольный текст в обычном режиме модель передать не может. Свободные вопросы остаются тебе или отдельному режиму черновиков. Анкету по-прежнему <b>отправляешь ты сам</b>.</p>
+        <p class="hint" style="margin:8px 0 0; font-size:12px;">Включая, ты соглашаешься на передачу ограниченного набора данных профиля в Google Gemini для сопоставления вопросов. Чувствительные данные отправляются только при похожем вопросе.{% if not ai_fill_available %} <b style="color:var(--warn-txt)">Нужен ключ Gemini в secrets.json — сейчас его нет, ИИ не заработает.</b>{% endif %}</p>
+      </div>
+      <label class="switch" title="Включить ИИ-заполнение">
+        <input type="checkbox" id="aiFillToggle" {{ 'checked' if ai_fill_on else '' }}>
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+      </label>
+    </div>
+    <span id="aiFillStatus" class="autosave" style="margin-top:10px; display:inline-block;"></span>
+
+    <div class="ai-sub" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--glass-line);">
+      <div class="ai-toggle-row">
+        <div class="ai-toggle-copy">
+          <h2 style="font-size:15px;">✍️ Черновик мотивации под вакансию</h2>
+          <p class="hint" style="margin:6px 0 0;">Для свободных вопросов («почему хочешь к нам») ИИ напишет <b>черновик</b> из твоего «о себе» и названия вакансии. Это <b>единственное</b>, что ИИ сочиняет, а не берёт фактом — поэтому отдельно и по умолчанию выключено. В окне подачи такой ответ помечается «⚠ черновик — проверь». Заполни «Коротко о себе» выше, иначе черновика не будет.</p>
+        </div>
+        <label class="switch" title="Черновик мотивации">
+          <input type="checkbox" id="aiMotToggle" {{ 'checked' if ai_fill_motivation_on else '' }} {{ 'disabled' if not ai_fill_on else '' }}>
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+      </div>
+      <span id="aiMotStatus" class="autosave" style="margin-top:8px; display:inline-block;"></span>
+    </div>
+  </div>
 
   <!-- Подписка показывается только после включения биллинга -->
   {% if show_billing() %}
@@ -685,7 +985,9 @@
     autosaveStatus.textContent = 'Сохраняю...';
     autosaveStatus.className = 'autosave';
     const fd = new FormData();
-    ['first_name','last_name','email','phone','address','zipcode','city','country','linkedin'].forEach((name) => {
+    ['first_name','last_name','email','phone','address','zipcode','city','country','linkedin',
+     'work_authorization','languages','experience_years','current_role','education',
+     'available_from','date_of_birth','about'].forEach((name) => {
       const input = profileForm.querySelector(`[name="${name}"]`);
       if (input) fd.append(name, input.value || '');
     });
@@ -820,6 +1122,63 @@
           })
           .catch(function () { b.disabled = false; });
       });
+    });
+  })();
+
+  // БЕТА-тумблер ИИ-заполнения форм
+  (function () {
+    var toggle = document.getElementById('aiFillToggle');
+    if (!toggle) return;
+    var motToggle = document.getElementById('aiMotToggle');
+    var status = document.getElementById('aiFillStatus');
+    function setStatus(text, kind) {
+      if (!status) return;
+      status.textContent = text || '';
+      status.className = 'autosave' + (kind ? ' ' + kind : '');
+    }
+    toggle.addEventListener('change', function () {
+      var on = toggle.checked;
+      toggle.disabled = true;
+      setStatus('Сохраняю…');
+      var fd = new FormData();
+      fd.append('enabled', on ? '1' : '0');
+      fetch('/settings/ai-fill', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          toggle.disabled = false;
+          if (d && d.ok) {
+            toggle.checked = !!d.enabled;
+            if (motToggle) {
+              motToggle.disabled = !d.enabled;
+              if (!d.enabled) motToggle.checked = false;
+              else if (Object.prototype.hasOwnProperty.call(d, 'motivation_enabled')) motToggle.checked = !!d.motivation_enabled;
+            }
+            setStatus(d.enabled ? 'ИИ-заполнение включено' : 'ИИ-заполнение выключено', 'saved');
+          } else { toggle.checked = !on; setStatus('Не удалось сохранить', 'error'); }
+        })
+        .catch(function () { toggle.disabled = false; toggle.checked = !on; setStatus('Нет связи', 'error'); });
+    });
+  })();
+
+  // Под-тумблер: черновик мотивации
+  (function () {
+    var toggle = document.getElementById('aiMotToggle');
+    if (!toggle) return;
+    var mainToggle = document.getElementById('aiFillToggle');
+    toggle.disabled = !(mainToggle && mainToggle.checked);
+    var status = document.getElementById('aiMotStatus');
+    function setStatus(t, kind) { if (status) { status.textContent = t || ''; status.className = 'autosave' + (kind ? ' ' + kind : ''); } }
+    toggle.addEventListener('change', function () {
+      var on = toggle.checked; toggle.disabled = true; setStatus('Сохраняю…');
+      var fd = new FormData(); fd.append('enabled', on ? '1' : '0');
+      fetch('/settings/ai-fill-motivation', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          toggle.disabled = false;
+          if (d && d.ok) { toggle.checked = !!d.enabled; setStatus(d.enabled ? 'Черновик мотивации включён' : 'Черновик мотивации выключен', 'saved'); }
+          else { toggle.checked = !!(d && d.enabled); setStatus((d && d.error) || 'Не удалось сохранить', 'error'); }
+        })
+        .catch(function () { toggle.disabled = false; toggle.checked = !on; setStatus('Нет связи', 'error'); });
     });
   })();
 </script>

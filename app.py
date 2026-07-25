@@ -2693,7 +2693,15 @@ async def api_autopilot_mode(request: Request):
         body = {}
     mode = body.get("mode")
     if mode == "telegram" and not account_mod.is_signed_in():
-        return {"ok": False, "error": "Сначала войди через Telegram в разделе «Аккаунт»."}
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "login_required",
+                "error": "Сначала войди через Telegram в разделе «Аккаунт».",
+                "setupUrl": "/account#telegram-setup",
+            },
+            status_code=401,
+        )
     if mode not in autopilot.MODES:
         return {"ok": False, "error": "Неизвестный режим."}
     new_mode = autopilot.set_mode(mode)
@@ -2971,7 +2979,8 @@ def api_transit(job_id: str):
 
 @app.get("/account", response_class=HTMLResponse)
 def account_page(request: Request, saved: str = "", missing: str = "",
-                 deleted: str = "", delete_error: str = ""):
+                 deleted: str = "", delete_error: str = "",
+                 unlinked: str = "", unlink_warning: str = ""):
     """Общие настройки приложения: единый профиль, документы и подписка."""
     # если уже вошли — освежим тариф/имя из облака (подхватит выданный Pro/Max)
     if account_mod.is_signed_in():
@@ -2989,11 +2998,15 @@ def account_page(request: Request, saved: str = "", missing: str = "",
         "file_info": _profile_file_info(profile),
         "saved": saved, "missing_fields": missing_fields,
         "deleted": deleted, "delete_error": delete_error,
+        "unlinked": unlinked, "unlink_warning": unlink_warning,
         "city_options": city_options, "country_options": country_options,
         "subscription": subscription.status(),
         "account": account_mod.status(profile),
         "account_tg_id": account_mod.load().get("tg_id") or "",
         "cloud_login_url": cloud_auth.login_url(),
+        "ai_fill_on": settings_store.get_ai_fill(),
+        "ai_fill_motivation_on": settings_store.get_ai_fill_motivation(),
+        "ai_fill_available": bool(ai_filters.api_key()),
     })
 
 
@@ -3093,6 +3106,7 @@ def _settings_context(
         "saved": saved, "geoerror": geoerror,
         "subscription": subscription.status(),
         "account_tg_id": account_mod.load().get("tg_id") or "",
+        "account_signed_in": account_mod.is_signed_in(),
         "settings_section": section,
         "settings_title": settings_title,
         "settings_meta": settings_meta,
@@ -3165,20 +3179,64 @@ def account_save(
     first_name: str = Form(""), last_name: str = Form(""), email: str = Form(""),
     phone: str = Form(""), address: str = Form(""), zipcode: str = Form(""),
     city: str = Form(""), country: str = Form(""), linkedin: str = Form(""),
+    work_authorization: str = Form(""), languages: str = Form(""),
+    experience_years: str = Form(""), current_role: str = Form(""),
+    education: str = Form(""), available_from: str = Form(""),
+    date_of_birth: str = Form(""), about: str = Form(""),
 ):
-    """Общий профиль — только личные данные. Документы (CV/письмо) — в настройках фирмы."""
+    """Общий профиль — только личные данные. Документы (CV/письмо) — в настройках фирмы.
+    Поля после linkedin — необязательные, их использует ИИ-дозаполнение форм (бета)."""
     profile = profile_store.load_profile()
     profile.update({
         "first_name": first_name.strip(), "last_name": last_name.strip(),
         "email": email.strip(), "phone": phone.strip(), "address": address.strip(),
         "zip": zipcode.strip(), "city": city.strip(), "country": country.strip(),
         "linkedin": linkedin.strip(),
+        "work_authorization": work_authorization.strip(), "languages": languages.strip(),
+        "experience_years": experience_years.strip(), "current_role": current_role.strip(),
+        "education": education.strip(), "available_from": available_from.strip(),
+        "date_of_birth": date_of_birth.strip(), "about": about.strip(),
     })
     missing = _profile_missing(profile)
     if missing:
         return RedirectResponse("/account?missing=" + quote_plus(",".join(missing)), status_code=303)
     profile_store.save_profile(profile)
     return RedirectResponse("/account?saved=1", status_code=303)
+
+
+@app.post("/settings/ai-fill")
+async def settings_ai_fill(request: Request):
+    """БЕТА-тумблер ИИ-дозаполнения форм. Включая его, пользователь соглашается,
+    что данные профиля уходят в Google Gemini для подбора ответов. Отправку анкет
+    ИИ по-прежнему НЕ делает — только заполняет, финальную кнопку жмёт человек."""
+    form = await request.form()
+    raw = str(form.get("enabled") or "").strip().lower()
+    enabled = raw in ("1", "true", "yes", "on")
+    settings_store.set_ai_fill(enabled)
+    return JSONResponse({
+        "ok": True,
+        "enabled": settings_store.get_ai_fill(),
+        "motivation_enabled": settings_store.get_ai_fill_motivation(),
+    })
+
+
+@app.post("/settings/ai-fill-motivation")
+async def settings_ai_fill_motivation(request: Request):
+    """Под-тумблер: разрешить ИИ писать ЧЕРНОВИК мотивации (свободные вопросы
+    «почему к нам») из «о себе». Единственное место, где ИИ сочиняет текст —
+    поэтому отдельно и ВЫКЛ по умолчанию. Черновик всегда проверяет человек."""
+    form = await request.form()
+    raw = str(form.get("enabled") or "").strip().lower()
+    requested = raw in ("1", "true", "yes", "on")
+    if requested and not settings_store.get_ai_fill():
+        settings_store.set_ai_fill_motivation(False)
+        return JSONResponse({
+            "ok": False,
+            "enabled": False,
+            "error": "Сначала включи основное ИИ-заполнение.",
+        })
+    settings_store.set_ai_fill_motivation(requested)
+    return JSONResponse({"ok": True, "enabled": settings_store.get_ai_fill_motivation()})
 
 
 @app.post("/account/waitlist")
@@ -3245,9 +3303,19 @@ def account_login_poll():
 
 @app.post("/account/logout")
 def account_logout():
-    """Выйти из аккаунта (локально). Облачная сессия остаётся — можно войти снова."""
+    """Отвязать Telegram от этого ПК и остановить зависящий от него режим."""
+    was_signed_in = account_mod.is_signed_in()
+    if autopilot.get_mode() == "telegram":
+        autopilot.set_mode("off")
+        _reschedule_autopilot_scan()
+    # Локально прекращаем слушать команды сразу, до сетевого запроса: даже при
+    # медленном/недоступном облаке этот ПК уже безопасно отключён.
     account_mod.sign_out()
-    return RedirectResponse("/account", status_code=303)
+    cloud_unlinked = True
+    if was_signed_in:
+        cloud_unlinked = bool(cloud_auth.unlink_device().get("ok"))
+    target = "/account?unlinked=1" if cloud_unlinked else "/account?unlink_warning=cloud"
+    return RedirectResponse(target, status_code=303)
 
 
 @app.post("/account/delete-cloud")
@@ -3304,12 +3372,32 @@ def settings_documents_save(
 @app.post("/api/telegram/clear_pending")
 def api_telegram_clear_pending():
     """Снять все ожидающие Telegram-карточки разом (очередь решений)."""
+    if not account_mod.is_signed_in():
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "login_required",
+                "error": "Сначала войди через Telegram в разделе «Аккаунт».",
+                "setupUrl": "/account#telegram-setup",
+            },
+            status_code=401,
+        )
     return JSONResponse({"ok": True, "cleared": autopilot.tg_pending_clear_all()})
 
 
 @app.post("/api/telegram/digest")
 async def api_telegram_digest(request: Request):
     """Включить/выключить дневной дайджест вместо потока карточек."""
+    if not account_mod.is_signed_in():
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "login_required",
+                "error": "Сначала войди через Telegram в разделе «Аккаунт».",
+                "setupUrl": "/account#telegram-setup",
+            },
+            status_code=401,
+        )
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -3565,8 +3653,16 @@ async def telegram_approval(request: Request):
     except Exception:  # noqa: BLE001
         body = {}
     on = bool(body.get("on"))
-    if on and not account_mod.is_signed_in():
-        return {"ok": False, "error": "Сначала войди через Telegram в разделе «Аккаунт»."}
+    if not account_mod.is_signed_in():
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "login_required",
+                "error": "Сначала войди через Telegram в разделе «Аккаунт».",
+                "setupUrl": "/account#telegram-setup",
+            },
+            status_code=401,
+        )
     if on:
         autopilot.set_mode("telegram")
     else:
@@ -3586,7 +3682,15 @@ def telegram_test():
     """Проверочное сообщение = РЕАЛЬНЫЙ вид карточки вакансии с кнопками
     (на примере подходящей вакансии). Кнопки в примере ничего не отправляют."""
     if not account_mod.is_signed_in():
-        return {"ok": False, "error": "Сначала войди через Telegram (раздел «Аккаунт»)."}
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "login_required",
+                "error": "Сначала войди через Telegram в разделе «Аккаунт».",
+                "setupUrl": "/account#telegram-setup",
+            },
+            status_code=401,
+        )
     sample = None
     try:
         matches = autopilot.find_matches()
@@ -3606,13 +3710,47 @@ def telegram_test():
     return {"ok": bool(r and r.get("ok")), "error": (r or {}).get("error", "")}
 
 
+@app.post("/api/telegram/setup-test")
+def telegram_setup_test():
+    """Шаг мастера подключения: простое сообщение без вакансии и кнопок подачи."""
+    if not account_mod.is_signed_in():
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "login_required",
+                "error": "Сначала войди через Telegram.",
+                "setupUrl": "/account#telegram-setup",
+            },
+            status_code=401,
+        )
+    result = cloud_auth.send_test_message(
+        "✅ <b>WexFlow подключён</b>\n"
+        "Связь с этим компьютером работает. Теперь можно включать уведомления "
+        "и подтверждение подачи в настройках Telegram."
+    )
+    return JSONResponse({
+        "ok": bool(result.get("ok")),
+        "error": str(result.get("error") or ""),
+        "needsBotStart": bool(result.get("needsBotStart")),
+        "botUrl": str(result.get("botUrl") or "https://t.me/wexflowbot"),
+    })
+
+
 @app.post("/api/telegram/send-current")
 async def telegram_send_current(request: Request, panel: bool = False):
     """Ручная отправка текущих подходящих вакансий в Telegram.
     Нужна для понятного сценария: счётчик «подходит» уже есть, но безопасный
     режим автоматически шлёт только новые после включения."""
     if not account_mod.is_signed_in():
-        return {"ok": False, "error": "Сначала войди через Telegram (раздел «Аккаунт»)."}
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "login_required",
+                "error": "Сначала войди через Telegram в разделе «Аккаунт».",
+                "setupUrl": "/account#telegram-setup",
+            },
+            status_code=401,
+        )
     try:
         body = await request.json()
         if isinstance(body, dict) and "panel" in body:
@@ -3652,6 +3790,11 @@ async def settings_profile_autosave(request: Request):
         ("phone", "phone"), ("address", "address"), ("zipcode", "zip"),
         ("city", "city"), ("country", "country"), ("linkedin", "linkedin"),
         ("cv_path", "cv_path"), ("cover_letter_path", "cover_letter_path"),
+        # необязательные поля для ИИ-дозаполнения (бета)
+        ("work_authorization", "work_authorization"), ("languages", "languages"),
+        ("experience_years", "experience_years"), ("current_role", "current_role"),
+        ("education", "education"), ("available_from", "available_from"),
+        ("date_of_birth", "date_of_birth"), ("about", "about"),
     ]:
         if form_key in form:
             profile[profile_key] = str(form.get(form_key) or "").strip()

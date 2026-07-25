@@ -10,6 +10,8 @@ import os
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import app
 import autopilot
@@ -17,6 +19,26 @@ import applications
 import cloud_auth
 import translate_worker
 import account as account_mod
+
+
+@pytest.fixture(autouse=True)
+def _restore_global_patches():
+    """Не выпускать прямые подмены _patch за пределы текущего теста."""
+    targets = [
+        (account_mod, "is_signed_in"),
+        (autopilot, "find_matches"),
+        (applications, "submitted_ids"),
+        (applications, "skipped_ids"),
+        (applications, "submitting_ids"),
+        (translate_worker, "is_translator_down"),
+        (cloud_auth, "report_job_texts"),
+    ]
+    originals = [(obj, name, getattr(obj, name)) for obj, name in targets]
+    try:
+        yield
+    finally:
+        for obj, name, value in originals:
+            setattr(obj, name, value)
 
 
 def _job(jid, desc="Dansk beskrivelse.", ru="", fs=1.0):

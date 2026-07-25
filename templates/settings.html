@@ -173,6 +173,7 @@
   .ap-mode-opt:hover { border-color:var(--hover-line); color:var(--txt); }
   .ap-mode-opt.on { border-color:var(--accent); color:var(--accent);
     background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .ap-mode-opt.needs-login { border-style:dashed; }
   .ap-mode-opt.busy { opacity:.55; pointer-events:none; }
   /* профили подбора (несколько наборов фильтров) */
   .ap-profiles-wrap { margin:6px 0 10px; padding-bottom:10px; border-bottom:1px dashed var(--glass-line); }
@@ -589,7 +590,11 @@
     <div class="ap-mode" id="apMode">
       <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='off' else '' }}" data-mode="off">{{ ic.i('pause', 20) }}<span>Выключен</span></button>
       <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='notify' else '' }}" data-mode="notify">{{ ic.i('bell', 20) }}<span>Уведомлять</span></button>
-      <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='telegram' else '' }}" data-mode="telegram">{{ ic.i('message', 20) }}<span>Спрашивать в Telegram</span></button>
+      <button type="button"
+              class="ap-mode-opt {{ 'on' if autopilot_mode=='telegram' else '' }} {{ 'needs-login' if not account_signed_in else '' }}"
+              data-mode="telegram"{% if not account_signed_in %} data-setup="/account#telegram-setup"{% endif %}>
+        {{ ic.i('message', 20) }}<span>Спрашивать в Telegram{% if not account_signed_in %} · нужен вход{% endif %}</span>
+      </button>
       <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='auto' else '' }}" data-mode="auto">{{ ic.i('zap', 20) }}<span>Автоотправка</span></button>
     </div>
     <div class="ap-hint" id="apModeHint" style="margin-bottom:4px;"></div>
@@ -608,6 +613,7 @@
       box.querySelectorAll('.ap-mode-opt').forEach(function(b){
         b.addEventListener('click',function(){
           var m=b.dataset.mode;
+          if(m==='telegram' && b.dataset.setup){ location.href=b.dataset.setup; return; }
           b.classList.add('busy');
           fetch('/api/autopilot/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})})
             .then(function(r){return r.json();})
@@ -881,7 +887,17 @@
     #tg .tg-stat { border:1px solid var(--glass-line); background:var(--glass); border-radius:12px; padding:10px 11px; }
     #tg .tg-stat b { display:block; font-size:18px; color:var(--txt-strong); line-height:1.1; }
     #tg .tg-stat span { display:block; margin-top:3px; color:var(--muted); font-size:12px; line-height:1.25; }
+    #tg .tg-lock { margin-top:14px; border:1px solid color-mix(in srgb, var(--accent) 35%, var(--glass-line));
+      background:color-mix(in srgb, var(--accent) 6%, var(--glass)); border-radius:14px; padding:14px; }
+    #tg .tg-lock-title { margin:0 0 12px; color:var(--txt-strong); font-size:14px; font-weight:750; }
+    #tg .tg-lock-steps { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+    #tg .tg-lock-step { display:flex; gap:8px; align-items:flex-start; color:var(--muted); font-size:12.5px; line-height:1.35;
+      border:1px solid var(--glass-line); border-radius:10px; padding:10px; background:var(--glass); }
+    #tg .tg-lock-step b { display:grid; place-items:center; flex:0 0 22px; height:22px; border-radius:50%;
+      background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); font-size:12px; }
+    #tg .tg-lock .actions { margin-top:12px; }
     @media (max-width:640px){ #tg .tg-stats { grid-template-columns:1fr 1fr; } }
+    @media (max-width:640px){ #tg .tg-lock-steps { grid-template-columns:1fr; } }
   </style>
   <section id="tg" class="panel" style="margin-top:14px;">
     <h2>{{ ic.i('send', 16) }} Telegram — подтверждение подачи</h2>
@@ -901,9 +917,15 @@
       stopPoll();
       if(!st.signed_in){
         box.innerHTML =
-          '<p class="hint">Сначала войди через Telegram в разделе «Аккаунт». После входа WexFlow будет знать, куда присылать карточки.</p>'+
-          '<div class="actions"><a class="primary" href="/account">Открыть Аккаунт</a>'+
-          '<a class="tg-sec" href="https://t.me/wexflowbot" target="_blank" rel="noopener">Открыть @wexflowbot</a></div>';
+          '<div class="tg-lock">'+
+            '<p class="tg-lock-title">Telegram пока не подключён</p>'+
+            '<ol class="tg-lock-steps">'+
+              '<li class="tg-lock-step"><b>1</b><span>Войти через Telegram и привязать этот компьютер</span></li>'+
+              '<li class="tg-lock-step"><b>2</b><span>Открыть @wexflowbot и нажать Start</span></li>'+
+              '<li class="tg-lock-step"><b>3</b><span>Получить проверочное сообщение</span></li>'+
+            '</ol>'+
+            '<div class="actions"><a class="primary" href="/account#telegram-setup">Подключить Telegram пошагово</a></div>'+
+          '</div>';
         pollTimer = setInterval(function(){ api('/api/telegram/status').then(function(s){ if(s.signed_in){ render(s); } }); }, 3000);
         return;
       }
@@ -942,6 +964,7 @@
         (Number(st.pending||0) ? '<button type="button" class="tg-sec" id="tgClearPending">Снять ожидающие ('+esc(st.pending)+')</button>' : '')+
         '<button type="button" class="tg-sec" id="tgDigest">'+(digestOn ? 'Дайджест: вкл' : 'Дайджест: выкл')+'</button>'+
         '<a class="tg-sec" href="https://t.me/wexflowbot" target="_blank" rel="noopener">Открыть @wexflowbot</a>'+
+        '<a class="tg-sec" href="/account#telegram-setup">Управление привязкой</a>'+
         '<span class="hint" id="tgMsg" style="margin:0;"></span></div>';
       var start = document.getElementById('tgStart');
       if(start) start.addEventListener('click', startTelegram);

@@ -61,8 +61,23 @@ def prepare(page, job_url: str, profile: dict) -> None:
         filled.append("CV")
     if attach_cover_letter(page, profile):
         filled.append("cover letter")
+
+    # БЕТА (по умолчанию ВЫКЛ): тот же ИИ-слой, что и в generic_apply. Без флага/
+    # ключа Gemini — no-op, поведение как раньше. Отправку не жмём.
+    ai_details: list[dict] = []
+    try:
+        from connectors import ai_fill
+        ai_details = ai_fill.fill(page, profile, job=None)
+        for d in ai_details:
+            tag = "черновик" if d.get("kind") == "draft" else "ИИ"
+            filled.append(f"{d.get('label')} ({tag})")
+        if ai_details:
+            print(f"  ИИ дозаполнил: {[d.get('label') for d in ai_details]}")
+    except Exception as ai_err:  # noqa: BLE001 — ИИ-слой не должен ломать подачу
+        print("  ИИ-дозаполнение пропущено:", str(ai_err)[:120])
+
     questions = count_questions(page)
     missing = missing_required(page)
-    add_banner(page, questions, filled, platform="Teamtailor", missing=missing)
+    add_banner(page, questions, filled, platform="Teamtailor", missing=missing, ai_details=ai_details)
     print(f"  вопросов вакансии: {questions} | дозаполнить: {missing or '—'}")
     print("  ГОТОВО — НЕ отправляю. Проверь, поставь согласие и отправь сам.")

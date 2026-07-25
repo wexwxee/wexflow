@@ -219,6 +219,20 @@ def delete_cloud_data(timeout: int = 15) -> dict:
     return result
 
 
+def unlink_device(timeout: int = 12) -> dict:
+    """Отвязать только этот компьютер от Telegram-аккаунта в облаке.
+
+    Профиль, тариф, сам Telegram-аккаунт и секрет устройства сохраняются:
+    пользователь сможет позднее осознанно войти снова. Очереди и обратные
+    привязки этого ПК удаляются, поэтому Mini App перестаёт им управлять.
+    """
+    return _post_json(
+        "/api/session",
+        {"action": "unlink_device", "device": device_id()},
+        timeout,
+    )
+
+
 def link_new(timeout: int = 10) -> dict:
     """Получить одноразовый код привязки по ID. Пользователь отправляет код боту
     @wexflowbot со своего Telegram — облако логинит его аккаунт в это устройство
@@ -258,8 +272,17 @@ def offer(text: str, job_id: str, timeout: int = 15, *,
 def send_digest(text: str, timeout: int = 10) -> bool:
     """Одно информационное сообщение в чат (без кнопок ✅/❌) — дневной дайджест.
     Бот добавит кнопку «Открыть панель»; решения принимаются в панели."""
-    payload = {"deviceId": device_id(), "digest": True, "text": text}
-    return bool(_post_json("/api/offer", payload, timeout).get("ok"))
+    return bool(send_test_message(text, timeout).get("ok"))
+
+
+def send_test_message(text: str, timeout: int = 10) -> dict:
+    """Отправить простое сообщение для проверки привязки Telegram.
+
+    В отличие от send_digest возвращает полный ответ облака, чтобы мастер
+    подключения мог объяснить needsBotStart и другие причины, а не просто False.
+    """
+    payload = {"deviceId": device_id(), "digest": True, "text": str(text or "")[:2000]}
+    return _post_json("/api/offer", payload, timeout)
 
 
 def clear_panel(timeout: int = 5) -> bool:

@@ -858,10 +858,16 @@ def _port_up(port: int) -> bool:
 
 
 def _bind_free(port: int) -> bool:
-    """True, если порт СВОБОДЕН (можно занять). На Windows bind к занятому порту
-    падает без SO_REUSEADDR — то, что нужно для честной проверки."""
+    """True, если порт можно эксклюзивно занять нашим сервером.
+
+    На Windows обычный bind иногда проходит рядом с wildcard/WSL-прокси, а
+    последующий connect к только что освобождённому порту может ложно отвечать.
+    SO_EXCLUSIVEADDRUSE проверяет именно то, что затем потребуется uvicorn.
+    """
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         s.bind(("127.0.0.1", port))
         return True
     except OSError:
@@ -875,6 +881,8 @@ def _port_clean(port: int) -> bool:
     чужой сервер (connect). Docker/WSL держат 8080 так, что bind на 127.0.0.1
     проходит, но connect отвечает им — на таком порту loopback-трафик может уйти
     не туда, поэтому берём порт, где никого нет вообще."""
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        return _bind_free(port)
     return _bind_free(port) and not _port_up(port)
 
 

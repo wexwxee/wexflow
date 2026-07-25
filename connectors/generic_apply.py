@@ -157,7 +157,23 @@ def prepare(page, url: str, profile: dict, platform: str = "") -> None:
         filled.append("CV")
     if attach_cover_letter(page, profile):
         filled.append("cover letter")
+
+    # БЕТА (по умолчанию ВЫКЛ): ИИ-дозаполнение полей, которые скрипт не распознал.
+    # Флаг WEXFLOW_AI_FILL / secrets "ai_fill". Без флага или без ключа Gemini —
+    # это no-op, и поведение остаётся ровно таким, как было. Отправку не жмём.
+    ai_details: list[dict] = []
+    try:
+        from connectors import ai_fill
+        ai_details = ai_fill.fill(page, profile, job=None)
+        for d in ai_details:
+            tag = "черновик" if d.get("kind") == "draft" else "ИИ"
+            filled.append(f"{d.get('label')} ({tag})")
+        if ai_details:
+            print(f"  ИИ дозаполнил: {[d.get('label') for d in ai_details]}")
+    except Exception as ai_err:  # noqa: BLE001 — ИИ-слой не должен ломать подачу
+        print("  ИИ-дозаполнение пропущено:", str(ai_err)[:120])
+
     missing = missing_required(page)
-    add_banner(page, 0, filled, platform=platform or "форма", missing=missing)
+    add_banner(page, 0, filled, platform=platform or "форма", missing=missing, ai_details=ai_details)
     print(f"  заполнено: {filled or '—'} | дозаполнить: {missing or '—'}")
     print("  ГОТОВО — НЕ отправляю. Проверь, заполни остальное и отправь сам.")

@@ -14,6 +14,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cloud_auth
@@ -166,6 +167,44 @@ def test_delete_cloud_data_rotates_device_identity():
         delete = next(r for r in cloud.requests if r["body"] and r["body"].get("action") == "delete_data")
         assert delete["body"]["device"] == old_id
         assert delete["headers"].get("x-device-token") == old_secret
+
+
+def test_simple_telegram_message_returns_full_cloud_result():
+    result = {"ok": False, "needsBotStart": True, "botUrl": "https://t.me/wexflowbot"}
+    with (
+        mock.patch.object(cloud_auth, "device_id", return_value="device-42"),
+        mock.patch.object(cloud_auth, "_post_json", return_value=result) as post,
+    ):
+        returned = cloud_auth.send_test_message("hello", timeout=7)
+
+    assert returned is result
+    post.assert_called_once_with(
+        "/api/offer",
+        {"deviceId": "device-42", "digest": True, "text": "hello"},
+        7,
+    )
+
+
+def test_digest_keeps_boolean_compatibility():
+    with mock.patch.object(cloud_auth, "send_test_message", return_value={"ok": True}) as send:
+        assert cloud_auth.send_digest("daily") is True
+    send.assert_called_once_with("daily", 10)
+
+
+def test_unlink_device_keeps_identity_and_calls_authenticated_session_route():
+    result = {"ok": True, "unlinked": True}
+    with (
+        mock.patch.object(cloud_auth, "device_id", return_value="device-42"),
+        mock.patch.object(cloud_auth, "_post_json", return_value=result) as post,
+    ):
+        returned = cloud_auth.unlink_device(timeout=9)
+
+    assert returned is result
+    post.assert_called_once_with(
+        "/api/session",
+        {"action": "unlink_device", "device": "device-42"},
+        9,
+    )
 
 
 if __name__ == "__main__":

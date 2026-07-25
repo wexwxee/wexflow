@@ -157,14 +157,99 @@ def missing_required(page) -> list[str]:
         return []
 
 
+def show_ai_progress(
+    page,
+    step: int,
+    total: int,
+    title: str,
+    detail: str = "",
+    *,
+    state: str = "working",
+) -> None:
+    """Показать/обновить живой этап ИИ-подготовки прямо поверх внешней формы.
+
+    Состояние также сохраняется в window.__wexflowAiRun: финальный баннер читает
+    его и честно показывает, завершилась ИИ-проверка или была пропущена с ошибкой.
+    """
+    total = max(1, int(total or 1))
+    step = max(0, min(total, int(step or 0)))
+    state = state if state in {"working", "done", "error"} else "working"
+    payload = {
+        "step": step,
+        "total": total,
+        "percent": round(step * 100 / total),
+        "title": str(title or "Подготавливаю форму"),
+        "detail": str(detail or ""),
+        "state": state,
+    }
+    try:
+        page.evaluate(
+            """(data) => {
+                window.__wexflowAiRun=data;
+                const id='wexflow-banner';
+                let host=document.getElementById(id);
+                let root=host && host.shadowRoot;
+                if(!root || !root.querySelector('.ai-progress-card')){
+                  if(host) host.remove();
+                  host=document.createElement('div'); host.id=id;
+                  host.style.cssText='position:fixed;top:16px;right:16px;z-index:2147483647;'
+                    +'width:min(420px,calc(100vw - 32px));color-scheme:dark;';
+                  root=host.attachShadow({mode:'open'});
+                  root.innerHTML=`<style>
+                    *{box-sizing:border-box}.ai-progress-card{font:13px/1.42 Inter,Segoe UI,sans-serif;
+                      color:#e9efeb;background:#111513;border:1px solid #304039;border-radius:14px;
+                      padding:14px;box-shadow:0 18px 60px rgba(0,0,0,.45)}
+                    .head{display:flex;align-items:flex-start;gap:10px}.mark{width:26px;height:26px;
+                      display:grid;place-items:center;border-radius:8px;background:#142d20;color:#5bf08b;
+                      font-weight:900;flex:0 0 auto}.copy{min-width:0;flex:1}.title{font-weight:800;font-size:14px}
+                    .detail{margin-top:3px;color:#aab4ae;font-size:12px}.count{color:#96a39c;font-size:11px;
+                      font-weight:700;white-space:nowrap}.track{height:7px;margin-top:12px;border-radius:999px;
+                      background:#28312c;overflow:hidden}.bar{height:100%;width:0;border-radius:inherit;
+                      background:linear-gradient(90deg,#1ed760,#38a8ff);transition:width .28s ease}
+                    .working .bar{position:relative}.working .bar:after{content:"";position:absolute;inset:0;
+                      background:linear-gradient(100deg,transparent,rgba(255,255,255,.45),transparent);
+                      animation:sweep 1.2s linear infinite}.done{border-color:#235f39}.error{border-color:#76572b}
+                    .error .mark{background:#33240e;color:#f5d778}.error .bar{background:#d59b32}
+                    @keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+                    @media(prefers-reduced-motion:reduce){.bar{transition:none}.working .bar:after{animation:none}}
+                  </style><section class="ai-progress-card" role="status" aria-live="polite">
+                    <div class="head"><span class="mark">AI</span><div class="copy">
+                      <div class="title"></div><div class="detail"></div></div><span class="count"></span></div>
+                    <div class="track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+                      <div class="bar"></div></div></section>`;
+                  document.documentElement.appendChild(host);
+                }
+                const card=root.querySelector('.ai-progress-card');
+                card.className='ai-progress-card '+data.state;
+                root.querySelector('.title').textContent=data.title;
+                const detail=root.querySelector('.detail');
+                detail.textContent=data.detail; detail.hidden=!data.detail;
+                root.querySelector('.count').textContent=data.step+' / '+data.total;
+                const track=root.querySelector('.track');
+                track.setAttribute('aria-valuenow',String(data.percent));
+                root.querySelector('.bar').style.width=data.percent+'%';
+            }""",
+            payload,
+        )
+    except Exception:
+        pass
+
+
 def add_banner(page, questions: int, filled: list[str], platform: str = "",
-               missing: list[str] | None = None) -> None:
-    """Isolated floating summary: filled fields, remaining work and safety boundary."""
+               missing: list[str] | None = None, ai_details: list[dict] | None = None) -> None:
+    """Isolated floating summary: filled fields, remaining work and safety boundary.
+    ai_details — список {label,value,kind} того, что вписал ИИ (для прозрачности):
+    показываем «поле → значение», а черновики мотивации помечаем «проверь»."""
     payload = {
         "platform": platform or "Форма",
         "filled": list(filled or []),
         "missing": list(missing or []),
         "questions": int(questions or 0),
+        "ai": [
+            {"label": str(d.get("label") or ""), "value": str(d.get("value") or ""),
+             "draft": d.get("kind") == "draft"}
+            for d in (ai_details or []) if isinstance(d, dict)
+        ],
     }
     try:
         page.evaluate(
@@ -185,15 +270,43 @@ def add_banner(page, questions: int, filled: list[str], platform: str = "",
                   .row{margin-top:7px;padding:8px 10px;border-radius:9px;background:#19201c;color:#bdc7c1}
                   .ok{border:1px solid #235f39;background:#102a1a;color:#8ff0ae}.warn{border:1px solid #66511e;background:#29230f;color:#f5d778}
                   .label{font-weight:800}.foot{margin-top:10px;color:#aab4ae;font-size:11.5px}
+                  .ai{border:1px solid #35407a;background:#141a33;color:#c6cdf5}
+                  .ai .ai-h{font-weight:800;margin-bottom:5px;display:block}
+                  .ai ul{margin:0;padding:0;list-style:none}.ai li{padding:2px 0;font-size:12px}
+                  .ai b{color:#e9ecff}.ai .v{color:#a9b3ef;white-space:pre-wrap;overflow-wrap:anywhere}
+                  .ai .draft{color:#f5d778}.ai .draft-tag{font-weight:800}
                 </style><section class="card" role="status"><div class="head"><span class="mark">◆</span>
                   <div class="title">WexFlow · форма подготовлена<div class="platform"></div></div>
                   <button type="button" aria-label="Закрыть">×</button></div>
                   <div class="row ok"><span class="label">Заполнено:</span> <span class="filled"></span></div>
+                  <div class="row ai-run" hidden></div>
+                  <div class="row ai" hidden></div>
                   <div class="row questions" hidden></div><div class="row warn missing" hidden></div>
                   <div class="foot">Проверь данные, поставь нужные согласия и отправь анкету сам. WexFlow не нажимает финальную кнопку.</div>
                 </section>`;
                 root.querySelector('.platform').textContent=data.platform;
                 root.querySelector('.filled').textContent=data.filled.length?data.filled.join(', '):'распознанных полей нет';
+                const run=window.__wexflowAiRun;
+                const runEl=root.querySelector('.ai-run');
+                if(run){
+                  runEl.hidden=false;
+                  if(run.state==='error'){
+                    runEl.classList.add('warn');
+                    runEl.textContent='ИИ-проверка пропущена: '+(run.detail||'неизвестная ошибка');
+                  } else {
+                    runEl.classList.add('ok');
+                    runEl.textContent='ИИ-проверка завершена · '+run.step+' из '+run.total+' этапов';
+                  }
+                }
+                const ai=root.querySelector('.ai');
+                if(data.ai && data.ai.length){
+                  ai.hidden=false;
+                  const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+                  const items=data.ai.map(x=>x.draft
+                    ? `<li class="draft"><span class="draft-tag">⚠ черновик — проверь:</span> <b>${esc(x.label)}</b> → <span class="v">${esc(x.value)}</span></li>`
+                    : `<li><b>${esc(x.label)}</b> → <span class="v">${esc(x.value)}</span></li>`).join('');
+                  ai.innerHTML=`<span class="ai-h">Заполнил ИИ:</span><ul>${items}</ul>`;
+                }
                 const q=root.querySelector('.questions'); if(data.questions){q.hidden=false;q.textContent=`Дополнительных вопросов: ${data.questions}`;}
                 const m=root.querySelector('.missing'); if(data.missing.length){m.hidden=false;m.textContent=`Осталось заполнить: ${data.missing.join(', ')}`;}
                 root.querySelector('button').addEventListener('click',()=>host.remove());

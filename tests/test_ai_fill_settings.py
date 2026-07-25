@@ -1,0 +1,68 @@
+"""The motivation sub-toggle must never outlive or bypass the main AI toggle."""
+import asyncio
+import json
+import os
+import sys
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import app
+
+
+class _Request:
+    def __init__(self, data):
+        self._data = data
+
+    async def form(self):
+        return self._data
+
+
+def _body(response):
+    return json.loads(response.body.decode("utf-8"))
+
+
+def test_disabling_main_ai_also_disables_motivation():
+    with (
+        mock.patch.object(app.settings_store, "set_ai_fill") as set_main,
+        mock.patch.object(app.settings_store, "get_ai_fill", return_value=False),
+        mock.patch.object(app.settings_store, "get_ai_fill_motivation", return_value=False),
+    ):
+        response = asyncio.run(app.settings_ai_fill(_Request({"enabled": "0"})))
+
+    set_main.assert_called_once_with(False)
+    assert _body(response) == {
+        "ok": True,
+        "enabled": False,
+        "motivation_enabled": False,
+    }
+
+
+def test_settings_store_clears_motivation_in_the_same_mutation():
+    data = {"ai_fill": True, "ai_fill_motivation": True}
+
+    def apply_mutation(mutator):
+        mutator(data)
+        return data
+
+    with mock.patch.object(app.settings_store, "mutate", side_effect=apply_mutation):
+        app.settings_store.set_ai_fill(False)
+
+    assert data == {"ai_fill": False, "ai_fill_motivation": False}
+
+
+def test_motivation_cannot_be_enabled_without_main_ai():
+    with (
+        mock.patch.object(app.settings_store, "get_ai_fill", return_value=False),
+        mock.patch.object(app.settings_store, "set_ai_fill_motivation") as set_motivation,
+    ):
+        response = asyncio.run(
+            app.settings_ai_fill_motivation(_Request({"enabled": "1"}))
+        )
+
+    set_motivation.assert_called_once_with(False)
+    assert _body(response) == {
+        "ok": False,
+        "enabled": False,
+        "error": "Сначала включи основное ИИ-заполнение.",
+    }

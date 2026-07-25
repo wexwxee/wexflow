@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import changelog
 import version
 
 ROOT = Path(__file__).resolve().parent
@@ -33,6 +34,37 @@ def _run_text(cmd: list[str]) -> str:
 def _release_target() -> str:
     """Коммит, на который должен указывать GitHub-тег релиза."""
     return _run_text(["git", "rev-parse", "HEAD"])
+
+
+def _tracked_worktree_clean() -> bool:
+    """Релизный тег обязан указывать на тот же код, из которого собран ZIP."""
+    unstaged = subprocess.run(
+        ["git", "diff", "--quiet", "HEAD", "--"],
+        cwd=str(ROOT),
+    )
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--quiet", "HEAD", "--"],
+        cwd=str(ROOT),
+    )
+    return unstaged.returncode == 0 and staged.returncode == 0
+
+
+def _release_notes(ver: str) -> str:
+    entry = next(
+        (item for item in changelog.ENTRIES if str(item.get("version")) == ver),
+        None,
+    )
+    lines = [f"WexFlow {ver}", ""]
+    if entry:
+        if entry.get("date"):
+            lines.extend([str(entry["date"]), ""])
+        lines.extend(f"- {text}" for text in entry.get("items", []))
+        lines.append("")
+    lines.extend([
+        "Для нового компьютера скачай и запусти WexFlow-Setup.exe — он установит свежую версию целиком.",
+        "ZIP предназначен для встроенного автообновления.",
+    ])
+    return "\n".join(lines)
 
 
 def _setup_sources() -> list[Path]:
@@ -87,6 +119,12 @@ def main() -> int:
     if not target:
         print("Не удалось определить текущий git-коммит. Релиз не опубликован.")
         return 1
+    if not _tracked_worktree_clean():
+        print(
+            "Есть незакоммиченные изменения в отслеживаемых файлах. "
+            "Сначала зафиксируй код, заново собери ZIP и только потом публикуй релиз."
+        )
+        return 1
     ok, setup_problem = _setup_is_fresh(setup_path)
     if not ok:
         print(setup_problem)
@@ -111,7 +149,7 @@ def main() -> int:
         "--repo", repo,
         "--target", target,
         "--title", f"WexFlow {ver}",
-        "--notes", f"WexFlow {ver}\n\nFor a new PC: download and run WexFlow-Setup.exe (it installs everything). The zip is for in-app auto-update.",
+        "--notes", _release_notes(ver),
     ]
     print("Публикую…")
     result = subprocess.run(cmd)

@@ -99,3 +99,30 @@ def add_preset(name: str, query: str):
 def delete_preset(name: str):
     mutate(lambda d: d.__setitem__(
         "presets", [p for p in d.get("presets", []) if p.get("name") != name]))
+
+
+# --- БЕТА: ИИ-дозаполнение форм (по умолчанию ВЫКЛ) ---
+def get_ai_fill() -> bool:
+    """Включена ли бета ИИ-дозаполнения. По умолчанию False."""
+    return bool(load().get("ai_fill"))
+
+
+def set_ai_fill(enabled: bool) -> None:
+    enabled = bool(enabled)
+
+    def _m(data):
+        data["ai_fill"] = enabled
+        if not enabled:
+            data["ai_fill_motivation"] = False
+
+    mutate(_m)
+
+
+def get_ai_fill_motivation() -> bool:
+    """Разрешён ли ИИ-черновик мотивации (свободные вопросы «почему к нам»).
+    По умолчанию False — единственное место, где ИИ сочиняет текст."""
+    return bool(load().get("ai_fill_motivation"))
+
+
+def set_ai_fill_motivation(enabled: bool) -> None:
+    mutate(lambda d: d.__setitem__("ai_fill_motivation", bool(enabled)))
