@@ -432,6 +432,20 @@
   .batch-doc-note { color:var(--muted); font-size:10.5px; line-height:1.35; }
   .batch-doc-note a { color:var(--accent); text-decoration:none; margin-left:6px; font-weight:700; }
   .batch-doc-note a:hover { text-decoration:underline; }
+  .batch-ai {
+    display:flex; align-items:flex-start; gap:10px; padding:10px 11px; border:1px solid var(--glass-line);
+    border-radius:11px; background:var(--glass); cursor:pointer;
+  }
+  .batch-ai:hover { border-color:var(--hover-line); }
+  .batch-ai.disabled { cursor:not-allowed; opacity:.68; }
+  .batch-ai input { width:17px; height:17px; margin:1px 0 0; accent-color:var(--accent); flex:0 0 auto; }
+  .batch-ai-copy { min-width:0; display:grid; gap:2px; }
+  .batch-ai-title { color:var(--txt-strong); font-size:12px; font-weight:750; }
+  .batch-ai-meta { color:var(--muted); font-size:10.5px; line-height:1.35; }
+  .batch-ai-meta a { color:var(--accent); text-decoration:none; font-weight:700; }
+  .batch-ai-badge { display:inline-flex; align-items:center; margin-left:5px; padding:1px 5px; border-radius:999px;
+    color:#a99fff; border:1px solid color-mix(in srgb, #8b7bff 45%, var(--glass-line));
+    background:color-mix(in srgb, #8b7bff 12%, transparent); font-size:9px; font-weight:800; text-transform:uppercase; }
   .batchbar .bactions {
     display:grid; grid-template-columns:minmax(190px,1fr) minmax(210px,1.1fr); gap:8px;
     padding-top:1px;
@@ -1102,7 +1116,7 @@
       <span class="batch-doc-icon">{{ ic.i('file', 16) }}</span>
       <div class="batch-doc-copy">
         <div class="batch-doc-label">
-          CV / резюме
+          Общий CV / запасной
           <span class="batch-doc-status {{ 'missing' if apply_files.cv_status != 'ok' }}" data-doc-status>
             {{ 'готово' if apply_files.cv_status == 'ok' else ('не найдено' if apply_files.cv_status == 'missing' else 'не добавлено') }}
           </span>
@@ -1125,7 +1139,7 @@
       <span class="batch-doc-icon">{{ ic.i('edit', 16) }}</span>
       <div class="batch-doc-copy">
         <div class="batch-doc-label">
-          Мотивационное письмо
+          Общее письмо / запасное
           <span class="batch-doc-status {{ 'missing' if apply_files.cover_status == 'missing' else ('optional' if apply_files.cover_status != 'ok' else '') }}" data-doc-status>
             {{ 'готово' if apply_files.cover_status == 'ok' else ('не найдено' if apply_files.cover_status == 'missing' else 'необязательно') }}
           </span>
@@ -1146,9 +1160,25 @@
   </div>
 
   <div class="batch-doc-note">
-    PDF, DOC или DOCX · максимум 25 МБ. Новый файл сохранится локально и станет текущим для следующих подач.
-    <a href="/settings/salling#documents">Все документы →</a>
+    Для каждой вакансии WexFlow сначала проверит комплект магазина, затем бренда. Эти файлы используются, если точного варианта нет.
+    {% if document_rule_count %}Персональных комплектов: {{ document_rule_count }}.{% endif %}
+    <a href="/settings/documents">Настроить документы →</a>
   </div>
+
+  <label class="batch-ai {{ 'disabled' if not batch_ai_available else '' }}">
+    <input type="checkbox" name="ai_fill" value="1"
+           {{ 'checked' if batch_ai_on and batch_ai_available else '' }}
+           {{ 'disabled' if not batch_ai_available else '' }}>
+    <span class="batch-ai-copy">
+      <span class="batch-ai-title">{{ ic.i('sparkles', 13) }} Проверить и дозаполнить анкету с ИИ <span class="batch-ai-badge">бета</span></span>
+      <span class="batch-ai-meta">
+        Работает и в прогоне, и при полной отправке: Gemini получает только нужные факты профиля, заполняет неизвестные поля, затем WexFlow продолжает обычную подачу.
+        {% if batch_ai_motivation_on %}Черновики мотивации включены.{% else %}Мотивационные черновики выключены.{% endif %}
+        {% if not batch_ai_available %}<b>Сначала добавь ключ Gemini.</b>{% endif %}
+        <a href="/settings/forms">Настройки ИИ →</a>
+      </span>
+    </span>
+  </label>
 
   <div class="bactions">
     <button class="preparebtn" type="submit" name="mode" value="dry"

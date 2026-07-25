@@ -78,7 +78,7 @@
         <h2>{{ ic.i('cart', 18) }} Salling</h2>
         <span class="arrow">→</span>
       </div>
-      <p>Логин Salling, CV, мотивационное письмо, домашний адрес и сброс входа.</p>
+      <p>Логин Salling, домашний адрес, сохранённая браузерная сессия и сброс входа.</p>
       <div class="settings-meta">
         {% if creds.email %}
           <span class="settings-pill ok">{{ ic.i('unlock', 12) }} Логин сохранён</span>
@@ -90,6 +90,22 @@
         {% else %}
           <span class="settings-pill">Добавь адрес</span>
         {% endif %}
+      </div>
+    </a>
+
+    <a class="settings-card" href="/settings/documents">
+      <div class="settings-card-top">
+        <h2>{{ ic.i('file', 18) }} Документы</h2>
+        <span class="arrow">→</span>
+      </div>
+      <p>Общий CV и письмо плюс отдельные комплекты для брендов и конкретных магазинов.</p>
+      <div class="settings-meta">
+        {% if file_info.cv_status == 'ok' %}
+          <span class="settings-pill ok">{{ ic.i('check', 12) }} Общий CV готов</span>
+        {% else %}
+          <span class="settings-pill warn">Добавь общий CV</span>
+        {% endif %}
+        <span class="settings-pill">{{ document_rule_count }} персональных</span>
       </div>
     </a>
 

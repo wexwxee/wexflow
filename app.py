@@ -31,6 +31,7 @@ import translator
 import translator_setup
 import html_sanitize
 import profile_store
+import document_rules
 import credentials_store
 import subscription
 import account as account_mod
@@ -2708,6 +2709,10 @@ def index(
         "scope_urls": _scope_urls,
         "batch": batch, "batch_mode": mode, "skipped": skipped, "dup": dup,
         "apply_files": _profile_file_info(_profile),
+        "document_rule_count": len(document_rules.get_rules()),
+        "batch_ai_available": bool(ai_filters.api_key()),
+        "batch_ai_on": settings_store.get_ai_fill(),
+        "batch_ai_motivation_on": settings_store.get_ai_fill_motivation(),
         "setup": _setup,
         "today": _today,
         "maps_urls": maps_urls,
@@ -3274,6 +3279,89 @@ def _home_city(home: dict | None) -> str:
     return city
 
 
+def _document_settings_options() -> tuple[list[dict], list[dict]]:
+    """Brands and physical stores available for document rules."""
+    with get_session() as s:
+        jobs = list(
+            s.exec(
+                select(Job).where(
+                    Job.source == "salling",
+                    Job.status.not_in(["closed", "hidden", "applied"]),
+                )
+            ).all()
+        )
+
+    brand_counts: Counter = Counter()
+    stores: dict[str, dict] = {}
+    for job in jobs:
+        brand = document_rules.brand_key(job)
+        if not brand:
+            continue
+        brand_counts[brand] += 1
+        key = document_rules.store_key(job)
+        if not key:
+            continue
+        brand_label = labels.BRANDS.get(brand, (job.brand or brand).title())
+        address = ", ".join(
+            value for value in [
+                (job.street or "").strip(),
+                " ".join(value for value in [(job.zip or "").strip(), (job.city or "").strip()] if value),
+            ]
+            if value
+        )
+        if key not in stores:
+            stores[key] = {
+                "key": key,
+                "brand": brand,
+                "brand_label": brand_label,
+                "label": f"{brand_label} · {address}" if address else brand_label,
+                "count": 0,
+            }
+        stores[key]["count"] += 1
+
+    known_brands = {
+        document_rules.brand_key(code): label
+        for code, label in labels.BRANDS.items()
+    }
+    for rule in document_rules.get_rules():
+        known_brands.setdefault(rule["brand"], rule["brand_label"])
+    brand_options = [
+        {
+            "key": key,
+            "label": label,
+            "count": int(brand_counts.get(key, 0)),
+        }
+        for key, label in known_brands.items()
+    ]
+    brand_options.sort(key=lambda item: (-item["count"], item["label"].casefold()))
+    store_options = sorted(
+        stores.values(),
+        key=lambda item: (item["brand_label"].casefold(), item["label"].casefold()),
+    )
+    return brand_options, store_options
+
+
+def _document_rule_view(rule: dict) -> dict:
+    view = dict(rule)
+    cv_status = profile_store.file_status(rule.get("cv_path", ""))
+    cover_status = profile_store.file_status(rule.get("cover_letter_path", ""))
+    view.update({
+        "cv_label": profile_store.file_label(rule.get("cv_path", "")),
+        "cv_status": cv_status,
+        "cv_url": (
+            f"/settings/document-rule/{rule['id']}/cv"
+            if cv_status == "ok" else ""
+        ),
+        "cover_label": profile_store.file_label(rule.get("cover_letter_path", "")),
+        "cover_status": cover_status,
+        "cover_url": (
+            f"/settings/document-rule/{rule['id']}/cover"
+            if cover_status == "ok" else ""
+        ),
+    })
+    return view
+
+
 def _settings_context(
     request: Request,
     saved: str = "",
@@ -3304,8 +3392,14 @@ def _settings_context(
             ((code, lbl, int(_fc["brand"].get(code, 0))) for code, lbl in labels.BRANDS.items()),
             key=lambda t: (-t[2], t[1]),
         )
+    document_brand_options: list[dict] = []
+    document_store_options: list[dict] = []
+    if section == "documents":
+        document_brand_options, document_store_options = _document_settings_options()
+    saved_document_rules = document_rules.get_rules()
     titles = {
-        "salling": ("Salling", "Логин, документы, домашний адрес и сброс входа"),
+        "salling": ("Salling", "Логин, домашний адрес и управление сохранённой сессией"),
+        "documents": ("Документы", "CV и мотивационные письма для брендов и отдельных магазинов"),
         "autopilot": ("Автопилот", "Наборы фильтров, режим работы и автоотправка"),
         "telegram": ("Telegram", "Статус @wexflowbot, проверка и ручная отправка текущих"),
         "forms": ("Анкеты и ИИ", "Умное дозаполнение внешних форм и безопасные черновики"),
@@ -3323,6 +3417,10 @@ def _settings_context(
         "settings_section": section,
         "settings_title": settings_title,
         "settings_meta": settings_meta,
+        "document_rules": [_document_rule_view(rule) for rule in saved_document_rules],
+        "document_rule_count": len(saved_document_rules),
+        "document_brand_options": document_brand_options,
+        "document_store_options": document_store_options,
         "autopilot": ap_view, "brands": labels.BRANDS,
         "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
         "autopilot_cities": ap_cities, "autopilot_regions": ap_regions,
@@ -3377,6 +3475,11 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
 @app.get("/settings/salling", response_class=HTMLResponse)
 def settings_salling(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     return _render_settings_section(request, "salling", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.get("/settings/documents", response_class=HTMLResponse)
+def settings_documents(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+    return _render_settings_section(request, "documents", saved=saved, geoerror=geoerror, missing=missing)
 
 
 @app.get("/settings/autopilot", response_class=HTMLResponse)
@@ -3581,13 +3684,93 @@ def settings_documents_save(
     cv_path: str = Form(""), cover_letter_path: str = Form(""),
     cv_file: UploadFile | None = File(None), cover_letter_file: UploadFile | None = File(None),
 ):
-    """Документы для Salling (CV/письмо). WexFlow использует их в анкетах Salling."""
+    """Global documents used when no store or brand rule overrides them."""
     profile = profile_store.load_profile()
     profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
     if file_error:
-        return RedirectResponse(_url_with_system_response("/settings/salling", error=file_error), status_code=303)
+        return RedirectResponse(_url_with_system_response("/settings/documents", error=file_error), status_code=303)
     profile_store.save_profile(profile)
-    return RedirectResponse("/settings/salling?saved=1#documents", status_code=303)
+    return RedirectResponse("/settings/documents?saved=1#global-documents", status_code=303)
+
+
+@app.post("/settings/document-rules/save")
+def settings_document_rule_save(
+    rule_id: str = Form(""),
+    name: str = Form(""),
+    scope: str = Form("brand"),
+    brand: str = Form(""),
+    store_key: str = Form(""),
+    cv_file: UploadFile | None = File(None),
+    cover_letter_file: UploadFile | None = File(None),
+):
+    existing = document_rules.get_rule(rule_id) if rule_id else None
+    if rule_id and existing is None:
+        return RedirectResponse(
+            _url_with_system_response("/settings/documents", error="Комплект документов не найден."),
+            status_code=303,
+        )
+
+    brand_options, store_options = _document_settings_options()
+    brand = document_rules.brand_key(brand)
+    brand_option = next((item for item in brand_options if item["key"] == brand), None)
+    store_option = next(
+        (
+            item for item in store_options
+            if item["key"] == store_key and item["brand"] == brand
+        ),
+        None,
+    )
+    if scope == "store" and store_option is None:
+        # An inactive store can still be edited without losing its saved rule.
+        if not (
+            existing
+            and existing["scope"] == "store"
+            and existing["store_key"] == store_key
+            and existing["brand"] == brand
+        ):
+            return RedirectResponse(
+                _url_with_system_response("/settings/documents", error="Выбери магазин из списка."),
+                status_code=303,
+            )
+
+    cv_path = (existing or {}).get("cv_path", "")
+    cover_path = (existing or {}).get("cover_letter_path", "")
+    try:
+        if cv_file and cv_file.filename:
+            cv_path = profile_store.save_upload(cv_file, "rule_cv")
+        if cover_letter_file and cover_letter_file.filename:
+            cover_path = profile_store.save_upload(cover_letter_file, "rule_cover")
+        document_rules.save_rule(
+            rule_id=rule_id,
+            name=name,
+            scope=scope,
+            brand=brand,
+            brand_label=(
+                (brand_option or {}).get("label")
+                or (existing or {}).get("brand_label")
+                or brand
+            ),
+            selected_store_key=store_key,
+            store_label=(
+                (store_option or {}).get("label")
+                or (existing or {}).get("store_label")
+                or ""
+            ),
+            cv_path=cv_path,
+            cover_letter_path=cover_path,
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            _url_with_system_response("/settings/documents", error=str(exc)),
+            status_code=303,
+        )
+    return RedirectResponse("/settings/documents?saved=rule#document-rules", status_code=303)
+
+
+@app.post("/settings/document-rules/delete")
+def settings_document_rule_delete(rule_id: str = Form("")):
+    document_rules.delete_rule(rule_id)
+    return RedirectResponse("/settings/documents?saved=deleted#document-rules", status_code=303)
 
 
 @app.post("/api/telegram/clear_pending")
@@ -4042,6 +4225,28 @@ def settings_file(kind: str):
     return FileResponse(clean_path, media_type=media_type, filename=filename, content_disposition_type=disposition)
 
 
+@app.get("/settings/document-rule/{rule_id}/{kind}")
+def settings_document_rule_file(rule_id: str, kind: str):
+    rule = document_rules.get_rule(rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Комплект документов не найден")
+    path = {
+        "cv": rule.get("cv_path", ""),
+        "cover": rule.get("cover_letter_path", ""),
+    }.get(kind)
+    if not path or profile_store.file_status(path) != "ok":
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    clean_path = profile_store.validate_document_path(path)
+    filename = profile_store.file_label(clean_path)
+    is_pdf = filename.lower().endswith(".pdf")
+    return FileResponse(
+        clean_path,
+        media_type="application/pdf" if is_pdf else "application/octet-stream",
+        filename=filename,
+        content_disposition_type="inline" if is_pdf else "attachment",
+    )
+
+
 @app.get("/job/{job_id}", response_class=HTMLResponse)
 def detail(request: Request, job_id: str, trerror: str = ""):
     with get_session() as s:
@@ -4236,7 +4441,12 @@ def _load_jobs_snapshot(ids):
         return [(jid, s.get(Job, jid)) for jid in ids]
 
 
-def _run_apply_worker(ids, submit: bool = False, auto_close: bool = False):
+def _run_apply_worker(
+    ids,
+    submit: bool = False,
+    auto_close: bool = False,
+    ai_fill: bool | None = None,
+):
     """ЕДИНСТВЕННОЕ место, запускающее воркер подачи apply.py (общая «воротина»).
     Возвращает Popen или None. Здесь действует последний барьер источника;
     остальные правила применяет вызывающий: авто/пакет проходят через
@@ -4256,11 +4466,15 @@ def _run_apply_worker(ids, submit: bool = False, auto_close: bool = False):
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     env["PYTHONUNBUFFERED"] = "1"
+    if ai_fill is not None:
+        env["WEXFLOW_AI_FILL"] = "1" if ai_fill else "0"
     cmd = _salling_apply_cmd(ids + ["--web"])
     if submit:
         cmd.append("--submit")
     if submit and auto_close:
         cmd.append("--auto-close")
+    if ai_fill:
+        cmd.append("--ai-fill")
     log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
     global _last_apply_proc, _last_apply_spawn_ts
     try:
@@ -4379,12 +4593,20 @@ def apply_batch(
     request: Request,
     job_ids: list[str] = Form(default=[]),
     mode: str = Form("dry"),
+    ai_fill: str = Form(""),
     cv_file: UploadFile | None = File(None),
     cover_letter_file: UploadFile | None = File(None),
 ):
     ids = [j for j in job_ids if j]
+    use_ai = ai_fill in {"1", "true", "on", "yes"}
     if not ids:
         return _redirect_back(request, "/", error="Сначала выбери хотя бы одну вакансию для пакетной подачи.")
+    if use_ai and not ai_filters.api_key():
+        return _redirect_back(
+            request,
+            "/",
+            error="ИИ-заполнение не запущено: сначала добавь ключ Gemini в настройках анкет.",
+        )
     # Коннекторы работают только assisted: пакетный Salling worker не должен
     # получить их id даже через вручную подделанную форму.
     snapshots = _load_jobs_snapshot(ids)
@@ -4435,7 +4657,7 @@ def apply_batch(
             request, "/",
             error="Подача уже идёт — дождись её окончания. Второй раз не запускаю, чтобы не ушли дубли.",
         )
-    _run_apply_worker(safe, submit=(mode == "submit"))
+    _run_apply_worker(safe, submit=(mode == "submit"), ai_fill=use_ai)
     url = f"/?batch={len(safe)}&mode={mode}"
     if leadership:
         url += f"&skipped={len(leadership)}"

@@ -32,6 +32,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 import config
 import profile_store
+import document_rules
 from db import Job, get_session, init_db
 
 
@@ -959,9 +960,44 @@ def _mark_applied(job_id: str, confidence: str = "receipt"):
     print(f"  ⚠ НЕ смог отметить applied после повторов — проверь вручную: {last_err}")
 
 
-def process_job(page, job, profile, submit: bool):
+def _job_for_ai(job: Job) -> dict:
+    return {
+        "title": job.title or "",
+        "brand": job.brand or "",
+        "city": job.city or "",
+        "description": job.description or "",
+    }
+
+
+def _run_ai_fill(page, profile: dict, job: Job, enabled: bool) -> list[dict]:
+    if not enabled:
+        return []
+    try:
+        from connectors import ai_fill
+        results = ai_fill.fill(page, profile, job=_job_for_ai(job))
+        if results:
+            drafts = sum(1 for item in results if item.get("kind") == "draft")
+            facts = len(results) - drafts
+            print(f"  ИИ-проверка: заполнено фактов {facts}, черновиков {drafts}")
+        else:
+            print("  ИИ-проверка: новых полей для заполнения нет")
+        return results
+    except Exception as exc:  # AI must never block a normal application
+        print("  ИИ-проверка пропущена:", str(exc)[:120])
+        return []
+
+
+def _log_document_selection(profile: dict) -> None:
+    selection = profile.get("_document_selection") or {}
+    cv = (selection.get("cv") or {}).get("label", "Общий комплект")
+    cover = (selection.get("cover") or {}).get("label", "Общий комплект")
+    print(f"  документы: CV — {cv}; письмо — {cover}")
+
+
+def process_job(page, job, profile, submit: bool, ai_fill: bool = False):
     """Открывает вакансию, ждёт логин, открывает форму, грузит файлы, опц. отправляет."""
     print(f"\n=== {job.title} — {job.city} ===\n{job.application_link}")
+    _log_document_selection(profile)
     sent = False
     try:
         page.goto(job.application_link, wait_until="domcontentloaded", timeout=60000)
@@ -975,6 +1011,7 @@ def process_job(page, job, profile, submit: bool):
         accept_consent(page)
         add_job_banner(page, job)
         upload_documents(page, profile)
+        _run_ai_fill(page, profile, job, ai_fill)
     except Exception as e:
         print("  warning:", e)
     if submit:
@@ -997,7 +1034,7 @@ def process_job(page, job, profile, submit: bool):
 
 
 def run(job_id: str | None, login_only: bool = False, web_mode: bool = False,
-        submit: bool = False, keep_open: bool = True):
+        submit: bool = False, keep_open: bool = True, ai_fill: bool = False):
     profile = load_profile()
     config.BROWSER_PROFILE_DIR.mkdir(exist_ok=True)
 
@@ -1019,7 +1056,8 @@ def run(job_id: str | None, login_only: bool = False, web_mode: bool = False,
                 print("  goto warning:", e)
             print("\n>>> Войди/создай аккаунт кандидата вручную. Сессия сохранится в browser_profile/.")
         else:
-            process_job(page, job, profile, submit)
+            job_profile = document_rules.resolve_profile(profile, job)
+            process_job(page, job, job_profile, submit, ai_fill=ai_fill)
 
         if web_mode and keep_open:
             print("\n>>> Браузер останется открытым. Закрой его, когда закончишь.")
@@ -1090,7 +1128,7 @@ def _cloud_progress(prog: dict) -> None:
 
 
 def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
-              concurrency: int = 1, keep_open: bool = True):
+              concurrency: int = 1, keep_open: bool = True, ai_fill: bool = False):
     """Пакетная подача.
 
     Реальная отправка всегда идёт последовательно в одной вкладке: так меньше
@@ -1109,7 +1147,8 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
         sys.exit("Не нашёл выбранных вакансий в БД.")
     effective_concurrency = 1 if submit else max(1, concurrency)
     print(f"Пакетная подача: вакансий {len(jobs)}, по {effective_concurrency} за раз, "
-          f"{'С ОТПРАВКОЙ' if submit else 'прогон без отправки'}")
+          f"{'С ОТПРАВКОЙ' if submit else 'прогон без отправки'}, "
+          f"ИИ {'включён' if ai_fill else 'выключен'}")
 
     submitted = 0
     with sync_playwright() as p:
@@ -1137,7 +1176,8 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                     _cloud_report(job.id, "submitting", "WexFlow заполняет форму")
                 ok = False
                 try:
-                    ok = process_job(page, job, profile, submit)
+                    job_profile = document_rules.resolve_profile(profile, job)
+                    ok = process_job(page, job, job_profile, submit, ai_fill=ai_fill)
                 except Exception as e:  # одна вакансия не должна валить всю пачку
                     print("  job error:", str(e)[:120])
                     ok = False
@@ -1198,13 +1238,16 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 pg.bring_to_front()
                 print(f"\n=== {job.title} — {job.city} ===")
                 pg.wait_for_timeout(1500)
+                job_profile = document_rules.resolve_profile(profile, job)
+                _log_document_selection(job_profile)
                 try:
-                    wait_for_login_if_needed(pg, profile)
+                    wait_for_login_if_needed(pg, job_profile)
                     add_job_banner(pg, job)
                     wait_for_application_form(pg, job)
                     accept_consent(pg)
                     add_job_banner(pg, job)
-                    upload_documents(pg, profile)
+                    upload_documents(pg, job_profile)
+                    _run_ai_fill(pg, job_profile, job, ai_fill)
                     if submit:
                         outcome = submit_application(pg)
                         if outcome in ("receipt", "indirect"):
@@ -1250,6 +1293,7 @@ def main(argv=None):
     init_db()
     web_mode = "--web" in args
     submit = "--submit" in args
+    ai_fill = "--ai-fill" in args
     keep_open = "--auto-close" not in args
     ids = [a for a in args if not a.startswith("--")]
     if "--login" in args:
@@ -1260,9 +1304,9 @@ def main(argv=None):
         # полоска прогресса (шаг 4 — воркер возвращает результат, а не «приложение
         # угадывает по базе»). Раньше одиночный dry шёл через run() — прогресс
         # в интерфейсе оставался пустым.
-        run_batch(ids, submit=submit, web_mode=web_mode, keep_open=keep_open)
+        run_batch(ids, submit=submit, web_mode=web_mode, keep_open=keep_open, ai_fill=ai_fill)
     else:
-        run(ids[0], web_mode=web_mode, submit=submit, keep_open=keep_open)
+        run(ids[0], web_mode=web_mode, submit=submit, keep_open=keep_open, ai_fill=ai_fill)
 
 
 if __name__ == "__main__":

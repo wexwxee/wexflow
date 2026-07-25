@@ -47,7 +47,7 @@ def test_batch_upload_is_saved_before_worker_starts():
         worker = stack.enter_context(mock.patch.object(
             app,
             "_run_apply_worker",
-            side_effect=lambda ids, submit: events.append("worker"),
+            side_effect=lambda ids, submit, ai_fill: events.append("worker"),
         ))
 
         response = app.apply_batch(
@@ -62,7 +62,7 @@ def test_batch_upload_is_saved_before_worker_starts():
     assert events == ["documents", "saved", "worker"]
     assert files_result.call_args.args[3] is cv
     save_profile.assert_called_once_with(saved_profile)
-    worker.assert_called_once_with(["job-1"], submit=False)
+    worker.assert_called_once_with(["job-1"], submit=False, ai_fill=False)
 
 
 def test_invalid_batch_upload_does_not_start_worker():
@@ -107,7 +107,49 @@ def test_batch_panel_contains_inline_document_controls():
     assert 'name="cv_file"' in template
     assert 'name="cover_letter_file"' in template
     assert "data-doc-open" in template
-    assert "/settings/salling#documents" in template
+    assert "/settings/documents" in template
+    assert 'name="ai_fill"' in template
+
+
+def test_batch_ai_choice_is_forwarded_to_worker():
+    with ExitStack() as stack:
+        stack.enter_context(mock.patch.object(
+            app, "_load_jobs_snapshot", return_value=[("job-1", _job())]
+        ))
+        stack.enter_context(mock.patch.object(
+            app, "_partition_submit_ids", return_value=(["job-1"], [], [])
+        ))
+        stack.enter_context(mock.patch.object(app.ai_filters, "api_key", return_value="key"))
+        stack.enter_context(mock.patch.object(app, "_claim_apply_slot", return_value=True))
+        worker = stack.enter_context(mock.patch.object(app, "_run_apply_worker"))
+
+        response = app.apply_batch(
+            SimpleNamespace(headers={}),
+            job_ids=["job-1"],
+            mode="submit",
+            ai_fill="1",
+            cv_file=None,
+            cover_letter_file=None,
+        )
+
+    assert response.status_code == 303
+    worker.assert_called_once_with(["job-1"], submit=True, ai_fill=True)
+
+
+def test_worker_ai_override_reaches_cli_and_environment():
+    process = SimpleNamespace()
+    with mock.patch.object(
+        app, "_load_jobs_snapshot", return_value=[("job-1", _job())]
+    ), mock.patch("builtins.open", mock.mock_open()), mock.patch.object(
+        app.subprocess, "Popen", return_value=process
+    ) as popen:
+        result = app._run_apply_worker(["job-1"], ai_fill=True)
+
+    assert result is process
+    command = popen.call_args.args[0]
+    environment = popen.call_args.kwargs["env"]
+    assert "--ai-fill" in command
+    assert environment["WEXFLOW_AI_FILL"] == "1"
 
 
 if __name__ == "__main__":

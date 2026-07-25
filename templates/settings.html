@@ -259,6 +259,46 @@
     background:var(--muted); transition:.18s; }
   .switch input:checked + .switch-track { background:color-mix(in srgb, var(--accent) 30%, transparent); border-color:var(--accent); }
   .switch input:checked + .switch-track .switch-thumb { left:25px; background:var(--accent); }
+  /* Документы: общий запасной комплект + точечные правила */
+  .doc-flow { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:14px; }
+  .doc-flow-step { position:relative; padding:13px 14px; border:1px solid var(--glass-line);
+    border-radius:12px; background:var(--glass); }
+  .doc-flow-step b { display:block; color:var(--txt-strong); font-size:13px; margin-bottom:3px; }
+  .doc-flow-step span { color:var(--muted); font-size:12px; line-height:1.4; }
+  .doc-flow-step:not(:last-child)::after { content:"→"; position:absolute; right:-17px; top:50%;
+    transform:translateY(-50%); z-index:2; color:var(--accent); font-weight:800; }
+  .doc-rule-list { display:grid; gap:10px; margin-top:12px; }
+  .doc-rule { border:1px solid var(--glass-line); border-radius:14px; background:var(--glass); overflow:hidden; }
+  .doc-rule-main { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; padding:14px; }
+  .doc-rule-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .doc-rule-title b { color:var(--txt-strong); }
+  .doc-scope { display:inline-flex; align-items:center; min-height:22px; padding:2px 8px; border-radius:999px;
+    color:var(--accent); background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 36%, var(--glass-line));
+    font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.035em; }
+  .doc-files { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
+  .doc-file-pill { display:inline-flex; align-items:center; gap:6px; max-width:310px; min-height:28px; padding:4px 9px;
+    border:1px solid var(--glass-line); border-radius:9px; color:var(--muted); background:var(--card);
+    font-size:12px; text-decoration:none; }
+  .doc-file-pill.ready { color:var(--txt); }
+  .doc-file-pill .doc-file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .doc-rule-edit { padding:0 14px 14px; }
+  .doc-rule-edit summary { cursor:pointer; color:var(--muted); font-size:12px; font-weight:650; }
+  .doc-rule-edit[open] summary { margin-bottom:12px; }
+  .doc-rule-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .doc-new { border-color:color-mix(in srgb, var(--accent) 44%, var(--glass-line));
+    background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%), var(--card); }
+  .doc-select { width:100%; min-height:42px; border:1px solid var(--line); border-radius:10px;
+    background:var(--input-bg); color:var(--txt); padding:0 11px; }
+  .doc-empty { padding:16px; border:1px dashed var(--glass-line); border-radius:12px; color:var(--muted);
+    text-align:center; line-height:1.5; }
+  .doc-global-note { display:flex; align-items:flex-start; gap:9px; padding:10px 12px; margin:12px 0 14px;
+    border:1px solid var(--ok-line); border-radius:11px; background:var(--ok-bg); color:var(--ok-txt);
+    font-size:12.5px; line-height:1.45; }
+  @media (max-width:700px) {
+    .doc-flow { grid-template-columns:1fr; }
+    .doc-flow-step:not(:last-child)::after { content:"↓"; right:auto; left:50%; top:auto; bottom:-19px; transform:translateX(-50%); }
+    .doc-rule-main { flex-direction:column; }
+  }
   /* --- новая раскладка фильтров: 5 простых вопросов --- */
   .apx-q { margin:12px 0; padding:14px 16px; border:1px solid var(--glass-line);
     border-radius:14px; background:var(--glass); }
@@ -303,6 +343,7 @@
 
   <nav class="sec-nav">
     <a class="{{ 'active' if settings_section == 'salling' else '' }}" href="/settings/salling">{{ ic.i('cart', 13) }} Salling</a>
+    <a class="{{ 'active' if settings_section == 'documents' else '' }}" href="/settings/documents">{{ ic.i('file', 13) }} Документы</a>
     <a class="{{ 'active' if settings_section == 'autopilot' else '' }}" href="/settings/autopilot">{{ ic.i('zap', 13) }} Автопилот</a>
     <a class="{{ 'active' if settings_section == 'telegram' else '' }}" href="/settings/telegram">{{ ic.i('send', 13) }} Telegram</a>
     <a class="{{ 'active' if settings_section == 'forms' else '' }}" href="/settings/forms">{{ ic.i('sparkles', 13) }} Анкеты и ИИ</a>
@@ -343,34 +384,14 @@
     <div class="actions"><button class="secondary" type="submit">Сохранить вход</button></div>
   </form>
 
-  <!-- Документы для Salling -->
-  <form id="documents" class="panel" method="post" action="/settings/documents/save" enctype="multipart/form-data">
-    <h2>{{ ic.i('file', 17) }} Документы для Salling</h2>
-    <p class="hint">CV и письмо для подачи в Salling. Личные данные (имя, контакты) — в <a class="crosslink" href="/account#profile">Аккаунте</a>. CV можно оставить пустым, если сайт уже помнит резюме.</p>
-    <div class="grid2">
-      <div class="file-card">
-        <label class="lbl">CV / резюме</label>
-        <input type="text" name="cv_path" value="{{ profile.cv_path or '' }}" placeholder="путь к файлу или выбери ниже">
-        <div class="file-picker">
-          <label class="file-button" for="cv_file">Выбрать файл</label>
-          <span class="file-name {{ 'saved' if file_info.cv_status=='ok' else ('missing' if file_info.cv_status=='missing' else '') }}" data-file-name="cv_file">{{ file_info.cv_label }}</span>
-          {% if file_info.cv_url %}<a class="file-open" href="{{ file_info.cv_url }}" title="Открыть сохранённый CV">{{ ic.i('eye', 14) }} Открыть</a>{% endif %}
-          <input id="cv_file" type="file" name="cv_file" accept=".pdf,.doc,.docx">
-        </div>
-      </div>
-      <div class="file-card">
-        <label class="lbl">Мотивационное письмо</label>
-        <input type="text" name="cover_letter_path" value="{{ profile.cover_letter_path or '' }}" placeholder="путь к файлу или выбери ниже">
-        <div class="file-picker">
-          <label class="file-button" for="cover_letter_file">Выбрать файл</label>
-          <span class="file-name {{ 'saved' if file_info.cover_status=='ok' else ('missing' if file_info.cover_status=='missing' else '') }}" data-file-name="cover_letter_file">{{ file_info.cover_label }}</span>
-          {% if file_info.cover_url %}<a class="file-open" href="{{ file_info.cover_url }}" title="Открыть сохранённое мотивационное письмо">{{ ic.i('eye', 14) }} Открыть</a>{% endif %}
-          <input id="cover_letter_file" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
-        </div>
-      </div>
+  <div id="documents" class="panel">
+    <h2>{{ ic.i('file', 17) }} Документы для подачи</h2>
+    <p class="hint">Общий комплект и отдельные CV/письма для Netto, Føtex, Bilka или конкретного магазина теперь собраны в одном месте.</p>
+    <div class="actions">
+      <a class="primary" href="/settings/documents">Настроить документы</a>
+      <span class="hint" style="margin:0;">{{ document_rule_count }} персональных комплектов</span>
     </div>
-    <div class="actions" style="margin-top:16px;"><button class="primary" type="submit">Сохранить документы</button></div>
-  </form>
+  </div>
 
   <!-- Дом -->
   <form id="home" class="panel" method="post" action="/set-home">
@@ -552,6 +573,214 @@
         });
       });
     })();
+  </script>
+  {% endif %}
+
+  {% if settings_section == 'documents' %}
+  <section class="panel doc-new">
+    <h2>{{ ic.i('briefcase', 17) }} Как WexFlow выбирает файлы</h2>
+    <p class="hint">Перед каждой вакансией выбор выполняется заново. Если специального файла нет, WexFlow спокойно берёт следующий по приоритету — поэтому письмо или CV не пропадут.</p>
+    <div class="doc-flow" aria-label="Приоритет документов">
+      <div class="doc-flow-step">
+        <b>1. Конкретный магазин</b>
+        <span>Например, Netto · Herlev. Самый точный вариант.</span>
+      </div>
+      <div class="doc-flow-step">
+        <b>2. Бренд</b>
+        <span>Один комплект для всех вакансий Netto или Føtex.</span>
+      </div>
+      <div class="doc-flow-step">
+        <b>3. Общий комплект</b>
+        <span>Безопасный запасной CV и письмо для всего остального.</span>
+      </div>
+    </div>
+  </section>
+
+  <form id="global-documents" class="panel" method="post" action="/settings/documents/save" enctype="multipart/form-data">
+    <h2>{{ ic.i('file', 17) }} Общий комплект</h2>
+    <p class="hint">Используется по умолчанию и как запасной вариант. Загруженный здесь файл не перезаписывает персональные комплекты ниже.</p>
+    <div class="doc-global-note">
+      {{ ic.i('check', 15) }}
+      <span>Если для бренда задан только CV, мотивационное письмо автоматически возьмётся отсюда — и наоборот.</span>
+    </div>
+    <div class="grid2">
+      <div class="file-card">
+        <label class="lbl">CV / резюме</label>
+        <div class="file-picker">
+          <label class="file-button" for="global_cv_file">Заменить файл</label>
+          <span class="file-name {{ 'saved' if file_info.cv_status=='ok' else ('missing' if file_info.cv_status=='missing' else '') }}" data-file-name="global_cv_file">{{ file_info.cv_label }}</span>
+          {% if file_info.cv_url %}<a class="file-open" href="{{ file_info.cv_url }}" title="Открыть общий CV">{{ ic.i('eye', 14) }} Просмотр</a>{% endif %}
+          <input id="global_cv_file" type="file" name="cv_file" accept=".pdf,.doc,.docx">
+        </div>
+      </div>
+      <div class="file-card">
+        <label class="lbl">Мотивационное письмо</label>
+        <div class="file-picker">
+          <label class="file-button" for="global_cover_file">Заменить файл</label>
+          <span class="file-name {{ 'saved' if file_info.cover_status=='ok' else ('missing' if file_info.cover_status=='missing' else '') }}" data-file-name="global_cover_file">{{ file_info.cover_label }}</span>
+          {% if file_info.cover_url %}<a class="file-open" href="{{ file_info.cover_url }}" title="Открыть общее мотивационное письмо">{{ ic.i('eye', 14) }} Просмотр</a>{% endif %}
+          <input id="global_cover_file" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
+        </div>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:16px;"><button class="primary" type="submit">Сохранить общий комплект</button></div>
+  </form>
+
+  <section id="document-rules" class="panel">
+    <h2>{{ ic.i('briefcase', 17) }} Комплекты по брендам и магазинам</h2>
+    <p class="hint">WexFlow применит их автоматически — выбирать файл вручную перед каждой подачей больше не нужно.</p>
+    {% if document_rules %}
+    <div class="doc-rule-list">
+      {% for rule in document_rules %}
+      <article class="doc-rule">
+        <div class="doc-rule-main">
+          <div style="min-width:0;">
+            <div class="doc-rule-title">
+              <b>{{ rule.name }}</b>
+              <span class="doc-scope">{{ 'магазин' if rule.scope == 'store' else 'бренд' }}</span>
+            </div>
+            <div class="hint" style="margin:4px 0 0;">
+              {{ rule.store_label if rule.scope == 'store' else rule.brand_label }}
+            </div>
+            <div class="doc-files">
+              {% if rule.cv_url %}
+                <a class="doc-file-pill ready" href="{{ rule.cv_url }}">{{ ic.i('file', 13) }} <span class="doc-file-name">{{ rule.cv_label }}</span> {{ ic.i('eye', 12) }}</a>
+              {% else %}
+                <span class="doc-file-pill">CV из следующего уровня</span>
+              {% endif %}
+              {% if rule.cover_url %}
+                <a class="doc-file-pill ready" href="{{ rule.cover_url }}">{{ ic.i('edit', 13) }} <span class="doc-file-name">{{ rule.cover_label }}</span> {{ ic.i('eye', 12) }}</a>
+              {% else %}
+                <span class="doc-file-pill">Письмо из следующего уровня</span>
+              {% endif %}
+            </div>
+          </div>
+          <form method="post" action="/settings/document-rules/delete" onsubmit="return confirm('Удалить этот комплект? Общие документы останутся.');">
+            <input type="hidden" name="rule_id" value="{{ rule.id }}">
+            <button class="ghost danger" type="submit" title="Удалить комплект">{{ ic.i('trash', 14) }}</button>
+          </form>
+        </div>
+        <details class="doc-rule-edit">
+          <summary>Изменить название или заменить файлы</summary>
+          <form method="post" action="/settings/document-rules/save" enctype="multipart/form-data">
+            <input type="hidden" name="rule_id" value="{{ rule.id }}">
+            <input type="hidden" name="scope" value="{{ rule.scope }}">
+            <input type="hidden" name="brand" value="{{ rule.brand }}">
+            <input type="hidden" name="store_key" value="{{ rule.store_key }}">
+            <div class="field">
+              <label class="lbl">Название комплекта</label>
+              <input type="text" name="name" maxlength="80" value="{{ rule.name }}">
+            </div>
+            <div class="grid2">
+              <div class="file-card">
+                <label class="lbl">Новый CV <span class="hint">(необязательно)</span></label>
+                <div class="file-picker">
+                  <label class="file-button" for="rule_cv_{{ loop.index }}">Выбрать</label>
+                  <span class="file-name" data-file-name="rule_cv_{{ loop.index }}">Текущий файл сохранится</span>
+                  <input id="rule_cv_{{ loop.index }}" type="file" name="cv_file" accept=".pdf,.doc,.docx">
+                </div>
+              </div>
+              <div class="file-card">
+                <label class="lbl">Новое письмо <span class="hint">(необязательно)</span></label>
+                <div class="file-picker">
+                  <label class="file-button" for="rule_cover_{{ loop.index }}">Выбрать</label>
+                  <span class="file-name" data-file-name="rule_cover_{{ loop.index }}">Текущий файл сохранится</span>
+                  <input id="rule_cover_{{ loop.index }}" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
+                </div>
+              </div>
+            </div>
+            <div class="actions"><button class="secondary" type="submit">Сохранить изменения</button></div>
+          </form>
+        </details>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="doc-empty">Пока используется только общий комплект.<br>Добавь первый вариант — например, отдельный CV для Netto.</div>
+    {% endif %}
+  </section>
+
+  <form id="new-document-rule" class="panel doc-new" method="post" action="/settings/document-rules/save" enctype="multipart/form-data">
+    <h2>{{ ic.i('edit', 17) }} Добавить персональный комплект</h2>
+    <p class="hint">Выбери, насколько точно применять документы. Для начала обычно достаточно одного комплекта на бренд.</p>
+    <div class="grid2">
+      <div class="field">
+        <label class="lbl" for="docScope">Применять для</label>
+        <select class="doc-select" id="docScope" name="scope">
+          <option value="brand">Всего бренда</option>
+          <option value="store">Конкретного магазина</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="lbl" for="docBrand">Бренд</label>
+        <select class="doc-select" id="docBrand" name="brand" required>
+          <option value="">Выбери бренд</option>
+          {% for item in document_brand_options %}
+          <option value="{{ item.key }}">{{ item.label }}{% if item.count %} · {{ item.count }} вакансий{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field" id="docStoreField" hidden>
+      <label class="lbl" for="docStore">Магазин</label>
+      <select class="doc-select" id="docStore" name="store_key">
+        <option value="">Сначала выбери бренд</option>
+        {% for store in document_store_options %}
+        <option value="{{ store.key }}" data-brand="{{ store.brand }}">{{ store.label }} · {{ store.count }} вакансий</option>
+        {% endfor %}
+      </select>
+      <div class="ap-hint">В списке только магазины с актуальными вакансиями. Комплект сохранится и после закрытия вакансии.</div>
+    </div>
+    <div class="field">
+      <label class="lbl">Название <span class="hint">(необязательно)</span></label>
+      <input type="text" name="name" maxlength="80" placeholder="например: Netto — короткий CV">
+    </div>
+    <div class="grid2">
+      <div class="file-card">
+        <label class="lbl">CV / резюме</label>
+        <div class="file-picker">
+          <label class="file-button" for="new_rule_cv">Выбрать файл</label>
+          <span class="file-name" data-file-name="new_rule_cv">PDF, DOC или DOCX</span>
+          <input id="new_rule_cv" type="file" name="cv_file" accept=".pdf,.doc,.docx">
+        </div>
+      </div>
+      <div class="file-card">
+        <label class="lbl">Мотивационное письмо</label>
+        <div class="file-picker">
+          <label class="file-button" for="new_rule_cover">Выбрать файл</label>
+          <span class="file-name" data-file-name="new_rule_cover">Можно добавить позже</span>
+          <input id="new_rule_cover" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
+        </div>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:16px;">
+      <button class="primary" type="submit">Добавить комплект</button>
+      <span class="hint" style="margin:0;">Нужен хотя бы один файл.</span>
+    </div>
+  </form>
+
+  <script>
+  (function () {
+    var scope = document.getElementById("docScope");
+    var brand = document.getElementById("docBrand");
+    var field = document.getElementById("docStoreField");
+    var store = document.getElementById("docStore");
+    if (!scope || !brand || !field || !store) return;
+    var options = Array.prototype.slice.call(store.querySelectorAll("option[data-brand]"));
+    function sync() {
+      var storeMode = scope.value === "store";
+      field.hidden = !storeMode;
+      store.required = storeMode;
+      options.forEach(function (option) {
+        option.hidden = !brand.value || option.dataset.brand !== brand.value;
+        option.disabled = option.hidden;
+      });
+      if (!storeMode || !store.selectedOptions.length || store.selectedOptions[0].disabled) store.value = "";
+    }
+    scope.addEventListener("change", sync);
+    brand.addEventListener("change", sync);
+    sync();
+  })();
   </script>
   {% endif %}
 
