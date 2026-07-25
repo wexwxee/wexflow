@@ -245,6 +245,20 @@ def _prompt(fields: list[dict], profile: dict, job: dict | None) -> str:
 def _ask_gemini(prompt: str, *, deadline: float | None = None) -> dict | None:
     key = ai_filters.api_key()
     if not key:
+        # Gemini не подключён — если активен другой провайдер (Groq), спросим его
+        # через общий gateway. Валидация ответа ниже по коду не меняется.
+        try:
+            import ai_gateway
+            if ai_gateway.available():
+                remaining = (deadline - time.monotonic()) if deadline is not None else _REQUEST_TIMEOUT_SECONDS
+                if remaining <= 0.25:
+                    return None
+                res = ai_gateway.generate_json(
+                    prompt, max_tokens=512,
+                    timeout=max(0.25, min(_REQUEST_TIMEOUT_SECONDS, remaining)))
+                return res.data if res.ok and isinstance(res.data, dict) else None
+        except Exception:  # noqa: BLE001
+            return None
         return None
     body = {
         "contents": [{"parts": [{"text": prompt}]}],

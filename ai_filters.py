@@ -16,8 +16,10 @@ import os
 
 import httpx
 
+import ai_secrets
 import ai_usage
 import config
+import paths
 
 # Модель по умолчанию — бесплатный Flash. Можно переопределить через окружение
 # или secrets.json ("gemini_model"), не трогая код.
@@ -34,15 +36,49 @@ def _secrets() -> dict:
 
 
 def api_key() -> str:
-    return (os.getenv("GEMINI_API_KEY") or _secrets().get("gemini_api_key", "") or "").strip()
+    """Ключ Gemini ТЕКУЩЕГО аккаунта (переходный фасад).
+
+    Порядок: зашифрованное хранилище аккаунта -> (dev) переменная окружения ->
+    (только dev, не в собранном приложении) legacy secrets.json. В собранном
+    приложении legacy-ключ не становится общим для всех аккаунтов.
+    """
+    key = ai_secrets.get_api_key("gemini")
+    if key:
+        return key
+    if not paths.is_frozen():
+        return (_secrets().get("gemini_api_key", "") or "").strip()
+    return ""
 
 
 def model_name() -> str:
-    return (os.getenv("GEMINI_MODEL") or _secrets().get("gemini_model") or _DEFAULT_MODEL).strip()
+    override = ai_secrets.info("gemini").get("model")
+    return (os.getenv("GEMINI_MODEL") or override or _secrets().get("gemini_model") or _DEFAULT_MODEL).strip()
 
 
 def available() -> bool:
+    """Доступен ли ИИ для текущего аккаунта (любой провайдер: Gemini или Groq)."""
+    try:
+        import ai_gateway
+        return ai_gateway.available()
+    except Exception:  # noqa: BLE001
+        return bool(api_key())
+
+
+def gemini_available() -> bool:
+    """Именно Gemini подключён (для роутинга/совместимости)."""
     return bool(api_key())
+
+
+def _legacy_from_result(res, *, want_fields=False, catalogs=None):
+    """Преобразовать AIResult шлюза в старый формат ответа ai_filters."""
+    if res.ok and isinstance(res.data, dict):
+        if want_fields and catalogs is not None:
+            fields, explanation = _sanitize(res.data, *catalogs)
+            return {"ok": True, "fields": fields, "explanation": explanation}
+        return {"ok": True, "data": res.data, "model": res.model}
+    if res.error_code == "not_connected":
+        return {"ok": False, "error": "ИИ не подключён: подключи Gemini или Groq в разделе «ИИ и лимиты»."}
+    return {"ok": False, "error": res.error_message or "Не удалось получить ответ ИИ."}
 
 
 # Запасная стабильная 2.5-модель на случай 429/503. Gemini 2.0 удалён из
@@ -65,10 +101,22 @@ def generate_json(
     temperature: float = 0.1,
     timeout: float = 40.0,
 ) -> dict:
-    """Small shared Gemini JSON gateway for explicit, user-triggered AI tasks."""
+    """Small shared JSON gateway for explicit, user-triggered AI tasks.
+
+    Gemini подключён -> родной путь (поведение 1.3.21). Иначе, если подключён
+    другой провайдер (Groq) -> маршрут через общий gateway.
+    """
     key = api_key()
     if not key:
-        return {"ok": False, "error": "ИИ не подключён: добавь ключ Gemini в настройках."}
+        try:
+            import ai_gateway
+            if ai_gateway.available():
+                res = ai_gateway.generate_json(str(prompt or "").strip(),
+                                               temperature=temperature, timeout=timeout)
+                return _legacy_from_result(res)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "error": "ИИ не подключён: подключи Gemini или Groq в настройках."}
     prompt = str(prompt or "").strip()
     if not prompt:
         return {"ok": False, "error": "Пустой запрос к ИИ."}
@@ -167,14 +215,26 @@ def suggest_filters(
     regions: dict,
 ) -> dict:
     """Вернёт {"ok": True, "fields": {...}, "explanation": str} или {"ok": False, "error": str}."""
-    key = api_key()
-    if not key:
-        return {"ok": False, "error": "ИИ не подключён: добавь ключ Gemini в secrets.json (gemini_api_key)."}
     text = (text or "").strip()
     if not text:
         return {"ok": False, "error": "Опиши словами, что ищешь."}
     if len(text) > 8000:
         text = text[:8000]
+
+    key = api_key()
+    if not key:
+        try:
+            import ai_gateway
+            if ai_gateway.available():
+                res = ai_gateway.generate_json(
+                    _prompt(text, categories, brands, employments, regions),
+                    temperature=0.2, timeout=30)
+                return _legacy_from_result(
+                    res, want_fields=True,
+                    catalogs=(categories, brands, employments, regions))
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "error": "ИИ не подключён: подключи Gemini или Groq в разделе «ИИ и лимиты»."}
 
     body = {
         "contents": [{"parts": [{"text": _prompt(text, categories, brands, employments, regions)}]}],
@@ -241,13 +301,33 @@ def _chat_system(categories, brands, employments, regions) -> str:
 def chat(messages, categories, brands, employments, regions) -> dict:
     """Многоходовый диалог настройки фильтров. messages: [{"role":"user"|"model","text":str}].
     Возвращает {"ok":True,"reply":str,"done":bool,"fields":dict|None} или {"ok":False,"error":str}."""
-    key = api_key()
-    if not key:
-        return {"ok": False, "error": "ИИ не подключён: добавь ключ Gemini в secrets.json (gemini_api_key)."}
     msgs = [m for m in (messages or [])
             if isinstance(m, dict) and str(m.get("text") or "").strip()][-16:]
     if not msgs:
         return {"ok": False, "error": "Напиши, что ищешь."}
+
+    key = api_key()
+    if not key:
+        try:
+            import ai_gateway
+            if ai_gateway.available():
+                res = ai_gateway.chat(
+                    msgs,
+                    system=_chat_system(categories, brands, employments, regions),
+                    json_mode=True, temperature=0.3, timeout=30)
+                if res.ok and isinstance(res.data, dict):
+                    data = res.data
+                    reply = str(data.get("reply") or "").strip()[:1200]
+                    done = bool(data.get("done"))
+                    fields = None
+                    if done and isinstance(data.get("fields"), dict):
+                        fields, _ = _sanitize(data["fields"], categories, brands, employments, regions)
+                    return {"ok": True, "reply": reply or "Хорошо.", "done": done, "fields": fields}
+                return _legacy_from_result(res)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": False, "error": "ИИ не подключён: подключи Gemini или Groq в разделе «ИИ и лимиты»."}
+
     contents = [{"role": ("user" if m.get("role") == "user" else "model"),
                  "parts": [{"text": str(m.get("text"))[:2000]}]} for m in msgs]
     body = {
