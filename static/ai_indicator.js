@@ -28,7 +28,13 @@
   function injectStyle() {
     if (document.getElementById("wf-ai-ind-style")) return;
     var css =
-      "#wfAiInd{position:fixed;left:14px;bottom:14px;z-index:940;font-family:Inter,system-ui,sans-serif}" +
+      "#wfAiInd{position:fixed;left:14px;bottom:14px;z-index:940;font-family:Inter,system-ui,sans-serif;touch-action:none}" +
+      "#wfAiInd.dragging{opacity:.92;cursor:grabbing}" +
+      "#wfAiInd.dragging .wf-ai-chip{transform:none;box-shadow:0 10px 28px rgba(0,0,0,.45)}" +
+      "#wfAiInd .wf-ai-grip{width:9px;height:14px;flex:0 0 auto;opacity:.45;cursor:grab;margin-right:-2px}" +
+      "#wfAiInd .wf-ai-chip:hover .wf-ai-grip{opacity:.8}" +
+      "#wfAiPop.up{bottom:auto;top:44px}" +
+      "#wfAiPop.right{left:auto;right:0}" +
       "#wfAiInd .wf-ai-chip{display:flex;align-items:center;gap:8px;border:1px solid var(--border,rgba(255,255,255,.12));" +
         "background:var(--card,var(--bg-soft,#1b1b20));color:var(--fg,#e8e8ea);border-radius:999px;padding:6px 12px 6px 8px;" +
         "cursor:pointer;font:inherit;font-size:12.5px;line-height:1;box-shadow:0 6px 20px rgba(0,0,0,.25);transition:transform .12s}" +
@@ -96,7 +102,15 @@
     root.id = "wfAiInd";
     chip = el(
       '<button type="button" class="wf-ai-chip" aria-haspopup="dialog" aria-expanded="false" ' +
-      'aria-label="Ресурс ИИ">' + ringSvg() +
+      'aria-label="Ресурс ИИ. Можно перетащить в любое место окна">' +
+      '<svg class="wf-ai-grip" viewBox="0 0 6 14" aria-hidden="true">' +
+      '<circle cx="1.5" cy="2" r="1.2" fill="currentColor"></circle>' +
+      '<circle cx="4.5" cy="2" r="1.2" fill="currentColor"></circle>' +
+      '<circle cx="1.5" cy="7" r="1.2" fill="currentColor"></circle>' +
+      '<circle cx="4.5" cy="7" r="1.2" fill="currentColor"></circle>' +
+      '<circle cx="1.5" cy="12" r="1.2" fill="currentColor"></circle>' +
+      '<circle cx="4.5" cy="12" r="1.2" fill="currentColor"></circle></svg>' +
+      ringSvg() +
       '<span class="wf-ai-pct">—</span><span class="wf-ai-lbl">ИИ</span></button>'
     );
     pop = document.createElement("div");
@@ -109,6 +123,7 @@
 
     chip.addEventListener("click", function (e) {
       e.stopPropagation();
+      if (drag.moved) { drag.moved = false; return; }   // это было перетаскивание, не клик
       toggle();
     });
     document.addEventListener("click", function (e) {
@@ -117,10 +132,100 @@
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape" && state.open) { close(); chip.focus(); }
     });
+    installDrag();
+    restorePosition();
+    window.addEventListener("resize", function () { clampToViewport(); });
+  }
+
+  // ── перетаскивание: индикатор можно поставить в любой угол окна ─────────── //
+  var POS_KEY = "wf-ai-indicator-pos";
+  var drag = { active: false, moved: false, dx: 0, dy: 0 };
+
+  function applyPosition(left, top) {
+    root.style.left = Math.round(left) + "px";
+    root.style.top = Math.round(top) + "px";
+    root.style.right = "auto";
+    root.style.bottom = "auto";
+    orientPopover();
+  }
+
+  function clampToViewport() {
+    var rect = root.getBoundingClientRect();
+    if (!rect.width) return;
+    if (root.style.top === "" && root.style.left === "") return;   // позиция по умолчанию
+    var maxLeft = Math.max(4, window.innerWidth - rect.width - 4);
+    var maxTop = Math.max(4, window.innerHeight - rect.height - 4);
+    applyPosition(Math.min(Math.max(4, rect.left), maxLeft),
+                  Math.min(Math.max(4, rect.top), maxTop));
+  }
+
+  function savePosition() {
+    try {
+      var rect = root.getBoundingClientRect();
+      localStorage.setItem(POS_KEY, JSON.stringify({ left: rect.left, top: rect.top }));
+    } catch (e) {}
+  }
+
+  function restorePosition() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(POS_KEY) || "null");
+      if (!saved || typeof saved.left !== "number") return;
+      applyPosition(saved.left, saved.top);
+      clampToViewport();
+    } catch (e) {}
+  }
+
+  /** Popover всегда раскрывается внутрь экрана, куда бы ни перетащили индикатор. */
+  function orientPopover() {
+    var rect = root.getBoundingClientRect();
+    pop.classList.toggle("up", rect.top < window.innerHeight / 2);
+    pop.classList.toggle("right", rect.left > window.innerWidth / 2);
+  }
+
+  function installDrag() {
+    chip.addEventListener("pointerdown", function (e) {
+      if (e.button !== 0) return;
+      var rect = root.getBoundingClientRect();
+      drag.active = true;
+      drag.moved = false;
+      drag.dx = e.clientX - rect.left;
+      drag.dy = e.clientY - rect.top;
+      try { chip.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    chip.addEventListener("pointermove", function (e) {
+      if (!drag.active) return;
+      var left = e.clientX - drag.dx, top = e.clientY - drag.dy;
+      if (!drag.moved) {
+        // маленькое дрожание пальцем/мышью не должно превращать клик в перенос
+        if (Math.abs(e.clientX - (drag.dx + root.getBoundingClientRect().left)) < 4 &&
+            Math.abs(e.clientY - (drag.dy + root.getBoundingClientRect().top)) < 4) return;
+        drag.moved = true;
+        root.classList.add("dragging");
+        close();
+      }
+      var rect = root.getBoundingClientRect();
+      var maxLeft = Math.max(4, window.innerWidth - rect.width - 4);
+      var maxTop = Math.max(4, window.innerHeight - rect.height - 4);
+      applyPosition(Math.min(Math.max(4, left), maxLeft), Math.min(Math.max(4, top), maxTop));
+    });
+    function end(e) {
+      if (!drag.active) return;
+      drag.active = false;
+      root.classList.remove("dragging");
+      if (drag.moved) savePosition();
+      try { chip.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+    chip.addEventListener("pointerup", end);
+    chip.addEventListener("pointercancel", end);
   }
 
   function toggle() { state.open ? close() : openPop(); }
-  function openPop() { state.open = true; root.classList.add("open"); chip.setAttribute("aria-expanded", "true"); renderPop(); }
+  function openPop() {
+    state.open = true; root.classList.add("open");
+    chip.setAttribute("aria-expanded", "true");
+    orientPopover();
+    renderPop();
+  }
   function close() { state.open = false; root.classList.remove("open"); chip.setAttribute("aria-expanded", "false"); }
 
   // ------------------------------ отрисовка -------------------------------- //
