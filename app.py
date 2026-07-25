@@ -4797,6 +4797,12 @@ def _run_apply_worker(
     env["PYTHONUNBUFFERED"] = "1"
     if ai_fill is not None:
         env["WEXFLOW_AI_FILL"] = "1" if ai_fill else "0"
+    # Ключи ИИ НИКОГДА не передаются воркеру: ни аргументом, ни в окружении.
+    # Воркер получает только идентификатор аккаунта и сам достаёт ключ из
+    # account-specific защищённого хранилища (DPAPI).
+    for secret_var in ("GEMINI_API_KEY", "GROQ_API_KEY"):
+        env.pop(secret_var, None)
+    env["WEXFLOW_AI_ACCOUNT"] = ai_secrets.current_account_id()
     cmd = _salling_apply_cmd(ids + ["--web"])
     if submit:
         cmd.append("--submit")

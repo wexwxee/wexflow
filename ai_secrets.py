@@ -117,12 +117,8 @@ def _local_account_id() -> str:
         return local
 
 
-def current_account_id() -> str:
-    """Текущий аккаунт WexFlow.
-
-    Вошедший через Telegram -> ``tg:<id>`` (стабильно на пользователя). Иначе —
-    локальный анонимный id. Возможности ИИ определяются ключами ЭТОГО аккаунта.
-    """
+def _live_account_id() -> str:
+    """Аккаунт, который сейчас реально активен в приложении."""
     try:
         import account
         acc = account.load()
@@ -131,6 +127,35 @@ def current_account_id() -> str:
     except Exception:  # noqa: BLE001 — аккаунт не должен ронять ИИ-слой
         pass
     return _local_account_id()
+
+
+def pinned_account_id() -> str:
+    """Аккаунт, закреплённый за фоновым процессом (воркер подачи).
+
+    Родитель передаёт только ИДЕНТИФИКАТОР аккаунта — никогда не ключ. Воркер
+    сам достаёт ключ из защищённого хранилища именно этого аккаунта.
+    """
+    return (os.getenv("WEXFLOW_AI_ACCOUNT") or "").strip()
+
+
+def current_account_id() -> str:
+    """Текущий аккаунт WexFlow.
+
+    Вошедший через Telegram -> ``tg:<id>`` (стабильно на пользователя). Иначе —
+    локальный анонимный id. В фоновом воркере — закреплённый при запуске аккаунт.
+    Возможности ИИ определяются ключами ЭТОГО аккаунта.
+    """
+    return pinned_account_id() or _live_account_id()
+
+
+def context_valid() -> bool:
+    """Выполняется ли задача в том же аккаунте, что был при её создании.
+
+    Если пользователь сменил аккаунт (или вышел), пока фоновая задача жила,
+    задача НЕ имеет права работать ни старым, ни новым чужим ключом.
+    """
+    pinned = pinned_account_id()
+    return (not pinned) or pinned == _live_account_id()
 
 
 def _resolve(account_id: str | None) -> str:

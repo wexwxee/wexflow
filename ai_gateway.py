@@ -86,6 +86,12 @@ def _with_retry(call, prov, *, retries: int) -> AIResult:
 
 
 def _dispatch(account_id: str | None, call, *, retries: int) -> AIResult:
+    # Фоновая задача обязана выполняться в том же аккаунте, в котором создана.
+    if not ai_secrets.context_valid():
+        return AIResult(
+            ok=False, provider="", error_code=base.NOT_CONNECTED,
+            error_message="Аккаунт сменился — задача остановлена без обращения к ИИ.",
+        )
     account_id = _account(account_id)
     order = _usable_providers(account_id)
     if not order:
