@@ -482,31 +482,112 @@ body.candidate-profile-open { overflow: hidden; }
 .candidate-profile-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .candidate-profile-copy small { color: var(--muted); }
 .candidate-profile-check { margin-left: auto; color: var(--accent); }
+.candidate-profile-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  transition: color .16s ease, transform .16s ease;
+}
+.candidate-profile-action span { font-size: 18px; line-height: 1; }
+.candidate-profile-row:hover .candidate-profile-action {
+  color: var(--accent);
+  transform: translateX(2px);
+}
 .candidate-profile-add {
   margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--glass-line);
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--glass-line));
+  border-radius: 15px;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--accent) 7%, var(--card-2)),
+      color-mix(in srgb, var(--card) 94%, transparent));
 }
-.candidate-profile-add > label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 700;
-  font-size: 13px;
+.candidate-profile-add-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
 }
-.candidate-profile-add > div { display: flex; gap: 8px; }
-.candidate-profile-add input { min-width: 0; flex: 1; }
+.candidate-profile-add-head > span:last-child { display: grid; gap: 3px; }
+.candidate-profile-add-head b { color: var(--txt-strong); font-size: 13.5px; }
+.candidate-profile-add-head small { color: var(--muted); font-size: 11.5px; }
+.candidate-profile-add-avatar {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 32px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 65%, var(--glass-line));
+  border-radius: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font: 700 20px/1 Inter, sans-serif;
+}
+.candidate-profile-add-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 9px;
+}
+.candidate-profile-name-field {
+  position: relative;
+  min-width: 0;
+}
+.candidate-profile-name-field > span {
+  position: absolute;
+  z-index: 1;
+  top: 7px;
+  left: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .03em;
+  pointer-events: none;
+}
+.candidate-profile-add input {
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  padding: 20px 12px 6px;
+  border-color: color-mix(in srgb, var(--glass-line) 82%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--card) 84%, transparent);
+}
+.candidate-profile-add input:focus {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--glass-line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 11%, transparent);
+}
 .candidate-profile-add button {
   border: 0;
-  border-radius: 10px;
-  padding: 0 14px;
+  border-radius: 11px;
+  padding: 0 16px;
   background: var(--accent);
   color: #07130c;
   font-weight: 800;
   cursor: pointer;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.candidate-profile-add button > span {
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 18px;
+  line-height: 1;
+  vertical-align: -1px;
 }
 .candidate-profile-add button:disabled { opacity: .55; cursor: wait; }
 .candidate-profile-error { margin: 8px 0 0; color: var(--err-txt); font-size: 13px; }
 .candidate-profile-note { margin-top: 14px; }
+@media (max-width: 560px) {
+  .candidate-profile-add-controls { grid-template-columns: 1fr; }
+  .candidate-profile-add button { min-height: 44px; }
+  .candidate-profile-action { font-size: 0; }
+  .candidate-profile-action span { font-size: 20px; }
+}
 .wex-main {
   min-height: calc(100vh - var(--desktop-frame-h));
   margin-left: 84px;

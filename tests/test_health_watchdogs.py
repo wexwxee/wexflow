@@ -62,6 +62,19 @@ def test_cloud_failures_raise_telegram_warning():
     assert "локальный поиск" in warns[0]["text"]
 
 
+def test_cloud_quota_warning_explains_real_fix():
+    warns = app._health_warnings(
+        last_hits=480,
+        sync_failed=False,
+        fail_streak=0,
+        cloud_fail_streak=3,
+        cloud_error="Облачное хранилище Telegram исчерпало лимит.",
+    )
+    assert _ids(warns) == ["telegram-cloud-down"]
+    assert "исчерпала квоту" in warns[0]["text"]
+    assert "заменить или расширить" in warns[0]["text"]
+
+
 def test_two_cloud_failures_do_not_alarm():
     assert app._health_warnings(
         last_hits=480, sync_failed=False, fail_streak=0, cloud_fail_streak=2) == []

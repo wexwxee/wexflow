@@ -2125,7 +2125,7 @@
       var disabled = current ? '' : ' disabled';
       var telegramOn = st.mode === 'telegram' || st.approval;
       var cloudHint = st.cloud_state === 'offline'
-        ? '<p class="hint" style="color:#b45309">⚠️ Сейчас нет связи с облаком. Команды из Telegram автоматически продолжатся после восстановления сети.</p>'
+        ? '<p class="hint" style="color:#b45309">⚠️ '+esc(st.cloud_error || 'Сейчас нет связи с облаком. Команды из Telegram автоматически продолжатся после восстановления сети.')+'</p>'
         : st.cloud_state === 'checking'
           ? '<p class="hint">Проверяем связь с облаком…</p>'
           : '<p class="hint" style="color:#15803d">● Связь с облаком работает — компьютер принимает команды из Telegram.</p>';

@@ -141,7 +141,7 @@ def test_detach_is_locally_safe_when_cloud_is_offline():
     assert response.headers["location"] == "/account?unlink_warning=cloud"
 
 
-def _account_html(signed_in: bool) -> str:
+def _account_html(signed_in: bool, *, relink: bool = False) -> str:
     account = {
         "signed_in": signed_in,
         "display_name": "Ivan",
@@ -152,6 +152,8 @@ def _account_html(signed_in: bool) -> str:
         "account": account,
         "account_tg_id": "42" if signed_in else "",
         "cloud_login_url": "https://example.test/login",
+        "telegram_ready": bool(signed_in and not relink),
+        "telegram_relink": bool(signed_in and relink),
         "profile": {},
         "file_info": {},
         "saved": "",
@@ -190,6 +192,37 @@ def test_signed_in_account_exposes_test_settings_and_honest_detach():
     assert 'id="tgSetupTest"' in wizard
     assert 'href="/settings/telegram"' in wizard
     assert "Отвязать от этого ПК" in wizard
+
+
+def test_stale_local_telegram_session_offers_relink_instead_of_claiming_connected():
+    html = _account_html(True, relink=True)
+    wizard = html.split('id="telegram-setup"', 1)[1].split("</section>", 1)[0]
+
+    assert 'data-signed-in="0"' in html
+    assert "Восстанови связь с Telegram" in wizard
+    assert "Нужна привязка" in wizard
+    assert 'id="linkIdBtn"' in wizard
+    assert "Создать новый код" in wizard
+    assert 'id="tgSetupTest"' not in wizard
+
+
+def test_setup_test_turns_missing_device_into_one_click_relink():
+    cloud_result = {"ok": False, "error": "device not linked"}
+    with (
+        mock.patch.object(app.account_mod, "is_signed_in", return_value=True),
+        mock.patch.object(app.cloud_auth, "send_test_message", return_value=cloud_result),
+        mock.patch.object(
+            app.cloud_auth,
+            "link_new",
+            return_value={"ok": True, "code": "ABC234", "botUsername": "wexflowbot"},
+        ),
+    ):
+        data = _json(app.telegram_setup_test())
+
+    assert data["code"] == "device_not_linked"
+    assert data["needsRelink"] is True
+    assert data["linkCode"] == "ABC234"
+    assert data["botUrl"].endswith("?start=ABC234")
 
 
 def test_telegram_settings_locked_state_points_back_to_wizard():

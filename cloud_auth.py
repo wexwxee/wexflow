@@ -29,6 +29,38 @@ DEVICE_PATH = config.SHARED_DIR / "device.json"
 
 _device_cache: dict | None = None
 _device_lock = threading.Lock()
+_poll_error_lock = threading.Lock()
+_last_poll_error: dict = {}
+
+
+def _remember_poll_error(data: dict | None = None, *, http_status: int = 0) -> None:
+    """Сохранить безопасную причину последнего сбоя poll для интерфейса."""
+    global _last_poll_error
+    friendly = _friendly_cloud_result(dict(data or {}), http_status=http_status)
+    if not friendly.get("error"):
+        friendly.update({
+            "ok": False,
+            "code": friendly.get("code") or "cloud_unavailable",
+            "error": "Нет связи с облаком Telegram",
+        })
+    with _poll_error_lock:
+        _last_poll_error = {
+            "code": str(friendly.get("code") or ""),
+            "error": str(friendly.get("error") or "")[:240],
+            "http_status": int(http_status or 0),
+        }
+
+
+def _clear_poll_error() -> None:
+    global _last_poll_error
+    with _poll_error_lock:
+        _last_poll_error = {}
+
+
+def last_poll_error() -> dict:
+    """Безопасная копия причины последнего сбоя облачного poll."""
+    with _poll_error_lock:
+        return dict(_last_poll_error)
 
 
 def _device_record() -> dict:
@@ -144,20 +176,26 @@ def login_url() -> str:
     return f"{CLOUD_BASE}/api/login?device={device_id()}"
 
 
+def fetch_session_state(timeout: int = 10) -> dict | None:
+    """Вернуть состояние облачной сессии или None именно при ошибке связи."""
+    url = f"{CLOUD_BASE}/api/session?device={device_id()}"
+    try:
+        with _open(url, timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        return data if isinstance(data, dict) else None
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
 def fetch_session(timeout: int = 10) -> dict | None:
     """Спросить облако, кто вошёл по нашему device. Вернёт user-dict или None.
 
     user-dict: {"tgId", "name", "username", "plan", "ts"}.
     Сеть/таймаут не роняют вызывающего — при любой ошибке вернётся None.
     """
-    url = f"{CLOUD_BASE}/api/session?device={device_id()}"
-    try:
-        with _open(url, timeout=timeout) as r:
-            data = json.loads(r.read().decode("utf-8"))
-        if data.get("loggedIn") and isinstance(data.get("user"), dict):
-            return data["user"]
-    except (urllib.error.URLError, OSError, ValueError):
-        pass
+    data = fetch_session_state(timeout)
+    if data and data.get("loggedIn") and isinstance(data.get("user"), dict):
+        return data["user"]
     return None
 
 
@@ -362,6 +400,7 @@ def fetch_poll(
         with _open(url, timeout=timeout) as r:
             data = json.loads(r.read().decode("utf-8"))
         if not data.get("ok"):
+            _remember_poll_error(data)
             return None
         # Backward compatibility during a staged rollout: an older cloud
         # endpoint treats unknown kind=poll as the decisions-only request and
@@ -369,12 +408,22 @@ def fetch_poll(
         commands = data.get("commands")
         if not isinstance(commands, list):
             commands = fetch_commands(tg_id=tg_id, timeout=timeout)
-        return {
+        result = {
             "decisions": data.get("decisions") if isinstance(data.get("decisions"), list) else [],
             "commands": commands,
             "ack": bool(data.get("ack")),
         }
+        _clear_poll_error()
+        return result
+    except urllib.error.HTTPError as e:
+        try:
+            data = json.loads(e.read().decode("utf-8"))
+        except (ValueError, OSError):
+            data = {}
+        _remember_poll_error(data, http_status=e.code)
+        return None
     except (urllib.error.URLError, OSError, ValueError):
+        _remember_poll_error()
         return None
 
 

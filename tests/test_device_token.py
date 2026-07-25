@@ -135,6 +135,23 @@ def test_cloud_quota_error_is_human_readable():
     assert "500" not in result["error"]
 
 
+def test_combined_poll_preserves_cloud_quota_reason():
+    response = io.BytesIO(json.dumps({
+        "ok": False,
+        "code": "store_quota",
+        "error": "ERR max requests limit exceeded",
+    }).encode("utf-8"))
+    response.__enter__ = lambda *a: response
+    response.__exit__ = lambda *a: False
+
+    with mock.patch.object(cloud_auth, "_open", return_value=response):
+        assert cloud_auth.fetch_poll() is None
+
+    error = cloud_auth.last_poll_error()
+    assert error["code"] == "store_quota"
+    assert "исчерпало лимит" in error["error"]
+
+
 def test_combined_poll_falls_back_for_old_cloud():
     class _OldCloud(_FakeCloud):
         def __call__(self, req, timeout=None):

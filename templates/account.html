@@ -87,6 +87,8 @@
   .tg-connect-state::before { content:""; width:8px; height:8px; border-radius:50%; background:#8b9690; }
   .tg-connect-state.on { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
   .tg-connect-state.on::before { background:#21d86b; box-shadow:0 0 0 4px rgba(33,216,107,.13); }
+  .tg-connect-state.repair { color:#f5b642; border-color:rgba(245,182,66,.42); background:rgba(245,182,66,.08); }
+  .tg-connect-state.repair::before { background:#f5b642; box-shadow:0 0 0 4px rgba(245,182,66,.12); }
   .tg-account-strip { display:flex; align-items:center; gap:12px; margin-top:18px; padding:12px;
     border:1px solid var(--glass-line); border-radius:13px; background:color-mix(in srgb,var(--glass) 78%,transparent); }
   .acct-id { display:flex; align-items:center; gap:14px; min-width:0; }
@@ -331,19 +333,21 @@
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
 
   <!-- Заметный пошаговый вход и привязка Telegram -->
-  <section class="panel tg-setup-card" id="telegram-setup" data-signed-in="{{ '1' if account.signed_in else '0' }}">
+  <section class="panel tg-setup-card" id="telegram-setup" data-signed-in="{{ '1' if telegram_ready else '0' }}">
     <div class="tg-setup-head">
       <div class="tg-setup-title">
         <span class="tg-eyebrow">Telegram · вход и управление</span>
-        <h2>{% if account.signed_in %}Telegram подключён к WexFlow{% else %}Подключи Telegram за 3 шага{% endif %}</h2>
-        <p>{% if account.signed_in %}
+        <h2>{% if telegram_relink %}Восстанови связь с Telegram{% elif telegram_ready %}Telegram подключён к WexFlow{% else %}Подключи Telegram за 3 шага{% endif %}</h2>
+        <p>{% if telegram_relink %}
+          Аккаунт сохранён на ПК, но облачная привязка отсутствует. Создай код и отправь его боту.
+        {% elif telegram_ready %}
           Аккаунт подтверждён. Осталось убедиться, что бот запущен, и выбрать режим уведомлений.
         {% else %}
           Без входа Telegram-функции заблокированы: WexFlow не знает, куда присылать вакансии и подтверждения.
         {% endif %}</p>
       </div>
-      <span class="tg-connect-state {{ 'on' if account.signed_in else '' }}" id="tgConnectState">
-        {{ 'Подключено' if account.signed_in else 'Требуется вход' }}
+      <span class="tg-connect-state {{ 'repair' if telegram_relink else ('on' if telegram_ready else '') }}" id="tgConnectState">
+        {{ 'Нужна привязка' if telegram_relink else ('Подключено' if telegram_ready else 'Требуется вход') }}
       </span>
     </div>
 
@@ -363,20 +367,22 @@
     </div>
 
     <ol class="tg-steps">
-      <li class="tg-step {{ 'done' if account.signed_in else 'active' }}" id="tgStep1">
-        <span class="tg-step-num">{{ '✓' if account.signed_in else '1' }}</span>
+      <li class="tg-step {{ 'done' if telegram_ready else 'active' }}" id="tgStep1">
+        <span class="tg-step-num">{{ '✓' if telegram_ready else '1' }}</span>
         <div class="tg-step-copy">
           <h3>Войди и привяжи этот компьютер</h3>
-          {% if account.signed_in %}
+          {% if telegram_ready %}
           <p>Личность Telegram подтверждена. Профиль и тариф могут синхронизироваться между устройствами.</p>
           {% else %}
-          <p>Основной способ — безопасная страница входа. Если браузерный вход не откроется, используй одноразовый код.</p>
+          <p>{% if telegram_relink %}Создай новый одноразовый код и отправь его обычным сообщением в @wexflowbot.{% else %}Основной способ — безопасная страница входа. Если браузерный вход не откроется, используй одноразовый код.{% endif %}</p>
           <div class="tg-step-actions">
+            {% if not account.signed_in %}
             <a class="tg-login-btn" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">
               <span class="tg-login-ic">{{ ic.i('send', 15) }}</span>
               <span class="tg-login-text">Шаг 1 · Войти через Telegram</span>
             </a>
-            <button class="ghost link-id-btn" type="button" id="linkIdBtn">Получить код привязки</button>
+            {% endif %}
+            <button class="ghost link-id-btn" type="button" id="linkIdBtn">{{ 'Создать новый код' if telegram_relink else 'Получить код привязки' }}</button>
           </div>
           <div class="tg-login-wait" id="tgLoginWait" hidden>
             <span id="tgLoginWaitText">Жду подтверждение входа в Telegram…</span>
@@ -397,12 +403,12 @@
         </div>
       </li>
 
-      <li class="tg-step {{ 'active' if account.signed_in else 'locked' }}" id="tgStep2">
+      <li class="tg-step {{ 'active' if telegram_ready else 'locked' }}" id="tgStep2">
         <span class="tg-step-num">2</span>
         <div class="tg-step-copy">
           <h3>Открой @wexflowbot и нажми Start</h3>
-          <p>{% if account.signed_in %}Это разрешит боту отправить первое сообщение. Без запуска Telegram сам блокирует сообщения от бота.{% else %}Сначала заверши вход — тогда этот шаг станет доступен.{% endif %}</p>
-          {% if account.signed_in %}
+          <p>{% if telegram_ready %}Это разрешит боту отправить первое сообщение. Без запуска Telegram сам блокирует сообщения от бота.{% else %}Сначала заверши вход — тогда этот шаг станет доступен.{% endif %}</p>
+          {% if telegram_ready %}
           <div class="tg-step-actions">
             <a class="primary" href="https://t.me/wexflowbot?start=wexflow" target="_blank" rel="noopener">Открыть бота и нажать Start</a>
           </div>
@@ -410,12 +416,12 @@
         </div>
       </li>
 
-      <li class="tg-step {{ 'active' if account.signed_in else 'locked' }}" id="tgStep3">
+      <li class="tg-step {{ 'active' if telegram_ready else 'locked' }}" id="tgStep3">
         <span class="tg-step-num">3</span>
         <div class="tg-step-copy">
           <h3>Проверь сообщение и включи нужный режим</h3>
-          <p>{% if account.signed_in %}WexFlow пришлёт короткое проверочное сообщение. Только после успешной проверки переходи к уведомлениям и подтверждению подачи.{% else %}Проверка и настройки заблокированы до входа.{% endif %}</p>
-          {% if account.signed_in %}
+          <p>{% if telegram_ready %}WexFlow пришлёт короткое проверочное сообщение. Только после успешной проверки переходи к уведомлениям и подтверждению подачи.{% else %}Проверка и настройки заблокированы до входа.{% endif %}</p>
+          {% if telegram_ready %}
           <div class="tg-step-actions">
             <button class="primary" type="button" id="tgSetupTest">Отправить проверочное</button>
             <a class="ghost" href="/settings/telegram">Настроить Telegram →</a>
@@ -511,7 +517,7 @@
   <script>
   (function () {
     var btn = document.getElementById('linkIdBtn');
-    if (!btn) return;                 // уже вошли — привязывать нечего
+    if (!btn) return;                 // облачная привязка уже подтверждена
     var box = document.getElementById('linkIdBox');
     var codeEl = document.getElementById('linkIdCode');
     var copyBtn = document.getElementById('linkIdCopy');

@@ -1023,11 +1023,20 @@ def _tg_poller_loop() -> None:
             )
             if cycle is None:
                 _tg_poll_state["fail_streak"] = int(_tg_poll_state.get("fail_streak") or 0) + 1
-                _tg_poll_state["last_error"] = "Нет связи с облаком Telegram"
+                poll_error = cloud_auth.last_poll_error()
+                _tg_poll_state["last_error"] = (
+                    poll_error.get("error") or "Нет связи с облаком Telegram"
+                )
+                _tg_poll_state["error_code"] = poll_error.get("code") or ""
             else:
                 if sync_binding:
                     binding_sync_last = time.time()
-                _tg_poll_state.update({"fail_streak": 0, "last_ok": time.time(), "last_error": ""})
+                _tg_poll_state.update({
+                    "fail_streak": 0,
+                    "last_ok": time.time(),
+                    "last_error": "",
+                    "error_code": "",
+                })
                 decisions = cycle.get("decisions") or []
                 commands = cycle.get("commands") or []
                 had_work = bool(decisions or commands)
@@ -1598,7 +1607,8 @@ def api_apply_progress():
 
 
 def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
-                     cloud_fail_streak: int = 0, connector_errors=None) -> list:
+                     cloud_fail_streak: int = 0, connector_errors=None,
+                     cloud_error: str = "") -> list:
     """Сторожа деградации (шаг 7): приложение стоит на чужих недокументированных
     опорах (лента вакансий Salling, их форма подачи) — падение опоры надо хотя бы
     ЗАМЕЧАТЬ и говорить о нём пользователю, а не молча показывать пустой список.
@@ -1619,11 +1629,18 @@ def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
                 "Проверь почту, подались ли заявки, и напиши в поддержку @wexwxeee.",
         })
     if cloud_fail_streak >= 3:
+        quota_exhausted = "исчерпало лимит" in str(cloud_error).lower()
         warns.append({
             "id": "telegram-cloud-down",
-            "text": "Нет устойчивой связи с Telegram: команды с телефона временно "
-                    "не доходят до ПК. WexFlow продолжит попытки автоматически. "
-                "Проверь интернет; локальный поиск и ручная подача работают.",
+            "text": (
+                "Облачная база Telegram исчерпала квоту: команды с телефона не доходят "
+                "до ПК. Локальный поиск и ручная подача работают; нужно заменить или "
+                "расширить облачную базу."
+                if quota_exhausted else
+                "Нет устойчивой связи с Telegram: команды с телефона временно "
+                "не доходят до ПК. WexFlow продолжит попытки автоматически. "
+                "Проверь интернет; локальный поиск и ручная подача работают."
+            ),
         })
     if connector_errors:
         warns.append({
@@ -1646,7 +1663,8 @@ def api_health():
     return {"service": "wexflow-salling", "warnings": _health_warnings(
         _sync_state.get("last_hits"), bool(_sync_state.get("sync_failed")), streak,
         int(_tg_poll_state.get("fail_streak") or 0),
-        _sync_state.get("connector_errors") or [])}
+        _sync_state.get("connector_errors") or [],
+        str(_tg_poll_state.get("last_error") or ""))}
 
 
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
@@ -3318,13 +3336,23 @@ def account_page(request: Request, saved: str = "", missing: str = "",
                  unlinked: str = "", unlink_warning: str = ""):
     """Общие настройки приложения: единый профиль, документы и подписка."""
     # если уже вошли — освежим тариф/имя из облака (подхватит выданный Pro/Max)
-    if account_mod.is_signed_in():
+    locally_signed_in = account_mod.is_signed_in()
+    cloud_account_linked = None
+    if locally_signed_in:
         try:
-            u = cloud_auth.fetch_session()
-            if u:
+            session_state = cloud_auth.fetch_session_state()
+            if session_state is not None:
+                cloud_account_linked = bool(session_state.get("loggedIn"))
+            u = session_state.get("user") if (
+                session_state and session_state.get("loggedIn")
+                and isinstance(session_state.get("user"), dict)
+            ) else None
+            if isinstance(u, dict):
                 account_mod.apply_session(u)
         except Exception:  # noqa: BLE001 — обновление не должно мешать открытию страницы
             pass
+    telegram_relink = bool(locally_signed_in and cloud_account_linked is False)
+    telegram_ready = bool(locally_signed_in and not telegram_relink)
     profile = profile_store.load_profile()
     city_options, country_options = _profile_choices()
     missing_fields = [x for x in missing.split(",") if x]
@@ -3339,6 +3367,8 @@ def account_page(request: Request, saved: str = "", missing: str = "",
         "account": account_mod.status(profile),
         "account_tg_id": account_mod.load().get("tg_id") or "",
         "cloud_login_url": cloud_auth.login_url(),
+        "telegram_ready": telegram_ready,
+        "telegram_relink": telegram_relink,
     })
 
 
@@ -3831,7 +3861,10 @@ def account_login_poll():
             "username": acc.get("username") or "",
             "plan": acc.get("plan") or "free",
         })
-    return JSONResponse({"signed_in": account_mod.is_signed_in()})
+    return JSONResponse({
+        "signed_in": False,
+        "local_signed_in": account_mod.is_signed_in(),
+    })
 
 
 @app.post("/account/logout")
@@ -4386,6 +4419,8 @@ def telegram_status():
         "cloud_state": cloud_state,
         "cloud_fail_streak": fail_streak,
         "cloud_last_ok": last_ok,
+        "cloud_error": str(_tg_poll_state.get("last_error") or ""),
+        "cloud_error_code": str(_tg_poll_state.get("error_code") or ""),
         "tg_id": acc.get("tg_id") or "",
         "username": acc.get("username") or "",
         "name": acc.get("tg_name") or "",
@@ -4481,13 +4516,35 @@ def telegram_setup_test():
         "Связь с этим компьютером работает. Теперь можно включать уведомления "
         "и подтверждение подачи в настройках Telegram."
     )
-    return JSONResponse({
+    if str(result.get("error") or "").strip().lower() == "device not linked":
+        link = cloud_auth.link_new()
+        if link.get("ok") and link.get("code"):
+            code = str(link["code"])
+            bot_username = str(link.get("botUsername") or "wexflowbot")
+            result = {
+                "ok": False,
+                "code": "device_not_linked",
+                "error": (
+                    f"Аккаунт сохранён на ПК, но облачная привязка отсутствует. "
+                    f"Отправь боту код {code}."
+                ),
+                "needsRelink": True,
+                "linkCode": code,
+                "botUrl": f"https://t.me/{bot_username}?start={code}",
+            }
+    payload = {
         "ok": bool(result.get("ok")),
         "code": str(result.get("code") or ""),
         "error": str(result.get("error") or ""),
         "needsBotStart": bool(result.get("needsBotStart")),
         "botUrl": str(result.get("botUrl") or "https://t.me/wexflowbot"),
-    })
+    }
+    if result.get("needsRelink"):
+        payload.update({
+            "needsRelink": True,
+            "linkCode": str(result.get("linkCode") or ""),
+        })
+    return JSONResponse(payload)
 
 
 @app.post("/api/telegram/send-current")

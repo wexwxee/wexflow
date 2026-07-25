@@ -106,6 +106,9 @@ def test_profile_controls_and_remove_buttons_are_present():
     sidebar = Path("templates/_ui.html").read_text(encoding="utf-8")
     settings = Path("templates/settings.html").read_text(encoding="utf-8")
     assert "data-candidate-profile-open" in sidebar
-    assert "Создать чистый профиль" in sidebar
+    assert "Новый профиль человека" in sidebar
+    assert "Данные, документы и подачи начнутся с нуля" in sidebar
+    assert "Создать профиль" in sidebar
+    assert "candidate-profile-action" in sidebar
     assert 'name="remove_document" value="cv"' in settings
     assert 'name="remove_document" value="cover"' in settings

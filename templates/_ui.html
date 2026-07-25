@@ -58,16 +58,29 @@
               <b>{{ person.name }}</b>
               <small>{{ 'Текущий профиль' if person.active else ('Ваш основной профиль' if person.primary else 'Отдельный чистый профиль') }}</small>
             </span>
-            {% if person.active %}<span class="candidate-profile-check">{{ ic.i('check', 17) }}</span>{% endif %}
+            {% if person.active %}
+              <span class="candidate-profile-check">{{ ic.i('check', 17) }}</span>
+            {% else %}
+              <span class="candidate-profile-action">Открыть <span aria-hidden="true">›</span></span>
+            {% endif %}
           </button>
           {% endfor %}
         </div>
         <form class="candidate-profile-add" data-candidate-profile-add>
-          <label for="candidateProfileName">Добавить человека</label>
-          <div>
-            <input id="candidateProfileName" name="name" maxlength="40" autocomplete="off"
-                   placeholder="Например, Сестра" required>
-            <button type="submit">Создать чистый профиль</button>
+          <div class="candidate-profile-add-head">
+            <span class="candidate-profile-add-avatar" aria-hidden="true">+</span>
+            <span>
+              <b>Новый профиль человека</b>
+              <small>Данные, документы и подачи начнутся с нуля</small>
+            </span>
+          </div>
+          <div class="candidate-profile-add-controls">
+            <label class="candidate-profile-name-field" for="candidateProfileName">
+              <span>Имя профиля</span>
+              <input id="candidateProfileName" name="name" maxlength="40" autocomplete="off"
+                     placeholder="Например, Сестра" required>
+            </label>
+            <button type="submit"><span aria-hidden="true">+</span> Создать профиль</button>
           </div>
           <p class="candidate-profile-error" data-candidate-profile-error hidden></p>
         </form>
