@@ -4,10 +4,10 @@ import publish_release
 
 
 def test_release_notes_use_current_changelog():
-    notes = publish_release._release_notes("1.3.12")
+    notes = publish_release._release_notes("1.3.13")
 
-    assert notes.startswith("WexFlow 1.3.12")
-    assert "HTTP 500" in notes
+    assert notes.startswith("WexFlow 1.3.13")
+    assert "нестабильное разворачивание окна" in notes
     assert "WexFlow-Setup.exe" in notes
 
 

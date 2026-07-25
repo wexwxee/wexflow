@@ -149,6 +149,8 @@ body {
 .traffic-close { background: #ff6fae; }      /* розовая — закрыть */
 .traffic-dot:hover { filter: brightness(1.08); }
 .traffic-dot:active { transform: scale(.92); }
+.traffic-dot:disabled { cursor:default; pointer-events:none; }
+body.wex-window-fullscreen .wex-resize { pointer-events:none !important; }
 
 /* ── окно «Что нового» ─────────────────────────────────────────── */
 .wn-overlay {

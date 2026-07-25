@@ -3,6 +3,12 @@
    Resize has no native equivalent for a frameless WebView2 window, so we add a
    thin invisible border that calls the Python js_api (window.resize via FixPoint). */
 (function () {
+  // The pywebviewready event and the polling fallback can become ready in the
+  // same tick. Installing twice duplicated the fullscreen handler and resize
+  // borders, so a single gesture could trigger two native transitions.
+  if (window.__wexWindowChromeInstalled) return;
+  window.__wexWindowChromeInstalled = true;
+
   function api() {
     var p = window.pywebview;
     return p && p.api ? p.api : null;
@@ -10,10 +16,19 @@
 
   function ready(fn) {
     if (api()) { fn(); return; }
-    window.addEventListener("pywebviewready", fn, { once: true });
+    var done = false;
+    var t = null;
+    function runOnce() {
+      if (done || !api()) return;
+      done = true;
+      if (t) window.clearInterval(t);
+      window.removeEventListener("pywebviewready", runOnce);
+      fn();
+    }
+    window.addEventListener("pywebviewready", runOnce);
     var n = 0;
-    var t = window.setInterval(function () {
-      if (api()) { window.clearInterval(t); fn(); }
+    t = window.setInterval(function () {
+      if (api()) runOnce();
       else if (++n > 200) window.clearInterval(t);
     }, 50);
   }
@@ -22,13 +37,53 @@
     var bridge = api();
     if (!bridge || !bridge.resize_window) return;
 
+    var togglePending = false;
+    function syncFullscreen(result) {
+      var fullscreen = !!(result && result.fullscreen);
+      document.body.classList.toggle("wex-window-fullscreen", fullscreen);
+      document.querySelectorAll('[data-window-control="toggle_maximize"]').forEach(function (button) {
+        button.setAttribute("aria-pressed", fullscreen ? "true" : "false");
+      });
+    }
+    function setToggleBusy(busy) {
+      document.querySelectorAll('[data-window-control="toggle_maximize"]').forEach(function (button) {
+        button.disabled = !!busy;
+        button.setAttribute("aria-busy", busy ? "true" : "false");
+      });
+    }
+    function toggleMaximize() {
+      if (togglePending) return Promise.resolve({ busy: true });
+      var a = api();
+      if (!a || !a.toggle_maximize) return Promise.resolve({ ok: false });
+      togglePending = true;
+      setToggleBusy(true);
+      return Promise.resolve(a.toggle_maximize())
+        .then(function (result) {
+          syncFullscreen(result || {});
+          return result;
+        })
+        .catch(function () { return { ok: false }; })
+        .finally(function () {
+          window.setTimeout(function () {
+            togglePending = false;
+            setToggleBusy(false);
+          }, 350);
+        });
+    }
+    window.WexFlowWindowChrome = {
+      toggleMaximize: toggleMaximize,
+      syncFullscreen: syncFullscreen
+    };
+    if (bridge.window_state) {
+      Promise.resolve(bridge.window_state()).then(syncFullscreen).catch(function () {});
+    }
+
     // double-click the top bar toggles maximize
     var bar = document.querySelector(".desktop-framebar");
     if (bar) {
       bar.addEventListener("dblclick", function (e) {
         if (e.target.closest("button, a, input, select, textarea")) return;
-        var a = api();
-        if (a && a.toggle_maximize) a.toggle_maximize();
+        toggleMaximize();
       });
     }
 
@@ -85,6 +140,7 @@
       });
       el.addEventListener("mousedown", function (e) {
         if (e.button !== 0) return;
+        if (document.body.classList.contains("wex-window-fullscreen")) return;
         e.preventDefault();
         active = dir;
         anchor = cfg.a;

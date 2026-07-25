@@ -21,7 +21,7 @@
     }
   })();
 </script>
-<link rel="stylesheet" href="/static/theme.css?v=20260705-health">
+<link rel="stylesheet" href="/static/theme.css?v=20260725-fullscreen">
 {% block style %}{% endblock %}
 </head>
 <body>
@@ -96,6 +96,10 @@
         event.stopPropagation();
         var action = button.dataset.windowControl;
         var api = window.pywebview && window.pywebview.api;
+        if (action === "toggle_maximize" && window.WexFlowWindowChrome) {
+          window.WexFlowWindowChrome.toggleMaximize();
+          return;
+        }
         if (api && typeof api[action] === "function") {
           api[action]();
         }
@@ -171,7 +175,7 @@
     setInterval(tick, 90000);
   })();
 </script>
-<script src="/static/window_chrome.js?v=20260614-drag-resize"></script>
+<script src="/static/window_chrome.js?v=20260725-fullscreen-race"></script>
 <script>
   // Открыть мини-окно автопилота: в приложении — отдельным окном (pywebview),
   // в браузере (dev) — обычным всплывающим окном.

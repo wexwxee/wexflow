@@ -297,82 +297,13 @@ class WindowControls:
     def __init__(self):
         self._maximized = False
         self._fullscreen = False
-        self._restore_rect = None
+        self._window_transition_lock = threading.Lock()
+        self._last_window_toggle = 0.0
         self.update_info = None  # заполняется фоновой проверкой обновлений
 
     def _window(self):
         import webview
         return webview.windows[0] if webview.windows else None
-
-    def _native_hwnd(self, window) -> int | None:
-        native = getattr(window, "native", None)
-        handle = getattr(native, "Handle", None)
-        if handle is None:
-            return None
-        try:
-            return int(handle.ToInt64())
-        except Exception:  # noqa: BLE001
-            try:
-                return int(handle.ToInt32())
-            except Exception:  # noqa: BLE001
-                try:
-                    return int(handle)
-                except Exception:  # noqa: BLE001
-                    return None
-
-    def _native_window_rect(self, hwnd: int) -> tuple[int, int, int, int] | None:
-        import ctypes
-        from ctypes import wintypes
-
-        rect = wintypes.RECT()
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        if not user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
-            return None
-        return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
-
-    def _native_monitor_rect(self, hwnd: int) -> tuple[int, int, int, int] | None:
-        import ctypes
-        from ctypes import wintypes
-
-        class MONITORINFO(ctypes.Structure):
-            _fields_ = [
-                ("cbSize", wintypes.DWORD),
-                ("rcMonitor", wintypes.RECT),
-                ("rcWork", wintypes.RECT),
-                ("dwFlags", wintypes.DWORD),
-            ]
-
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
-        user32.MonitorFromWindow.restype = wintypes.HMONITOR
-        user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
-        user32.GetMonitorInfoW.restype = wintypes.BOOL
-
-        monitor = user32.MonitorFromWindow(wintypes.HWND(hwnd), 2)  # nearest monitor
-        if not monitor:
-            return None
-        info = MONITORINFO()
-        info.cbSize = ctypes.sizeof(MONITORINFO)
-        if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
-            return None
-        r = info.rcMonitor
-        return int(r.left), int(r.top), int(r.right), int(r.bottom)
-
-    def _native_set_rect(self, hwnd: int, rect: tuple[int, int, int, int]) -> bool:
-        import ctypes
-        from ctypes import wintypes
-
-        left, top, right, bottom = rect
-        width = max(1, int(right - left))
-        height = max(1, int(bottom - top))
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        user32.SetWindowPos.argtypes = [
-            wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
-            ctypes.c_int, ctypes.c_int, wintypes.UINT,
-        ]
-        user32.SetWindowPos.restype = wintypes.BOOL
-        flags = 0x0004 | 0x0200 | 0x0020 | 0x0040  # no z-order, no owner z-order, frame changed, show
-        return bool(user32.SetWindowPos(wintypes.HWND(hwnd), None, left, top, width, height, flags))
 
     def minimize(self):
         window = self._window()
@@ -380,41 +311,62 @@ class WindowControls:
             window.minimize()
         return True
 
-    def toggle_maximize(self):
+    def _native_fullscreen_state(self, window) -> bool | None:
+        """Read pywebview's real state when its WinForms window is available."""
+        native = getattr(window, "native", None)
+        state = getattr(native, "is_fullscreen", None)
+        return None if state is None else bool(state)
+
+    def window_state(self):
         window = self._window()
-        if not window:
-            return True
-        if os.name == "nt":
-            try:
-                hwnd = self._native_hwnd(window)
-                if hwnd:
-                    if self._fullscreen and self._restore_rect:
-                        if self._native_set_rect(hwnd, self._restore_rect):
-                            self._fullscreen = False
-                            self._maximized = False
-                            return True
-                    current = self._native_window_rect(hwnd)
-                    target = self._native_monitor_rect(hwnd)
-                    if current and target and self._native_set_rect(hwnd, target):
-                        self._restore_rect = current
-                        self._fullscreen = True
-                        self._maximized = True
-                        return True
-            except Exception:  # noqa: BLE001
-                pass
+        native_state = self._native_fullscreen_state(window) if window else None
+        if native_state is not None:
+            self._fullscreen = native_state
+            self._maximized = native_state
+        return {"ok": True, "fullscreen": bool(self._fullscreen)}
+
+    def toggle_maximize(self):
+        # JS bridge methods run on worker threads. Two quick clicks used to enter
+        # SetWindowPos concurrently and could leave WinForms/WebView2 in a broken
+        # state. Only one UI transition may exist at a time.
+        if not self._window_transition_lock.acquire(blocking=False):
+            return {"ok": True, "fullscreen": bool(self._fullscreen), "busy": True}
         try:
-            if self._maximized:
-                window.restore()
-            else:
-                window.maximize()
-            self._maximized = not self._maximized
-        except Exception:  # noqa: BLE001
+            now = time.monotonic()
+            if now - self._last_window_toggle < 0.35:
+                return {"ok": True, "fullscreen": bool(self._fullscreen), "busy": True}
+
+            window = self._window()
+            if not window:
+                return {"ok": False, "fullscreen": bool(self._fullscreen)}
+
+            native_state = self._native_fullscreen_state(window)
+            before = self._fullscreen if native_state is None else native_state
             try:
+                # pywebview marshals this operation onto the WinForms UI thread,
+                # fits the current monitor and disables DWM rounding/border.
+                # The old direct SetWindowPos path caused the thin left line and
+                # intermittent crashes during overlapping transitions.
                 window.toggle_fullscreen()
-                self._fullscreen = not self._fullscreen
-            except Exception:  # noqa: BLE001
-                pass
-        return True
+                after = self._native_fullscreen_state(window)
+                self._fullscreen = (not before) if after is None else after
+                self._maximized = self._fullscreen
+                self._last_window_toggle = time.monotonic()
+                return {"ok": True, "fullscreen": bool(self._fullscreen)}
+            except Exception:  # noqa: BLE001 — safe fallback on other platforms
+                try:
+                    if self._maximized:
+                        window.restore()
+                    else:
+                        window.maximize()
+                    self._maximized = not self._maximized
+                    self._fullscreen = self._maximized
+                    self._last_window_toggle = time.monotonic()
+                    return {"ok": True, "fullscreen": bool(self._fullscreen)}
+                except Exception:  # noqa: BLE001
+                    return {"ok": False, "fullscreen": bool(self._fullscreen)}
+        finally:
+            self._window_transition_lock.release()
 
     def get_location(self):
         script = r"""
@@ -455,6 +407,8 @@ if ($started -and -not $coord.IsUnknown) {
         """
         window = self._window()
         if not window:
+            return False
+        if self._fullscreen or self._window_transition_lock.locked():
             return False
         w = max(900, int(width))
         h = max(600, int(height))
