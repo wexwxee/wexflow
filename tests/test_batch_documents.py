@@ -119,7 +119,7 @@ def test_batch_ai_choice_is_forwarded_to_worker():
         stack.enter_context(mock.patch.object(
             app, "_partition_submit_ids", return_value=(["job-1"], [], [])
         ))
-        stack.enter_context(mock.patch.object(app.ai_filters, "api_key", return_value="key"))
+        stack.enter_context(mock.patch.object(app.ai_gateway, "available", return_value=True))
         stack.enter_context(mock.patch.object(app, "_claim_apply_slot", return_value=True))
         worker = stack.enter_context(mock.patch.object(app, "_run_apply_worker"))
 

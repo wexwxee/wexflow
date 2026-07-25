@@ -43,9 +43,19 @@ class GroqProvider(base.BaseProvider):
                  fallback_model: str | None = None):
         super().__init__(account_id, model=model)
         self._fallback = (fallback_model or FALLBACK_MODEL).strip() or FALLBACK_MODEL
+        self._key_override: str | None = None
+
+    @classmethod
+    def with_key(cls, key: str, account_id: str = "probe", **kw) -> "GroqProvider":
+        """Экземпляр для проверки ПЕРЕДАННОГО ключа (до сохранения)."""
+        p = cls(account_id, **kw)
+        p._key_override = (key or "").strip()
+        return p
 
     # -- статус -------------------------------------------------------------- #
     def _key(self) -> str:
+        if self._key_override is not None:
+            return self._key_override
         return ai_secrets.get_api_key("groq", self.account_id)
 
     def available(self) -> bool:

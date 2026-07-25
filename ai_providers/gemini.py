@@ -25,7 +25,19 @@ BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 class GeminiProvider(base.BaseProvider):
     provider_name = "gemini"
 
+    def __init__(self, account_id: str, *, model: str | None = None):
+        super().__init__(account_id, model=model)
+        self._key_override: str | None = None
+
+    @classmethod
+    def with_key(cls, key: str, account_id: str = "probe", **kw) -> "GeminiProvider":
+        p = cls(account_id, **kw)
+        p._key_override = (key or "").strip()
+        return p
+
     def _key(self) -> str:
+        if self._key_override is not None:
+            return self._key_override
         return ai_secrets.get_api_key("gemini", self.account_id)
 
     def available(self) -> bool:

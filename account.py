@@ -79,6 +79,7 @@ def _apply_session(user: dict, *, respect_pause: bool) -> dict | None:
         })
         save(data)
         _sync_subscription(plan)
+    _drop_ai_keys()  # вход другим аккаунтом — не показывать ключи предыдущего
     return data
 
 
@@ -92,12 +93,22 @@ def apply_cloud_session(user: dict) -> bool:
     return _apply_session(user, respect_pause=True) is not None
 
 
+def _drop_ai_keys() -> None:
+    """Смена/выход аккаунта: ключи ИИ прежнего аккаунта не должны «пережить» выход."""
+    try:
+        import ai_secrets
+        ai_secrets.on_account_switch()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def sign_out() -> None:
     with _LOCK:
         data = dict(DEFAULT)
         data["cloud_sync_paused"] = True
         save(data)
         _sync_subscription("free")
+    _drop_ai_keys()
 
 
 def cloud_sync_paused() -> bool:

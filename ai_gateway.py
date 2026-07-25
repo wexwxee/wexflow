@@ -147,7 +147,46 @@ def validate_key(provider: str, *, account_id: str | None = None,
                 use_generation: bool = False) -> AIResult:
     account_id = _account(account_id)
     prov = GroqProvider(account_id) if provider == "groq" else GeminiProvider(account_id)
-    return prov.validate_key(use_generation=use_generation)
+    res = prov.validate_key(use_generation=use_generation)
+    try:
+        ai_secrets.set_last_check(provider, res.ok if res.error_code != base.NOT_CONNECTED else None, account_id)
+    except Exception:  # noqa: BLE001
+        pass
+    return res
+
+
+def validate_supplied_key(provider: str, key: str, *, use_generation: bool = False) -> AIResult:
+    """Проверить ПЕРЕДАННЫЙ ключ, ничего не сохраняя (мастер подключения)."""
+    cls = GroqProvider if provider == "groq" else GeminiProvider
+    return cls.with_key(key).validate_key(use_generation=use_generation)
+
+
+def connect(provider: str, key: str, *, account_id: str | None = None,
+           consent: bool | None = None, model: str | None = None,
+           use_generation: bool = False) -> AIResult:
+    """Подключить провайдера: сперва проверка ключа, СОХРАНЕНИЕ только при успехе."""
+    account_id = _account(account_id)
+    key = (key or "").strip()
+    if provider not in ("gemini", "groq"):
+        return AIResult(ok=False, provider=provider, error_code=base.INVALID_REQUEST,
+                        error_message="Неизвестный провайдер.")
+    if not key:
+        return AIResult(ok=False, provider=provider, error_code=base.INVALID_KEY,
+                        error_message="Пустой ключ.")
+    res = validate_supplied_key(provider, key, use_generation=use_generation)
+    if not res.ok:
+        return res  # ключ НЕ сохраняем
+    primary = True if provider == "gemini" else None
+    ai_secrets.set_api_key(provider, key, account_id, consent=consent,
+                           model=model, primary=primary)
+    ai_secrets.set_last_check(provider, True, account_id)
+    ai_secrets.on_account_switch(account_id)  # сбросить кэш, чтобы подхватить новый ключ
+    return res
+
+
+def disconnect(provider: str, *, account_id: str | None = None) -> bool:
+    account_id = _account(account_id)
+    return ai_secrets.delete_api_key(provider, account_id)
 
 
 # --------------------------------------------------------------------------- #

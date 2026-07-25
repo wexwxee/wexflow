@@ -45,6 +45,8 @@ import applications
 import autopilot
 import autostart
 import ai_filters
+import ai_gateway
+import ai_secrets
 import ai_usage
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -225,9 +227,16 @@ def _sync_jobs(force_connectors: bool = False):
 
 
 def _ai_usage_payload() -> dict:
+    # Легаси-блок (индикатор Gemini в хабе 1.3.21) — семантика прежняя: Gemini.
     payload = ai_usage.status()
-    payload["connected"] = ai_filters.available()
+    payload["connected"] = ai_filters.gemini_available()
     payload["model"] = ai_filters.model_name() if payload["connected"] else ""
+    # Новый мультипровайдерный блок (sidebar-индикатор, раздел «ИИ и лимиты»).
+    try:
+        payload["ai"] = ai_gateway.usage_payload()
+    except Exception:  # noqa: BLE001 — статус ИИ не должен ронять страницу
+        payload["ai"] = {"connected": False, "primary": "", "compact": None,
+                         "providers": {}, "active": None}
     return payload
 
 
@@ -2723,7 +2732,7 @@ def index(
         "batch": batch, "batch_mode": mode, "skipped": skipped, "dup": dup,
         "apply_files": _profile_file_info(_profile),
         "document_rule_count": len(document_rules.get_rules()),
-        "batch_ai_available": bool(ai_filters.api_key()),
+        "batch_ai_available": ai_gateway.available(),
         "batch_ai_on": settings_store.get_ai_fill(),
         "batch_ai_motivation_on": settings_store.get_ai_fill_motivation(),
         "setup": _setup,
@@ -2897,6 +2906,90 @@ def api_ai_usage():
     return JSONResponse(_ai_usage_payload())
 
 
+def _ai_public(res) -> dict:
+    """Безопасный ответ мастера/проверки: без ключа и сырого HTTP JSON."""
+    return {
+        "ok": bool(res.ok),
+        "provider": res.provider,
+        "model": res.model,
+        "error_code": res.error_code,
+        "error": res.error_message,
+        "retry_after": res.retry_after,
+    }
+
+
+@app.get("/api/ai/providers")
+def api_ai_providers():
+    """Карточки провайдеров текущего аккаунта (только текущего; без ключей)."""
+    return JSONResponse(ai_gateway.usage_payload())
+
+
+@app.post("/api/ai/connect")
+async def api_ai_connect(request: Request):
+    """Мастер подключения: проверить переданный ключ и сохранить ТОЛЬКО при успехе.
+    Ключ не отражается обратно, не логируется и не уходит в облако."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    provider = str(body.get("provider") or "").strip()
+    key = str(body.get("key") or "").strip()
+    consent = bool(body.get("consent")) if body.get("consent") is not None else None
+    use_generation = bool(body.get("use_generation"))
+    res = ai_gateway.connect(provider, key, consent=consent,
+                             use_generation=use_generation)
+    out = _ai_public(res)
+    if res.ok:
+        out["usage"] = ai_gateway.usage_payload()
+        out["info"] = ai_secrets.info(provider)  # маска, не ключ
+    status = 200 if res.ok else (401 if res.error_code == "invalid_key" else 200)
+    return JSONResponse(out, status_code=status)
+
+
+@app.post("/api/ai/validate")
+async def api_ai_validate(request: Request):
+    """Проверить уже сохранённое подключение (кнопка «Проверить»)."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    provider = str(body.get("provider") or "").strip()
+    if provider not in ("gemini", "groq"):
+        return JSONResponse({"ok": False, "error": "Неизвестный провайдер."}, status_code=400)
+    res = ai_gateway.validate_key(provider, use_generation=bool(body.get("use_generation")))
+    out = _ai_public(res)
+    out["usage"] = ai_gateway.usage_payload()
+    return JSONResponse(out)
+
+
+@app.post("/api/ai/disconnect")
+async def api_ai_disconnect(request: Request):
+    """Отключить/удалить локальный ключ провайдера (с подтверждением на фронте)."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    provider = str(body.get("provider") or "").strip()
+    if provider not in ("gemini", "groq"):
+        return JSONResponse({"ok": False, "error": "Неизвестный провайдер."}, status_code=400)
+    removed = ai_gateway.disconnect(provider)
+    return JSONResponse({"ok": True, "removed": removed, "usage": ai_gateway.usage_payload()})
+
+
+@app.post("/api/ai/consent")
+async def api_ai_consent(request: Request):
+    """Явное согласие на передачу необходимых полей выбранному ИИ."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    provider = str(body.get("provider") or "").strip()
+    if provider not in ("gemini", "groq"):
+        return JSONResponse({"ok": False, "error": "Неизвестный провайдер."}, status_code=400)
+    ai_secrets.set_consent(provider, value=bool(body.get("value", True)))
+    return JSONResponse({"ok": True, "usage": ai_gateway.usage_payload()})
+
+
 @app.post("/api/autopilot/scan-now")
 def api_autopilot_scan_now():
     """Запустить проверку вручную («Проверить сейчас») — тот же фоновый скан."""
@@ -2984,8 +3077,10 @@ async def api_autopilot_ai_suggest(request: Request):
     if not ai_filters.available():
         return {
             "ok": False,
-            "error": "ИИ не подключён. Добавь бесплатный ключ Gemini в файл secrets.json "
-                     "(ключ gemini_api_key) — см. AI Studio.",
+            "error_code": "not_connected",
+            "error": "ИИ ещё не подключён. Открой «Настройки → ИИ и лимиты» и подключи "
+                     "бесплатный ключ (Groq — за пару минут, без карты).",
+            "setupUrl": "/settings/ai",
         }
     try:
         body = await request.json()
@@ -3466,6 +3561,7 @@ def _settings_context(
         "autopilot": ("Автопилот", "Наборы фильтров, режим работы и автоотправка"),
         "telegram": ("Telegram", "Статус @wexflowbot, проверка и ручная отправка текущих"),
         "forms": ("Анкеты и ИИ", "Умное дозаполнение внешних форм и безопасные черновики"),
+        "ai": ("ИИ и лимиты", "Провайдеры ИИ, подключение бесплатного Groq и остаток ресурса"),
         "overview": ("Настройки", "Короткая карта управления WexFlow"),
     }
     settings_title, settings_meta = titles.get(section, titles["salling"])
@@ -3498,8 +3594,12 @@ def _settings_context(
         "ai_available": ai_filters.available(),
         "ai_fill_on": settings_store.get_ai_fill(),
         "ai_fill_motivation_on": settings_store.get_ai_fill_motivation(),
-        "ai_fill_available": bool(ai_filters.api_key()),
+        "ai_fill_available": ai_gateway.available(),
         "ai_usage": _ai_usage_payload(),
+        "ai_providers": ai_gateway.usage_payload(),
+        "ai_groq_keys_url": "https://console.groq.com/keys",
+        "ai_groq_privacy_url": "https://console.groq.com/docs/your-data",
+        "ai_legacy_gemini": bool(ai_secrets.legacy_gemini_key()) and not ai_secrets.info("gemini")["connected"],
         "autopilot_profiles": ap_profiles, "autopilot_profile": sel_profile,
         "autopilot_profile_count": autopilot.profile_match_count(sel_profile),
         "autopilot_count": autopilot.match_count(),
@@ -3562,6 +3662,23 @@ def settings_telegram(request: Request, saved: str = "", geoerror: str = "", mis
 @app.get("/settings/forms", response_class=HTMLResponse)
 def settings_forms(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     return _render_settings_section(request, "forms", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.get("/settings/ai", response_class=HTMLResponse)
+def settings_ai(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+    return _render_settings_section(request, "ai", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.post("/settings/ai/migrate-gemini")
+async def settings_ai_migrate_gemini(request: Request):
+    """Привязать существующий Gemini-ключ (secrets.json) к текущему аккаунту —
+    только по явному подтверждению владельца."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    ok = ai_secrets.migrate_legacy_gemini(confirm=bool(body.get("confirm")))
+    return JSONResponse({"ok": ok, "usage": ai_gateway.usage_payload()})
 
 
 @app.post("/account/save")
@@ -4813,11 +4930,11 @@ def apply_batch(
     use_ai = ai_fill in {"1", "true", "on", "yes"}
     if not ids:
         return _redirect_back(request, "/", error="Сначала выбери хотя бы одну вакансию для пакетной подачи.")
-    if use_ai and not ai_filters.api_key():
+    if use_ai and not ai_gateway.available():
         return _redirect_back(
             request,
             "/",
-            error="ИИ-заполнение не запущено: сначала добавь ключ Gemini в настройках анкет.",
+            error="ИИ-заполнение не запущено: сначала подключи ИИ в «Настройки → ИИ и лимиты».",
         )
     # Коннекторы работают только assisted: пакетный Salling worker не должен
     # получить их id даже через вручную подделанную форму.
