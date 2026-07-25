@@ -40,6 +40,10 @@ def test_hub_separates_salling_and_connector_counts_and_uses_clean_copy():
     status = {
         "enabled": False, "running": False, "found": 0, "prepared": 0,
         "submitted_today": 0, "submitted_total": 0, "events": [], "now": 0,
+        "ai_usage": {
+            "connected": True, "percent_remaining": 84, "remaining": 210,
+            "limit": 250, "reset_at": 1784962800,
+        },
     }
     with mock.patch.object(app, "get_session", sessions), \
             mock.patch.object(app, "_seven_eleven_state", return_value={
@@ -70,6 +74,10 @@ def test_hub_separates_salling_and_connector_counts_and_uses_clean_copy():
     assert "Salling Jobs" not in page
     assert "Apply Studio" not in page
     assert ">active<" not in page and ">applied<" not in page and ">total<" not in page
+    assert "Ресурс ИИ" in page
+    assert "Осталось 210 из 250 запросов" in page
+    assert "Искать новые сейчас" in page
+    assert "Важное за последние 24 часа" in page
 
 
 if __name__ == "__main__":

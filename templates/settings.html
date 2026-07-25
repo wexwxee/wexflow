@@ -251,6 +251,30 @@
   .ai-toggle-copy h2 .ic { color:#8b7bff; }
   .ai-beta { font-size:11px; font-weight:800; color:#8b7bff; padding:2px 8px; border-radius:999px;
     border:1px solid color-mix(in srgb, #8b7bff 40%, var(--glass-line)); background:color-mix(in srgb, #8b7bff 12%, transparent); }
+  .ai-usage-card { background:linear-gradient(135deg, color-mix(in srgb, #8b7bff 11%, transparent), transparent 62%), var(--card); }
+  .ai-usage-head { display:flex; align-items:flex-start; gap:13px; }
+  .ai-usage-icon { width:40px; height:40px; flex:0 0 auto; display:grid; place-items:center; border-radius:11px;
+    color:#a99fff; border:1px solid color-mix(in srgb, #8b7bff 38%, var(--glass-line));
+    background:color-mix(in srgb, #8b7bff 13%, transparent); }
+  .ai-usage-title { flex:1; min-width:0; }
+  .ai-usage-title h2 { margin:0; display:flex; align-items:center; gap:8px; }
+  .ai-usage-title p { margin:5px 0 0; }
+  .ai-usage-percent { flex:0 0 auto; font:800 28px/1 "Space Grotesk",system-ui,sans-serif; color:#b6adff; }
+  .ai-usage-track { height:9px; margin-top:15px; overflow:hidden; border-radius:999px; background:var(--line); }
+  .ai-usage-fill { height:100%; border-radius:inherit; background:linear-gradient(90deg,#8b7bff,#35d98a);
+    transition:width .35s ease; }
+  .ai-usage-meta { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:8px;
+    color:var(--muted); font-size:12px; }
+  .ai-usage-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin-top:14px; }
+  .ai-usage-stat { padding:10px 11px; border:1px solid var(--glass-line); border-radius:10px; background:var(--glass); }
+  .ai-usage-stat b { display:block; color:var(--txt-strong); font-size:17px; }
+  .ai-usage-stat span { display:block; margin-top:2px; color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; }
+  .ai-limit-form { display:flex; align-items:end; gap:9px; flex-wrap:wrap; margin-top:14px; padding-top:14px;
+    border-top:1px solid var(--glass-line); }
+  .ai-limit-field { width:190px; }
+  .ai-limit-field input { width:100%; }
+  .ai-usage-note { margin:11px 0 0; color:var(--muted); font-size:11.5px; line-height:1.5; }
+  @media(max-width:620px){ .ai-usage-stats{grid-template-columns:1fr;} .ai-usage-percent{font-size:23px;} }
   .switch { position:relative; flex:0 0 auto; display:inline-block; width:52px; height:30px; cursor:pointer; }
   .switch input { position:absolute; opacity:0; width:0; height:0; }
   .switch-track { position:absolute; inset:0; border-radius:999px; background:var(--glass);
@@ -993,6 +1017,43 @@
   {% endif %}
 
   {% if settings_section == 'forms' %}
+  <section class="panel ai-usage-card" id="ai-budget">
+    <div class="ai-usage-head">
+      <span class="ai-usage-icon">{{ ic.i('sparkles', 19) }}</span>
+      <div class="ai-usage-title">
+        <h2>Ресурс ИИ за сутки <span class="ai-beta">быстрый контроль</span></h2>
+        <p class="hint">Все запросы Gemini из поиска, документов и заполнения анкет считаются в одном месте.</p>
+      </div>
+      <span class="ai-usage-percent" id="aiUsagePercent">{{ ai_usage.percent_remaining }}%</span>
+    </div>
+    <div class="ai-usage-track" aria-label="Остаток запросов ИИ">
+      <div class="ai-usage-fill" id="aiUsageFill" style="width:{{ ai_usage.percent_remaining }}%"></div>
+    </div>
+    <div class="ai-usage-meta">
+      <span id="aiUsageRemaining">Осталось {{ ai_usage.remaining }} из {{ ai_usage.limit }} запросов</span>
+      <span id="aiUsageReset">Сброс по правилам Google: …</span>
+    </div>
+    <div class="ai-usage-stats">
+      <div class="ai-usage-stat"><b id="aiUsageUsed">{{ ai_usage.used }}</b><span>использовано</span></div>
+      <div class="ai-usage-stat"><b id="aiUsageSuccess">{{ ai_usage.success }}</b><span>успешных ответов</span></div>
+      <div class="ai-usage-stat"><b id="aiUsageErrors">{{ ai_usage.errors }}</b><span>ошибок / ограничений</span></div>
+    </div>
+    <form class="ai-limit-form" id="aiLimitForm">
+      <label class="ai-limit-field">
+        <span class="lbl">Твой RPD-лимит в AI Studio</span>
+        <input type="number" name="daily_limit" id="aiDailyLimit" min="1" max="1000000" value="{{ ai_usage.limit }}">
+      </label>
+      <button class="secondary" type="submit">{{ ic.i('save', 14) }} Сохранить лимит</button>
+      <a class="crosslink" href="{{ ai_usage.rate_limits_url }}">Проверить настоящий лимит в Google AI Studio →</a>
+      <span class="autosave" id="aiLimitStatus"></span>
+    </form>
+    <p class="ai-usage-note">
+      WexFlow показывает честную локальную оценку: Google не предоставляет API с готовым остатком квоты.
+      Лимиты зависят от модели и проекта, считаются на весь проект, а RPD сбрасывается в полночь по тихоокеанскому времени.
+      Если Google вернёт суточный 429, индикатор сразу покажет 0%.
+    </p>
+  </section>
+
   <section class="panel ai-toggle-card">
     <div class="ai-toggle-row">
       <div class="ai-toggle-copy">
@@ -1030,6 +1091,43 @@
 
   <script>
   (function () {
+    function usageClock(epoch) {
+      try {
+        return new Date(epoch * 1000).toLocaleString('ru-RU', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+      } catch (e) { return 'в следующую полночь Google'; }
+    }
+    function renderUsage(u) {
+      if (!u) return;
+      document.getElementById('aiUsagePercent').textContent = (u.percent_remaining || 0) + '%';
+      document.getElementById('aiUsageFill').style.width = (u.percent_remaining || 0) + '%';
+      document.getElementById('aiUsageRemaining').textContent = 'Осталось ' + (u.remaining || 0) + ' из ' + (u.limit || 0) + ' запросов';
+      document.getElementById('aiUsageReset').textContent = 'Сброс: ' + usageClock(u.reset_at);
+      document.getElementById('aiUsageUsed').textContent = u.used || 0;
+      document.getElementById('aiUsageSuccess').textContent = u.success || 0;
+      document.getElementById('aiUsageErrors').textContent = u.errors || 0;
+      document.getElementById('aiDailyLimit').value = u.limit || 250;
+    }
+    renderUsage({{ ai_usage | tojson }});
+    var limitForm = document.getElementById('aiLimitForm');
+    var limitStatus = document.getElementById('aiLimitStatus');
+    if (limitForm) limitForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      limitStatus.textContent = 'Сохраняю…';
+      var fd = new FormData(limitForm);
+      fetch('/settings/ai-usage-limit', { method:'POST', body:fd })
+        .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,data:d}; }); })
+        .then(function(result){
+          if (!result.ok || !result.data.ok) throw new Error(result.data.error || 'Не удалось сохранить');
+          renderUsage(result.data.usage);
+          limitStatus.textContent = 'Лимит сохранён';
+          limitStatus.className = 'autosave saved';
+        })
+        .catch(function(err){
+          limitStatus.textContent = err.message || 'Не удалось сохранить';
+          limitStatus.className = 'autosave error';
+        });
+    });
+
     var toggle = document.getElementById('aiFillToggle');
     if (!toggle) return;
     var motToggle = document.getElementById('aiMotToggle');

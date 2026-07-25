@@ -250,6 +250,9 @@ def test_motivation_is_one_explicit_full_length_draft_call():
 
 def test_gemini_fallback_is_bounded_to_two_models():
     response = mock.Mock(status_code=429)
+    response.json.return_value = {
+        "error": {"message": "Requests per minute limit reached"}
+    }
     with (
         mock.patch.object(ai_fill.ai_filters, "api_key", return_value="test-key"),
         mock.patch.object(
@@ -258,10 +261,12 @@ def test_gemini_fallback_is_bounded_to_two_models():
             return_value=["one", "two", "three", "four"],
         ),
         mock.patch.object(ai_fill.httpx, "post", return_value=response) as post,
+        mock.patch.object(ai_fill.ai_usage, "record_response") as record,
     ):
         assert ai_fill._ask_gemini("prompt") is None
 
     assert post.call_count == 2
+    assert record.call_count == 2
     assert all(call.kwargs["timeout"] <= ai_fill._REQUEST_TIMEOUT_SECONDS for call in post.call_args_list)
 
 

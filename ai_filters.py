@@ -16,6 +16,7 @@ import os
 
 import httpx
 
+import ai_usage
 import config
 
 # Модель по умолчанию — бесплатный Flash. Можно переопределить через окружение
@@ -44,10 +45,10 @@ def available() -> bool:
     return bool(api_key())
 
 
-# Запасные модели на случай 429 (нет бесплатной квоты на модель) или 503
-# (временная перегрузка). Проверено: на бесплатном тарифе живые — 2.5-flash и
-# flash-lite-latest; 2.0-flash у части проектов уже без бесплатной квоты.
-_FALLBACK_MODELS = ("gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash-lite")
+# Запасная стабильная 2.5-модель на случай 429/503. Gemini 2.0 удалён из
+# перебора: Google закрыл его в июне 2026, лишняя попытка только тратила время
+# и путала локальный счётчик запросов.
+_FALLBACK_MODELS = ("gemini-2.5-flash", "gemini-2.5-flash-lite")
 
 
 def _models_to_try() -> list[str]:
@@ -91,9 +92,14 @@ def generate_json(
         except Exception as exc:  # noqa: BLE001
             last_error = f"Не вышло связаться с Gemini: {exc}"
             continue
+        try:
+            response_payload = response.json()
+        except Exception:  # noqa: BLE001
+            response_payload = {}
+        ai_usage.record_response(mdl, response.status_code, response_payload)
         if response.status_code == 200:
             try:
-                raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                raw = response_payload["candidates"][0]["content"]["parts"][0]["text"]
                 data = json.loads(raw)
             except Exception:  # noqa: BLE001
                 last_error = "Не удалось разобрать ответ Gemini."
@@ -103,7 +109,7 @@ def generate_json(
             last_error = "Gemini вернул неожиданный формат."
             continue
         try:
-            detail = (response.json().get("error", {}) or {}).get("message", "")
+            detail = (response_payload.get("error", {}) or {}).get("message", "")
         except Exception:  # noqa: BLE001
             detail = response.text[:200]
         last_error = f"Gemini вернул ошибку {response.status_code}: {detail}"
@@ -186,9 +192,14 @@ def suggest_filters(
         except Exception as e:  # noqa: BLE001
             last_error = f"Не вышло связаться с Gemini: {e}"
             continue
+        try:
+            response_payload = r.json()
+        except Exception:  # noqa: BLE001
+            response_payload = {}
+        ai_usage.record_response(mdl, r.status_code, response_payload)
         if r.status_code == 200:
             try:
-                raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                raw = response_payload["candidates"][0]["content"]["parts"][0]["text"]
                 data = json.loads(raw)
             except Exception:  # noqa: BLE001
                 last_error = "Не удалось разобрать ответ Gemini."
@@ -197,7 +208,7 @@ def suggest_filters(
             return {"ok": True, "fields": fields, "explanation": explanation}
         # ошибка: 429/503 — пробуем следующую модель; иные — отдаём сразу
         try:
-            detail = (r.json().get("error", {}) or {}).get("message", "")
+            detail = (response_payload.get("error", {}) or {}).get("message", "")
         except Exception:  # noqa: BLE001
             detail = r.text[:200]
         last_error = f"Gemini вернул ошибку {r.status_code}: {detail}"
@@ -252,9 +263,14 @@ def chat(messages, categories, brands, employments, regions) -> dict:
         except Exception as e:  # noqa: BLE001
             last_error = f"Не вышло связаться с Gemini: {e}"
             continue
+        try:
+            response_payload = r.json()
+        except Exception:  # noqa: BLE001
+            response_payload = {}
+        ai_usage.record_response(mdl, r.status_code, response_payload)
         if r.status_code == 200:
             try:
-                raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                raw = response_payload["candidates"][0]["content"]["parts"][0]["text"]
                 data = json.loads(raw)
             except Exception:  # noqa: BLE001
                 last_error = "Не удалось разобрать ответ Gemini."
@@ -266,7 +282,7 @@ def chat(messages, categories, brands, employments, regions) -> dict:
                 fields, _ = _sanitize(data["fields"], categories, brands, employments, regions)
             return {"ok": True, "reply": reply or "Хорошо.", "done": done, "fields": fields}
         try:
-            detail = (r.json().get("error", {}) or {}).get("message", "")
+            detail = (response_payload.get("error", {}) or {}).get("message", "")
         except Exception:  # noqa: BLE001
             detail = r.text[:200]
         last_error = f"Gemini вернул ошибку {r.status_code}: {detail}"

@@ -79,6 +79,21 @@ def test_ai_controls_live_in_forms_settings_not_account():
     assert 'id="aiFillToggle"' not in account_source
     assert 'href="/settings/forms"' in account_source
     assert "{% if settings_section == 'forms' %}" in settings_source
+    assert 'id="ai-budget"' in settings_source
+    assert 'id="aiUsagePercent"' in settings_source
+    assert 'id="aiLimitForm"' in settings_source
     assert 'id="aiFillToggle"' in settings_source
     assert "ic.i('edit', 16)" in settings_source
     assert "✍️" not in settings_source
+
+
+def test_daily_ai_limit_can_be_saved_from_settings():
+    usage = {"limit": 500, "remaining": 500, "percent_remaining": 100}
+    with mock.patch.object(app.ai_usage, "set_daily_limit", return_value=500) as save, \
+            mock.patch.object(app, "_ai_usage_payload", return_value=usage):
+        response = asyncio.run(
+            app.settings_ai_usage_limit(_Request({"daily_limit": "500"}))
+        )
+
+    save.assert_called_once_with(500)
+    assert _body(response) == {"ok": True, "usage": usage}

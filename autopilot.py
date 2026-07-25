@@ -51,6 +51,11 @@ DEFAULT_RULE = {
     "submit_scope": "new",      # "new" = только появившиеся ПОСЛЕ включения; "all" = все подходящие
     "autosubmit_baseline": [],  # снимок совпадений на момент включения — их НЕ трогаем (для scope=new)
     "event_log": [],            # лента событий автопилота [{ts,kind,text}] (для монитора)
+    "last_search_at": 0.0,      # последняя завершённая проверка при включённом автопилоте
+    "last_search_new": 0,       # сколько новых совпадений было в последней проверке
+    "last_search_matches": 0,   # сколько всего подходило в последней проверке
+    "last_new_at": 0.0,         # когда последний раз действительно нашлось новое
+    "last_new_count": 0,        # сколько нашлось в той проверке
     # --- режим «по разрешению» через Telegram (по умолчанию ВЫКЛ) ---
     "tg_approval": False,       # спрашивать подтверждение в Telegram перед подачей?
     "tg_pending": [],           # ждут ответа в TG [{job_id, message_id, ts}] (переходное состояние)
@@ -164,6 +169,16 @@ def status() -> dict:
         "found": len(matches),
         "prepared": len(match_ids & prepared_ids),   # из найденных уже подготовлено
         "pending": len(match_ids - prepared_ids),    # ждут подготовки
+        "new_24h": sum(
+            1
+            for job in matches
+            if _seen_ts(job) >= _dt.datetime.utcnow() - _dt.timedelta(hours=24)
+        ),
+        "last_search_at": float(r.get("last_search_at") or 0),
+        "last_search_new": int(r.get("last_search_new") or 0),
+        "last_search_matches": int(r.get("last_search_matches") or 0),
+        "last_new_at": float(r.get("last_new_at") or 0),
+        "last_new_count": int(r.get("last_new_count") or 0),
         "submitted_today": submitted_today(),
         "submitted_total": submitted_total(),
         "daily_limit": int(r.get("daily_limit") or 0),
@@ -1077,7 +1092,16 @@ def scan_and_notify() -> None:
         with get_session() as s:
             existing = set(s.exec(select(Job.id)).all())
         merged = [i for i in seen_list if i in existing] + [i for i in ids if i not in seen]
-        save_rule({"seen_ids": merged[-4000:]})
+        now_ts = _dt.datetime.now().timestamp()
+        patch = {
+            "seen_ids": merged[-4000:],
+            "last_search_at": now_ts,
+            "last_search_new": len(fresh),
+            "last_search_matches": len(matches),
+        }
+        if fresh:
+            patch.update({"last_new_at": now_ts, "last_new_count": len(fresh)})
+        save_rule(patch)
         # В ленту пишем только событие с НОВЫМИ совпадениями: при скане каждые
         # 3 минуты записи «проверил базу, ничего нового» вытесняли из журнала
         # (EVENT_LOG_MAX) реальные подачи и решения за считанные часы. Время

@@ -27,6 +27,7 @@ import uuid
 import httpx
 
 import ai_filters  # переиспуем api_key()/model перебор — не дублируем обвязку
+import ai_usage
 from connectors.fill_common import show_ai_progress
 
 # Поля профиля, которые МОЖНО показывать ИИ. Пути к файлам и техполя не отдаём.
@@ -260,9 +261,14 @@ def _ask_gemini(prompt: str, *, deadline: float | None = None) -> dict | None:
             r = httpx.post(url, headers={"x-goog-api-key": key}, json=body, timeout=timeout)
         except Exception:  # noqa: BLE001
             continue
+        try:
+            response_payload = r.json()
+        except Exception:  # noqa: BLE001
+            response_payload = {}
+        ai_usage.record_response(mdl, r.status_code, response_payload)
         if r.status_code == 200:
             try:
-                raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                raw = response_payload["candidates"][0]["content"]["parts"][0]["text"]
                 data = json.loads(raw)
                 return data if isinstance(data, dict) else None
             except Exception:  # noqa: BLE001

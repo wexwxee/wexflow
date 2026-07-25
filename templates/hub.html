@@ -226,6 +226,32 @@
     border-color: var(--module-accent);
     box-shadow: 0 8px 22px color-mix(in srgb, var(--module-accent) 32%, transparent);
   }
+  /* ── быстрый счётчик ресурса ИИ ───────────────────────────── */
+  .hub-ai-meter {
+    --ai-color:#8b7bff;
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:14px;
+    padding:14px 16px; border:1px solid color-mix(in srgb,var(--ai-color) 32%,var(--glass-line));
+    border-radius:12px; background:linear-gradient(115deg,color-mix(in srgb,var(--ai-color) 10%,transparent),transparent 58%),var(--card);
+    box-shadow:var(--shadow-sm);
+  }
+  .hub-ai-meter.warn { --ai-color:#f5a623; }
+  .hub-ai-meter.danger { --ai-color:#ef5b67; }
+  .hub-ai-ic { width:38px; height:38px; display:grid; place-items:center; border-radius:10px; color:var(--ai-color);
+    background:color-mix(in srgb,var(--ai-color) 14%,transparent); border:1px solid color-mix(in srgb,var(--ai-color) 34%,var(--glass-line)); }
+  .hub-ai-main { min-width:0; }
+  .hub-ai-top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .hub-ai-top b { font-size:13.5px; color:var(--txt-strong); }
+  .hub-ai-top strong { font:800 22px/1 "Space Grotesk",system-ui,sans-serif; color:var(--ai-color); }
+  .hub-ai-track { height:7px; margin-top:8px; overflow:hidden; border-radius:999px; background:var(--line); }
+  .hub-ai-fill { height:100%; border-radius:inherit; background:linear-gradient(90deg,var(--ai-color),var(--accent));
+    transition:width .35s ease; }
+  .hub-ai-copy { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:6px;
+    color:var(--muted); font-size:11.5px; }
+  .hub-ai-settings { color:var(--ai-color); font-size:12px; font-weight:750; text-decoration:none; white-space:nowrap; }
+  @media(max-width:640px) {
+    .hub-ai-meter { grid-template-columns:auto minmax(0,1fr); }
+    .hub-ai-settings { grid-column:2; justify-self:start; }
+  }
   /* ── живой монитор автопилота ─────────────────────────────── */
   .hub-autopilot {
     --ap-accent: #f5a623;
@@ -288,8 +314,19 @@
   }
   .ap-stat span {
     font-size: 11px; color: var(--muted);
-    text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+    text-transform: uppercase; letter-spacing: .06em;
   }
+  .ap-search-state { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+  .ap-search-step { display:flex; align-items:center; gap:9px; min-width:0; padding:10px 11px;
+    border:1px solid var(--glass-line); border-radius:10px; background:color-mix(in srgb,#38b6ff 5%,var(--glass)); }
+  .ap-search-step .ic { color:#38b6ff; }
+  .ap-search-step div { min-width:0; }
+  .ap-search-step span { display:block; color:var(--muted); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; }
+  .ap-search-step b { display:block; margin-top:2px; color:var(--txt-strong); font-size:12.5px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ap-events-head { display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--muted);
+    font-size:10.5px; font-weight:750; text-transform:uppercase; letter-spacing:.055em; }
+  .ap-scope { color:#7dd3fc; text-transform:none; letter-spacing:0; }
   .ap-timeline { display: grid; gap: 6px; max-height: 168px; overflow: auto; }
   .ap-ev { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--txt); }
   .ap-ev .ev-dot { width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; background: var(--muted); }
@@ -301,6 +338,8 @@
   .ap-empty { color: var(--muted); font-size: 12.5px; padding: 6px 0; }
   .ap-actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .ap-actions .hub-link { min-height: 36px; }
+  .ap-actions .hub-link.primary { --module-accent:var(--accent); }
+  @media (max-width: 700px) { .ap-search-state { grid-template-columns:1fr; } }
   @media (max-width: 560px) { .ap-stats { grid-template-columns: repeat(2, 1fr); } }
 
   .hub-quiet-row {
@@ -623,6 +662,22 @@
       </section>
     </div>
 
+    <section class="hub-ai-meter" id="hubAiMeter">
+      <span class="hub-ai-ic">{{ ic.i('sparkles', 18) }}</span>
+      <div class="hub-ai-main">
+        <div class="hub-ai-top">
+          <b>Ресурс ИИ · текущие сутки Google</b>
+          <strong id="hubAiPercent">{{ autopilot_status.ai_usage.percent_remaining }}%</strong>
+        </div>
+        <div class="hub-ai-track"><div class="hub-ai-fill" id="hubAiFill" style="width:{{ autopilot_status.ai_usage.percent_remaining }}%"></div></div>
+        <div class="hub-ai-copy">
+          <span id="hubAiRemaining">Осталось {{ autopilot_status.ai_usage.remaining }} из {{ autopilot_status.ai_usage.limit }} запросов</span>
+          <span id="hubAiReset">Сброс: …</span>
+        </div>
+      </div>
+      <a class="hub-ai-settings" href="/settings/forms#ai-budget">Подробнее и лимит →</a>
+    </section>
+
     <section class="hub-autopilot" id="apMonitor">
       <div class="ap-head">
         <span class="ap-ic">{{ ic.i('zap', 18) }}</span>
@@ -633,18 +688,34 @@
         <span class="ap-badge" id="apBadge"><span class="dot"></span> …</span>
       </div>
       <div class="ap-stats">
-        <div class="ap-stat"><b id="apFound">0</b><span>подходит по фильтрам</span></div>
-        <div class="ap-stat"><b id="apPrepared">0</b><span>подготовлено</span></div>
+        <div class="ap-stat"><b id="apNew24h">0</b><span>новых за 24 часа</span></div>
+        <div class="ap-stat"><b id="apFound">0</b><span>подходит сейчас</span></div>
+        <div class="ap-stat"><b id="apWaiting">0</b><span>ждут обработки</span></div>
         <div class="ap-stat"><b id="apSubToday">0</b><span>подано сегодня</span></div>
-        <div class="ap-stat"><b id="apSubTotal">0</b><span>подано всего</span></div>
       </div>
+      <div class="ap-search-state">
+        <div class="ap-search-step">
+          {{ ic.i('refresh', 15) }}
+          <div><span>Последний поиск</span><b id="apLastSearch">ещё не запускался</b></div>
+        </div>
+        <div class="ap-search-step">
+          {{ ic.i('sparkles', 15) }}
+          <div><span>Новых в том поиске</span><b id="apLastSearchNew">0 вакансий</b></div>
+        </div>
+        <div class="ap-search-step">
+          {{ ic.i('clock', 15) }}
+          <div><span>Следующий поиск</span><b id="apNextSearch">после включения</b></div>
+        </div>
+      </div>
+      <div class="ap-events-head"><span>Важное за последние 24 часа</span><span class="ap-scope" id="apScope">Следит только за новыми</span></div>
       <div class="ap-timeline" id="apTimeline">
-        <div class="ap-empty">Событий пока нет — появятся после первой проверки.</div>
+        <div class="ap-empty">Важных событий за сутки пока нет.</div>
       </div>
       <div class="ap-actions">
-        <a class="hub-link" href="/autopilot">{{ ic.i('zap', 14) }} Открыть автопилот</a>
-        <button class="hub-link" id="apScanNow" type="button">{{ ic.i('refresh', 14) }} Проверить сейчас</button>
-        <a class="hub-link" href="/settings/autopilot">{{ ic.i('sliders', 14) }} Настройки</a>
+        <button class="hub-link primary" id="apToggle" type="button">{{ ic.i('zap', 14) }} <span>Включить поиск</span></button>
+        <button class="hub-link" id="apScanNow" type="button">{{ ic.i('refresh', 14) }} Искать новые сейчас</button>
+        <a class="hub-link" href="/autopilot">{{ ic.i('eye', 14) }} Подробный монитор</a>
+        <a class="hub-link" href="/settings/autopilot">{{ ic.i('sliders', 14) }} Фильтры и режим</a>
       </div>
     </section>
     <script>window.__apInit = {{ autopilot_status | tojson }};</script>
@@ -762,9 +833,38 @@
       try { return new Date(epoch * 1000).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); }
       catch (e) { return ""; }
     }
+    function renderAi(u) {
+      if (!u) return;
+      var meter = document.getElementById("hubAiMeter");
+      var pct = Number(u.percent_remaining || 0);
+      meter.className = "hub-ai-meter" + (pct <= 10 ? " danger" : (pct <= 25 ? " warn" : ""));
+      document.getElementById("hubAiPercent").textContent = u.connected ? pct + "%" : "—";
+      document.getElementById("hubAiFill").style.width = (u.connected ? pct : 0) + "%";
+      document.getElementById("hubAiRemaining").textContent = u.connected
+        ? "Осталось " + (u.remaining || 0) + " из " + (u.limit || 0) + " запросов"
+        : "Gemini не подключён — счётчик начнёт работать после подключения";
+      document.getElementById("hubAiReset").textContent = u.connected
+        ? "Сброс: " + new Date(u.reset_at * 1000).toLocaleString("ru-RU", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" })
+        : "";
+    }
+    function eventCopy(text) {
+      var value = String(text || "");
+      var failed = value.match(/^TG: не отправилось — не удалось отправить карточку(?: · ×(\d+))?$/);
+      if (failed) return failed[1]
+        ? "Telegram: не доставлено карточек — " + failed[1] + ". Проверь подключение в Аккаунте."
+        : "Telegram: карточка не доставлена. Проверь подключение в Аккаунте.";
+      return value
+        .replace(/^TG: спросил разрешение/, "Отправлено в Telegram на подтверждение")
+        .replace(/^TG: пропущено/, "Пропущено после решения в Telegram")
+        .replace(/^TG: снял с ожидания карточки без ответа/, "Убраны старые карточки без ответа")
+        .replace(/^TG: запущена пакетная подача/, "После подтверждения запущена подача")
+        .replace(/^TG:/, "Telegram:")
+        .replace(/^TG-панель:/, "Telegram-панель:");
+    }
     function render(d) {
       if (!d) return;
       var now = d.now || (Date.now() / 1000);
+      renderAi(d.ai_usage);
       var badge = document.getElementById("apBadge");
       var line = document.getElementById("apStatusLine");
       if (d.running) { badge.className = "ap-badge run"; badge.innerHTML = '<span class="dot"></span> Проверяет…'; }
@@ -772,45 +872,62 @@
       else { badge.className = "ap-badge"; badge.innerHTML = '<span class="dot"></span> Выключен'; }
 
       if (d.running) {
-        line.textContent = "Идёт проверка базы вакансий…";
+        line.textContent = "Сейчас обновляю источники и ищу новые вакансии по твоим фильтрам…";
       } else if (!d.enabled) {
-        line.textContent = "Автопилот выключен — включи его в настройках, чтобы он искал сам.";
+        line.textContent = "Поиск новых выключен. Нажми «Включить поиск» — WexFlow будет проверять вакансии сам.";
       } else if (d.last_scan) {
         var everySec = (d.every_min || 30) * 60;
         if (now - d.last_scan > Math.max(3 * everySec, 1800)) {
-          // проверка сильно старше интервала — не врём «следующая через ~1 мин»
-          line.textContent = "Последняя проверка: " + rel(d.last_scan, now) +
-            " — похоже, WexFlow был выключен. Проверка запустится в ближайшие минуты.";
+          line.textContent = "Поиск включён, но WexFlow долго не работал. Запусти проверку сейчас — дальше она пойдёт автоматически.";
         } else {
-          var t = "Последняя проверка: " + clock(d.last_scan) + " (" + rel(d.last_scan, now) + ")";
+          var t = "Следит за новыми вакансиями каждые " + (d.every_min || 30) + " мин · проверено " + rel(d.last_scan, now);
           if (d.next_scan) t += " · следующая " + future(d.next_scan, now);
-          t += " · каждые " + (d.every_min || 30) + " мин";
           line.textContent = t;
         }
       } else {
-        line.textContent = "Ещё не проверял — запустится автоматически.";
+        line.textContent = "Поиск включён. Первая проверка новых вакансий запустится автоматически.";
       }
 
+      document.getElementById("apNew24h").textContent = d.new_24h || 0;
       document.getElementById("apFound").textContent = d.found || 0;
-      document.getElementById("apPrepared").textContent = d.prepared || 0;
+      document.getElementById("apWaiting").textContent =
+        d.mode === "telegram" ? (d.tg_pending || 0) : (d.pending || 0);
       document.getElementById("apSubToday").textContent =
         (d.submitted_today || 0) + (d.daily_limit ? " / " + d.daily_limit : "");
-      document.getElementById("apSubTotal").textContent = d.submitted_total || 0;
+
+      var lastSearch = d.last_search_at || d.last_scan || 0;
+      document.getElementById("apLastSearch").textContent =
+        lastSearch ? clock(lastSearch) + " · " + rel(lastSearch, now) : "ещё не запускался";
+      document.getElementById("apLastSearchNew").textContent =
+        lastSearch ? (d.last_search_new || 0) + " новых" : "нет данных";
+      document.getElementById("apNextSearch").textContent = d.running
+        ? "идёт сейчас"
+        : (!d.enabled ? "после включения" : (d.next_scan ? future(d.next_scan, now) : "автоматически"));
+      document.getElementById("apScope").textContent =
+        "Только новые" + (d.last_new_at ? " · находил " + (d.last_new_count || 0) + " " + rel(d.last_new_at, now) : "");
 
       var tl = document.getElementById("apTimeline");
-      var evs = d.events || [];
+      var evs = (d.events || []).filter(function(e) {
+        var ep = Date.parse(e.ts) / 1000;
+        return ep && now - ep <= 86400;
+      }).slice(0, 5);
       if (!evs.length) {
-        tl.innerHTML = '<div class="ap-empty">Событий пока нет — появятся после первой проверки.</div>';
+        tl.innerHTML = '<div class="ap-empty">За последние сутки ошибок и действий не было. Сам факт каждой проверки показан выше.</div>';
       } else {
-        tl.innerHTML = evs.slice(0, 8).map(function (e) {
+        tl.innerHTML = evs.map(function (e) {
           var ep = Date.parse(e.ts) / 1000;
           var kind = e.kind || "info";
           return '<div class="ap-ev ' + kind + '"><span class="ev-dot"></span>' +
-            '<span class="ev-text">' + escAp(e.text || "") + '</span>' +
+            '<span class="ev-text">' + escAp(eventCopy(e.text)) + '</span>' +
             '<span class="ev-time">' + rel(ep, now) + '</span></div>';
         }).join("");
       }
 
+      var toggle = document.getElementById("apToggle");
+      if (toggle) {
+        toggle.dataset.enabled = d.enabled ? "1" : "0";
+        toggle.querySelector("span").textContent = d.enabled ? "Поставить на паузу" : "Включить поиск";
+      }
       if (!!d.running !== fast) { fast = !!d.running; schedule(); }
     }
     function poll() {
@@ -828,6 +945,16 @@
           .then(function (r) { return r.json(); })
           .then(function () { fast = true; schedule(); poll(); setTimeout(function () { btn.disabled = false; }, 2500); })
           .catch(function () { btn.disabled = false; });
+      });
+    }
+    var toggleBtn = document.getElementById("apToggle");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", function () {
+        toggleBtn.disabled = true;
+        fetch("/api/autopilot/toggle", { method:"POST" })
+          .then(function(r){ return r.json(); })
+          .then(function(){ poll(); setTimeout(function(){ toggleBtn.disabled = false; }, 500); })
+          .catch(function(){ toggleBtn.disabled = false; });
       });
     }
     render(window.__apInit || null);

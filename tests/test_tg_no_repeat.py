@@ -98,10 +98,18 @@ def test_flapping_match_is_not_new_again():
         a, b = _job("a"), _job("b")
         _run_scan([a, b], ["a", "b"], notes)          # первый скан: обе новые
         assert len(notes) == 1
-        assert set(autopilot.get_rule()["seen_ids"]) == {"a", "b"}
+        first = autopilot.get_rule()
+        assert set(first["seen_ids"]) == {"a", "b"}
+        assert first["last_search_new"] == 2
+        assert first["last_search_matches"] == 2
+        assert first["last_new_count"] == 2
+        assert first["last_search_at"] > 0
 
         _run_scan([b], ["a", "b"], notes)             # «a» мигнула из выдачи
-        assert "a" in autopilot.get_rule()["seen_ids"], "просмотренное забылось при мигании выдачи"
+        second = autopilot.get_rule()
+        assert "a" in second["seen_ids"], "просмотренное забылось при мигании выдачи"
+        assert second["last_search_new"] == 0
+        assert second["last_new_count"] == 2
 
         _run_scan([a, b], ["a", "b"], notes)          # «a» вернулась
         assert len(notes) == 1, "вернувшаяся вакансия снова посчиталась «новой»"

@@ -4,6 +4,7 @@ sf_credentials.json
 telegram.json
 secrets.json
 settings.json
+ai_usage.json*
 jobs.db
 jobs.db-journal
 *.db-journal

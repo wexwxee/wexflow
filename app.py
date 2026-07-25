@@ -45,6 +45,7 @@ import applications
 import autopilot
 import autostart
 import ai_filters
+import ai_usage
 from apscheduler.schedulers.background import BackgroundScheduler
 
 PROFILE_REQUIRED = [
@@ -223,6 +224,13 @@ def _sync_jobs(force_connectors: bool = False):
         _sync_lock.release()
 
 
+def _ai_usage_payload() -> dict:
+    payload = ai_usage.status()
+    payload["connected"] = ai_filters.available()
+    payload["model"] = ai_filters.model_name() if payload["connected"] else ""
+    return payload
+
+
 def _autopilot_status_payload() -> dict:
     """Полная сводка для живого монитора автопилота (главная опрашивает её)."""
     st = autopilot.status()
@@ -231,7 +239,10 @@ def _autopilot_status_payload() -> dict:
     # время последней проверки. После перезапуска процесса счётчик в памяти
     # сбрасывается — тогда берём момент последнего обновления базы (last_seen),
     # чтобы монитор не врал «ещё не проверял», когда данные на самом деле свежие.
-    last = _sync_state.get("last_scan") or 0.0
+    last = max(
+        float(_sync_state.get("last_scan") or 0.0),
+        float(st.get("last_search_at") or 0.0),
+    )
     if not last:
         age = _data_age_minutes()
         if age is not None:
@@ -248,6 +259,7 @@ def _autopilot_status_payload() -> dict:
         nxt = 0.0
     st["next_scan"] = nxt
     st["now"] = time.time()  # серверное «сейчас» — фронт считает дельты от него
+    st["ai_usage"] = _ai_usage_payload()
     return st
 
 
@@ -2880,6 +2892,11 @@ def api_autopilot_status():
     return JSONResponse(_autopilot_status_payload())
 
 
+@app.get("/api/ai/usage")
+def api_ai_usage():
+    return JSONResponse(_ai_usage_payload())
+
+
 @app.post("/api/autopilot/scan-now")
 def api_autopilot_scan_now():
     """Запустить проверку вручную («Проверить сейчас») — тот же фоновый скан."""
@@ -3482,6 +3499,7 @@ def _settings_context(
         "ai_fill_on": settings_store.get_ai_fill(),
         "ai_fill_motivation_on": settings_store.get_ai_fill_motivation(),
         "ai_fill_available": bool(ai_filters.api_key()),
+        "ai_usage": _ai_usage_payload(),
         "autopilot_profiles": ap_profiles, "autopilot_profile": sel_profile,
         "autopilot_profile_count": autopilot.profile_match_count(sel_profile),
         "autopilot_count": autopilot.match_count(),
@@ -3591,6 +3609,25 @@ async def settings_ai_fill(request: Request):
         "enabled": settings_store.get_ai_fill(),
         "motivation_enabled": settings_store.get_ai_fill_motivation(),
     })
+
+
+@app.post("/settings/ai-usage-limit")
+async def settings_ai_usage_limit(request: Request):
+    form = await request.form()
+    try:
+        limit = int(str(form.get("daily_limit") or "").strip())
+    except (TypeError, ValueError):
+        return JSONResponse(
+            {"ok": False, "error": "Укажи дневной лимит целым числом."},
+            status_code=400,
+        )
+    if not 1 <= limit <= ai_usage.MAX_DAILY_LIMIT:
+        return JSONResponse(
+            {"ok": False, "error": f"Допустимо от 1 до {ai_usage.MAX_DAILY_LIMIT:,} запросов."},
+            status_code=400,
+        )
+    ai_usage.set_daily_limit(limit)
+    return JSONResponse({"ok": True, "usage": _ai_usage_payload()})
 
 
 @app.post("/settings/ai-fill-motivation")
