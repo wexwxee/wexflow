@@ -3371,7 +3371,7 @@ def _document_import_view(preview: dict | None) -> dict | None:
     for raw in preview.get("files", []):
         item = dict(raw)
         item["url"] = (
-            f"/settings/document-import/file/{preview_id}/{item['id']}"
+            f"/settings/document-import/preview/{preview_id}/{item['id']}"
             if preview_id and item.get("id") else ""
         )
         files.append(item)
@@ -3842,6 +3842,18 @@ def settings_document_import_analyse(files: list[UploadFile] = File(default=[]))
 
 @app.get("/settings/document-import/file/{preview_id}/{file_id}")
 def settings_document_import_file(preview_id: str, file_id: str):
+    item = _current_document_import_file(preview_id, file_id)
+    filename = item["filename"]
+    is_pdf = filename.lower().endswith(".pdf")
+    return FileResponse(
+        item["path"],
+        media_type="application/pdf" if is_pdf else "application/octet-stream",
+        filename=filename,
+        content_disposition_type="inline" if is_pdf else "attachment",
+    )
+
+
+def _current_document_import_file(preview_id: str, file_id: str) -> dict:
     preview = document_import.get_preview()
     if not preview or preview.get("id") != preview_id:
         raise HTTPException(status_code=404, detail="План импорта устарел")
@@ -3858,12 +3870,28 @@ def settings_document_import_file(preview_id: str, file_id: str):
         raise HTTPException(status_code=404, detail="Файл не найден")
     clean_path = profile_store.validate_document_path(path)
     filename = str((item or {}).get("filename") or profile_store.file_label(clean_path))
-    is_pdf = filename.lower().endswith(".pdf")
-    return FileResponse(
-        clean_path,
-        media_type="application/pdf" if is_pdf else "application/octet-stream",
-        filename=filename,
-        content_disposition_type="inline" if is_pdf else "attachment",
+    return {
+        "id": file_id,
+        "path": clean_path,
+        "filename": filename,
+        "is_pdf": filename.lower().endswith(".pdf"),
+    }
+
+
+@app.get(
+    "/settings/document-import/preview/{preview_id}/{file_id}",
+    response_class=HTMLResponse,
+)
+def settings_document_import_preview(request: Request, preview_id: str, file_id: str):
+    item = _current_document_import_file(preview_id, file_id)
+    return templates.TemplateResponse(
+        "document_preview.html",
+        {
+            "request": request,
+            "file": item,
+            "raw_url": f"/settings/document-import/file/{preview_id}/{file_id}",
+            "back_url": "/settings/documents#bulk-import",
+        },
     )
 
 

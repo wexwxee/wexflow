@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+
+{% block title %}{{ file.filename }} · WexFlow{% endblock %}
+
+{% block style %}
+<style>
+  html, body { height:100%; overflow:hidden; }
+  .document-preview {
+    height:calc(100vh - var(--desktop-frame-h));
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    background:var(--bg);
+  }
+  .document-preview-bar {
+    min-height:60px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:10px 16px;
+    border-bottom:1px solid var(--glass-line);
+    background:color-mix(in srgb, var(--card) 94%, transparent);
+    box-shadow:0 8px 24px rgba(0,0,0,.16);
+    position:relative;
+    z-index:2;
+  }
+  .document-preview-back,
+  .document-preview-action {
+    min-height:38px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:7px;
+    padding:0 13px;
+    border:1px solid var(--glass-line);
+    border-radius:10px;
+    background:var(--glass);
+    color:var(--txt-strong);
+    font:700 12.5px/1 "Inter", system-ui, sans-serif;
+    text-decoration:none;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .document-preview-back {
+    border-color:color-mix(in srgb, var(--accent) 55%, var(--glass-line));
+    background:var(--accent);
+    color:var(--on-accent);
+  }
+  .document-preview-action:hover { border-color:var(--accent); color:var(--accent); }
+  .document-preview-title { flex:1; min-width:0; }
+  .document-preview-title b {
+    display:block;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    color:var(--txt-strong);
+    font-size:13px;
+  }
+  .document-preview-title span { display:block; margin-top:3px; color:var(--muted); font-size:10.5px; }
+  .document-preview-frame {
+    flex:1;
+    min-height:0;
+    width:100%;
+    border:0;
+    background:#d9d9d9;
+  }
+  .document-preview-fallback {
+    flex:1;
+    display:grid;
+    place-items:center;
+    padding:24px;
+  }
+  .document-preview-card {
+    max-width:520px;
+    padding:28px;
+    border:1px solid var(--glass-line);
+    border-radius:16px;
+    background:var(--card);
+    text-align:center;
+  }
+  .document-preview-card h1 { margin:12px 0 7px; font-size:18px; }
+  .document-preview-card p { margin:0 0 18px; color:var(--muted); line-height:1.55; }
+  @media (max-width:700px) {
+    .document-preview-bar { flex-wrap:wrap; padding:9px 10px; }
+    .document-preview-title { order:3; flex-basis:100%; }
+    .document-preview-action span { display:none; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<main class="document-preview">
+  <header class="document-preview-bar">
+    <a class="document-preview-back" href="{{ back_url }}">
+      {{ ic.i('undo', 15) }} Вернуться к плану
+    </a>
+    <div class="document-preview-title">
+      <b>{{ file.filename }}</b>
+      <span>{{ 'PDF открыт внутри WexFlow' if file.is_pdf else 'Локальный документ' }}</span>
+    </div>
+    <button class="document-preview-action" type="button" id="openPreviewExternal" data-raw-url="{{ raw_url }}">
+      {{ ic.i('eye', 14) }} <span>Открыть отдельно</span>
+    </button>
+    <button class="document-preview-action" type="button" data-window-control="minimize" title="Свернуть WexFlow">
+      <span>Свернуть</span> −
+    </button>
+  </header>
+
+  {% if file.is_pdf %}
+  <iframe class="document-preview-frame" src="{{ raw_url }}#toolbar=1&navpanes=0" title="Просмотр {{ file.filename }}"></iframe>
+  {% else %}
+  <section class="document-preview-fallback">
+    <div class="document-preview-card">
+      {{ ic.i('file', 34) }}
+      <h1>{{ file.filename }}</h1>
+      <p>Этот формат открывается установленной на компьютере программой. План импорта останется на месте.</p>
+      <a class="document-preview-back" href="{{ raw_url }}">Скачать и открыть документ</a>
+    </div>
+  </section>
+  {% endif %}
+</main>
+{% endblock %}
+
+{% block script %}
+<script>
+  (function () {
+    var button = document.getElementById("openPreviewExternal");
+    if (button) {
+      button.addEventListener("click", function () {
+        var url = new URL(button.dataset.rawUrl, location.href).href;
+        var api = window.pywebview && window.pywebview.api;
+        if (api && typeof api.open_external === "function") api.open_external(url);
+        else window.open(url, "_blank");
+      });
+    }
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") location.href = {{ back_url | tojson }};
+    });
+  })();
+</script>
+{% endblock %}

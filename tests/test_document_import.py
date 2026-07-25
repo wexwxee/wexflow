@@ -162,12 +162,12 @@ def test_document_import_view_adds_preview_urls():
         "unassigned": ["f1"],
     })
 
-    expected = "/settings/document-import/file/preview-1/f1"
+    expected = "/settings/document-import/preview/preview-1/f1"
     assert view["groups"][0]["cv_file"]["url"] == expected
     assert view["unassigned_files"][0]["url"] == expected
 
 
-def test_document_import_preview_file_route_is_bound_to_current_plan():
+def test_document_import_preview_page_keeps_app_controls_and_return_action():
     client = TestClient(app.app, base_url="http://127.0.0.1")
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "Netto CV.pdf"
@@ -178,10 +178,15 @@ def test_document_import_preview_file_route_is_bound_to_current_plan():
             "groups": [],
         }
         with mock.patch.object(app.document_import, "get_preview", return_value=preview):
+            page = client.get("/settings/document-import/preview/preview-1/f1")
             response = client.get("/settings/document-import/file/preview-1/f1")
             stale = client.get("/settings/document-import/file/old-preview/f1")
             unknown = client.get("/settings/document-import/file/preview-1/f2")
 
+    assert page.status_code == 200
+    assert "Вернуться к плану" in page.text
+    assert 'data-window-control="minimize"' in page.text
+    assert "/settings/document-import/file/preview-1/f1#toolbar=1" in page.text
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
     assert response.headers["content-disposition"].startswith("inline;")
