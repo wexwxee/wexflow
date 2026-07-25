@@ -294,10 +294,50 @@
   .doc-global-note { display:flex; align-items:flex-start; gap:9px; padding:10px 12px; margin:12px 0 14px;
     border:1px solid var(--ok-line); border-radius:11px; background:var(--ok-bg); color:var(--ok-txt);
     font-size:12.5px; line-height:1.45; }
+  .bulk-import { border-color:color-mix(in srgb, #8b7bff 48%, var(--glass-line));
+    background:linear-gradient(135deg, color-mix(in srgb, #8b7bff 8%, transparent), transparent 58%), var(--card); }
+  .bulk-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .bulk-badge { display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border-radius:999px;
+    color:#a99fff; border:1px solid color-mix(in srgb, #8b7bff 45%, var(--glass-line));
+    background:color-mix(in srgb, #8b7bff 12%, transparent); font-size:10px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.04em; }
+  .bulk-drop { display:grid; place-items:center; min-height:126px; padding:18px; margin-top:14px;
+    border:1px dashed color-mix(in srgb, #8b7bff 48%, var(--glass-line)); border-radius:14px;
+    background:color-mix(in srgb, #8b7bff 5%, var(--glass)); text-align:center; cursor:pointer; }
+  .bulk-drop:hover, .bulk-drop.drag { border-color:#8b7bff; background:color-mix(in srgb, #8b7bff 10%, var(--glass)); }
+  .bulk-drop input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+  .bulk-drop-title { color:var(--txt-strong); font-size:14px; font-weight:750; }
+  .bulk-drop-meta { color:var(--muted); font-size:12px; margin-top:5px; line-height:1.45; }
+  .bulk-selected { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .bulk-selected:empty { display:none; }
+  .bulk-selected-file { display:inline-flex; align-items:center; gap:5px; max-width:260px; padding:4px 8px;
+    border-radius:8px; border:1px solid var(--glass-line); background:var(--glass); color:var(--txt);
+    font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bulk-privacy { margin-top:12px; color:var(--muted); font-size:11.5px; line-height:1.5; }
+  .bulk-progress { display:none; margin-top:12px; padding:11px 12px; border:1px solid var(--glass-line);
+    border-radius:11px; background:var(--glass); }
+  .bulk-progress.show { display:block; }
+  .bulk-progress-track { height:5px; overflow:hidden; border-radius:999px; background:var(--line); }
+  .bulk-progress-bar { width:42%; height:100%; border-radius:inherit; background:linear-gradient(90deg, #8b7bff, var(--accent));
+    animation:bulkScan 1.15s ease-in-out infinite alternate; }
+  @keyframes bulkScan { from { transform:translateX(-70%); } to { transform:translateX(210%); } }
+  .bulk-progress-copy { margin-top:7px; color:var(--muted); font-size:11.5px; }
+  .bulk-plan { display:grid; gap:10px; margin-top:14px; }
+  .bulk-plan-row { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(210px,.9fr); gap:14px;
+    padding:13px; border:1px solid var(--glass-line); border-radius:13px; background:var(--glass); }
+  .bulk-pair { display:grid; gap:7px; }
+  .bulk-pair-file { display:flex; align-items:center; gap:7px; min-width:0; color:var(--txt); font-size:12px; }
+  .bulk-pair-role { flex:0 0 auto; min-width:55px; color:var(--muted); font-size:10px; font-weight:750; text-transform:uppercase; }
+  .bulk-pair-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bulk-confidence { color:var(--muted); font-size:11px; margin-top:2px; }
+  .bulk-confidence strong { color:var(--ok-txt); }
+  .bulk-unassigned { margin-top:12px; padding:11px 12px; border:1px solid var(--warn-line);
+    border-radius:11px; background:var(--warn-bg); color:var(--warn-txt); font-size:12px; line-height:1.45; }
   @media (max-width:700px) {
     .doc-flow { grid-template-columns:1fr; }
     .doc-flow-step:not(:last-child)::after { content:"↓"; right:auto; left:50%; top:auto; bottom:-19px; transform:translateX(-50%); }
     .doc-rule-main { flex-direction:column; }
+    .bulk-plan-row { grid-template-columns:1fr; }
   }
   /* --- новая раскладка фильтров: 5 простых вопросов --- */
   .apx-q { margin:12px 0; padding:14px 16px; border:1px solid var(--glass-line);
@@ -596,6 +636,107 @@
     </div>
   </section>
 
+  <section id="bulk-import" class="panel bulk-import">
+    <div class="bulk-head">
+      <div>
+        <h2>{{ ic.i('sparkles', 17) }} Массовый импорт с ИИ</h2>
+        <p class="hint" style="margin:5px 0 0;">Загрузи сразу несколько CV и мотивационных писем. WexFlow определит тип, соберёт пары и предложит, к какому бренду или магазину их закрепить.</p>
+      </div>
+      <span class="bulk-badge">до 20 файлов</span>
+    </div>
+
+    {% if document_import_preview %}
+    <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--glass-line);">
+      <div class="doc-rule-title">
+        <b>ИИ подготовил {{ document_import_preview.groups|length }} комплектов</b>
+        <span class="doc-scope">проверь план</span>
+      </div>
+      <p class="hint" style="margin:5px 0 0;">Файлы уже загружены локально, но правила ещё не изменены. Проверь назначения и нажми «Создать и закрепить».</p>
+      <form method="post" action="/settings/document-import/apply">
+        <input type="hidden" name="preview_id" value="{{ document_import_preview.id }}">
+        <div class="bulk-plan">
+          {% for group in document_import_preview.groups %}
+          <article class="bulk-plan-row">
+            <div class="bulk-pair">
+              {% if group.cv_file %}
+              <div class="bulk-pair-file">
+                <span class="bulk-pair-role">CV</span>
+                {{ ic.i('file', 13) }} <span class="bulk-pair-name">{{ group.cv_file.filename }}</span>
+              </div>
+              {% else %}
+              <div class="bulk-pair-file"><span class="bulk-pair-role">CV</span><span class="hint">не найден — останется файл следующего уровня</span></div>
+              {% endif %}
+              {% if group.cover_file %}
+              <div class="bulk-pair-file">
+                <span class="bulk-pair-role">Письмо</span>
+                {{ ic.i('edit', 13) }} <span class="bulk-pair-name">{{ group.cover_file.filename }}</span>
+              </div>
+              {% else %}
+              <div class="bulk-pair-file"><span class="bulk-pair-role">Письмо</span><span class="hint">не найдено — останется файл следующего уровня</span></div>
+              {% endif %}
+              <div class="bulk-confidence">
+                Уверенность ИИ: <strong>{{ group.confidence_percent }}%</strong>
+                {% if group.reason %} · {{ group.reason }}{% endif %}
+              </div>
+            </div>
+            <div>
+              <label class="lbl" for="bulkTarget{{ loop.index }}">Закрепить за</label>
+              <select class="doc-select" id="bulkTarget{{ loop.index }}" name="selections">
+                {% for target in document_target_options %}
+                <option value="{{ group.id }}|{{ target.value }}" {{ 'selected' if target.value == group.target else '' }}>{{ target.label }}</option>
+                {% endfor %}
+                <option value="{{ group.id }}|skip">Не создавать этот комплект</option>
+              </select>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% if document_import_preview.unassigned_files %}
+        <div class="bulk-unassigned">
+          <b>Не удалось уверенно назначить:</b>
+          {% for file in document_import_preview.unassigned_files %}{{ file.filename }}{{ ', ' if not loop.last }}{% endfor %}.
+          Эти файлы не будут закреплены — их можно добавить вручную ниже или переименовать понятнее и повторить импорт.
+        </div>
+        {% endif %}
+        <div class="actions" style="margin-top:14px;">
+          <button class="primary" type="submit">{{ ic.i('check', 14) }} Создать и закрепить {{ document_import_preview.groups|length }} комплектов</button>
+        </div>
+      </form>
+      <form method="post" action="/settings/document-import/cancel" style="margin-top:8px;">
+        <button class="ghost" type="submit">Отменить этот план</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <form id="bulkImportForm" method="post" action="/settings/document-import/analyse" enctype="multipart/form-data"
+          style="margin-top:{{ '18px' if document_import_preview else '0' }};">
+      {% if document_import_preview %}<div style="padding-top:16px; border-top:1px solid var(--glass-line);"><b style="font-size:13px;">Разобрать другую пачку</b></div>{% endif %}
+      <label class="bulk-drop" id="bulkDrop" for="bulkFiles">
+        <input id="bulkFiles" type="file" name="files" accept=".pdf,.doc,.docx" multiple required>
+        <span>
+          <span class="bulk-drop-title">{{ ic.i('file', 16) }} Выбрать несколько документов</span>
+          <span class="bulk-drop-meta">Можно выделить сразу 4 CV и 4 письма · PDF, DOC или DOCX · до 25 МБ каждый</span>
+        </span>
+      </label>
+      <div class="bulk-selected" id="bulkSelected"></div>
+      <div class="bulk-privacy">
+        {{ ic.i('lock', 12) }} Файлы сохраняются локально. В Gemini отправляются только названия и короткие текстовые фрагменты без email и телефона — исключительно для определения типа документа и подходящего бренда. Ничего не закрепляется без плана выше.
+      </div>
+      <div class="actions" style="margin-top:12px;">
+        <button id="bulkAnalyseButton" class="secondary" type="submit" {{ 'disabled' if not document_import_ai_available else '' }}>
+          {{ ic.i('sparkles', 14) }} Разобрать и собрать комплекты
+        </button>
+        {% if not document_import_ai_available %}
+        <span class="hint" style="margin:0;">Сначала подключи Gemini в разделе <a class="crosslink" href="/settings/forms">«Анкеты и ИИ»</a>.</span>
+        {% endif %}
+      </div>
+      <div class="bulk-progress" id="bulkProgress" role="status" aria-live="polite">
+        <div class="bulk-progress-track"><div class="bulk-progress-bar"></div></div>
+        <div class="bulk-progress-copy" id="bulkProgressCopy">Загружаю и читаю документы… Затем ИИ соберёт пары.</div>
+      </div>
+    </form>
+  </section>
+
   <form id="global-documents" class="panel" method="post" action="/settings/documents/save" enctype="multipart/form-data">
     <h2>{{ ic.i('file', 17) }} Общий комплект</h2>
     <p class="hint">Используется по умолчанию и как запасной вариант. Загруженный здесь файл не перезаписывает персональные комплекты ниже.</p>
@@ -780,6 +921,64 @@
     scope.addEventListener("change", sync);
     brand.addEventListener("change", sync);
     sync();
+  })();
+  (function () {
+    var form = document.getElementById("bulkImportForm");
+    var input = document.getElementById("bulkFiles");
+    var selected = document.getElementById("bulkSelected");
+    var drop = document.getElementById("bulkDrop");
+    var progress = document.getElementById("bulkProgress");
+    var progressCopy = document.getElementById("bulkProgressCopy");
+    var button = document.getElementById("bulkAnalyseButton");
+    if (!form || !input || !selected || !drop) return;
+    function renderFiles() {
+      selected.innerHTML = "";
+      Array.prototype.slice.call(input.files || []).forEach(function (file) {
+        var item = document.createElement("span");
+        item.className = "bulk-selected-file";
+        item.textContent = file.name;
+        selected.appendChild(item);
+      });
+      if (button && !button.dataset.aiDisabled) button.disabled = !(input.files && input.files.length >= 2);
+    }
+    input.addEventListener("change", renderFiles);
+    ["dragenter", "dragover"].forEach(function (eventName) {
+      drop.addEventListener(eventName, function (event) {
+        event.preventDefault();
+        drop.classList.add("drag");
+      });
+    });
+    drop.addEventListener("dragleave", function () { drop.classList.remove("drag"); });
+    drop.addEventListener("drop", function (event) {
+      event.preventDefault();
+      drop.classList.remove("drag");
+      if (event.dataTransfer && event.dataTransfer.files) {
+        input.files = event.dataTransfer.files;
+        renderFiles();
+      }
+    });
+    if (button && button.disabled) button.dataset.aiDisabled = "1";
+    form.addEventListener("submit", function (event) {
+      var count = input.files ? input.files.length : 0;
+      if (count < 2 || count > 20) {
+        event.preventDefault();
+        alert(count > 20 ? "За один раз можно выбрать максимум 20 файлов." : "Выбери минимум два файла.");
+        return;
+      }
+      if (button) button.disabled = true;
+      if (progress) progress.classList.add("show");
+      var messages = [
+        "Загружаю и читаю документы…",
+        "Убираю email и телефоны из фрагментов…",
+        "ИИ определяет бренды и собирает пары…",
+      ];
+      var step = 0;
+      window.setInterval(function () {
+        step = Math.min(step + 1, messages.length - 1);
+        if (progressCopy) progressCopy.textContent = messages[step];
+      }, 1800);
+    });
+    renderFiles();
   })();
   </script>
   {% endif %}

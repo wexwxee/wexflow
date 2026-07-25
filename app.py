@@ -32,6 +32,7 @@ import translator_setup
 import html_sanitize
 import profile_store
 import document_rules
+import document_import
 import credentials_store
 import subscription
 import account as account_mod
@@ -3362,6 +3363,27 @@ def _document_rule_view(rule: dict) -> dict:
     return view
 
 
+def _document_import_view(preview: dict | None) -> dict | None:
+    if not preview:
+        return None
+    file_map = {item["id"]: item for item in preview.get("files", [])}
+    groups = []
+    for raw in preview.get("groups", []):
+        group = dict(raw)
+        group["cv_file"] = file_map.get(group.get("cv_id"))
+        group["cover_file"] = file_map.get(group.get("cover_id"))
+        group["confidence_percent"] = round(float(group.get("confidence") or 0) * 100)
+        groups.append(group)
+    result = dict(preview)
+    result["groups"] = groups
+    result["unassigned_files"] = [
+        file_map[file_id]
+        for file_id in preview.get("unassigned", [])
+        if file_id in file_map
+    ]
+    return result
+
+
 def _settings_context(
     request: Request,
     saved: str = "",
@@ -3396,6 +3418,20 @@ def _settings_context(
     document_store_options: list[dict] = []
     if section == "documents":
         document_brand_options, document_store_options = _document_settings_options()
+    document_target_options = [
+        {
+            "value": f"brand:{item['key']}",
+            "label": f"Бренд · {item['label']}",
+        }
+        for item in document_brand_options
+    ]
+    document_target_options.extend(
+        {
+            "value": f"store:{item['key']}",
+            "label": f"Магазин · {item['label']}",
+        }
+        for item in document_store_options
+    )
     saved_document_rules = document_rules.get_rules()
     titles = {
         "salling": ("Salling", "Логин, домашний адрес и управление сохранённой сессией"),
@@ -3421,6 +3457,9 @@ def _settings_context(
         "document_rule_count": len(saved_document_rules),
         "document_brand_options": document_brand_options,
         "document_store_options": document_store_options,
+        "document_target_options": document_target_options,
+        "document_import_preview": _document_import_view(document_import.get_preview()),
+        "document_import_ai_available": ai_filters.available(),
         "autopilot": ap_view, "brands": labels.BRANDS,
         "categories": labels.CATEGORY, "employments": labels.EMPLOYMENT,
         "autopilot_cities": ap_cities, "autopilot_regions": ap_regions,
@@ -3771,6 +3810,77 @@ def settings_document_rule_save(
 def settings_document_rule_delete(rule_id: str = Form("")):
     document_rules.delete_rule(rule_id)
     return RedirectResponse("/settings/documents?saved=deleted#document-rules", status_code=303)
+
+
+@app.post("/settings/document-import/analyse")
+def settings_document_import_analyse(files: list[UploadFile] = File(default=[])):
+    brand_options, store_options = _document_settings_options()
+    result = document_import.analyse_uploads(files, brand_options, store_options)
+    if not result.get("ok"):
+        return RedirectResponse(
+            _url_with_system_response(
+                "/settings/documents#bulk-import",
+                error=str(result.get("error") or "Не удалось разобрать документы."),
+            ),
+            status_code=303,
+        )
+    return RedirectResponse(
+        "/settings/documents?saved=import-preview#bulk-import",
+        status_code=303,
+    )
+
+
+@app.post("/settings/document-import/apply")
+def settings_document_import_apply(
+    preview_id: str = Form(""),
+    selections: list[str] = Form(default=[]),
+):
+    preview = document_import.get_preview()
+    if not preview or preview.get("id") != preview_id:
+        return RedirectResponse(
+            _url_with_system_response(
+                "/settings/documents#bulk-import",
+                error="План импорта устарел. Загрузи файлы ещё раз.",
+            ),
+            status_code=303,
+        )
+    selected_targets: dict[str, str] = {}
+    for raw in selections:
+        group_id, separator, target = str(raw or "").partition("|")
+        if separator and group_id:
+            selected_targets[group_id] = target
+    brand_options, store_options = _document_settings_options()
+    try:
+        created = document_import.apply_preview(
+            preview,
+            selected_targets,
+            brand_options,
+            store_options,
+        )
+    except ValueError as exc:
+        return RedirectResponse(
+            _url_with_system_response("/settings/documents#bulk-import", error=str(exc)),
+            status_code=303,
+        )
+    if not created:
+        return RedirectResponse(
+            _url_with_system_response(
+                "/settings/documents#bulk-import",
+                error="Не выбран ни один комплект для закрепления.",
+            ),
+            status_code=303,
+        )
+    document_import.clear_preview()
+    return RedirectResponse(
+        f"/settings/documents?saved=imported&count={len(created)}#document-rules",
+        status_code=303,
+    )
+
+
+@app.post("/settings/document-import/cancel")
+def settings_document_import_cancel():
+    document_import.clear_preview(delete_files=True)
+    return RedirectResponse("/settings/documents#bulk-import", status_code=303)
 
 
 @app.post("/api/telegram/clear_pending")

@@ -58,6 +58,60 @@ def _models_to_try() -> list[str]:
     return out
 
 
+def generate_json(
+    prompt: str,
+    *,
+    temperature: float = 0.1,
+    timeout: float = 40.0,
+) -> dict:
+    """Small shared Gemini JSON gateway for explicit, user-triggered AI tasks."""
+    key = api_key()
+    if not key:
+        return {"ok": False, "error": "ИИ не подключён: добавь ключ Gemini в настройках."}
+    prompt = str(prompt or "").strip()
+    if not prompt:
+        return {"ok": False, "error": "Пустой запрос к ИИ."}
+    body = {
+        "contents": [{"parts": [{"text": prompt[:50000]}]}],
+        "generationConfig": {
+            "temperature": max(0.0, min(float(temperature), 1.0)),
+            "responseMimeType": "application/json",
+        },
+    }
+    last_error = "Не удалось получить ответ Gemini."
+    for mdl in _models_to_try():
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent"
+        try:
+            response = httpx.post(
+                url,
+                headers={"x-goog-api-key": key},
+                json=body,
+                timeout=timeout,
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_error = f"Не вышло связаться с Gemini: {exc}"
+            continue
+        if response.status_code == 200:
+            try:
+                raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                data = json.loads(raw)
+            except Exception:  # noqa: BLE001
+                last_error = "Не удалось разобрать ответ Gemini."
+                continue
+            if isinstance(data, dict):
+                return {"ok": True, "data": data, "model": mdl}
+            last_error = "Gemini вернул неожиданный формат."
+            continue
+        try:
+            detail = (response.json().get("error", {}) or {}).get("message", "")
+        except Exception:  # noqa: BLE001
+            detail = response.text[:200]
+        last_error = f"Gemini вернул ошибку {response.status_code}: {detail}"
+        if response.status_code not in (429, 503):
+            break
+    return {"ok": False, "error": last_error}
+
+
 # Поля формы, которые ИИ имеет право заполнять. Город/слова — свободный текст;
 # остальное — коды из справочника (валидируем ниже). Возраст — under18/adult.
 _MULTI_CODE_FIELDS = ("category", "employment_type", "brand", "regions")
