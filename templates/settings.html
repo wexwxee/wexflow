@@ -1306,6 +1306,11 @@
           <label class="file-button" for="global_cv_file">Заменить файл</label>
           <span class="file-name {{ 'saved' if file_info.cv_status=='ok' else ('missing' if file_info.cv_status=='missing' else '') }}" data-file-name="global_cv_file">{{ file_info.cv_label }}</span>
           {% if file_info.cv_url %}<a class="file-open" href="{{ file_info.cv_url }}" title="Открыть общий CV">{{ ic.i('eye', 14) }} Просмотр</a>{% endif %}
+          {% if file_info.cv_status != 'empty' %}
+          <button class="file-remove" type="submit" name="remove_document" value="cv"
+                  formnovalidate onclick="return confirm('Убрать общий CV из этого профиля?');"
+                  title="Убрать общий CV">{{ ic.i('trash', 13) }} Убрать</button>
+          {% endif %}
           <input id="global_cv_file" type="file" name="cv_file" accept=".pdf,.doc,.docx">
         </div>
       </div>
@@ -1315,6 +1320,11 @@
           <label class="file-button" for="global_cover_file">Заменить файл</label>
           <span class="file-name {{ 'saved' if file_info.cover_status=='ok' else ('missing' if file_info.cover_status=='missing' else '') }}" data-file-name="global_cover_file">{{ file_info.cover_label }}</span>
           {% if file_info.cover_url %}<a class="file-open" href="{{ file_info.cover_url }}" title="Открыть общее мотивационное письмо">{{ ic.i('eye', 14) }} Просмотр</a>{% endif %}
+          {% if file_info.cover_status != 'empty' %}
+          <button class="file-remove" type="submit" name="remove_document" value="cover"
+                  formnovalidate onclick="return confirm('Убрать общее мотивационное письмо из этого профиля?');"
+                  title="Убрать мотивационное письмо">{{ ic.i('trash', 13) }} Убрать</button>
+          {% endif %}
           <input id="global_cover_file" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
         </div>
       </div>

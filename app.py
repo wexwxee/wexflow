@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import func
 
 import config
+import candidate_profiles
 import local_guard
 import labels
 import geo
@@ -1652,6 +1653,7 @@ app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), nam
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 templates.env.globals["brand_label"] = labels.brand
 templates.env.globals["L"] = labels
+templates.env.globals["candidate_profiles_state"] = candidate_profiles.ui_state
 # Текущий тариф доступен во всех шаблонах (бейдж в боковом меню и т.п.).
 templates.env.globals["current_plan"] = subscription.plan
 templates.env.globals["plan_label"] = lambda p=None: subscription.PLANS.get(p or subscription.plan(), subscription.PLANS["free"])["name"]
@@ -3788,6 +3790,8 @@ def _sync_profile_with_cloud():
       человеком на новый ПК/после переустановки).
     Непустой локальный профиль НИКОГДА не затирается пустым облачным.
     """
+    if not candidate_profiles.is_primary():
+        return
     try:
         local = profile_store.load_profile()
         has_local = any(
@@ -3888,9 +3892,23 @@ def account_rebind_confirm(code: str = Form("")):
 def settings_documents_save(
     cv_path: str = Form(""), cover_letter_path: str = Form(""),
     cv_file: UploadFile | None = File(None), cover_letter_file: UploadFile | None = File(None),
+    remove_document: str = Form(""),
 ):
     """Global documents used when no store or brand rule overrides them."""
     profile = profile_store.load_profile()
+    remove_key = {
+        "cv": "cv_path",
+        "cover": "cover_letter_path",
+    }.get(str(remove_document or "").strip())
+    if remove_key:
+        old_path = str(profile.get(remove_key) or "")
+        profile[remove_key] = ""
+        profile_store.save_profile(profile)
+        profile_store.remove_managed_document(old_path)
+        return RedirectResponse(
+            "/settings/documents?saved=removed#global-documents",
+            status_code=303,
+        )
     profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
     if file_error:
         return RedirectResponse(_url_with_system_response("/settings/documents", error=file_error), status_code=303)

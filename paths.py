@@ -14,6 +14,8 @@ import os
 import sys
 from pathlib import Path
 
+import candidate_profiles
+
 APP_NAME = "WexFlow"
 _MODULE = "salling"
 
@@ -33,11 +35,7 @@ else:
 
 def data_root() -> Path:
     """Куда писать пользовательские данные (БД, профиль, логин браузера)."""
-    if is_frozen():
-        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        d = Path(base) / APP_NAME / _MODULE
-    else:
-        d = _PROJECT_DIR
+    d = candidate_profiles.data_dir(candidate_profiles.active_profile_id())
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -53,7 +51,8 @@ def shared_root() -> Path:
     (как и остальные данные), чтобы не засорять корень диска.
     """
     if is_frozen():
-        d = DATA_DIR.parent
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        d = Path(base) / APP_NAME
     else:
         d = _PROJECT_DIR
     d.mkdir(parents=True, exist_ok=True)

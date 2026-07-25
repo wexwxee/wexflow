@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import paths
+import candidate_profiles
 
 # BASE_DIR — код и ресурсы (в сборке = распакованные данные PyInstaller).
 # DATA_DIR — пользовательские данные (в сборке = %AppData%\WexFlow\salling).
@@ -20,6 +21,15 @@ SHARED_PROFILE_PATH = SHARED_DIR / "profile.json"  # единый профиль
 LICENSE_PATH = SHARED_DIR / "license.json"         # состояние подписки (заготовка)
 BROWSER_PROFILE_DIR = DATA_DIR / "browser_profile"  # persistent context (логин SuccessFactors)
 SECRETS_PATH = DATA_DIR / "secrets.json"
+
+# Candidate profile data must not leak between people on the same computer.
+# The old shared path remains a migration source for the primary candidate.
+LEGACY_SHARED_PROFILE_PATH = SHARED_PROFILE_PATH
+SHARED_PROFILE_PATH = (
+    LEGACY_SHARED_PROFILE_PATH
+    if candidate_profiles.is_primary()
+    else DATA_DIR / "profile.json"
+)
 
 
 def _secrets() -> dict:

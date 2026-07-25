@@ -13,6 +13,7 @@
 {%- endmacro %}
 
 {% macro sidebar(active="jobs") -%}
+  {% set candidate_state = candidate_profiles_state() %}
   <aside class="wex-sidebar" aria-label="WexFlow navigation">
     <a class="wex-side-logo" href="/hub" data-tip-title="WexFlow" data-tip-body="Вакансии и подача в одном рабочем пространстве.">{{ plane(28) }}</a>
     <nav class="wex-side-nav">
@@ -27,11 +28,54 @@
       <a class="wex-side-btn {{ 'active' if active == 'help' }}" href="/help" data-tip-title="Справка" data-tip-body="Частые вопросы: как работает подача, автопилот, Telegram и обновления.">{{ ic.i('message', 18) }}<span>Справка</span></a>
     </nav>
     <div class="wex-side-spacer"></div>
+    <button type="button" class="wex-side-btn candidate-profile-trigger" data-candidate-profile-open
+            data-tip-title="Профили людей"
+            data-tip-body="Отдельные данные, документы и история подач для каждого человека.">
+      <span class="candidate-profile-avatar">{{ candidate_state.active.initials }}</span>
+      <span>{{ candidate_state.active.name }}</span>
+    </button>
     <a class="wex-side-btn {{ 'active' if active == 'account' }}" href="/account" data-tip-title="Аккаунт" data-tip-body="Общий профиль кандидата и вход через Telegram.">{{ ic.i('user', 18) }}<span>Аккаунт</span></a>
     {% if show_billing() %}
     <a class="wex-side-btn" href="/account#подписка" data-tip-title="Твой тариф" data-tip-body="Текущий тариф подписки. Нажми, чтобы посмотреть планы.">{{ ic.i('star', 18) }}<span>{{ plan_label() }}</span></a>
     {% endif %}
     <a class="wex-side-btn" href="/__app/7eleven" data-tip-title="7-Eleven" data-tip-body="Перейти в отдельный модуль автоподачи 7-Eleven.">{{ ic.i('store', 18) }}<span>7-Eleven</span></a>
+    <div class="candidate-profile-overlay" data-candidate-profile-modal hidden>
+      <section class="candidate-profile-modal" role="dialog" aria-modal="true" aria-labelledby="candidateProfileTitle">
+        <div class="candidate-profile-head">
+          <div>
+            <h2 id="candidateProfileTitle">Профили людей</h2>
+            <p>У каждого — свои данные, документы, настройки и история подач.</p>
+          </div>
+          <button type="button" class="candidate-profile-close" data-candidate-profile-close
+                  aria-label="Закрыть">{{ ic.i('x', 17) }}</button>
+        </div>
+        <div class="candidate-profile-list">
+          {% for person in candidate_state.profiles %}
+          <button type="button" class="candidate-profile-row {{ 'active' if person.active }}"
+                  data-candidate-profile-switch="{{ person.id }}" {{ 'disabled' if person.active }}>
+            <span class="candidate-profile-avatar">{{ person.initials }}</span>
+            <span class="candidate-profile-copy">
+              <b>{{ person.name }}</b>
+              <small>{{ 'Текущий профиль' if person.active else ('Ваш основной профиль' if person.primary else 'Отдельный чистый профиль') }}</small>
+            </span>
+            {% if person.active %}<span class="candidate-profile-check">{{ ic.i('check', 17) }}</span>{% endif %}
+          </button>
+          {% endfor %}
+        </div>
+        <form class="candidate-profile-add" data-candidate-profile-add>
+          <label for="candidateProfileName">Добавить человека</label>
+          <div>
+            <input id="candidateProfileName" name="name" maxlength="40" autocomplete="off"
+                   placeholder="Например, Сестра" required>
+            <button type="submit">Создать чистый профиль</button>
+          </div>
+          <p class="candidate-profile-error" data-candidate-profile-error hidden></p>
+        </form>
+        <p class="candidate-profile-note">
+          При переключении WexFlow безопасно перезапустится. Подачи другого профиля здесь не появятся.
+        </p>
+      </section>
+    </div>
   </aside>
 {%- endmacro %}
 

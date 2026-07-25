@@ -293,7 +293,10 @@ a { color: var(--accent); text-decoration: none; }
   padding: 16px 10px;
   background: #0b0c0c;
   border-right: 1px solid rgba(255, 255, 255, .08);
+  overflow-y: auto;
+  scrollbar-width: none;
 }
+.wex-sidebar::-webkit-scrollbar { display: none; }
 .wex-side-logo {
   width: 60px;
   min-height: 46px;
@@ -390,6 +393,120 @@ a { color: var(--accent); text-decoration: none; }
 .wex-side-spacer {
   flex: 1;
 }
+.candidate-profile-trigger {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent) !important;
+  background: color-mix(in srgb, var(--accent) 8%, transparent) !important;
+}
+.candidate-profile-avatar {
+  width: 27px;
+  height: 27px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  background: linear-gradient(145deg, #31e981, #13b75c);
+  color: #07130c;
+  font: 800 11px/1 Inter, sans-serif;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.24);
+}
+.candidate-profile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 6, 5, .72);
+  backdrop-filter: blur(9px);
+}
+.candidate-profile-overlay[hidden] { display: none; }
+body.candidate-profile-open { overflow: hidden; }
+.candidate-profile-modal {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--glass-line);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--card) 96%, #0b100d);
+  box-shadow: 0 28px 90px rgba(0,0,0,.5);
+}
+.candidate-profile-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+.candidate-profile-head h2 { margin: 0; font-size: 20px; }
+.candidate-profile-head p,
+.candidate-profile-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.candidate-profile-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--txt);
+  cursor: pointer;
+}
+.candidate-profile-list { display: grid; gap: 8px; }
+.candidate-profile-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  background: var(--card-2);
+  color: var(--txt);
+  text-align: left;
+  cursor: pointer;
+}
+.candidate-profile-row:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--glass-line));
+}
+.candidate-profile-row.active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--glass-line));
+  background: color-mix(in srgb, var(--accent) 9%, var(--card-2));
+  cursor: default;
+}
+.candidate-profile-copy { min-width: 0; display: grid; gap: 3px; }
+.candidate-profile-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.candidate-profile-copy small { color: var(--muted); }
+.candidate-profile-check { margin-left: auto; color: var(--accent); }
+.candidate-profile-add {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--glass-line);
+}
+.candidate-profile-add > label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 700;
+  font-size: 13px;
+}
+.candidate-profile-add > div { display: flex; gap: 8px; }
+.candidate-profile-add input { min-width: 0; flex: 1; }
+.candidate-profile-add button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: var(--accent);
+  color: #07130c;
+  font-weight: 800;
+  cursor: pointer;
+}
+.candidate-profile-add button:disabled { opacity: .55; cursor: wait; }
+.candidate-profile-error { margin: 8px 0 0; color: var(--err-txt); font-size: 13px; }
+.candidate-profile-note { margin-top: 14px; }
 .wex-main {
   min-height: calc(100vh - var(--desktop-frame-h));
   margin-left: 84px;
@@ -475,6 +592,9 @@ a { color: var(--accent); text-decoration: none; }
   }
   .wex-side-btn span {
     display: none;
+  }
+  .wex-side-btn .candidate-profile-avatar {
+    display: inline-flex;
   }
   .wex-side-btn.active::before {
     left: 8px;
@@ -758,6 +878,24 @@ label.lbl {
   border-radius: 8px; padding: 9px 12px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .file-button:hover { border-color: var(--accent); }
+.file-remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--err-txt) 38%, var(--line));
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--err-txt);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.file-remove:hover {
+  border-color: var(--err-txt);
+  background: color-mix(in srgb, var(--err-txt) 9%, transparent);
+}
 .file-name { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
 .file-name.saved   { color: var(--ok-txt); }
 .file-name.missing { color: var(--err-txt); }

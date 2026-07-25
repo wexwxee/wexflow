@@ -36,6 +36,8 @@ import urllib.error
 import zipfile
 import hashlib
 
+import candidate_profiles
+
 APP_NAME = "WexFlow"
 
 def is_frozen() -> bool:
@@ -71,6 +73,7 @@ CREATE_NO_WINDOW = 0x08000000  # фоновые серверы — без чёр
 _started = []  # дочерние процессы, которые запустило именно это приложение
 _started_lock = threading.Lock()
 _stopping = False
+_profile_restart_requested = False
 _autopilot_win = None  # мини-окно автопилота (чтобы не открывать дубликаты)
 
 
@@ -310,6 +313,31 @@ class WindowControls:
         if window:
             window.minimize()
         return True
+
+    def _restart_for_candidate(self):
+        """Close cleanly; main() starts a fresh process after workers stop."""
+        global _profile_restart_requested, _tray_quit
+        _profile_restart_requested = True
+        _tray_quit = True
+        window = self._window()
+        if window:
+            threading.Timer(0.25, window.destroy).start()
+
+    def switch_candidate_profile(self, profile_id):
+        try:
+            profile = candidate_profiles.set_active(str(profile_id or ""))
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        self._restart_for_candidate()
+        return {"ok": True, "profile": profile}
+
+    def create_candidate_profile(self, name):
+        try:
+            profile = candidate_profiles.create_profile(str(name or ""), activate=True)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        self._restart_for_candidate()
+        return {"ok": True, "profile": profile}
 
     def _native_fullscreen_state(self, window) -> bool | None:
         """Read pywebview's real state when its WinForms window is available."""
@@ -1344,6 +1372,11 @@ def main():
             sys.exit(1)
         return
     run_window(minimized="--minimized" in args)
+    if _profile_restart_requested:
+        try:
+            _spawn(_self_cmd(), APP_ROOT if not is_frozen() else None)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WexFlow] profile restart failed: {exc}")
 
 
 if __name__ == "__main__":

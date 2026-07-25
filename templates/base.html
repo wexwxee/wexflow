@@ -175,6 +175,76 @@
     setInterval(tick, 90000);
   })();
 </script>
+<script>
+  (function () {
+    var modal = document.querySelector("[data-candidate-profile-modal]");
+    if (!modal) return;
+    var error = modal.querySelector("[data-candidate-profile-error]");
+    function showError(message) {
+      error.textContent = message || "Не получилось переключить профиль.";
+      error.hidden = false;
+    }
+    function api() {
+      return window.pywebview && window.pywebview.api;
+    }
+    document.querySelectorAll("[data-candidate-profile-open]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        modal.hidden = false;
+        document.body.classList.add("candidate-profile-open");
+      });
+    });
+    modal.querySelectorAll("[data-candidate-profile-close]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        modal.hidden = true;
+        document.body.classList.remove("candidate-profile-open");
+      });
+    });
+    modal.addEventListener("click", function (event) {
+      if (event.target === modal) {
+        modal.hidden = true;
+        document.body.classList.remove("candidate-profile-open");
+      }
+    });
+    modal.querySelectorAll("[data-candidate-profile-switch]").forEach(function (button) {
+      button.addEventListener("click", async function () {
+        var bridge = api();
+        if (!bridge || !bridge.switch_candidate_profile) {
+          showError("Переключение работает в окне приложения WexFlow.");
+          return;
+        }
+        button.disabled = true;
+        var result = await bridge.switch_candidate_profile(button.dataset.candidateProfileSwitch);
+        if (!result || !result.ok) {
+          button.disabled = false;
+          showError((result && result.error) || "");
+        }
+      });
+    });
+    var addForm = modal.querySelector("[data-candidate-profile-add]");
+    addForm.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      error.hidden = true;
+      var bridge = api();
+      if (!bridge || !bridge.create_candidate_profile) {
+        showError("Создание профиля работает в окне приложения WexFlow.");
+        return;
+      }
+      var button = addForm.querySelector("button[type=submit]");
+      button.disabled = true;
+      var result = await bridge.create_candidate_profile(addForm.elements.name.value);
+      if (!result || !result.ok) {
+        button.disabled = false;
+        showError((result && result.error) || "");
+      }
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !modal.hidden) {
+        modal.hidden = true;
+        document.body.classList.remove("candidate-profile-open");
+      }
+    });
+  })();
+</script>
 <script src="/static/window_chrome.js?v=20260725-fullscreen-race"></script>
 <script src="/static/ai_indicator.js?v=20260725-ai-multiprovider"></script>
 <script>

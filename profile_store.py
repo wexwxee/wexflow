@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 
 import config
+import candidate_profiles
 
 UPLOAD_DIR = config.DATA_DIR / "uploads"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -101,7 +102,9 @@ def _migrate_legacy_profile() -> None:
     Если общего файла ещё нет, а старый есть — копируем его содержимое.
     """
     shared = config.SHARED_PROFILE_PATH
-    legacy = config.PROFILE_PATH
+    legacy = getattr(config, "LEGACY_SHARED_PROFILE_PATH", config.PROFILE_PATH)
+    if not candidate_profiles.is_primary():
+        return
     if shared.exists() or not legacy.exists() or shared == legacy:
         return
     try:
@@ -228,6 +231,21 @@ def save_upload(upload_file, prefix: str) -> str:
                 raise ValueError("Файл слишком большой. Максимум 25 МБ.")
             f.write(chunk)
     return str(target)
+
+
+def remove_managed_document(path: str) -> bool:
+    """Delete only WexFlow's private upload copy, never a user's source file."""
+    if not path:
+        return False
+    try:
+        candidate = Path(path).resolve()
+        uploads = UPLOAD_DIR.resolve()
+        if candidate.parent != uploads or not candidate.is_file():
+            return False
+        candidate.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def file_label(path: str) -> str:
