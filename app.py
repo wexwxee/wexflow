@@ -3366,7 +3366,16 @@ def _document_rule_view(rule: dict) -> dict:
 def _document_import_view(preview: dict | None) -> dict | None:
     if not preview:
         return None
-    file_map = {item["id"]: item for item in preview.get("files", [])}
+    preview_id = str(preview.get("id") or "")
+    files = []
+    for raw in preview.get("files", []):
+        item = dict(raw)
+        item["url"] = (
+            f"/settings/document-import/file/{preview_id}/{item['id']}"
+            if preview_id and item.get("id") else ""
+        )
+        files.append(item)
+    file_map = {item["id"]: item for item in files}
     groups = []
     for raw in preview.get("groups", []):
         group = dict(raw)
@@ -3375,6 +3384,7 @@ def _document_import_view(preview: dict | None) -> dict | None:
         group["confidence_percent"] = round(float(group.get("confidence") or 0) * 100)
         groups.append(group)
     result = dict(preview)
+    result["files"] = files
     result["groups"] = groups
     result["unassigned_files"] = [
         file_map[file_id]
@@ -3827,6 +3837,33 @@ def settings_document_import_analyse(files: list[UploadFile] = File(default=[]))
     return RedirectResponse(
         "/settings/documents?saved=import-preview#bulk-import",
         status_code=303,
+    )
+
+
+@app.get("/settings/document-import/file/{preview_id}/{file_id}")
+def settings_document_import_file(preview_id: str, file_id: str):
+    preview = document_import.get_preview()
+    if not preview or preview.get("id") != preview_id:
+        raise HTTPException(status_code=404, detail="План импорта устарел")
+    item = next(
+        (
+            candidate
+            for candidate in preview.get("files", [])
+            if candidate.get("id") == file_id
+        ),
+        None,
+    )
+    path = str((item or {}).get("path") or "")
+    if not path or profile_store.file_status(path) != "ok":
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    clean_path = profile_store.validate_document_path(path)
+    filename = str((item or {}).get("filename") or profile_store.file_label(clean_path))
+    is_pdf = filename.lower().endswith(".pdf")
+    return FileResponse(
+        clean_path,
+        media_type="application/pdf" if is_pdf else "application/octet-stream",
+        filename=filename,
+        content_disposition_type="inline" if is_pdf else "attachment",
     )
 
 

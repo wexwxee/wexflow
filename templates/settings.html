@@ -328,7 +328,12 @@
   .bulk-pair { display:grid; gap:7px; }
   .bulk-pair-file { display:flex; align-items:center; gap:7px; min-width:0; color:var(--txt); font-size:12px; }
   .bulk-pair-role { flex:0 0 auto; min-width:55px; color:var(--muted); font-size:10px; font-weight:750; text-transform:uppercase; }
-  .bulk-pair-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bulk-pair-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bulk-file-preview { display:inline-flex; align-items:center; gap:4px; flex:0 0 auto; padding:3px 7px;
+    border:1px solid color-mix(in srgb, var(--accent) 38%, var(--glass-line)); border-radius:7px;
+    color:var(--accent); background:color-mix(in srgb, var(--accent) 7%, transparent);
+    font-size:10.5px; font-weight:750; text-decoration:none; }
+  .bulk-file-preview:hover { border-color:var(--accent); background:color-mix(in srgb, var(--accent) 13%, transparent); }
   .bulk-confidence { color:var(--muted); font-size:11px; margin-top:2px; }
   .bulk-confidence strong { color:var(--ok-txt); }
   .bulk-unassigned { margin-top:12px; padding:11px 12px; border:1px solid var(--warn-line);
@@ -662,6 +667,7 @@
               <div class="bulk-pair-file">
                 <span class="bulk-pair-role">CV</span>
                 {{ ic.i('file', 13) }} <span class="bulk-pair-name">{{ group.cv_file.filename }}</span>
+                {% if group.cv_file.url %}<a class="bulk-file-preview" href="{{ group.cv_file.url }}" title="Открыть этот CV">{{ ic.i('eye', 12) }} Просмотр</a>{% endif %}
               </div>
               {% else %}
               <div class="bulk-pair-file"><span class="bulk-pair-role">CV</span><span class="hint">не найден — останется файл следующего уровня</span></div>
@@ -670,6 +676,7 @@
               <div class="bulk-pair-file">
                 <span class="bulk-pair-role">Письмо</span>
                 {{ ic.i('edit', 13) }} <span class="bulk-pair-name">{{ group.cover_file.filename }}</span>
+                {% if group.cover_file.url %}<a class="bulk-file-preview" href="{{ group.cover_file.url }}" title="Открыть это мотивационное письмо">{{ ic.i('eye', 12) }} Просмотр</a>{% endif %}
               </div>
               {% else %}
               <div class="bulk-pair-file"><span class="bulk-pair-role">Письмо</span><span class="hint">не найдено — останется файл следующего уровня</span></div>
@@ -694,7 +701,9 @@
         {% if document_import_preview.unassigned_files %}
         <div class="bulk-unassigned">
           <b>Не удалось уверенно назначить:</b>
-          {% for file in document_import_preview.unassigned_files %}{{ file.filename }}{{ ', ' if not loop.last }}{% endfor %}.
+          {% for file in document_import_preview.unassigned_files %}
+            {{ file.filename }}{% if file.url %} <a class="bulk-file-preview" href="{{ file.url }}" title="Открыть этот файл">{{ ic.i('eye', 12) }} Просмотр</a>{% endif %}{{ ', ' if not loop.last }}
+          {% endfor %}.
           Эти файлы не будут закреплены — их можно добавить вручную ниже или переименовать понятнее и повторить импорт.
         </div>
         {% endif %}

@@ -148,7 +148,45 @@ def test_settings_template_exposes_multi_file_import_and_confirmation():
     assert 'name="files"' in template
     assert "multiple required" in template
     assert 'action="/settings/document-import/apply"' in template
+    assert "group.cv_file.url" in template
+    assert "group.cover_file.url" in template
+    assert "Просмотр" in template
     assert "короткие текстовые фрагменты без email и телефона" in template
+
+
+def test_document_import_view_adds_preview_urls():
+    view = app._document_import_view({
+        "id": "preview-1",
+        "files": [{"id": "f1", "filename": "Netto CV.pdf", "path": "unused.pdf"}],
+        "groups": [{"id": "g1", "cv_id": "f1", "cover_id": "", "confidence": 0.9}],
+        "unassigned": ["f1"],
+    })
+
+    expected = "/settings/document-import/file/preview-1/f1"
+    assert view["groups"][0]["cv_file"]["url"] == expected
+    assert view["unassigned_files"][0]["url"] == expected
+
+
+def test_document_import_preview_file_route_is_bound_to_current_plan():
+    client = TestClient(app.app, base_url="http://127.0.0.1")
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "Netto CV.pdf"
+        path.write_bytes(b"%PDF-1.4 preview")
+        preview = {
+            "id": "preview-1",
+            "files": [{"id": "f1", "filename": "Netto CV.pdf", "path": str(path)}],
+            "groups": [],
+        }
+        with mock.patch.object(app.document_import, "get_preview", return_value=preview):
+            response = client.get("/settings/document-import/file/preview-1/f1")
+            stale = client.get("/settings/document-import/file/old-preview/f1")
+            unknown = client.get("/settings/document-import/file/preview-1/f2")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.headers["content-disposition"].startswith("inline;")
+    assert stale.status_code == 404
+    assert unknown.status_code == 404
 
 
 def test_bulk_routes_accept_many_files_and_confirm_dynamic_targets():
