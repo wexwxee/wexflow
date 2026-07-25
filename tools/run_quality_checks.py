@@ -67,9 +67,16 @@ def check_database() -> None:
 
 def run_tests() -> int:
     tests = sorted((ROOT / "tests").glob("test_*.py"))
+    test_env = os.environ.copy()
+    previous_path = test_env.get("PYTHONPATH", "")
+    test_env["PYTHONPATH"] = str(ROOT) + (os.pathsep + previous_path if previous_path else "")
     for path in tests:
         print(f"RUN  {path.name}", flush=True)
-        result = subprocess.run([sys.executable, str(path)], cwd=str(ROOT))
+        result = subprocess.run(
+            [sys.executable, str(path)],
+            cwd=str(ROOT),
+            env=test_env,
+        )
         if result.returncode:
             raise RuntimeError(f"{path.name} failed with exit code {result.returncode}")
     print(f"OK   Test files: {len(tests)}")

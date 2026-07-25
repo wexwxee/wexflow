@@ -243,6 +243,22 @@
   .ap-ai-hero-sub { margin:6px 0 10px; font-size:13.5px; color:var(--muted); line-height:1.5; }
   .ap-ai-hero textarea { background:var(--bg); }
   .ap-ai-hero .ap-ai-btn { padding:11px 18px; font-size:13.5px; }
+  /* Внешние анкеты: ИИ-настройки живут в своём модуле, а не в Аккаунте. */
+  .ai-toggle-card { background:linear-gradient(135deg, color-mix(in srgb, #8b7bff 8%, transparent), transparent 55%), var(--card); }
+  .ai-toggle-row { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+  .ai-toggle-copy { max-width:640px; }
+  .ai-toggle-copy h2 { display:flex; align-items:center; gap:8px; }
+  .ai-toggle-copy h2 .ic { color:#8b7bff; }
+  .ai-beta { font-size:11px; font-weight:800; color:#8b7bff; padding:2px 8px; border-radius:999px;
+    border:1px solid color-mix(in srgb, #8b7bff 40%, var(--glass-line)); background:color-mix(in srgb, #8b7bff 12%, transparent); }
+  .switch { position:relative; flex:0 0 auto; display:inline-block; width:52px; height:30px; cursor:pointer; }
+  .switch input { position:absolute; opacity:0; width:0; height:0; }
+  .switch-track { position:absolute; inset:0; border-radius:999px; background:var(--glass);
+    border:1px solid var(--glass-line); transition:.18s; }
+  .switch-thumb { position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%;
+    background:var(--muted); transition:.18s; }
+  .switch input:checked + .switch-track { background:color-mix(in srgb, var(--accent) 30%, transparent); border-color:var(--accent); }
+  .switch input:checked + .switch-track .switch-thumb { left:25px; background:var(--accent); }
   /* --- новая раскладка фильтров: 5 простых вопросов --- */
   .apx-q { margin:12px 0; padding:14px 16px; border:1px solid var(--glass-line);
     border-radius:14px; background:var(--glass); }
@@ -289,6 +305,7 @@
     <a class="{{ 'active' if settings_section == 'salling' else '' }}" href="/settings/salling">{{ ic.i('cart', 13) }} Salling</a>
     <a class="{{ 'active' if settings_section == 'autopilot' else '' }}" href="/settings/autopilot">{{ ic.i('zap', 13) }} Автопилот</a>
     <a class="{{ 'active' if settings_section == 'telegram' else '' }}" href="/settings/telegram">{{ ic.i('send', 13) }} Telegram</a>
+    <a class="{{ 'active' if settings_section == 'forms' else '' }}" href="/settings/forms">{{ ic.i('sparkles', 13) }} Анкеты и ИИ</a>
     <a href="/account#profile">{{ ic.i('user', 13) }} Аккаунт</a>
   </nav>
 
@@ -535,6 +552,111 @@
         });
       });
     })();
+  </script>
+  {% endif %}
+
+  {% if settings_section == 'forms' %}
+  <section class="panel ai-toggle-card">
+    <div class="ai-toggle-row">
+      <div class="ai-toggle-copy">
+        <h2>{{ ic.i('sparkles', 17) }} Умное ИИ-заполнение форм <span class="ai-beta">бета</span></h2>
+        <p class="hint" style="margin:6px 0 0;">Для Teamtailor и других внешних анкет: когда обычный помощник не узнаёт короткое поле, Google Gemini сопоставляет его с конкретным фактом профиля, а WexFlow подставляет <b>точно сохранённое значение</b>. Анкету по-прежнему <b>отправляешь ты сам</b>.</p>
+        <p class="hint" style="margin:8px 0 0; font-size:12px;">Включая, ты соглашаешься на передачу ограниченного набора данных профиля в Google Gemini для сопоставления вопросов. Чувствительные данные отправляются только при похожем вопросе.{% if not ai_fill_available %} <b style="color:var(--warn-txt)">Нужен ключ Gemini в secrets.json — сейчас его нет, ИИ не заработает.</b>{% endif %}</p>
+      </div>
+      <label class="switch" title="Включить ИИ-заполнение">
+        <input type="checkbox" id="aiFillToggle" {{ 'checked' if ai_fill_on else '' }}>
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+      </label>
+    </div>
+    <span id="aiFillStatus" class="autosave" style="margin-top:10px; display:inline-block;"></span>
+
+    <div class="ai-sub" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--glass-line);">
+      <div class="ai-toggle-row">
+        <div class="ai-toggle-copy">
+          <h2 style="font-size:15px;">{{ ic.i('edit', 16) }} Черновик мотивации под вакансию</h2>
+          <p class="hint" style="margin:6px 0 0;">Для свободных вопросов («почему хочешь к нам») ИИ напишет <b>черновик</b> из твоего «о себе» и названия вакансии. Это единственное, что ИИ сочиняет, а не берёт фактом — поэтому разрешение отдельное и по умолчанию выключено. В форме ответ помечается «черновик — проверь».</p>
+        </div>
+        <label class="switch" title="Черновик мотивации">
+          <input type="checkbox" id="aiMotToggle" {{ 'checked' if ai_fill_motivation_on else '' }} {{ 'disabled' if not ai_fill_on else '' }}>
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+      </div>
+      <span id="aiMotStatus" class="autosave" style="margin-top:8px; display:inline-block;"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>{{ ic.i('user', 17) }} Данные для ответов</h2>
+    <p class="hint">ИИ использует только сохранённые факты кандидата. Имя, контакты, опыт, языки и «Коротко о себе» редактируются в общем профиле.</p>
+    <div class="actions"><a class="crosslink" href="/account#profile">Открыть профиль кандидата →</a></div>
+  </section>
+
+  <script>
+  (function () {
+    var toggle = document.getElementById('aiFillToggle');
+    if (!toggle) return;
+    var motToggle = document.getElementById('aiMotToggle');
+    var status = document.getElementById('aiFillStatus');
+    function setStatus(text, kind) {
+      status.textContent = text || '';
+      status.className = 'autosave' + (kind ? ' ' + kind : '');
+    }
+    toggle.addEventListener('change', function () {
+      var on = toggle.checked;
+      toggle.disabled = true;
+      setStatus('Сохраняю…');
+      var fd = new FormData();
+      fd.append('enabled', on ? '1' : '0');
+      fetch('/settings/ai-fill', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          toggle.disabled = false;
+          if (d && d.ok) {
+            toggle.checked = !!d.enabled;
+            motToggle.disabled = !d.enabled;
+            if (!d.enabled) motToggle.checked = false;
+            else if (Object.prototype.hasOwnProperty.call(d, 'motivation_enabled')) motToggle.checked = !!d.motivation_enabled;
+            setStatus(d.enabled ? 'ИИ-заполнение включено' : 'ИИ-заполнение выключено', 'saved');
+          } else {
+            toggle.checked = !on;
+            setStatus((d && d.error) || 'Не удалось сохранить', 'error');
+          }
+        })
+        .catch(function () { toggle.disabled = false; toggle.checked = !on; setStatus('Нет связи', 'error'); });
+    });
+  })();
+
+  (function () {
+    var toggle = document.getElementById('aiMotToggle');
+    if (!toggle) return;
+    var mainToggle = document.getElementById('aiFillToggle');
+    toggle.disabled = !(mainToggle && mainToggle.checked);
+    var status = document.getElementById('aiMotStatus');
+    function setStatus(text, kind) {
+      status.textContent = text || '';
+      status.className = 'autosave' + (kind ? ' ' + kind : '');
+    }
+    toggle.addEventListener('change', function () {
+      var on = toggle.checked;
+      toggle.disabled = true;
+      setStatus('Сохраняю…');
+      var fd = new FormData();
+      fd.append('enabled', on ? '1' : '0');
+      fetch('/settings/ai-fill-motivation', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          toggle.disabled = false;
+          if (d && d.ok) {
+            toggle.checked = !!d.enabled;
+            setStatus(d.enabled ? 'Черновик мотивации включён' : 'Черновик мотивации выключен', 'saved');
+          } else {
+            toggle.checked = !!(d && d.enabled);
+            setStatus((d && d.error) || 'Не удалось сохранить', 'error');
+          }
+        })
+        .catch(function () { toggle.disabled = false; toggle.checked = !on; setStatus('Нет связи', 'error'); });
+    });
+  })();
   </script>
   {% endif %}
 

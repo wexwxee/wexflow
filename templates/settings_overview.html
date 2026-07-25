@@ -107,6 +107,18 @@
       </div>
     </a>
 
+    <a class="settings-card" href="/settings/forms">
+      <div class="settings-card-top">
+        <h2>{{ ic.i('sparkles', 18) }} Анкеты и ИИ</h2>
+        <span class="arrow">→</span>
+      </div>
+      <p>Безопасное дозаполнение внешних анкет и отдельное разрешение на мотивационные черновики.</p>
+      <div class="settings-meta">
+        <span class="settings-pill {{ 'ok' if ai_fill_on else '' }}">{{ 'ИИ включён' if ai_fill_on else 'ИИ выключен' }}</span>
+        {% if ai_fill_motivation_on %}<span class="settings-pill">Черновики включены</span>{% endif %}
+      </div>
+    </a>
+
     <a class="settings-card" href="/status">
       <div class="settings-card-top">
         <h2>{{ ic.i('sparkles', 18) }} Состояние системы</h2>

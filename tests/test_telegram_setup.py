@@ -74,6 +74,7 @@ def test_every_mutating_telegram_action_requires_login():
 def test_setup_test_explains_when_bot_needs_start():
     cloud_result = {
         "ok": False,
+        "code": "bot_not_started",
         "error": "Open the bot first",
         "needsBotStart": True,
         "botUrl": "https://t.me/wexflowbot?start=wexflow",
@@ -88,6 +89,22 @@ def test_setup_test_explains_when_bot_needs_start():
     assert response.status_code == 200
     assert data == cloud_result
     assert "WexFlow" in send.call_args.args[0]
+
+
+def test_setup_test_preserves_cloud_quota_reason():
+    cloud_result = {
+        "ok": False,
+        "code": "store_quota",
+        "error": "Облачное хранилище Telegram исчерпало лимит.",
+    }
+    with (
+        mock.patch.object(app.account_mod, "is_signed_in", return_value=True),
+        mock.patch.object(app.cloud_auth, "send_test_message", return_value=cloud_result),
+    ):
+        data = _json(app.telegram_setup_test())
+
+    assert data["code"] == "store_quota"
+    assert "исчерпало лимит" in data["error"]
 
 
 def test_detach_stops_telegram_mode_before_local_signout():

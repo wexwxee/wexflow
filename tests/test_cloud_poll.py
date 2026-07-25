@@ -16,8 +16,8 @@ def test_normal_poll_intervals():
 
 
 def test_poll_backoff_is_bounded():
-    assert [app._tg_poll_delay(n, True) for n in range(1, 6)] == [10, 20, 40, 80, 120]
-    assert app._tg_poll_delay(100, True) == 120
+    assert [app._tg_poll_delay(n, True) for n in range(1, 6)] == [15, 30, 60, 120, 240]
+    assert app._tg_poll_delay(100, True) == 900
 
 
 def test_cloud_connection_state_is_honest():
@@ -30,26 +30,32 @@ def test_cloud_connection_state_is_honest():
 def test_failed_sync_retries_soon_without_request_storm():
     original_time = app.time.time
     original_attempts = dict(app._cloud_sync_attempt_last)
+    original_failures = dict(app._cloud_sync_fail_streak)
     clock = [1000.0]
     try:
         app.time.time = lambda: clock[0]
         app._cloud_sync_attempt_last["jobs"] = 0.0
+        app._cloud_sync_fail_streak["jobs"] = 0
         assert app._begin_cloud_sync("jobs", 0.0, 300) == 1000.0
 
-        # The caller did not move last_success because the request failed.
+        # После неуспеха следующий повтор отодвигается экспоненциально.
+        app._finish_cloud_sync("jobs", False)
         clock[0] = 1010.0
         assert app._begin_cloud_sync("jobs", 0.0, 300) is None
-        clock[0] = 1015.0
-        assert app._begin_cloud_sync("jobs", 0.0, 300) == 1015.0
+        clock[0] = 1060.0
+        assert app._begin_cloud_sync("jobs", 0.0, 300) == 1060.0
 
         # Once successful, the normal five-minute cooldown applies.
+        app._finish_cloud_sync("jobs", True)
         clock[0] = 1100.0
-        assert app._begin_cloud_sync("jobs", 1015.0, 300) is None
+        assert app._begin_cloud_sync("jobs", 1060.0, 300) is None
         assert app._begin_cloud_sync("jobs", 1015.0, 300, force=True) == 1100.0
     finally:
         app.time.time = original_time
         app._cloud_sync_attempt_last.clear()
         app._cloud_sync_attempt_last.update(original_attempts)
+        app._cloud_sync_fail_streak.clear()
+        app._cloud_sync_fail_streak.update(original_failures)
 
 
 def test_explicit_logout_blocks_background_relogin():

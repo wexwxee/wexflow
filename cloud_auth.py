@@ -190,6 +190,25 @@ def pull_profile(timeout: int = 10) -> dict | None:
     return None
 
 
+def _friendly_cloud_result(data: dict, http_status: int = 0) -> dict:
+    """Не показывать человеку сырые HTTP/Redis ошибки из облачного сервиса."""
+    if not isinstance(data, dict):
+        data = {}
+    code = str(data.get("code") or "")
+    if code == "store_quota":
+        data["error"] = (
+            "Облачное хранилище Telegram исчерпало лимит. Данные на ПК в "
+            "безопасности; нужно восстановить или заменить облачную базу."
+        )
+    elif http_status >= 500 and not data.get("error"):
+        data.update({
+            "ok": False,
+            "code": code or "cloud_unavailable",
+            "error": "Облако Telegram временно недоступно. Повтори немного позже.",
+        })
+    return data
+
+
 def _post_json(path: str, payload: dict, timeout: int = 10) -> dict:
     """POST JSON на облако и вернуть разобранный ответ (или {ok:False,error}).
 
@@ -198,12 +217,15 @@ def _post_json(path: str, payload: dict, timeout: int = 10) -> dict:
     url = f"{CLOUD_BASE}{path}"
     try:
         with _open(url, payload, timeout) as r:
-            return json.loads(r.read().decode("utf-8"))
+            return _friendly_cloud_result(json.loads(r.read().decode("utf-8")))
     except urllib.error.HTTPError as e:  # 4xx/5xx с телом-ошибкой
         try:
-            return json.loads(e.read().decode("utf-8"))
+            return _friendly_cloud_result(
+                json.loads(e.read().decode("utf-8")),
+                http_status=e.code,
+            )
         except (ValueError, OSError):
-            return {"ok": False, "error": f"HTTP {e.code}"}
+            return _friendly_cloud_result({"ok": False}, http_status=e.code)
     except (urllib.error.URLError, OSError, ValueError):
         return {"ok": False, "error": "Нет связи с облаком"}
 
@@ -321,14 +343,20 @@ def fetch_commands(tg_id: str = "", timeout: int = 15) -> list:
         return []
 
 
-def fetch_poll(tg_id: str = "", timeout: int = 12) -> dict | None:
+def fetch_poll(
+    tg_id: str = "",
+    timeout: int = 12,
+    *,
+    sync_binding: bool = False,
+) -> dict | None:
     """Одним запросом получить решения + команды и обновить heartbeat.
 
     None означает именно сбой связи/серверную ошибку; пустые списки означают
     успешный опрос без работы. Это различие нужно для backoff и диагностики."""
     query = {"deviceId": device_id(), "kind": "poll2"}
-    if tg_id:
+    if tg_id and sync_binding:
         query["tgId"] = str(tg_id)
+        query["bind"] = "1"
     url = f"{CLOUD_BASE}/api/decisions?{urllib.parse.urlencode(query)}"
     try:
         with _open(url, timeout=timeout) as r:

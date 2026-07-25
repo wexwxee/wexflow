@@ -106,11 +106,33 @@ def test_requests_carry_token_and_register_once():
 
 def test_combined_poll_uses_one_authenticated_request():
     with _TempDevice(), _Patched() as cloud:
-        result = cloud_auth.fetch_poll(tg_id="42")
+        result = cloud_auth.fetch_poll(tg_id="42", sync_binding=True)
         assert result == {"decisions": [], "commands": [], "ack": True}
         polls = [r for r in cloud.requests if "kind=poll2" in r["url"]]
         assert len(polls) == 1
+        assert "tgId=42" in polls[0]["url"]
+        assert "bind=1" in polls[0]["url"]
         assert polls[0]["headers"].get("x-device-token") == cloud_auth.device_secret()
+
+
+def test_idle_poll_does_not_spend_requests_on_binding_sync():
+    with _TempDevice(), _Patched() as cloud:
+        cloud_auth.fetch_poll(tg_id="42")
+        poll = next(r for r in cloud.requests if "kind=poll2" in r["url"])
+        assert "tgId=" not in poll["url"]
+        assert "bind=1" not in poll["url"]
+
+
+def test_cloud_quota_error_is_human_readable():
+    result = cloud_auth._friendly_cloud_result({
+        "ok": False,
+        "code": "store_quota",
+        "error": "ERR max requests limit exceeded",
+    }, http_status=503)
+
+    assert result["code"] == "store_quota"
+    assert "исчерпало лимит" in result["error"]
+    assert "500" not in result["error"]
 
 
 def test_combined_poll_falls_back_for_old_cloud():

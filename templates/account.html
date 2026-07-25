@@ -289,7 +289,7 @@
   .cmp-table .yes { color:var(--accent); display:inline-flex; }
   .cmp-table .no { color:var(--muted); opacity:.6; }
 
-  /* ── Доп-поля для ИИ + тумблер беты ──────────────────────── */
+  /* ── Дополнительные факты профиля для анкет ──────────────── */
   .ai-extra { margin-top:16px; border-top:1px solid var(--glass-line); padding-top:12px; }
   .ai-extra > summary {
     cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px;
@@ -305,19 +305,6 @@
     background:var(--glass); color:var(--txt); font:inherit; font-size:14px; resize:vertical; min-height:74px; }
   .ai-extra textarea:focus { outline:none; border-color:var(--accent); }
 
-  .ai-toggle-card { background:linear-gradient(135deg, color-mix(in srgb, #8b7bff 8%, transparent), transparent 55%), var(--card); }
-  .ai-toggle-row { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }
-  .ai-toggle-copy { max-width:640px; }
-  .ai-beta { font-size:11px; font-weight:800; color:#8b7bff; padding:2px 8px; border-radius:999px;
-    border:1px solid color-mix(in srgb, #8b7bff 40%, var(--glass-line)); background:color-mix(in srgb, #8b7bff 12%, transparent); }
-  .switch { position:relative; flex:0 0 auto; display:inline-block; width:52px; height:30px; cursor:pointer; }
-  .switch input { position:absolute; opacity:0; width:0; height:0; }
-  .switch-track { position:absolute; inset:0; border-radius:999px; background:var(--glass);
-    border:1px solid var(--glass-line); transition:.18s; }
-  .switch-thumb { position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%;
-    background:var(--muted); transition:.18s; }
-  .switch input:checked + .switch-track { background:color-mix(in srgb, var(--accent) 30%, transparent); border-color:var(--accent); }
-  .switch input:checked + .switch-track .switch-thumb { left:25px; background:var(--accent); }
 </style>
 {% endblock %}
 
@@ -819,36 +806,6 @@
     <div class="actions" style="margin-top:16px;"><span id="autosaveStatus" class="autosave">{{ ic.i('check', 13) }} Изменения сохраняются автоматически</span></div>
   </form>
 
-  <!-- БЕТА: ИИ-дозаполнение форм -->
-  <div class="panel ai-toggle-card">
-    <div class="ai-toggle-row">
-      <div class="ai-toggle-copy">
-        <h2>{{ ic.i('sparkles', 17) if ic else '' }} Умное ИИ-заполнение форм <span class="ai-beta">бета</span></h2>
-        <p class="hint" style="margin:6px 0 0;">Когда скрипт не узнаёт короткое поле анкеты по шаблону, Google Gemini сопоставляет его с конкретным фактом профиля, а приложение подставляет <b>точное сохранённое значение</b>. Произвольный текст в обычном режиме модель передать не может. Свободные вопросы остаются тебе или отдельному режиму черновиков. Анкету по-прежнему <b>отправляешь ты сам</b>.</p>
-        <p class="hint" style="margin:8px 0 0; font-size:12px;">Включая, ты соглашаешься на передачу ограниченного набора данных профиля в Google Gemini для сопоставления вопросов. Чувствительные данные отправляются только при похожем вопросе.{% if not ai_fill_available %} <b style="color:var(--warn-txt)">Нужен ключ Gemini в secrets.json — сейчас его нет, ИИ не заработает.</b>{% endif %}</p>
-      </div>
-      <label class="switch" title="Включить ИИ-заполнение">
-        <input type="checkbox" id="aiFillToggle" {{ 'checked' if ai_fill_on else '' }}>
-        <span class="switch-track"><span class="switch-thumb"></span></span>
-      </label>
-    </div>
-    <span id="aiFillStatus" class="autosave" style="margin-top:10px; display:inline-block;"></span>
-
-    <div class="ai-sub" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--glass-line);">
-      <div class="ai-toggle-row">
-        <div class="ai-toggle-copy">
-          <h2 style="font-size:15px;">✍️ Черновик мотивации под вакансию</h2>
-          <p class="hint" style="margin:6px 0 0;">Для свободных вопросов («почему хочешь к нам») ИИ напишет <b>черновик</b> из твоего «о себе» и названия вакансии. Это <b>единственное</b>, что ИИ сочиняет, а не берёт фактом — поэтому отдельно и по умолчанию выключено. В окне подачи такой ответ помечается «⚠ черновик — проверь». Заполни «Коротко о себе» выше, иначе черновика не будет.</p>
-        </div>
-        <label class="switch" title="Черновик мотивации">
-          <input type="checkbox" id="aiMotToggle" {{ 'checked' if ai_fill_motivation_on else '' }} {{ 'disabled' if not ai_fill_on else '' }}>
-          <span class="switch-track"><span class="switch-thumb"></span></span>
-        </label>
-      </div>
-      <span id="aiMotStatus" class="autosave" style="margin-top:8px; display:inline-block;"></span>
-    </div>
-  </div>
-
   <!-- Подписка показывается только после включения биллинга -->
   {% if show_billing() %}
   <div class="panel sub-panel">
@@ -939,6 +896,7 @@
     <h2>{{ ic.i('sliders', 17) }} Настройки модулей</h2>
     <p class="hint">Параметры, которые относятся к конкретному модулю.</p>
     <div class="actions">
+      <a class="crosslink" href="/settings/forms">{{ ic.i('sparkles', 14) }} Анкеты и ИИ →</a>
       <a class="crosslink" href="/settings/salling">{{ ic.i('cart', 14) }} Настройки Salling →</a>
       <a class="crosslink" href="/__app/7eleven">{{ ic.i('store', 14) }} Модуль 7-Eleven →</a>
     </div>
@@ -1125,61 +1083,5 @@
     });
   })();
 
-  // БЕТА-тумблер ИИ-заполнения форм
-  (function () {
-    var toggle = document.getElementById('aiFillToggle');
-    if (!toggle) return;
-    var motToggle = document.getElementById('aiMotToggle');
-    var status = document.getElementById('aiFillStatus');
-    function setStatus(text, kind) {
-      if (!status) return;
-      status.textContent = text || '';
-      status.className = 'autosave' + (kind ? ' ' + kind : '');
-    }
-    toggle.addEventListener('change', function () {
-      var on = toggle.checked;
-      toggle.disabled = true;
-      setStatus('Сохраняю…');
-      var fd = new FormData();
-      fd.append('enabled', on ? '1' : '0');
-      fetch('/settings/ai-fill', { method: 'POST', body: fd })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          toggle.disabled = false;
-          if (d && d.ok) {
-            toggle.checked = !!d.enabled;
-            if (motToggle) {
-              motToggle.disabled = !d.enabled;
-              if (!d.enabled) motToggle.checked = false;
-              else if (Object.prototype.hasOwnProperty.call(d, 'motivation_enabled')) motToggle.checked = !!d.motivation_enabled;
-            }
-            setStatus(d.enabled ? 'ИИ-заполнение включено' : 'ИИ-заполнение выключено', 'saved');
-          } else { toggle.checked = !on; setStatus('Не удалось сохранить', 'error'); }
-        })
-        .catch(function () { toggle.disabled = false; toggle.checked = !on; setStatus('Нет связи', 'error'); });
-    });
-  })();
-
-  // Под-тумблер: черновик мотивации
-  (function () {
-    var toggle = document.getElementById('aiMotToggle');
-    if (!toggle) return;
-    var mainToggle = document.getElementById('aiFillToggle');
-    toggle.disabled = !(mainToggle && mainToggle.checked);
-    var status = document.getElementById('aiMotStatus');
-    function setStatus(t, kind) { if (status) { status.textContent = t || ''; status.className = 'autosave' + (kind ? ' ' + kind : ''); } }
-    toggle.addEventListener('change', function () {
-      var on = toggle.checked; toggle.disabled = true; setStatus('Сохраняю…');
-      var fd = new FormData(); fd.append('enabled', on ? '1' : '0');
-      fetch('/settings/ai-fill-motivation', { method: 'POST', body: fd })
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          toggle.disabled = false;
-          if (d && d.ok) { toggle.checked = !!d.enabled; setStatus(d.enabled ? 'Черновик мотивации включён' : 'Черновик мотивации выключен', 'saved'); }
-          else { toggle.checked = !!(d && d.enabled); setStatus((d && d.error) || 'Не удалось сохранить', 'error'); }
-        })
-        .catch(function () { toggle.disabled = false; toggle.checked = !on; setStatus('Нет связи', 'error'); });
-    });
-  })();
 </script>
 {% endblock %}

@@ -66,3 +66,19 @@ def test_motivation_cannot_be_enabled_without_main_ai():
         "enabled": False,
         "error": "Сначала включи основное ИИ-заполнение.",
     }
+
+
+def test_ai_controls_live_in_forms_settings_not_account():
+    account_source = app.templates.env.loader.get_source(
+        app.templates.env, "account.html",
+    )[0]
+    settings_source = app.templates.env.loader.get_source(
+        app.templates.env, "settings.html",
+    )[0]
+
+    assert 'id="aiFillToggle"' not in account_source
+    assert 'href="/settings/forms"' in account_source
+    assert "{% if settings_section == 'forms' %}" in settings_source
+    assert 'id="aiFillToggle"' in settings_source
+    assert "ic.i('edit', 16)" in settings_source
+    assert "✍️" not in settings_source

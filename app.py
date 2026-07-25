@@ -574,6 +574,7 @@ _jobs_sync_last = 0.0
 _jobtexts_sync_last = 0.0
 _jobtexts_sent = {}   # jobId -> отпечаток последнего отправленного текста (не гонять то же)
 _cloud_sync_attempt_last = {"applied": 0.0, "jobs": 0.0, "filters": 0.0, "jobtexts": 0.0}
+_cloud_sync_fail_streak = {"applied": 0, "jobs": 0, "filters": 0, "jobtexts": 0}
 _cloud_sync_sent_hash = {}   # kind -> отпечаток последнего УСПЕШНО отправленного тела
 
 
@@ -589,24 +590,35 @@ def _sync_digest(payload) -> str:
 
 def _begin_cloud_sync(kind: str, last_success: float, interval: int,
                       force: bool = False) -> float | None:
-    """Start a due sync without treating failed attempts as successes."""
+    """Start a due sync; repeated cloud failures get exponential backoff."""
     now = time.time()
     if not force and now - last_success < interval:
         return None
-    if not force and now - _cloud_sync_attempt_last.get(kind, 0.0) < 15:
+    failures = int(_cloud_sync_fail_streak.get(kind, 0))
+    retry_after = min(1800, 30 * (2 ** min(failures, 6))) if failures else 30
+    if not force and now - _cloud_sync_attempt_last.get(kind, 0.0) < retry_after:
         return None
     _cloud_sync_attempt_last[kind] = now
     return now
 
 
+def _finish_cloud_sync(kind: str, success: bool) -> None:
+    if success:
+        _cloud_sync_fail_streak[kind] = 0
+    else:
+        _cloud_sync_fail_streak[kind] = min(
+            10, int(_cloud_sync_fail_streak.get(kind, 0)) + 1
+        )
+
+
 def _sync_applied_to_cloud(force: bool = False) -> bool:
     """Одно облако: периодически шлём в облако список недавно поданных вакансий —
     чтобы раздел «Поданные» в Mini App был виден (подал на ПК → видно в телефоне),
-    а поданные карточки ушли из «ждут решения». Троттлинг 30 сек."""
+    а поданные карточки ушли из «ждут решения»."""
     global _applied_sync_last
     if not account_mod.is_signed_in():
         return False
-    attempt = _begin_cloud_sync("applied", _applied_sync_last, 30, force)
+    attempt = _begin_cloud_sync("applied", _applied_sync_last, 300, force)
     if attempt is None:
         return False
     try:
@@ -633,14 +645,17 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
         digest = _sync_digest(items)
         if not force and digest and _cloud_sync_sent_hash.get("applied") == digest:
             _applied_sync_last = attempt   # список «Поданных» не изменился — не шлём
+            _finish_cloud_sync("applied", True)
             return False
         if cloud_auth.report_applied(items):
             _applied_sync_last = attempt
             if digest:
                 _cloud_sync_sent_hash["applied"] = digest
+            _finish_cloud_sync("applied", True)
             return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"applied-sync: ошибка — {e}")
+    _finish_cloud_sync("applied", False)
     return False
 
 
@@ -651,7 +666,7 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
     global _jobs_sync_last
     if not account_mod.is_signed_in():
         return False
-    attempt = _begin_cloud_sync("jobs", _jobs_sync_last, 300, force)
+    attempt = _begin_cloud_sync("jobs", _jobs_sync_last, 900, force)
     if attempt is None:
         return False
     try:
@@ -660,12 +675,21 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
         jobs.sort(key=lambda j: getattr(j, "first_seen", None) or utcnow(), reverse=True)
         jobs = jobs[:100]
         payload = [_tg_job_payload(j) for j in jobs]
+        digest = _sync_digest(payload)
+        if not force and digest and _cloud_sync_sent_hash.get("jobs") == digest:
+            _jobs_sync_last = attempt
+            _finish_cloud_sync("jobs", True)
+            return False
         if cloud_auth.report_jobs(payload):
             applications.mark_listed([j.id for j in jobs])
             _jobs_sync_last = attempt
+            if digest:
+                _cloud_sync_sent_hash["jobs"] = digest
+            _finish_cloud_sync("jobs", True)
             return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"jobs-sync: ошибка — {e}")
+    _finish_cloud_sync("jobs", False)
     return False
 
 
@@ -677,7 +701,7 @@ def _sync_job_texts_to_cloud(force: bool = False) -> bool:
     global _jobtexts_sync_last
     if not account_mod.is_signed_in():
         return False
-    attempt = _begin_cloud_sync("jobtexts", _jobtexts_sync_last, 300, force)
+    attempt = _begin_cloud_sync("jobtexts", _jobtexts_sync_last, 600, force)
     if attempt is None:
         return False
     try:
@@ -705,14 +729,17 @@ def _sync_job_texts_to_cloud(force: bool = False) -> bool:
             batch += 1
         if not items:
             _jobtexts_sync_last = attempt
+            _finish_cloud_sync("jobtexts", True)
             return True
         if cloud_auth.report_job_texts(items):
             for it in items:
                 _jobtexts_sent[it["id"]] = f"{it['st']}:{len(it['ru'])}:{len(it['orig'])}"
             _jobtexts_sync_last = attempt
+            _finish_cloud_sync("jobtexts", True)
             return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"jobtexts-sync: ошибка — {e}")
+    _finish_cloud_sync("jobtexts", False)
     return False
 
 
@@ -804,7 +831,7 @@ def _sync_filters_to_cloud(force: bool = False) -> bool:
     global _filters_sync_last
     if not account_mod.is_signed_in():
         return False
-    attempt = _begin_cloud_sync("filters", _filters_sync_last, 300, force)
+    attempt = _begin_cloud_sync("filters", _filters_sync_last, 900, force)
     if attempt is None:
         return False
     try:
@@ -869,27 +896,35 @@ def _sync_filters_to_cloud(force: bool = False) -> bool:
                 "submitScope": str(autopilot.get_rule().get("submit_scope") or "new"),
             },
         }
+        digest = _sync_digest(payload)
+        if not force and digest and _cloud_sync_sent_hash.get("filters") == digest:
+            _filters_sync_last = attempt
+            _finish_cloud_sync("filters", True)
+            return False
         if cloud_auth.report_filters(payload):
             _filters_sync_last = attempt
+            if digest:
+                _cloud_sync_sent_hash["filters"] = digest
+            _finish_cloud_sync("filters", True)
             return True
     except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
         print(f"filters-sync: ошибка — {e}")
+    _finish_cloud_sync("filters", False)
     return False
 
 
 # Холостой «пульс» на бесплатном облачном Redis: у него жёсткий лимит команд за
 # период, и частый пульс (6 c) выедал его за ~3 дня → «команды не доходят до ПК».
-# 40 c берегут лимит; сразу после действия интервал сам падает до 2 c (had_work),
-# поэтому серия нажатий в приложении остаётся отзывчивой. Если однажды перейдём на
-# платный Redis — верни сюда 6 c и окно онлайна ONLINE_WINDOW_MS в боте к ~45 c.
-TG_IDLE_POLL_SEC = 40
+# 120 c снижают постоянный расход примерно втрое. После найденной работы интервал
+# временно падает до 2 c, поэтому серия команд остаётся отзывчивой.
+TG_IDLE_POLL_SEC = 120
 
 
 def _tg_poll_delay(fail_streak: int, signed_in: bool, had_work: bool = False) -> int:
     """Адаптивный интервал: быстрый ответ после работы, редкий холостой heartbeat
     (бережём лимит облачного Redis) и экспоненциальный backoff при сбоях сети."""
     if fail_streak > 0:
-        return min(120, 10 * (2 ** min(fail_streak - 1, 4)))
+        return min(900, 15 * (2 ** min(fail_streak - 1, 6)))
     if had_work:
         return 2
     return TG_IDLE_POLL_SEC if signed_in else 20
@@ -901,6 +936,7 @@ def _tg_poller_loop() -> None:
 
     Заменяет старый getUpdates: бот теперь общий и работает через webhook, поэтому
     нажатия кнопок собирает облако, а приложение забирает готовые решения."""
+    binding_sync_last = 0.0
     while not _tg_stop.is_set():
         signed_in = False
         had_work = False
@@ -915,11 +951,17 @@ def _tg_poller_loop() -> None:
                 continue
 
             tg_id = account_mod.load().get("tg_id") or ""
-            cycle = cloud_auth.fetch_poll(tg_id=str(tg_id))
+            sync_binding = time.time() - binding_sync_last >= 600
+            cycle = cloud_auth.fetch_poll(
+                tg_id=str(tg_id),
+                sync_binding=sync_binding,
+            )
             if cycle is None:
                 _tg_poll_state["fail_streak"] = int(_tg_poll_state.get("fail_streak") or 0) + 1
                 _tg_poll_state["last_error"] = "Нет связи с облаком Telegram"
             else:
+                if sync_binding:
+                    binding_sync_last = time.time()
                 _tg_poll_state.update({"fail_streak": 0, "last_ok": time.time(), "last_error": ""})
                 decisions = cycle.get("decisions") or []
                 commands = cycle.get("commands") or []
@@ -3004,9 +3046,6 @@ def account_page(request: Request, saved: str = "", missing: str = "",
         "account": account_mod.status(profile),
         "account_tg_id": account_mod.load().get("tg_id") or "",
         "cloud_login_url": cloud_auth.login_url(),
-        "ai_fill_on": settings_store.get_ai_fill(),
-        "ai_fill_motivation_on": settings_store.get_ai_fill_motivation(),
-        "ai_fill_available": bool(ai_filters.api_key()),
     })
 
 
@@ -3096,6 +3135,7 @@ def _settings_context(
         "salling": ("Salling", "Логин, документы, домашний адрес и сброс входа"),
         "autopilot": ("Автопилот", "Наборы фильтров, режим работы и автоотправка"),
         "telegram": ("Telegram", "Статус @wexflowbot, проверка и ручная отправка текущих"),
+        "forms": ("Анкеты и ИИ", "Умное дозаполнение внешних форм и безопасные черновики"),
         "overview": ("Настройки", "Короткая карта управления WexFlow"),
     }
     settings_title, settings_meta = titles.get(section, titles["salling"])
@@ -3119,6 +3159,9 @@ def _settings_context(
         "autopilot_mode": autopilot.get_mode(),
         "home_city": _home_city(settings_store.get_home()),
         "ai_available": ai_filters.available(),
+        "ai_fill_on": settings_store.get_ai_fill(),
+        "ai_fill_motivation_on": settings_store.get_ai_fill_motivation(),
+        "ai_fill_available": bool(ai_filters.api_key()),
         "autopilot_profiles": ap_profiles, "autopilot_profile": sel_profile,
         "autopilot_profile_count": autopilot.profile_match_count(sel_profile),
         "autopilot_count": autopilot.match_count(),
@@ -3171,6 +3214,11 @@ def settings_autopilot(request: Request, saved: str = "", geoerror: str = "", mi
 @app.get("/settings/telegram", response_class=HTMLResponse)
 def settings_telegram(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     return _render_settings_section(request, "telegram", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.get("/settings/forms", response_class=HTMLResponse)
+def settings_forms(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+    return _render_settings_section(request, "forms", saved=saved, geoerror=geoerror, missing=missing)
 
 
 @app.post("/account/save")
@@ -3730,6 +3778,7 @@ def telegram_setup_test():
     )
     return JSONResponse({
         "ok": bool(result.get("ok")),
+        "code": str(result.get("code") or ""),
         "error": str(result.get("error") or ""),
         "needsBotStart": bool(result.get("needsBotStart")),
         "botUrl": str(result.get("botUrl") or "https://t.me/wexflowbot"),
