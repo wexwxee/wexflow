@@ -5,6 +5,10 @@ telegram.json
 secrets.json
 settings.json
 ai_usage.json*
+# зашифрованные ключи ИИ и привязка к аккаунту — только локально, НИКОГДА в git
+ai_credentials.json*
+ai_account.json
+benchmark_ai_report.json
 jobs.db
 jobs.db-journal
 *.db-journal
