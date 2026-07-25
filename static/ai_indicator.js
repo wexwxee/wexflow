@@ -39,25 +39,33 @@
       "#wfAiInd .wf-ai-pct{font-weight:700;font-variant-numeric:tabular-nums}" +
       "#wfAiInd .wf-ai-lbl{color:var(--muted,#9aa0a6);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       "#wfAiInd .wf-ai-dot{width:8px;height:8px;border-radius:50%}" +
-      "#wfAiPop{position:absolute;left:0;bottom:44px;width:320px;max-width:calc(100vw - 28px);background:var(--card,#1b1b20);" +
-        "color:var(--fg,#e8e8ea);border:1px solid var(--border,rgba(255,255,255,.14));border-radius:14px;padding:14px;" +
-        "box-shadow:0 18px 48px rgba(0,0,0,.42);display:none}" +
+      "#wfAiPop{position:absolute;left:0;bottom:44px;width:332px;max-width:calc(100vw - 28px);background:var(--card,#1b1b20);" +
+        "color:var(--fg,#e8e8ea);border:1px solid var(--border,rgba(255,255,255,.14));border-radius:16px;padding:0;" +
+        "box-shadow:0 18px 48px rgba(0,0,0,.45);display:none;overflow:hidden}" +
       "#wfAiInd.open #wfAiPop{display:block}" +
-      "#wfAiPop h4{margin:0 0 2px;font-size:13px;font-weight:700}" +
-      "#wfAiPop .wf-ai-sub{color:var(--muted,#9aa0a6);font-size:11.5px;margin-bottom:10px}" +
-      "#wfAiPop .wf-ai-card{border:1px solid var(--border,rgba(255,255,255,.10));border-radius:11px;padding:10px;margin-bottom:8px}" +
-      "#wfAiPop .wf-ai-card .row{display:flex;align-items:center;justify-content:space-between;gap:8px}" +
-      "#wfAiPop .wf-ai-card .name{font-weight:600;font-size:12.5px;display:flex;align-items:center;gap:6px}" +
+      "#wfAiPop .wf-ai-head{padding:14px 14px 12px;border-bottom:1px solid var(--border,rgba(255,255,255,.10))}" +
+      "#wfAiPop h4{margin:0 0 3px;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:7px}" +
+      "#wfAiPop .wf-ai-sub{color:var(--muted,#9aa0a6);font-size:11.5px;line-height:1.5}" +
+      "#wfAiPop .wf-ai-body{padding:12px 14px}" +
+      "#wfAiPop .wf-ai-card{border:1px solid var(--border,rgba(255,255,255,.10));border-radius:12px;padding:11px 12px;margin-bottom:9px}" +
+      "#wfAiPop .wf-ai-card.on{border-color:var(--wf-c,#2ecc71)}" +
+      "#wfAiPop .wf-ai-card .row{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}" +
+      "#wfAiPop .wf-ai-card .name{font-weight:700;font-size:12.5px;display:flex;align-items:center;gap:7px}" +
+      "#wfAiPop .wf-ai-card .mdl{font-size:11px;color:var(--muted,#9aa0a6);margin-top:2px}" +
+      "#wfAiPop .wf-ai-card .mdl b{color:var(--fg,#e8e8ea);font-weight:600}" +
       "#wfAiPop .wf-ai-card .role{font-size:10px;color:var(--muted,#9aa0a6);border:1px solid var(--border,rgba(255,255,255,.14));" +
-        "border-radius:999px;padding:1px 7px}" +
-      "#wfAiPop .wf-ai-bar{height:6px;border-radius:6px;background:var(--border,rgba(255,255,255,.12));margin:8px 0 6px;overflow:hidden}" +
+        "border-radius:999px;padding:2px 8px;white-space:nowrap}" +
+      "#wfAiPop .wf-ai-card .role.main{background:var(--accent,#7cc4ff);color:#0b1220;border-color:transparent;font-weight:700}" +
+      "#wfAiPop .wf-ai-bar{height:6px;border-radius:6px;background:var(--border,rgba(255,255,255,.12));margin:10px 0 7px;overflow:hidden}" +
       "#wfAiPop .wf-ai-bar>i{display:block;height:100%;border-radius:6px}" +
-      "#wfAiPop .wf-ai-meta{font-size:11px;color:var(--muted,#9aa0a6);line-height:1.5}" +
-      "#wfAiPop .wf-ai-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}" +
-      "#wfAiPop .wf-ai-actions button,#wfAiPop .wf-ai-actions a{font:inherit;font-size:12px;border-radius:8px;padding:6px 10px;cursor:pointer;" +
+      "#wfAiPop .wf-ai-meta{font-size:11px;color:var(--muted,#9aa0a6);line-height:1.55}" +
+      "#wfAiPop .wf-ai-meta b{color:var(--fg,#e8e8ea);font-weight:600}" +
+      "#wfAiPop .wf-ai-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}" +
+      "#wfAiPop .wf-ai-actions button,#wfAiPop .wf-ai-actions a{font:inherit;font-size:12px;border-radius:9px;padding:7px 11px;cursor:pointer;" +
         "border:1px solid var(--border,rgba(255,255,255,.16));background:transparent;color:var(--fg,#e8e8ea);text-decoration:none}" +
-      "#wfAiPop .wf-ai-actions .primary{background:var(--accent,#7cc4ff);color:#0b1220;border-color:transparent;font-weight:600}" +
-      "#wfAiPop .wf-ai-note{font-size:11px;color:var(--muted,#9aa0a6);margin-top:8px}" +
+      "#wfAiPop .wf-ai-actions button:hover,#wfAiPop .wf-ai-actions a:hover{border-color:var(--accent,#7cc4ff)}" +
+      "#wfAiPop .wf-ai-actions .primary{background:#2ecc71;color:#08150d;border-color:transparent;font-weight:700}" +
+      "#wfAiPop .wf-ai-note{font-size:10.5px;color:var(--muted,#9aa0a6);margin-top:9px;line-height:1.5}" +
       "html[data-theme=light] #wfAiInd .wf-ai-chip{background:#fff;color:#1b1b20;border-color:rgba(0,0,0,.12)}" +
       "html[data-theme=light] #wfAiPop{background:#fff;color:#1b1b20;border-color:rgba(0,0,0,.12)}" +
       "@media (max-width:640px){#wfAiInd{left:10px;bottom:10px}#wfAiInd .wf-ai-lbl{display:none}}";
@@ -124,10 +132,13 @@
   function modelShort(m) {
     if (!m) return "";
     if (m.indexOf("qwen") >= 0) return "Qwen 3.6";
-    if (m.indexOf("gpt-oss") >= 0) return "GPT-OSS";
-    if (m.indexOf("gemini") >= 0) return "Gemini";
+    if (m.indexOf("gpt-oss") >= 0) return "GPT-OSS 120B";
+    if (m.indexOf("gemini") >= 0) return "Gemini " + (m.indexOf("lite") >= 0 ? "2.5 Flash Lite" : "2.5 Flash");
     return m;
   }
+  // Модель по умолчанию для НЕподключённого провайдера — чтобы человек сразу видел,
+  // что Qwen не отдельный провайдер, а модель внутри Groq.
+  function defaultModel(p) { return p === "groq" ? "Qwen 3.6" : "Gemini 2.5 Flash"; }
 
   function renderChip() {
     var ai = (state.data && state.data.ai) || {};
@@ -158,59 +169,78 @@
   }
 
   function cardHtml(name, card, activeProvider) {
+    var head = function (right, dotColor) {
+      return '<div class="row"><div><div class="name">' +
+        '<span class="wf-ai-dot" style="background:' + (dotColor || "var(--border,rgba(255,255,255,.2))") + '"></span>' +
+        providerLabel(name) + '</div>' +
+        '<div class="mdl">модель <b>' +
+        (card && card.connected ? (modelShort(card.model) || defaultModel(name)) : defaultModel(name)) +
+        '</b></div></div>' + right + '</div>';
+    };
+
     if (!card || !card.connected) {
-      var isGroq = name === "groq";
-      return '<div class="wf-ai-card"><div class="row"><span class="name">' + providerLabel(name) +
-        '</span><span class="role">не подключён</span></div>' +
-        (isGroq ? '<div class="wf-ai-meta">Бесплатный личный ключ Qwen — подключается за пару минут, без карты.</div>'
-                : '<div class="wf-ai-meta">Необязателен для обычного пользователя.</div>') + '</div>';
+      var pitch = name === "groq"
+        ? "Бесплатно, без карты — запускает Qwen 3.6."
+        : "Ключ Google AI Studio, тоже бесплатный.";
+      return '<div class="wf-ai-card">' + head('<span class="role">не подключён</span>') +
+        '<div class="wf-ai-meta" style="margin-top:8px">' + pitch + '</div></div>';
     }
+
     var u = card.usage || {};
     var pct = Math.max(0, Math.min(100, (u.percent_remaining | 0)));
     var color = COLORS[(u.color)] || COLORS.green;
-    var role = card.role === "primary" ? "основной" : (card.role === "secondary" ? "резервный" : "");
+    var role = card.role === "primary"
+      ? '<span class="role main">основной</span>'
+      : (card.role === "secondary" ? '<span class="role">резервный</span>' : '');
     var req = u.requests || {};
-    var precise = req.precise ? "точно" : "оценка";
-    var meta = "Запросы: " + (req.remaining != null ? req.remaining : "—") + " из " + (req.limit || "—") +
-      " (" + precise + ")";
+    var meta;
+    if (req.precise) {
+      meta = "Запросы за день: <b>" + req.remaining + "</b> из " + req.limit + " — точно";
+    } else {
+      meta = "Запросов сделано: <b>" + (req.used | 0) + "</b> — лимит уточнится после ответа провайдера";
+    }
     if (u.tokens_minute) {
-      meta += "<br>Токены/мин: " + u.tokens_minute.remaining + " из " + u.tokens_minute.limit;
+      meta += "<br>Токены в минуту: <b>" + u.tokens_minute.remaining + "</b> из " + u.tokens_minute.limit;
     }
     var tl = u.tokens_day_local || {};
-    if (tl.total) meta += "<br>Токены за день (лок.): ~" + tl.total;
+    if (tl.total) meta += "<br>Токены за день: ~" + tl.total + " (оценка)";
     if (u.limiting === "tokens_day") meta += "<br><b>Ограничивают дневные токены</b>";
     if (u.reset_at) meta += "<br>Сброс: " + fmtReset(u.reset_at);
-    if (u.last_error_code) meta += "<br>Последняя ошибка: " + safeErr(u.last_error_code);
-    return '<div class="wf-ai-card"><div class="row"><span class="name">' +
-      '<span class="wf-ai-dot" style="background:' + color + '"></span>' + providerLabel(name) +
-      ' · ' + modelShort(card.model) + '</span>' +
-      (role ? '<span class="role">' + role + '</span>' : '') + '</div>' +
+    if (u.last_error_code) meta += "<br>Ошибка: " + safeErr(u.last_error_code);
+
+    return '<div class="wf-ai-card on" style="--wf-c:' + color + '">' + head(role, color) +
       '<div class="wf-ai-bar"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
-      '<div class="wf-ai-meta">Осталось ' + pct + '%<br>' + meta + '</div></div>';
+      '<div class="wf-ai-meta"><b style="font-size:12.5px">' + pct + '%</b> ресурса осталось<br>' +
+      meta + '</div></div>';
   }
 
   function renderPop() {
     var ai = (state.data && state.data.ai) || {};
     var providers = ai.providers || {};
     var active = ai.primary || "";
-    var head, sub;
+    var head, sub, dot = "";
     if (ai.connected && ai.active) {
-      head = "Активный ИИ: " + providerLabel(ai.active.provider) + " · " + modelShort(ai.active.model);
-      sub = active === "gemini" ? "Основной — Gemini, резерв — Groq (если подключён)."
-                                : "Основной провайдер — Groq (Qwen).";
+      var c = ai.compact || {};
+      dot = '<span class="wf-ai-dot" style="background:' + (COLORS[c.color] || COLORS.green) + '"></span>';
+      head = providerLabel(ai.active.provider) + " · " + modelShort(ai.active.model);
+      sub = (active === "gemini"
+        ? "Сейчас отвечает Gemini. Groq подключён резервом — включится только при исчерпании дневного лимита или сбое."
+        : "Сейчас отвечает Groq на модели " + modelShort(ai.active.model) + ".");
     } else {
       head = "ИИ не подключён";
-      sub = "Подключи бесплатный ключ Groq — займёт пару минут, карта не нужна.";
+      sub = "Подключи бесплатный ключ — пара минут, карта не нужна. Groq запускает модель Qwen 3.6.";
     }
-    var html = '<h4>' + head + '</h4><div class="wf-ai-sub">' + sub + '</div>';
-    html += cardHtml("gemini", providers.gemini, active);
+    var html = '<div class="wf-ai-head"><h4>' + dot + head + '</h4>' +
+               '<div class="wf-ai-sub">' + sub + '</div></div><div class="wf-ai-body">';
     html += cardHtml("groq", providers.groq, active);
+    html += cardHtml("gemini", providers.gemini, active);
     html += '<div class="wf-ai-actions">' +
       '<a class="primary" href="' + SETTINGS_URL + '">' + (ai.connected ? "Настроить ИИ" : "Подключить ИИ") + '</a>' +
-      '<a href="' + SETTINGS_URL + '#stats">Подробная статистика</a>' +
-      (ai.connected ? '<button type="button" id="wfAiCheck">Проверить подключение</button>' : '') +
+      '<a href="' + SETTINGS_URL + '#stats">Статистика</a>' +
+      (ai.connected ? '<button type="button" id="wfAiCheck">Проверить</button>' : '') +
       '</div>';
-    html += '<div class="wf-ai-note">Ключи хранятся только на этом компьютере, зашифрованно, и не уходят в облако.</div>';
+    html += '<div class="wf-ai-note">Провайдер — сервис с ключом, модель — сам ИИ внутри него. ' +
+            'Ключи хранятся только на этом компьютере, зашифрованно, и не уходят в облако.</div></div>';
     pop.innerHTML = html;
     var check = pop.querySelector("#wfAiCheck");
     if (check) check.addEventListener("click", doCheck);

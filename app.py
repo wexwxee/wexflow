@@ -3599,6 +3599,8 @@ def _settings_context(
         "ai_providers": ai_gateway.usage_payload(),
         "ai_groq_keys_url": "https://console.groq.com/keys",
         "ai_groq_privacy_url": "https://console.groq.com/docs/your-data",
+        "ai_gemini_keys_url": "https://aistudio.google.com/apikey",
+        "ai_gemini_privacy_url": "https://ai.google.dev/gemini-api/terms",
         "ai_legacy_gemini": bool(ai_secrets.legacy_gemini_key()) and not ai_secrets.info("gemini")["connected"],
         "autopilot_profiles": ap_profiles, "autopilot_profile": sel_profile,
         "autopilot_profile_count": autopilot.profile_match_count(sel_profile),

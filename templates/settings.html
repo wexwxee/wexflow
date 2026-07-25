@@ -425,269 +425,499 @@
   {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее (улица, город или индекс).</div>{% endif %}
 
   {% if settings_section == 'ai' %}
-  <!-- ═══ ИИ и лимиты: провайдеры, мастер Groq, раздельные лимиты ═══ -->
+  <!-- ═══ ИИ и лимиты: провайдеры, мастера подключения, раздельные лимиты ═══ -->
   <style>
-    .ai-prov-grid{display:grid;gap:12px}
-    .ai-prov{border:1px solid var(--border,rgba(255,255,255,.12));border-radius:14px;padding:14px}
-    .ai-prov .head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
-    .ai-prov .title{font-weight:700;display:flex;align-items:center;gap:8px}
-    .ai-prov .badge{font-size:11px;border:1px solid var(--border,rgba(255,255,255,.16));border-radius:999px;padding:2px 9px;color:var(--muted)}
-    .ai-prov .badge.on{color:#0b1220;background:#2ecc71;border-color:transparent}
-    .ai-prov .badge.role{background:var(--accent,#7cc4ff);color:#0b1220;border-color:transparent}
-    .ai-prov .mask{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12.5px}
-    .ai-prov .bar{height:7px;border-radius:7px;background:var(--border,rgba(255,255,255,.12));overflow:hidden;margin:10px 0 6px}
-    .ai-prov .bar>i{display:block;height:100%;border-radius:7px}
-    .ai-prov .meta{font-size:12px;color:var(--muted);line-height:1.55}
-    .ai-prov .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-    .ai-wizard{border:1px dashed var(--border,rgba(255,255,255,.2));border-radius:14px;padding:16px;margin-top:14px}
-    .ai-wizard ol{margin:8px 0 12px 18px;padding:0;line-height:1.7}
+    .ai-lead{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px}
+    .ai-lead .ai-lead-txt{flex:1;min-width:260px}
+    .ai-what{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--bg-soft);
+             font-size:12.5px;color:var(--muted);line-height:1.6;flex:1;min-width:250px}
+    .ai-what b{color:var(--fg)}
+    .ai-prov-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+    .ai-prov{position:relative;border:1px solid var(--border);border-radius:16px;padding:16px 18px;
+             background:var(--card,var(--bg-soft));overflow:hidden}
+    .ai-prov::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--border)}
+    .ai-prov.on::before{background:var(--ai-c,#2ecc71)}
+    .ai-prov-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+    .ai-prov-name{font-size:15.5px;font-weight:700;display:flex;align-items:center;gap:8px;line-height:1.2}
+    .ai-dot{width:9px;height:9px;border-radius:50%;background:var(--border);flex:0 0 auto}
+    .ai-prov.on .ai-dot{background:var(--ai-c,#2ecc71)}
+    .ai-model{margin-top:3px;font-size:12px;color:var(--muted)}
+    .ai-model .chip{display:inline-block;border:1px solid var(--border);border-radius:999px;
+                    padding:1px 8px;margin-left:4px;color:var(--fg);font-weight:600}
+    .ai-pill{font-size:10.5px;letter-spacing:.02em;border-radius:999px;padding:3px 9px;white-space:nowrap;
+             border:1px solid var(--border);color:var(--muted)}
+    .ai-pill.ok{background:rgba(46,204,113,.14);border-color:rgba(46,204,113,.45);color:#2ecc71}
+    .ai-pill.role{background:var(--accent);border-color:transparent;color:#0b1220;font-weight:700}
+    .ai-meter{margin:14px 0 8px}
+    .ai-meter .track{height:8px;border-radius:8px;background:var(--border);overflow:hidden}
+    .ai-meter .track>i{display:block;height:100%;border-radius:8px;transition:width .3s}
+    .ai-meter .cap{display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:11.5px;color:var(--muted)}
+    .ai-meter .cap b{color:var(--fg);font-size:13px}
+    .ai-facts{font-size:12px;color:var(--muted);line-height:1.65}
+    .ai-facts .k{color:var(--fg);font-weight:600}
+    .ai-facts .est{font-style:italic}
+    .ai-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+    .ai-actions .btn-mini{font:inherit;font-size:12.5px;padding:7px 12px;border-radius:9px;cursor:pointer;
+                          border:1px solid var(--border);background:transparent;color:var(--fg);text-decoration:none;
+                          display:inline-flex;align-items:center;gap:6px}
+    .ai-actions .btn-mini:hover{border-color:var(--accent)}
+    .ai-actions .btn-mini.go{background:#2ecc71;border-color:transparent;color:#08150d;font-weight:700}
+    .ai-actions .btn-mini.warn{color:var(--err-txt,#ef5b67)}
+    .ai-bind{margin-top:12px;border:1px dashed rgba(46,204,113,.5);border-radius:12px;padding:12px;
+             font-size:12.5px;line-height:1.6;background:rgba(46,204,113,.06)}
+    .ai-empty{font-size:12.5px;color:var(--muted);line-height:1.6;margin-top:6px}
+
+    .ai-wizard{margin-top:16px;border:1px solid var(--border);border-radius:16px;padding:18px;background:var(--bg-soft)}
+    .ai-wizard h3{margin:0 0 4px;font-size:15px}
+    .ai-wizard .wz-crumbs{display:flex;gap:6px;margin-bottom:12px}
+    .ai-wizard .wz-crumbs i{height:3px;flex:1;border-radius:3px;background:var(--border)}
+    .ai-wizard .wz-crumbs i.done{background:#2ecc71}
     .ai-step{display:none} .ai-step.on{display:block}
-    .ai-key-row{display:flex;gap:8px;align-items:center}
-    .ai-key-row input{flex:1}
-    .ai-progress{font-size:12.5px;color:var(--muted);margin:8px 0}
+    .ai-steps-list{margin:10px 0 14px;padding:0;list-style:none;counter-reset:s}
+    .ai-steps-list li{counter-increment:s;position:relative;padding:7px 0 7px 34px;line-height:1.55;font-size:13px;
+                      border-bottom:1px solid var(--border)}
+    .ai-steps-list li:last-child{border-bottom:0}
+    .ai-steps-list li::before{content:counter(s);position:absolute;left:0;top:6px;width:22px;height:22px;border-radius:50%;
+                              background:var(--border);color:var(--fg);font-size:11.5px;font-weight:700;
+                              display:flex;align-items:center;justify-content:center}
+    .ai-steps-list li b{color:var(--fg)}
+    .ai-steps-list .tip{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+    .ai-key-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .ai-key-row input{flex:1;min-width:220px}
+    .ai-consent{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;line-height:1.6;margin:12px 0;color:var(--muted)}
+    .ai-progress{font-size:12.5px;color:var(--muted);margin:10px 0}
     .ai-progress b{color:var(--fg)}
-    .ai-err{color:var(--err-txt,#ef5b67);font-size:13px;margin-top:8px}
-    .ai-ok{color:#2ecc71;font-size:13px;margin-top:8px}
-    .ai-consent{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin:10px 0}
+    .ai-err{color:var(--err-txt,#ef5b67);font-size:13px;margin-top:10px;line-height:1.55}
+    .ai-done{font-size:15px;font-weight:700;color:#2ecc71}
+    @media (max-width:620px){ .ai-prov-grid{grid-template-columns:1fr} }
   </style>
+
   <section class="panel">
     <h2>{{ ic.i('zap', 17) }} ИИ и лимиты</h2>
-    <p class="hint">WexFlow использует ИИ, чтобы помогать с фильтрами, разбором документов и дозаполнением анкет.
-      Подключается <b>твой личный бесплатный ключ</b> — он хранится только на этом компьютере, зашифрованно, и не уходит в облако.
-      Лимит не делится с другими пользователями.</p>
-
-    {% if ai_legacy_gemini %}
-    <div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">
-      Найдено старое подключение Gemini. Привязать его к текущему аккаунту (другие аккаунты на этом ПК не смогут им пользоваться)?
-      <button type="button" class="btn-small" id="aiMigrateGemini">Привязать к моему аккаунту</button>
+    <div class="ai-lead">
+      <p class="hint ai-lead-txt" style="margin:0;">WexFlow использует ИИ для подбора фильтров, разбора документов и
+        дозаполнения анкет. Подключается <b>твой личный бесплатный ключ</b>: он хранится только на этом компьютере,
+        зашифрованно, и не уходит в облако. Твой лимит не делится с другими пользователями WexFlow.</p>
+      <div class="ai-what">
+        <b>Провайдер и модель — разные вещи.</b><br>
+        Провайдер — сервис, который запускает ИИ и выдаёт ключ (Groq, Google).
+        Модель — сам «мозг» (Qwen 3.6, Gemini). Отдельно подключать модель не нужно:
+        подключаешь <b>Groq</b> — и он работает на модели <b>Qwen 3.6</b>.
+      </div>
     </div>
-    {% endif %}
 
-    <div class="ai-prov-grid" id="aiProvGrid"><!-- карточки провайдеров рендерит JS --></div>
+    <div class="ai-prov-grid" id="aiProvGrid"><!-- карточки рендерит JS --></div>
 
-    <div class="ai-wizard" id="aiGroqWizard" hidden>
+    <div class="ai-wizard" id="aiWizard" hidden>
+      <div class="wz-crumbs" id="wzCrumbs"><i></i><i></i><i></i><i></i></div>
+
       <div class="ai-step on" data-step="1">
-        <h3 style="margin:0 0 4px;">Подключи бесплатный ИИ за несколько минут</h3>
-        <p class="hint" style="margin:0 0 8px;">
-          Groq запускает модель <b>Qwen</b> для функций WexFlow. Нужен бесплатный личный API-ключ — он работает только для
-          твоих запросов и его лимит не делится с другими. Банковская карта не требуется.
-          Ключ похож на пароль: никому его не отправляй.</p>
-        <p class="hint" style="margin:0 0 10px;">
-          <b>Важно:</b> создай <b>свой личный</b> аккаунт Groq. Не используй чужой ключ и не вступай в общую организацию —
-          иначе лимит будет общим.</p>
-        <div class="actions">
-          <a class="btn primary" href="{{ ai_groq_keys_url }}" target="_blank" rel="noopener">Перейти в Groq →</a>
-          <button type="button" class="btn" data-goto="2">Уже открыл — дальше</button>
+        <h3 id="wzTitle1">Подключи бесплатный ИИ за несколько минут</h3>
+        <p class="hint" id="wzIntro" style="margin:0 0 10px;"></p>
+        <p class="hint" id="wzOwnAccount" style="margin:0 0 12px;"></p>
+        <div class="ai-actions">
+          <a class="btn-mini go" id="wzOpenSite" href="#" target="_blank" rel="noopener">Перейти на сайт →</a>
+          <button type="button" class="btn-mini" data-goto="2">Сайт открыт — дальше</button>
+          <button type="button" class="btn-mini" data-wz-close>Отмена</button>
         </div>
       </div>
+
       <div class="ai-step" data-step="2">
-        <h3 style="margin:0 0 4px;">Что сделать на сайте Groq</h3>
-        <ol>
-          <li>Войди или создай аккаунт Groq.</li>
-          <li>Открой страницу <b>API Keys</b>.</li>
-          <li>Нажми <b>Create API Key</b>.</li>
-          <li>В названии напиши <b>WexFlow</b>.</li>
-          <li>Создай ключ.</li>
-          <li>Скопируй ключ — Groq показывает его только один раз.</li>
-          <li>Вернись сюда и вставь ключ ниже.</li>
-        </ol>
-        <div class="actions">
-          <button type="button" class="btn" data-goto="1">← Назад</button>
-          <button type="button" class="btn primary" data-goto="3">Я создал ключ — продолжить</button>
+        <h3 id="wzTitle2">Что сделать на сайте</h3>
+        <ol class="ai-steps-list" id="wzSteps"></ol>
+        <div class="ai-actions">
+          <button type="button" class="btn-mini" data-goto="1">← Назад</button>
+          <button type="button" class="btn-mini go" data-goto="3">Я создал ключ — продолжить</button>
         </div>
       </div>
+
       <div class="ai-step" data-step="3">
-        <h3 style="margin:0 0 6px;">Вставь ключ</h3>
+        <h3>Вставь ключ</h3>
+        <p class="hint" style="margin:0 0 10px;">Ключ похож на пароль — никому его не пересылай.
+          WexFlow сохранит его только после успешной проверки.</p>
         <div class="ai-key-row">
-          <input type="password" id="aiGroqKey" placeholder="gsk_…" autocomplete="off" spellcheck="false">
-          <button type="button" class="btn" id="aiGroqReveal" aria-label="Показать ключ">Показать</button>
+          <input type="password" id="aiKeyInput" placeholder="вставь ключ сюда" autocomplete="off" spellcheck="false">
+          <button type="button" class="btn-mini" id="aiKeyReveal" aria-label="Показать ключ">Показать</button>
         </div>
         <label class="ai-consent">
-          <input type="checkbox" id="aiGroqConsent">
-          <span>Для заполнения анкет WexFlow передаёт выбранному ИИ только необходимые поля профиля, текст вопроса и
-            допустимые варианты ответа. Документы передаются лишь при запуске соответствующей функции.
-            <a class="crosslink" href="{{ ai_groq_privacy_url }}" target="_blank" rel="noopener">Политика Groq по данным ↗</a></span>
+          <input type="checkbox" id="aiConsent">
+          <span>Для заполнения анкет WexFlow передаёт выбранному ИИ только необходимые поля профиля, текст вопроса
+            и допустимые варианты ответа. Документы передаются лишь при запуске соответствующей функции.
+            <a class="crosslink" id="aiPrivacyLink" href="{{ ai_groq_privacy_url }}" target="_blank" rel="noopener">Как провайдер обращается с данными ↗</a></span>
         </label>
-        <div class="actions">
-          <button type="button" class="btn" data-goto="2">← Назад</button>
-          <button type="button" class="btn primary" id="aiGroqConnect">Проверить и подключить</button>
+        <div class="ai-actions">
+          <button type="button" class="btn-mini" data-goto="2">← Назад</button>
+          <button type="button" class="btn-mini go" id="aiConnectBtn">Проверить и подключить</button>
         </div>
-        <div class="ai-progress" id="aiGroqProgress" hidden></div>
-        <div class="ai-err" id="aiGroqError" hidden></div>
+        <div class="ai-progress" id="aiProgress" hidden></div>
+        <div class="ai-err" id="aiError" hidden></div>
       </div>
-      <div class="ai-step" data-step="5">
-        <div class="ai-ok" style="font-size:15px;font-weight:700;">✓ ИИ подключён</div>
-        <p class="hint" id="aiGroqSuccessMeta" style="margin:6px 0 10px;"></p>
-        <div class="actions">
-          <button type="button" class="btn" id="aiGroqTest">Сделать тестовый запрос</button>
-          <a class="btn" href="#stats">К статистике</a>
-          <button type="button" class="btn primary" id="aiGroqReturn" hidden>Вернуться к функции</button>
+
+      <div class="ai-step" data-step="4">
+        <div class="ai-done">✓ ИИ подключён</div>
+        <p class="hint" id="aiSuccessMeta" style="margin:8px 0 12px;"></p>
+        <div class="ai-actions">
+          <button type="button" class="btn-mini" id="aiTestBtn">Сделать тестовый запрос</button>
+          <button type="button" class="btn-mini" data-wz-close>Готово</button>
+          <button type="button" class="btn-mini go" id="aiReturnBtn" hidden>Вернуться к функции</button>
         </div>
-        <div class="ai-progress" id="aiGroqTestOut" hidden></div>
+        <div class="ai-progress" id="aiTestOut" hidden></div>
       </div>
     </div>
   </section>
 
   <section class="panel" id="stats">
     <h3 style="margin:0 0 8px;">{{ ic.i('sliders', 15) }} Подробные лимиты</h3>
-    <p class="hint" style="margin:0 0 10px;">Проценты каждого провайдера считаются отдельно и не складываются.
-      Где данные точные (заголовки аккаунта) — так и помечено; где WexFlow оценивает локально — тоже честно указано.</p>
-    <div id="aiStatsBody" class="meta">Загрузка…</div>
-    <div class="actions" style="margin-top:10px;">
-      <a class="crosslink" href="/settings/forms#ai-budget">Настройки Gemini RPD (1.3.21) →</a>
+    <p class="hint" style="margin:0 0 12px;">У каждого провайдера свой лимит, и они считаются отдельно — складывать их
+      в один процент нельзя. Точные числа берутся из заголовков твоего аккаунта; где WexFlow оценивает сам, так и написано.</p>
+    <div id="aiStatsBody" class="ai-facts">Загрузка…</div>
+    <div class="ai-actions" style="margin-top:12px;">
+      <a class="btn-mini" href="/settings/forms#ai-budget">Ручной лимит Gemini (RPD)</a>
     </div>
   </section>
 
   <script>
   (function () {
-    var KEYS_URL = {{ ai_groq_keys_url | tojson }};
+    var GROQ_KEYS_URL = {{ ai_groq_keys_url | tojson }};
+    var GROQ_PRIVACY_URL = {{ ai_groq_privacy_url | tojson }};
+    var GEMINI_KEYS_URL = {{ ai_gemini_keys_url | tojson }};
+    var GEMINI_PRIVACY_URL = {{ ai_gemini_privacy_url | tojson }};
+    var HAS_LEGACY_GEMINI = {{ 'true' if ai_legacy_gemini else 'false' }};
+
     var grid = document.getElementById("aiProvGrid");
-    var wizard = document.getElementById("aiGroqWizard");
+    var wizard = document.getElementById("aiWizard");
     var statsBody = document.getElementById("aiStatsBody");
-    var COLORS = { green:"#2ecc71", normal:"#7cc4ff", yellow:"#f5a623", red:"#ef5b67", exhausted:"#ef5b67", error:"#c0392b" };
+    var COLORS = { green:"#2ecc71", normal:"#7cc4ff", yellow:"#f5a623", red:"#ef5b67",
+                   exhausted:"#ef5b67", error:"#c0392b" };
     var returnUrl = new URLSearchParams(location.search).get("return") || "";
+    var current = null;                       // какой провайдер подключаем в мастере
 
-    function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
-    function providerLabel(p){ return p==="groq"?"Groq":(p==="gemini"?"Gemini":"ИИ"); }
-    function modelShort(m){ if(!m) return ""; if(m.indexOf("qwen")>=0) return "Qwen 3.6"; if(m.indexOf("gpt-oss")>=0) return "GPT-OSS"; if(m.indexOf("gemini")>=0) return "Gemini"; return m; }
-    function safeErr(c){ var map={invalid_key:"ключ не принят",permission_denied:"нет доступа к модели",rate_limit_rpm:"минутный лимит запросов",rate_limit_rpd:"дневной лимит запросов",rate_limit_tpm:"минутный лимит токенов",rate_limit_tpd:"дневной лимит токенов",provider_timeout:"таймаут",provider_unavailable:"провайдер недоступен",model_not_found:"модель недоступна",invalid_request:"некорректный запрос",offline:"нет связи",not_connected:"не подключён"}; return map[c]||c||"ошибка"; }
-
-    function cardHtml(name, card){
-      var connected = card && card.connected;
-      var role = card && (card.role==="primary"?"основной":(card.role==="secondary"?"резервный":""));
-      var head = '<div class="head"><div class="title">'+ providerLabel(name) + (connected?' · '+esc(modelShort(card.model)):'') +'</div><div>' +
-        (connected?'<span class="badge on">подключён</span>':'<span class="badge">не подключён</span>') +
-        (role?' <span class="badge role">'+role+'</span>':'') + '</div></div>';
-      if(!connected){
-        var msg = name==="groq" ? "Бесплатный личный ключ Qwen — за пару минут, без карты." : "Для обычного пользователя не обязателен.";
-        var btn = name==="groq" ? '<button type="button" class="btn primary" id="aiOpenWizard">Подключить Groq</button>' :
-                   '<a class="btn" href="/settings/forms#ai-budget">Про Gemini</a>';
-        return '<div class="ai-prov">'+head+'<div class="meta">'+msg+'</div><div class="actions">'+btn+'</div></div>';
+    var META = {
+      groq: {
+        label: "Groq",
+        model: "Qwen 3.6",
+        pitch: "Бесплатно и без банковской карты. Запускает модель Qwen 3.6 — это основной ИИ WexFlow.",
+        keysUrl: GROQ_KEYS_URL,
+        privacyUrl: GROQ_PRIVACY_URL,
+        intro: "Groq — сервис, который бесплатно запускает модель Qwen 3.6 для функций WexFlow. " +
+               "Нужен личный API-ключ: он работает только для твоих запросов, лимит не делится с другими, " +
+               "банковская карта не требуется.",
+        ownAccount: "Важно: создай свой личный аккаунт Groq. Не бери ключ у другого человека и не вступай в общую " +
+                    "организацию — лимиты Groq считаются на аккаунт, поэтому для независимого лимита нужен свой аккаунт.",
+        steps: [
+          ["Войди в Groq или создай аккаунт", "Можно войти через Google или GitHub."],
+          ["Открой страницу <b>API Keys</b>", "Ссылка выше ведёт прямо на неё."],
+          ["Нажми <b>Create API Key</b>", ""],
+          ["В поле <b>Display Name</b> напиши <b>WexFlow</b>", "Это просто название, чтобы потом узнать ключ."],
+          ["В поле <b>Expiration</b> оставь <b>No expiration</b>", "Если поставить дату, ИИ перестанет работать в этот день."],
+          ["Нажми <b>Submit</b>", ""],
+          ["Скопируй ключ целиком", "Groq показывает его только один раз — второй раз не покажет."],
+          ["Вернись в WexFlow и вставь ключ", ""]
+        ]
+      },
+      gemini: {
+        label: "Gemini",
+        model: "Gemini 2.5 Flash",
+        pitch: "Ключ Google AI Studio. Бесплатный тариф тоже без карты.",
+        keysUrl: GEMINI_KEYS_URL,
+        privacyUrl: GEMINI_PRIVACY_URL,
+        intro: "Gemini — модель Google. Ключ выдаёт Google AI Studio: он бесплатный, работает только для твоих " +
+               "запросов, и банковская карта для бесплатного тарифа не нужна.",
+        ownAccount: "Используй свой Google-аккаунт. Чужой ключ брать не нужно: лимит считается на проект, " +
+                    "поэтому со своим ключом лимит будет только твой.",
+        steps: [
+          ["Открой Google AI Studio и войди Google-аккаунтом", "Ссылка выше ведёт на страницу ключей."],
+          ["Нажми <b>Create API key</b>", "Кнопка может называться «Получить API-ключ»."],
+          ["Выбери проект или создай новый", "Подойдёт любой — можно оставить предложенный."],
+          ["Скопируй ключ целиком", "Он начинается с <b>AIza…</b>"],
+          ["Вернись в WexFlow и вставь ключ", ""]
+        ]
       }
-      var u = card.usage || {}; var pct = Math.max(0,Math.min(100,(u.percent_remaining|0))); var color = COLORS[u.color]||COLORS.green;
-      var req = u.requests || {}; var meta = "Маска ключа: <span class='mask'>"+esc(card.mask||"—")+"</span>";
-      meta += "<br>Запросы за день: "+ (req.remaining!=null?req.remaining:"—") +" из "+ (req.limit||"—") +" ("+(req.precise?"точно из заголовков":"локальная оценка")+")";
-      if(u.tokens_minute) meta += "<br>Токены/мин (TPM): "+u.tokens_minute.remaining+" из "+u.tokens_minute.limit;
-      var tl=u.tokens_day_local||{}; if(tl.total) meta += "<br>Токены за день (лок. оценка): ~"+tl.total;
-      if(u.limiting==="tokens_day") meta += "<br><b>Ограничивают дневные токены</b>";
-      if(u.reset_at) meta += "<br>Сброс: "+new Date(u.reset_at*1000).toLocaleString("ru-RU");
-      if(u.last_error_code) meta += "<br>Последняя ошибка: "+safeErr(u.last_error_code);
-      var acts = '<button type="button" class="btn" data-check="'+name+'">Проверить</button>' +
-                 (name==="groq"?'<button type="button" class="btn" id="aiReplaceGroq">Заменить ключ</button>':'') +
-                 '<button type="button" class="btn" data-disc="'+name+'">Отключить</button>' +
-                 (name==="groq"?'<a class="btn" href="'+esc(KEYS_URL)+'" target="_blank" rel="noopener">Ключи Groq / отозвать</a>':'');
-      return '<div class="ai-prov"><div style="border-left:4px solid '+color+';margin-left:-14px;padding-left:10px">'+head+
-        '<div class="bar"><i style="width:'+pct+'%;background:'+color+'"></i></div>'+
-        '<div class="meta">Осталось '+pct+'%<br>'+meta+'</div>'+
-        '<div class="actions">'+acts+'</div></div></div>';
+    };
+
+    function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+    function modelShort(m){
+      if(!m) return "";
+      if(m.indexOf("qwen")>=0) return "Qwen 3.6";
+      if(m.indexOf("gpt-oss")>=0) return "GPT-OSS 120B";
+      if(m.indexOf("gemini")>=0) return "Gemini " + (m.indexOf("lite")>=0 ? "2.5 Flash Lite" : "2.5 Flash");
+      return m;
+    }
+    function safeErr(c){
+      var map={invalid_key:"ключ не принят",permission_denied:"нет доступа к модели",
+        rate_limit_rpm:"минутный лимит запросов",rate_limit_rpd:"дневной лимит запросов",
+        rate_limit_tpm:"минутный лимит токенов",rate_limit_tpd:"дневной лимит токенов",
+        provider_timeout:"таймаут",provider_unavailable:"провайдер недоступен",
+        model_not_found:"модель недоступна",invalid_request:"некорректный запрос",
+        offline:"нет связи",not_connected:"не подключён"};
+      return map[c]||c||"ошибка";
+    }
+    function fmtTime(ts){
+      try { return new Date(ts*1000).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",
+        hour:"2-digit",minute:"2-digit"}); } catch(e){ return ""; }
+    }
+
+    // ── карточка провайдера ─────────────────────────────────────────────── //
+    function cardHtml(name, card){
+      var meta = META[name];
+      var connected = card && card.connected;
+      var head = '<div class="ai-prov-head"><div>' +
+        '<div class="ai-prov-name"><span class="ai-dot"></span>' + meta.label + '</div>' +
+        '<div class="ai-model">Модель:<span class="chip">' +
+          esc(connected ? (modelShort(card.model) || meta.model) : meta.model) + '</span></div>' +
+        '</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
+        (connected ? '<span class="ai-pill ok">подключён</span>' : '<span class="ai-pill">не подключён</span>') +
+        (connected && card.role === "primary" ? '<span class="ai-pill role">основной</span>' : '') +
+        (connected && card.role === "secondary" ? '<span class="ai-pill">резервный</span>' : '') +
+        '</div></div>';
+
+      if(!connected){
+        var bind = (name === "gemini" && HAS_LEGACY_GEMINI)
+          ? '<div class="ai-bind">Найден старый ключ Gemini от прошлых версий. Его можно привязать к твоему ' +
+            'аккаунту — другие аккаунты на этом компьютере им пользоваться не смогут.' +
+            '<div class="ai-actions"><button type="button" class="btn-mini go" id="aiBindLegacy">' +
+            'Привязать старый ключ ко мне</button></div></div>'
+          : '';
+        return '<div class="ai-prov">' + head +
+          '<div class="ai-empty">' + esc(meta.pitch) + '</div>' +
+          '<div class="ai-actions"><button type="button" class="btn-mini go" data-connect="' + name + '">' +
+          'Подключить ' + meta.label + '</button>' +
+          '<a class="btn-mini" href="' + esc(meta.keysUrl) + '" target="_blank" rel="noopener">Где взять ключ ↗</a>' +
+          '</div>' + bind + '</div>';
+      }
+
+      var u = card.usage || {};
+      var pct = Math.max(0, Math.min(100, (u.percent_remaining|0)));
+      var color = COLORS[u.uncolor] || COLORS[u.color] || COLORS.green;
+      var req = u.requests || {};
+      var precise = !!req.precise;
+      var reqLine = precise
+        ? '<span class="k">Запросы за день:</span> осталось ' + req.remaining + ' из ' + req.limit +
+          ' <span style="opacity:.75">— точно, из заголовков аккаунта</span>'
+        : '<span class="k">Запросы за день:</span> использовано ' + (req.used|0) +
+          ' <span class="est">— точный лимит станет известен после первого ответа провайдера</span>';
+      var facts = '<div class="ai-facts">' +
+        '<span class="k">Ключ:</span> ' + esc(card.mask || "—") + '<br>' + reqLine;
+      if(u.tokens_minute){
+        facts += '<br><span class="k">Токены в минуту:</span> осталось ' + u.tokens_minute.remaining +
+                 ' из ' + u.tokens_minute.limit + ' <span style="opacity:.75">— это минутный запас, не дневной</span>';
+      }
+      var tl = u.tokens_day_local || {};
+      if(tl.total) facts += '<br><span class="k">Токены за день:</span> ~' + tl.total +
+                            ' <span class="est">— локальная оценка WexFlow</span>';
+      if(u.limiting === "tokens_day") facts += '<br><b>Сейчас ограничивают дневные токены</b>';
+      if(u.reset_at) facts += '<br><span class="k">Сброс:</span> ' + fmtTime(u.reset_at);
+      if(card.last_checked_at) facts += '<br><span class="k">Проверено:</span> ' + fmtTime(card.last_checked_at);
+      if(u.last_error_code) facts += '<br><span class="k">Последняя ошибка:</span> ' + safeErr(u.last_error_code);
+      facts += '</div>';
+
+      var meter = '<div class="ai-meter"><div class="track"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
+        '<div class="cap"><span><b>' + pct + '%</b> ресурса осталось</span>' +
+        '<span>' + (precise ? 'точные данные' : 'оценка') + '</span></div></div>';
+
+      var acts = '<div class="ai-actions">' +
+        '<button type="button" class="btn-mini" data-check="' + name + '">Проверить</button>' +
+        '<button type="button" class="btn-mini" data-connect="' + name + '">Заменить ключ</button>' +
+        '<a class="btn-mini" href="' + esc(meta.keysUrl) + '" target="_blank" rel="noopener">Ключи на сайте ↗</a>' +
+        '<button type="button" class="btn-mini warn" data-disc="' + name + '">Отключить</button></div>';
+
+      return '<div class="ai-prov on" style="--ai-c:' + color + '">' + head + meter + facts + acts + '</div>';
     }
 
     function render(ai){
       var providers = (ai && ai.providers) || {};
       grid.innerHTML = cardHtml("groq", providers.groq) + cardHtml("gemini", providers.gemini);
-      // статистика
-      statsBody.innerHTML = "";
+
+      var lines = [];
       ["groq","gemini"].forEach(function(n){
-        var c = providers[n]; if(!c || !c.connected || !c.usage) return;
-        var u=c.usage, req=u.requests||{};
-        var line = "<div style='margin-bottom:8px'><b>"+providerLabel(n)+" · "+esc(modelShort(c.model))+"</b> — осталось "+
-          (u.percent_remaining|0)+"% · запросы "+(req.remaining!=null?req.remaining:"—")+"/"+(req.limit||"—")+
-          " ("+(req.precise?"точно":"оценка")+")";
-        if(u.tokens_minute) line += " · TPM "+u.tokens_minute.remaining+"/"+u.tokens_minute.limit;
-        line += "</div>";
-        statsBody.insertAdjacentHTML("beforeend", line);
+        var c = providers[n];
+        if(!c || !c.connected || !c.usage) return;
+        var u = c.usage, req = u.requests || {};
+        var s = "<div style='margin-bottom:10px'><span class='k'>" + META[n].label + " · " +
+          esc(modelShort(c.model) || META[n].model) + "</span> — осталось " + (u.percent_remaining|0) + "%";
+        s += req.precise ? (" · запросы " + req.remaining + "/" + req.limit + " (точно)")
+                         : (" · использовано запросов " + (req.used|0) + " (лимит уточняется)");
+        if(u.tokens_minute) s += " · токены/мин " + u.tokens_minute.remaining + "/" + u.tokens_minute.limit;
+        var tl = u.tokens_day_local || {};
+        if(tl.total) s += " · токены за день ~" + tl.total + " (оценка)";
+        lines.push(s + "</div>");
       });
-      if(!statsBody.innerHTML) statsBody.textContent = "Пока нет подключённых провайдеров.";
-      wireCards(ai);
+      statsBody.innerHTML = lines.join("") ||
+        "Пока нет подключённых провайдеров — подключи любой выше, и здесь появятся цифры.";
+      wire();
     }
 
-    function wireCards(ai){
-      var openW = document.getElementById("aiOpenWizard");
-      if(openW) openW.addEventListener("click", function(){ wizard.hidden=false; goto("1"); wizard.scrollIntoView({behavior:"smooth"}); });
-      var repl = document.getElementById("aiReplaceGroq");
-      if(repl) repl.addEventListener("click", function(){ wizard.hidden=false; goto("3"); wizard.scrollIntoView({behavior:"smooth"}); });
-      grid.querySelectorAll("[data-check]").forEach(function(b){ b.addEventListener("click", function(){ checkProvider(b.getAttribute("data-check"), b); }); });
-      grid.querySelectorAll("[data-disc]").forEach(function(b){ b.addEventListener("click", function(){ disconnect(b.getAttribute("data-disc")); }); });
+    function wire(){
+      grid.querySelectorAll("[data-connect]").forEach(function(b){
+        b.addEventListener("click", function(){ openWizard(b.getAttribute("data-connect")); });
+      });
+      grid.querySelectorAll("[data-check]").forEach(function(b){
+        b.addEventListener("click", function(){ checkProvider(b.getAttribute("data-check"), b); });
+      });
+      grid.querySelectorAll("[data-disc]").forEach(function(b){
+        b.addEventListener("click", function(){ disconnect(b.getAttribute("data-disc")); });
+      });
+      var bind = document.getElementById("aiBindLegacy");
+      if(bind) bind.addEventListener("click", bindLegacy);
     }
-    function showWizard(){ wizard.hidden=false; }
 
-    function goto(step){ wizard.querySelectorAll(".ai-step").forEach(function(s){ s.classList.toggle("on", s.getAttribute("data-step")===step); }); }
-    wizard.addEventListener("click", function(e){ var g=e.target.closest("[data-goto]"); if(g) goto(g.getAttribute("data-goto")); });
-
-    // показать/скрыть ключ
-    document.getElementById("aiGroqReveal").addEventListener("click", function(){
-      var inp=document.getElementById("aiGroqKey"); var on=inp.type==="text"; inp.type=on?"password":"text"; this.textContent=on?"Показать":"Скрыть";
+    // ── мастер ──────────────────────────────────────────────────────────── //
+    function openWizard(name){
+      current = name;
+      var meta = META[name];
+      document.getElementById("wzTitle1").textContent = "Подключи " + meta.label + " за несколько минут";
+      document.getElementById("wzIntro").textContent = meta.intro;
+      document.getElementById("wzOwnAccount").textContent = meta.ownAccount;
+      var site = document.getElementById("wzOpenSite");
+      site.href = meta.keysUrl;
+      site.textContent = "Перейти в " + meta.label + " →";
+      document.getElementById("aiPrivacyLink").href = meta.privacyUrl;
+      document.getElementById("wzSteps").innerHTML = meta.steps.map(function(s){
+        return "<li>" + s[0] + (s[1] ? '<span class="tip">' + s[1] + "</span>" : "") + "</li>";
+      }).join("");
+      document.getElementById("aiKeyInput").value = "";
+      document.getElementById("aiConsent").checked = false;
+      document.getElementById("aiError").hidden = true;
+      wizard.hidden = false;
+      goto("1");
+      wizard.scrollIntoView({behavior:"smooth", block:"nearest"});
+    }
+    function goto(step){
+      wizard.querySelectorAll(".ai-step").forEach(function(s){
+        s.classList.toggle("on", s.getAttribute("data-step") === step);
+      });
+      var n = parseInt(step, 10) || 1;
+      wizard.querySelectorAll("#wzCrumbs i").forEach(function(c, i){ c.classList.toggle("done", i < n); });
+    }
+    wizard.addEventListener("click", function(e){
+      var g = e.target.closest("[data-goto]");
+      if(g) goto(g.getAttribute("data-goto"));
+      if(e.target.closest("[data-wz-close]")) wizard.hidden = true;
+    });
+    document.getElementById("aiKeyReveal").addEventListener("click", function(){
+      var inp = document.getElementById("aiKeyInput");
+      var shown = inp.type === "text";
+      inp.type = shown ? "password" : "text";
+      this.textContent = shown ? "Показать" : "Скрыть";
     });
 
     function connect(){
-      var key=document.getElementById("aiGroqKey").value.trim();
-      var consent=document.getElementById("aiGroqConsent").checked;
-      var err=document.getElementById("aiGroqError"); var prog=document.getElementById("aiGroqProgress");
-      err.hidden=true;
-      if(!key){ err.textContent="Вставь ключ."; err.hidden=false; return; }
-      if(!consent){ err.textContent="Отметь согласие на передачу необходимых полей."; err.hidden=false; return; }
-      prog.hidden=false;
-      var steps=["Проверяем ключ","Проверяем доступ к Qwen","Получаем состояние лимита","Сохраняем зашифрованно"]; var i=0;
-      prog.innerHTML="<b>"+steps[0]+"…</b>"; var tick=setInterval(function(){ i=Math.min(i+1,steps.length-1); prog.innerHTML="<b>"+steps[i]+"…</b>"; },700);
-      fetch("/api/ai/connect",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({provider:"groq",key:key,consent:true})})
-        .then(function(r){return r.json();}).then(function(d){
-          clearInterval(tick); prog.hidden=true;
-          document.getElementById("aiGroqKey").value="";
+      var key = document.getElementById("aiKeyInput").value.trim();
+      var consent = document.getElementById("aiConsent").checked;
+      var err = document.getElementById("aiError"), prog = document.getElementById("aiProgress");
+      err.hidden = true;
+      if(!key){ err.textContent = "Вставь ключ."; err.hidden = false; return; }
+      if(!consent){ err.textContent = "Отметь согласие на передачу необходимых полей."; err.hidden = false; return; }
+      var meta = META[current];
+      prog.hidden = false;
+      var steps = ["Проверяем ключ", "Проверяем доступ к модели " + meta.model,
+                   "Получаем состояние лимита", "Сохраняем зашифрованно"], i = 0;
+      prog.innerHTML = "<b>" + steps[0] + "…</b>";
+      var tick = setInterval(function(){ i = Math.min(i+1, steps.length-1);
+        prog.innerHTML = "<b>" + steps[i] + "…</b>"; }, 700);
+      fetch("/api/ai/connect", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({provider: current, key: key, consent: true})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          clearInterval(tick); prog.hidden = true;
+          document.getElementById("aiKeyInput").value = "";
           if(d && d.ok){
-            var meta = "Groq · "+modelShort(d.model||"qwen")+(d.info&&d.info.mask?" · "+d.info.mask:"");
-            document.getElementById("aiGroqSuccessMeta").textContent = meta + " — готов к работе.";
-            if(returnUrl){ var rb=document.getElementById("aiGroqReturn"); rb.hidden=false; rb.onclick=function(){ location.href=returnUrl; }; }
-            goto("5");
+            document.getElementById("aiSuccessMeta").textContent =
+              meta.label + " · " + (modelShort(d.model) || meta.model) +
+              (d.info && d.info.mask ? " · ключ " + d.info.mask : "") + " — готов к работе.";
+            if(returnUrl){
+              var rb = document.getElementById("aiReturnBtn");
+              rb.hidden = false;
+              rb.onclick = function(){ location.href = returnUrl; };
+            }
+            goto("4");
             if(d.usage) render(d.usage);
             if(window.refreshAiIndicator) window.refreshAiIndicator();
           } else {
-            err.textContent = connectError(d);
-            err.hidden=false;
+            err.innerHTML = connectError(d);
+            err.hidden = false;
           }
-        }).catch(function(){ clearInterval(tick); prog.hidden=true; err.textContent="Не удалось связаться с Groq. Ключ не удалён. Проверь интернет и повтори."; err.hidden=false; });
+        })
+        .catch(function(){
+          clearInterval(tick); prog.hidden = true;
+          err.textContent = "Не удалось связаться с провайдером. Ключ не сохранён и не удалён. Проверь интернет и повтори.";
+          err.hidden = false;
+        });
     }
     function connectError(d){
-      var c=d&&d.error_code;
-      if(c==="invalid_key") return "Ключ не принят. Проверь, что скопировал его полностью. Можно создать новый ключ в Groq и попробовать снова.";
-      if(c==="permission_denied") return "У аккаунта нет доступа к выбранной модели.";
-      if(c==="rate_limit_rpd"||c==="rate_limit_rpm"||c==="rate_limit_tpm"||c==="rate_limit_tpd") return "Ключ работает, но временный лимит сейчас исчерпан"+(d.retry_after?" (повтор через ~"+Math.round(d.retry_after)+" c)":"")+".";
-      if(c==="model_not_found") return "Ключ работает, но Qwen временно недоступен. WexFlow проверит резервную модель.";
-      if(c==="provider_timeout"||c==="offline") return "Не удалось связаться с Groq. Ключ не удалён. Проверь интернет и повтори.";
-      return (d&&d.error)||"Не удалось подключить.";
+      var c = d && d.error_code, meta = META[current];
+      if(c === "invalid_key") return "Ключ не принят. Проверь, что скопировал его полностью, без пробелов. " +
+        'Можно создать новый ключ <a class="crosslink" href="' + esc(meta.keysUrl) + '" target="_blank" rel="noopener">на сайте ' +
+        meta.label + "</a> и попробовать снова.";
+      if(c === "permission_denied") return "У аккаунта нет доступа к выбранной модели.";
+      if(c === "rate_limit_rpd" || c === "rate_limit_rpm" || c === "rate_limit_tpm" || c === "rate_limit_tpd")
+        return "Ключ работает, но временный лимит сейчас исчерпан" +
+          (d.retry_after ? " — повтори примерно через " + Math.round(d.retry_after) + " с." : ".");
+      if(c === "model_not_found") return "Ключ работает, но модель " + meta.model +
+        " временно недоступна. WexFlow проверит резервную модель.";
+      if(c === "provider_timeout" || c === "offline")
+        return "Не удалось связаться с провайдером. Ключ не сохранён и не удалён. Проверь интернет и повтори.";
+      return (d && d.error) || "Не удалось подключить.";
     }
-    document.getElementById("aiGroqConnect").addEventListener("click", connect);
+    document.getElementById("aiConnectBtn").addEventListener("click", connect);
 
-    document.getElementById("aiGroqTest").addEventListener("click", function(){
-      var out=document.getElementById("aiGroqTestOut"); out.hidden=false; out.innerHTML="<b>Отправляю тестовый запрос…</b>";
-      fetch("/api/ai/validate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:"groq",use_generation:true})})
-        .then(function(r){return r.json();}).then(function(d){ out.textContent=d&&d.ok?"Ответ получен ✓ — всё работает.":"Проблема: "+safeErr(d&&d.error_code); if(d&&d.usage) render(d.usage); if(window.refreshAiIndicator) window.refreshAiIndicator(); })
-        .catch(function(){ out.textContent="Не удалось выполнить тест."; });
+    document.getElementById("aiTestBtn").addEventListener("click", function(){
+      var out = document.getElementById("aiTestOut");
+      out.hidden = false; out.innerHTML = "<b>Отправляю тестовый запрос…</b> (потратит один запрос из лимита)";
+      fetch("/api/ai/validate", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({provider: current, use_generation: true})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          out.textContent = d && d.ok ? "Ответ получен ✓ — всё работает." : "Проблема: " + safeErr(d && d.error_code);
+          if(d && d.usage) render(d.usage);
+          if(window.refreshAiIndicator) window.refreshAiIndicator();
+        })
+        .catch(function(){ out.textContent = "Не удалось выполнить тест."; });
     });
 
     function checkProvider(name, btn){
-      var t=btn.textContent; btn.disabled=true; btn.textContent="Проверяю…";
-      fetch("/api/ai/validate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:name})})
-        .then(function(r){return r.json();}).then(function(d){ if(d&&d.usage) render(d.usage); btn.textContent=d&&d.ok?"OK ✓":"Ошибка"; if(window.refreshAiIndicator) window.refreshAiIndicator(); setTimeout(function(){btn.disabled=false;btn.textContent=t;},1200); })
-        .catch(function(){ btn.textContent="Сбой"; setTimeout(function(){btn.disabled=false;btn.textContent=t;},1200); });
+      var t = btn.textContent; btn.disabled = true; btn.textContent = "Проверяю…";
+      fetch("/api/ai/validate", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({provider: name})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(d && d.usage) render(d.usage);
+          btn.textContent = d && d.ok ? "Работает ✓" : "Ошибка: " + safeErr(d && d.error_code);
+          if(window.refreshAiIndicator) window.refreshAiIndicator();
+          setTimeout(function(){ btn.disabled = false; btn.textContent = t; }, 1600);
+        })
+        .catch(function(){ btn.textContent = "Сбой";
+          setTimeout(function(){ btn.disabled = false; btn.textContent = t; }, 1600); });
     }
+
     function disconnect(name){
-      if(!confirm("Отключить и удалить локальный ключ "+providerLabel(name)+"? Действие можно отменить, подключив ключ заново.")) return;
-      fetch("/api/ai/disconnect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({provider:name})})
-        .then(function(r){return r.json();}).then(function(d){ if(d&&d.usage) render(d.usage); if(window.refreshAiIndicator) window.refreshAiIndicator(); });
+      if(!confirm("Отключить " + META[name].label + " и удалить локальный ключ? " +
+                  "Позже можно подключить заново — понадобится ключ.")) return;
+      fetch("/api/ai/disconnect", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({provider: name})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){ if(d && d.usage) render(d.usage);
+          if(window.refreshAiIndicator) window.refreshAiIndicator(); });
     }
 
-    var mig=document.getElementById("aiMigrateGemini");
-    if(mig) mig.addEventListener("click", function(){
-      if(!confirm("Привязать существующее подключение Gemini к текущему аккаунту? Другие аккаунты на этом компьютере не смогут им пользоваться.")) return;
-      fetch("/settings/ai/migrate-gemini",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})})
-        .then(function(r){return r.json();}).then(function(d){ if(d&&d.usage) render(d.usage); if(window.refreshAiIndicator) window.refreshAiIndicator(); });
-    });
+    function bindLegacy(){
+      if(!confirm("Привязать найденный ключ Gemini к твоему аккаунту? " +
+                  "Другие аккаунты на этом компьютере не смогут им пользоваться.")) return;
+      fetch("/settings/ai/migrate-gemini", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({confirm:true})})
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          if(d && d.usage) render(d.usage);
+          if(window.refreshAiIndicator) window.refreshAiIndicator();
+          if(d && !d.ok) alert("Не получилось привязать старый ключ. Подключи Gemini обычным способом — кнопкой «Подключить Gemini».");
+        });
+    }
 
-    // первичные данные с сервера + авто-открытие мастера, если пришли из «ИИ не подключён»
     render({{ ai_providers | tojson }});
-    if(!(({{ ai_providers | tojson }}).connected) && (returnUrl || new URLSearchParams(location.search).get("connect")==="groq")){
-      wizard.hidden=false; goto("1");
+    if(!({{ ai_providers | tojson }}).connected &&
+       (returnUrl || new URLSearchParams(location.search).get("connect"))){
+      openWizard(new URLSearchParams(location.search).get("connect") === "gemini" ? "gemini" : "groq");
     }
   })();
   </script>

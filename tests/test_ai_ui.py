@@ -75,10 +75,10 @@ def test_ai_settings_page_renders_wizard_with_exact_groq_steps():
     html = _render(_usage_payload(groq_connected=False))
 
     assert "ИИ и лимиты" in html
-    assert "Подключи бесплатный ИИ за несколько минут" in html
-    # точные шаги мастера
-    for step in ("Открой страницу", "Create API Key", "WexFlow", "только один раз"):
-        assert step in html
+    # шаги мастера совпадают с реальным окном Groq (включая Expiration и Submit)
+    for step in ("API Keys", "Create API Key", "Display Name", "WexFlow",
+                 "Expiration", "No expiration", "Submit", "только один раз"):
+        assert step in html, step
     assert "https://console.groq.com/keys" in html
     assert "Я создал ключ — продолжить" in html
     assert "Проверить и подключить" in html
@@ -86,9 +86,44 @@ def test_ai_settings_page_renders_wizard_with_exact_groq_steps():
     assert "только необходимые поля профиля" in html
     assert "https://console.groq.com/docs/your-data" in html
     # личный аккаунт, а не общая организация
-    assert "свой личный" in html and "организацию" in html
-    # поле ключа — password, не отражается в HTML значением
-    assert 'type="password" id="aiGroqKey"' in html
+    assert "свой личный аккаунт Groq" in html and "организацию" in html
+    # поле ключа — password, значение не отражается в HTML
+    assert 'type="password" id="aiKeyInput"' in html
+
+
+def test_wizard_explains_provider_versus_model():
+    """Qwen — модель внутри Groq, а не отдельный провайдер: это должно быть явно сказано."""
+    html = _render(_usage_payload(groq_connected=False))
+
+    assert "Провайдер и модель — разные вещи" in html
+    assert "Qwen 3.6" in html
+    # у неподключённого провайдера модель тоже показана
+    assert "Модель:" in html
+    assert "подключаешь" in html.casefold() or "подключать модель не нужно" in html
+
+
+def test_gemini_can_be_connected_by_any_user():
+    """Обычный пользователь тоже может подключить Gemini — не только ссылка «про Gemini»."""
+    html = _render(_usage_payload(groq_connected=False))
+
+    assert "Подключить Gemini" in html or "gemini" in html
+    assert "https://aistudio.google.com/apikey" in html
+    assert "Google AI Studio" in html
+    # мастер параметризован обоими провайдерами
+    assert '"gemini"' in html and '"groq"' in html
+
+
+def test_legacy_gemini_binding_is_offered_on_the_card():
+    with mock.patch.object(app.ai_gateway, "usage_payload",
+                           return_value=_usage_payload(groq_connected=False)), \
+         mock.patch.object(app.ai_gateway, "available", return_value=False), \
+         mock.patch.object(app.ai_secrets, "legacy_gemini_key", return_value="AIza_legacy"), \
+         mock.patch.object(app.ai_secrets, "info", return_value={"connected": False}):
+        html = app.settings_ai(_request()).body.decode("utf-8")
+
+    assert "aiBindLegacy" in html
+    assert "Привязать старый ключ" in html
+    assert "AIza_legacy" not in html          # сам ключ наружу не отдаётся
 
 
 def test_connected_card_shows_mask_model_and_separate_limits():
@@ -98,10 +133,13 @@ def test_connected_card_shows_mask_model_and_separate_limits():
     assert ("••••ABCD" in html) or ("\\u2022\\u2022\\u2022\\u2022ABCD" in html)
     assert "qwen" in html
     assert "Проверить" in html and "Заменить ключ" in html and "Отключить" in html
-    # раздельные лимиты: дневные запросы и минутные токены не смешаны
+    # раздельные лимиты: дневные запросы и минутные токены явно разведены
     assert "Запросы за день" in html
-    assert "TPM" in html
-    assert "локальная оценка" in html or "оценка" in html
+    assert "Токены в минуту" in html
+    assert "не дневной" in html                       # TPM не выдаётся за суточный
+    assert "локальная оценка WexFlow" in html
+    # без заголовков лимит не выдумывается
+    assert "станет известен после первого ответа" in html
 
 
 def test_no_api_key_ever_appears_in_html():
