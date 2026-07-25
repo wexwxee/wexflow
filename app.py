@@ -2707,10 +2707,7 @@ def index(
         "active_filter_count": len(_filter_chips),
         "scope_urls": _scope_urls,
         "batch": batch, "batch_mode": mode, "skipped": skipped, "dup": dup,
-        "apply_files": {
-            "cv": profile_store.file_label(_profile.get("cv_path", "")),
-            "cover": profile_store.file_label(_profile.get("cover_letter_path", "")),
-        },
+        "apply_files": _profile_file_info(_profile),
         "setup": _setup,
         "today": _today,
         "maps_urls": maps_urls,
@@ -4378,7 +4375,13 @@ def start_apply(
 
 
 @app.post("/apply/batch")
-def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: str = Form("dry")):
+def apply_batch(
+    request: Request,
+    job_ids: list[str] = Form(default=[]),
+    mode: str = Form("dry"),
+    cv_file: UploadFile | None = File(None),
+    cover_letter_file: UploadFile | None = File(None),
+):
     ids = [j for j in job_ids if j]
     if not ids:
         return _redirect_back(request, "/", error="Сначала выбери хотя бы одну вакансию для пакетной подачи.")
@@ -4407,6 +4410,24 @@ def apply_batch(request: Request, job_ids: list[str] = Form(default=[]), mode: s
             request, "/",
             error=f"Подавать нечего — {reason}. Повторно на одну и ту же вакансию заявка не уходит.",
         )
+    # Документы можно заменить прямо в пакетной панели. Сохраняем их до
+    # запуска браузерного воркера, чтобы вся пачка использовала один и тот же
+    # проверенный набор файлов.
+    if (
+        (cv_file and cv_file.filename)
+        or (cover_letter_file and cover_letter_file.filename)
+    ):
+        profile = profile_store.load_profile()
+        profile, file_error = _profile_files_result(
+            profile,
+            "",
+            "",
+            cv_file,
+            cover_letter_file,
+        )
+        if file_error:
+            return _redirect_back(request, "/", error=file_error)
+        profile_store.save_profile(profile)
     # Гонка/двойной клик: если подача уже идёт (другая пачка или автопилот) —
     # второй процесс не запускаем, чтобы два браузера не дрались за профиль.
     if not _claim_apply_slot():

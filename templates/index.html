@@ -368,28 +368,104 @@
   .selwrap input:checked + .selbox-ui::after { opacity:1; }
   .selwrap:hover .selbox-ui { border-color:var(--accent); }
   .card.selected { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft), var(--shadow-sm); }
-  /* плашка пакетной подачи */
-  .batchbar { position:fixed; left:calc(84px + (100vw - 84px) / 2); transform:translateX(-50%); bottom:74px; z-index:900;
-    display:none; grid-template-columns:1fr; align-items:center; gap:12px;
-    width:min(620px, calc(100vw - 124px));
-    background:#09100d; border:1px solid rgba(255,255,255,.13);
-    box-shadow:0 24px 60px rgba(0,0,0,.58), 0 0 0 1px rgba(30,215,96,.08);
-    border-radius:18px; padding:14px 16px; }
-  html[data-theme="light"] .batchbar { background:#fff; border-color:var(--line-strong); box-shadow:0 20px 45px rgba(20,50,40,.18); }
-  .batchbar.show { display:grid; opacity:1 !important; animation:none !important; }
-  .batchbar .binfo { width:100%; min-width:0; display:flex; flex-direction:column; align-items:center; text-align:center; gap:5px; }
-  .batchbar .cnt { font-weight:800; font-family:"Space Grotesk",system-ui,sans-serif; color:var(--txt-strong); }
-  .batchbar .files { display:block; width:100%; max-width:100%; font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .batchbar .files a { margin-left:8px; font-weight:700; }
-  .batchbar .bactions { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
-  .batchbar button { min-height:36px; border-radius:10px; padding:8px 12px; }
-  .batchbar .primary { background:#21d86b; color:#05130a; border-color:#21d86b; font-weight:800; }
-  .batchbar .submitbtn { background:rgba(30,215,96,.12); border:1px solid rgba(30,215,96,.34); color:var(--ok-txt); font-weight:700; }
-  .batchbar .submitbtn:hover { border-color:var(--ok-txt); background:rgba(30,215,96,.18); }
+  /* Панель пакетной подачи: выбор, документы и безопасные действия в одном месте. */
+  .batchbar {
+    position:fixed; left:calc(84px + (100vw - 84px) / 2); transform:translateX(-50%);
+    bottom:58px; z-index:900; display:none; width:min(820px, calc(100vw - 124px));
+    max-height:calc(100vh - 86px); overflow:auto; padding:16px;
+    background:rgba(7,15,11,.97); border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 26px 72px rgba(0,0,0,.64), 0 0 0 1px rgba(30,215,96,.08);
+    border-radius:18px; backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+  }
+  html[data-theme="light"] .batchbar {
+    background:rgba(255,255,255,.98); border-color:var(--line-strong);
+    box-shadow:0 20px 48px rgba(20,50,40,.22);
+  }
+  .batchbar.show { display:grid; gap:12px; opacity:1 !important; animation:none !important; }
+  .batch-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+  .batch-title {
+    display:flex; align-items:center; gap:9px; color:var(--txt-strong);
+    font:800 16px/1.2 "Space Grotesk",system-ui,sans-serif;
+  }
+  .batch-count {
+    min-width:28px; height:28px; display:inline-grid; place-items:center; padding:0 7px;
+    border-radius:9px; background:var(--accent); color:var(--on-accent); font-size:13px;
+  }
+  .batch-subtitle { margin-top:4px; color:var(--muted); font-size:11.5px; line-height:1.35; }
+  .batch-clear {
+    flex:0 0 auto; width:31px; height:31px; padding:0 !important; display:grid; place-items:center;
+    border:1px solid var(--line); border-radius:9px !important; background:var(--input-bg);
+    color:var(--muted); cursor:pointer; font-size:18px;
+  }
+  .batch-clear:hover { color:var(--err-txt); border-color:var(--err-line); background:var(--err-bg); }
+  .batch-docs { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+  .batch-doc {
+    min-width:0; display:grid; grid-template-columns:34px minmax(0,1fr) auto;
+    gap:9px; align-items:center; padding:10px; border:1px solid var(--line);
+    border-radius:12px; background:var(--input-bg);
+  }
+  .batch-doc-icon {
+    width:34px; height:34px; display:grid; place-items:center; border-radius:9px;
+    background:var(--glass); color:var(--accent); border:1px solid var(--glass-line);
+  }
+  .batch-doc-copy { min-width:0; }
+  .batch-doc-label { display:flex; align-items:center; gap:6px; color:var(--txt-strong); font-size:12px; font-weight:750; }
+  .batch-doc-status {
+    display:inline-flex; align-items:center; min-height:17px; padding:1px 5px; border-radius:5px;
+    color:var(--ok-txt); background:var(--ok-bg); font-size:9px; font-weight:800; text-transform:uppercase;
+    letter-spacing:.035em;
+  }
+  .batch-doc-status.optional { color:var(--muted); background:var(--glass); }
+  .batch-doc-status.missing { color:var(--warn-txt); background:var(--warn-bg); }
+  .batch-doc-name {
+    display:block; margin-top:3px; max-width:100%; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; color:var(--muted); font-size:11px;
+  }
+  .batch-doc-actions { display:flex; align-items:center; gap:5px; }
+  .batch-doc-action {
+    min-height:28px; display:inline-flex; align-items:center; justify-content:center; gap:4px;
+    padding:4px 7px; border:1px solid var(--line); border-radius:8px; background:var(--card);
+    color:var(--muted); text-decoration:none; cursor:pointer; font-size:10.5px; font-weight:700;
+  }
+  .batch-doc-action:hover { color:var(--txt); border-color:var(--hover-line); }
+  .batch-doc input[type=file] { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+  .batch-doc-note { color:var(--muted); font-size:10.5px; line-height:1.35; }
+  .batch-doc-note a { color:var(--accent); text-decoration:none; margin-left:6px; font-weight:700; }
+  .batch-doc-note a:hover { text-decoration:underline; }
+  .batchbar .bactions {
+    display:grid; grid-template-columns:minmax(190px,1fr) minmax(210px,1.1fr); gap:8px;
+    padding-top:1px;
+  }
+  .batchbar .bactions button {
+    min-height:43px; border-radius:11px; padding:8px 12px;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+  }
+  .batchbar .bactions button span { font-size:12.5px; font-weight:800; }
+  .batchbar .bactions button small { opacity:.7; font-size:10.5px; font-weight:600; }
+  #batchSubmitNoun { font-style:normal; }
+  .batchbar .preparebtn {
+    background:var(--glass); border:1px solid var(--hover-line); color:var(--txt);
+  }
+  .batchbar .preparebtn:hover { border-color:var(--accent); background:var(--accent-soft); }
+  .batchbar .submitbtn {
+    background:#21d86b; border:1px solid #21d86b; color:#05130a; font-weight:800;
+  }
+  .batchbar .submitbtn:hover { background:var(--accent-hover); border-color:var(--accent-hover); }
+  .batch-safety {
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    color:var(--muted); font-size:10.5px; text-align:center;
+  }
   @media (max-width:820px){
-    .batchbar { left:50%; width:calc(100vw - 24px); bottom:24px; }
-    .batchbar .bactions { justify-content:stretch; }
-    .batchbar .bactions button { flex:1 1 150px; }
+    .batchbar { left:50%; width:calc(100vw - 24px); bottom:12px; max-height:calc(100vh - 24px); }
+    .batch-docs { grid-template-columns:1fr; }
+  }
+  @media (max-width:520px){
+    .batchbar { padding:13px; border-radius:15px; }
+    .batch-doc { grid-template-columns:31px minmax(0,1fr); }
+    .batch-doc-icon { width:31px; height:31px; }
+    .batch-doc-actions { grid-column:1 / -1; justify-content:stretch; }
+    .batch-doc-action { flex:1; }
+    .batchbar .bactions { grid-template-columns:1fr; }
   }
   .notice-line { padding:8px 22px; font-size:13px; }
 
@@ -1008,20 +1084,84 @@
 </div>
 {% endif %}
 
-<form id="batchform" class="batchbar" method="post" action="/apply/batch">
-  <div class="binfo">
-    <span class="cnt"><span id="selcount">0</span> выбрано · подаются по одной</span>
-    <span class="files">{{ ic.i('file', 12) }} CV: {{ apply_files.cv }} · {{ ic.i('edit', 12) }} Письмо: {{ apply_files.cover }}
-      <a href="#" id="changefiles">изменить файлы</a></span>
+<form id="batchform" class="batchbar" method="post" action="/apply/batch" enctype="multipart/form-data">
+  <div class="batch-head">
+    <div>
+      <div class="batch-title">
+        <span class="batch-count" id="selcount">0</span>
+        <span>Вакансии выбраны</span>
+      </div>
+      <div class="batch-subtitle">WexFlow обработает их по одной — следующая форма откроется после завершения предыдущей.</div>
+    </div>
+    <button type="button" id="selclear" class="batch-clear" aria-label="Очистить выбранные вакансии"
+            title="Очистить выбор">×</button>
   </div>
+
+  <div class="batch-docs">
+    <article class="batch-doc" data-batch-document="cv">
+      <span class="batch-doc-icon">{{ ic.i('file', 16) }}</span>
+      <div class="batch-doc-copy">
+        <div class="batch-doc-label">
+          CV / резюме
+          <span class="batch-doc-status {{ 'missing' if apply_files.cv_status != 'ok' }}" data-doc-status>
+            {{ 'готово' if apply_files.cv_status == 'ok' else ('не найдено' if apply_files.cv_status == 'missing' else 'не добавлено') }}
+          </span>
+        </div>
+        <span class="batch-doc-name" data-doc-name title="{{ apply_files.cv_label }}">{{ apply_files.cv_label }}</span>
+      </div>
+      <div class="batch-doc-actions">
+        <a class="batch-doc-action" data-doc-open href="{{ apply_files.cv_url or '#' }}"
+           target="_blank" rel="noopener" {% if not apply_files.cv_url %}hidden{% endif %}>
+          {{ ic.i('eye', 12) }} Просмотр
+        </a>
+        <label class="batch-doc-action" for="batchCvFile">
+          {{ ic.i('edit', 12) }} {{ 'Заменить' if apply_files.cv_status == 'ok' else 'Загрузить' }}
+        </label>
+        <input id="batchCvFile" type="file" name="cv_file" accept=".pdf,.doc,.docx">
+      </div>
+    </article>
+
+    <article class="batch-doc" data-batch-document="cover">
+      <span class="batch-doc-icon">{{ ic.i('edit', 16) }}</span>
+      <div class="batch-doc-copy">
+        <div class="batch-doc-label">
+          Мотивационное письмо
+          <span class="batch-doc-status {{ 'missing' if apply_files.cover_status == 'missing' else ('optional' if apply_files.cover_status != 'ok' else '') }}" data-doc-status>
+            {{ 'готово' if apply_files.cover_status == 'ok' else ('не найдено' if apply_files.cover_status == 'missing' else 'необязательно') }}
+          </span>
+        </div>
+        <span class="batch-doc-name" data-doc-name title="{{ apply_files.cover_label }}">{{ apply_files.cover_label }}</span>
+      </div>
+      <div class="batch-doc-actions">
+        <a class="batch-doc-action" data-doc-open href="{{ apply_files.cover_url or '#' }}"
+           target="_blank" rel="noopener" {% if not apply_files.cover_url %}hidden{% endif %}>
+          {{ ic.i('eye', 12) }} Просмотр
+        </a>
+        <label class="batch-doc-action" for="batchCoverFile">
+          {{ ic.i('edit', 12) }} {{ 'Заменить' if apply_files.cover_status == 'ok' else 'Загрузить' }}
+        </label>
+        <input id="batchCoverFile" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
+      </div>
+    </article>
+  </div>
+
+  <div class="batch-doc-note">
+    PDF, DOC или DOCX · максимум 25 МБ. Новый файл сохранится локально и станет текущим для следующих подач.
+    <a href="/settings/salling#documents">Все документы →</a>
+  </div>
+
   <div class="bactions">
-    <button class="primary" type="submit" name="mode" value="dry"
-            data-tip-title="Без отправки" data-tip-body="WexFlow откроет форму, заполнит поля и прикрепит файлы, но не отправит заявку. Хорошо для проверки.">Подготовить</button>
+    <button class="preparebtn" type="submit" name="mode" value="dry"
+            data-tip-title="Без отправки" data-tip-body="WexFlow откроет форму, заполнит поля и прикрепит файлы, но не отправит заявку. Хорошо для проверки.">
+      {{ ic.i('eye', 14) }} <span>Подготовить</span><small>без отправки</small>
+    </button>
     <button class="submitbtn" type="submit" name="mode" value="submit"
             onclick="return confirm('Отправить выбранные заявки (' + (document.getElementById('selcount') ? document.getElementById('selcount').textContent : '?') + ') под твоим именем? Это действие нельзя отменить.')"
-            data-tip-title="Подать выбранные" data-tip-body="WexFlow заполнит форму, отправит заявку и подтвердит согласие, если сайт его покажет.">Подать выбранные</button>
-    <button type="button" id="selclear">Сброс</button>
+            data-tip-title="Подать выбранные" data-tip-body="WexFlow заполнит форму, отправит заявку и подтвердит согласие, если сайт его покажет.">
+      {{ ic.i('send', 14) }} <span>Подать <b id="batchSubmitCount">0</b> <i id="batchSubmitNoun">вакансий</i></span>
+    </button>
   </div>
+  <div class="batch-safety">{{ ic.i('lock', 12) }} Перед реальной отправкой WexFlow ещё раз попросит подтверждение.</div>
 </form>
 
 <div id="undoToast" class="undo-toast">
@@ -1156,6 +1296,8 @@
   const selboxes = [...document.querySelectorAll('[data-selbox]')];
   const bar = document.getElementById('batchform');
   const selcount = document.getElementById('selcount');
+  const batchSubmitCount = document.getElementById('batchSubmitCount');
+  const batchSubmitNoun = document.getElementById('batchSubmitNoun');
 
   // Выбор сохраняем в браузере, чтобы он не пропадал при переходе на
   // «Подробнее» и обратно (это полная перезагрузка страницы).
@@ -1176,6 +1318,13 @@
   function refreshSel() {
     const n = selboxes.filter(c => c.checked).length;
     selcount.textContent = n;
+    if (batchSubmitCount) batchSubmitCount.textContent = n;
+    if (batchSubmitNoun) {
+      const n10 = n % 10, n100 = n % 100;
+      batchSubmitNoun.textContent = (n10 === 1 && n100 !== 11)
+        ? 'вакансию'
+        : ((n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) ? 'вакансии' : 'вакансий');
+    }
     bar.classList.toggle('show', n > 0);
     selboxes.forEach(c => c.closest('[data-jobcard]').classList.toggle('selected', c.checked));
   }
@@ -1191,10 +1340,50 @@
     const saved = loadSelIds();
     if (saved.size) selboxes.forEach(c => { if (saved.has(c.value)) c.checked = true; });
   })();
-  document.getElementById('changefiles').addEventListener('click', (e) => {
-    e.preventDefault();
-    const first = selboxes.find(c => c.checked) || selboxes[0];
-    if (first) location.href = '/job/' + first.value + '/apply';
+
+  // Документы можно заменить прямо здесь. Для выбранного локального файла
+  // создаём временную ссылку просмотра; окончательная проверка размера и типа
+  // всё равно выполняется сервером перед сохранением.
+  const batchPreviewUrls = new Map();
+  document.querySelectorAll('.batch-doc input[type="file"]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      if (!['pdf', 'doc', 'docx'].includes(ext)) {
+        alert('Можно загрузить только PDF, DOC или DOCX.');
+        input.value = '';
+        return;
+      }
+      if (file.size > 25 * 1024 * 1024) {
+        alert('Файл слишком большой. Максимум 25 МБ.');
+        input.value = '';
+        return;
+      }
+      const card = input.closest('[data-batch-document]');
+      const name = card && card.querySelector('[data-doc-name]');
+      const status = card && card.querySelector('[data-doc-status]');
+      const open = card && card.querySelector('[data-doc-open]');
+      if (name) {
+        name.textContent = file.name;
+        name.title = file.name;
+      }
+      if (status) {
+        status.textContent = 'выбран новый';
+        status.classList.remove('missing', 'optional');
+      }
+      if (open) {
+        const old = batchPreviewUrls.get(input.id);
+        if (old) URL.revokeObjectURL(old);
+        const preview = URL.createObjectURL(file);
+        batchPreviewUrls.set(input.id, preview);
+        open.href = preview;
+        open.hidden = false;
+      }
+    });
+  });
+  window.addEventListener('beforeunload', () => {
+    batchPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
   });
   refreshSel();
 
