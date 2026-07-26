@@ -40,7 +40,17 @@ class JobItem:
     street: Optional[str] = None
     zip: Optional[str] = None
     country: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    categories: Optional[str] = None       # CSV of WexFlow category keys
+    region: Optional[str] = None
+    hours: Optional[str] = None
+    employment_type: Optional[str] = None
+    job_level: Optional[str] = None
+    pay_rate: Optional[str] = None
     published: Optional[str] = None   # ISO-дата публикации
+    modified: Optional[str] = None
+    requisition_id: Optional[str] = None
     description: Optional[str] = None  # HTML
 
     def as_dict(self) -> dict:

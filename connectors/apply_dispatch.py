@@ -31,6 +31,11 @@ _PLATFORMS = [
     ("lever", "Lever", re.compile(r"jobs\.lever\.co", re.I)),
     ("recruitee", "Recruitee", re.compile(r"\.recruitee\.com", re.I)),
     ("workable", "Workable", re.compile(r"\.workable\.com", re.I)),
+    (
+        "lidl_easy_apply",
+        "Lidl EasyApply",
+        re.compile(r"ea-lidl\.cfapps\.[^/]*hana\.ondemand\.com/easyapply", re.I),
+    ),
 ]
 
 def status_path(job_id: str = ""):
@@ -78,6 +83,9 @@ def prepare(page, url: str, profile: dict) -> str:
     if key == "teamtailor":
         from connectors import teamtailor_apply
         teamtailor_apply.prepare(page, url, profile)
+    elif key == "lidl_easy_apply":
+        from connectors import lidl_apply
+        lidl_apply.prepare(page, url, profile)
     elif key:
         from connectors import generic_apply
         generic_apply.prepare(page, url, profile, platform=platform_name(key))

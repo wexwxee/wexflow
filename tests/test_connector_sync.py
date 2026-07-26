@@ -134,6 +134,20 @@ def test_connector_geocoding_is_bounded_and_persists_coordinates():
         assert session.get(Job, "salling-geo").lat is None
 
 
+def test_update_preserves_geocode_when_feed_has_no_coordinates():
+    engine, sessions = _factory()
+    connector_sync.sync_items("teamtailor", [_item()], sessions)
+    with Session(engine) as session:
+        job = session.get(Job, "tt:demo:1")
+        job.lat, job.lon = 55.6761, 12.5683
+        session.add(job)
+        session.commit()
+    connector_sync.sync_items("teamtailor", [_item(title="Updated")], sessions)
+    with Session(engine) as session:
+        job = session.get(Job, "tt:demo:1")
+        assert (job.lat, job.lon) == (55.6761, 12.5683)
+
+
 def test_update_preserves_application_state():
     engine, sessions = _factory()
     connector_sync.sync_items("teamtailor", [_item()], sessions)

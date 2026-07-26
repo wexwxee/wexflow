@@ -1040,7 +1040,7 @@
     {% endif %}
     {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','hidden':'скрыто','closed':'закрыта'} %}
     <div class="badges">
-      {% set short_sources = {'teamtailor':'Teamtailor','greenhouse':'Greenhouse','ashby':'Ashby','manual_link':'По ссылке'} %}
+      {% set short_sources = {'lidl':'Lidl','teamtailor':'Teamtailor','greenhouse':'Greenhouse','ashby':'Ashby','manual_link':'По ссылке'} %}
       {% if j.source != 'salling' %}<span class="badge" style="border-color:#6b66ff;color:#9c98ff;">{{ short_sources.get(j.source, j.source) }}</span>{% endif %}
       {% set app_state = application_states.get((j.source, j.id), '') %}
       {% if app_state == 'submitting' %}<span class="badge" style="color:var(--info-txt);border-color:var(--info-line);" data-tip-title="Анкета в работе" data-tip-body="WexFlow открыл форму, но отправка ещё не подтверждена. После завершения отметь результат на странице вакансии. Забытое состояние само сменится через 6 часов.">анкета в работе</span>{% endif %}

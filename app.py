@@ -68,6 +68,7 @@ JOB_SOURCE_LABELS = {
     "teamtailor": "Другие компании · Teamtailor",
     "greenhouse": "Другие компании · Greenhouse",
     "ashby": "Другие компании · Ashby",
+    "lidl": "Lidl Danmark",
     "manual_link": "Добавлено по ссылке",
 }
 JOB_FILTER_KEYS = (
@@ -1896,7 +1897,7 @@ def _seven_eleven_state() -> dict:
 
 @app.get("/hub", response_class=HTMLResponse)
 def hub(request: Request):
-    connector_sources = ("teamtailor", "greenhouse", "ashby")
+    connector_sources = connector_sync.DEFAULT_SOURCES
     with get_session() as s:
         total_jobs = (
             s.exec(select(func.count(Job.id)).where(Job.source == "salling")).one() or 0
@@ -2090,7 +2091,7 @@ def apply_by_link(request: Request, pending: str = ""):
     sources = [
         {"key": key, "label": JOB_SOURCE_LABELS[key],
          "count": counts.get(key, 0), "href": f"/?source={key}"}
-        for key in ("teamtailor", "greenhouse", "ashby")
+        for key in connector_sync.DEFAULT_SOURCES
     ]
     return templates.TemplateResponse("apply_by_link.html", {
         "request": request, "sources": sources,

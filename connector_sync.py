@@ -13,7 +13,7 @@ import geo
 from connectors.base import JobItem, is_denmark
 from db import Job, get_session, init_db, select, utcnow
 
-DEFAULT_SOURCES = ("teamtailor", "greenhouse", "ashby")
+DEFAULT_SOURCES = ("teamtailor", "greenhouse", "ashby", "lidl")
 STALE_AFTER = dt.timedelta(hours=48)
 GEOCODE_BATCH = 40
 
@@ -47,14 +47,23 @@ def job_from_item(item: JobItem, now=None) -> Job:
         source=str(item.source or "")[:40],
         title=_text(item.title)[:500],
         brand=_text(item.company)[:180] or None,
+        categories=_text(item.categories)[:500] or None,
+        region=_text(item.region)[:180] or None,
         city=_text(item.city)[:180] or None,
         street=_text(item.street)[:240] or None,
         zip=_text(item.zip)[:30] or None,
         country=country[:60] or None,
+        lat=item.lat,
+        lon=item.lon,
+        hours=_text(item.hours)[:100] or None,
+        employment_type=_text(item.employment_type)[:80] or None,
+        job_level=_text(item.job_level)[:80] or None,
+        pay_rate=_text(item.pay_rate)[:240] or None,
         published=_text(item.published)[:80] or None,
+        modified=_text(item.modified)[:80] or None,
         description=item.description or None,
         application_link=_text(item.url)[:1000] or None,
-        requisition_id=str(item.id or "")[:220] or None,
+        requisition_id=_text(item.requisition_id)[:220] or str(item.id or "")[:220] or None,
         first_seen=now,
         last_seen=now,
         status="new",
@@ -93,10 +102,16 @@ def sync_items(source: str, items: Iterable[JobItem], session_factory=get_sessio
                 created += 1
                 continue
             data = fresh.model_dump(exclude={
-                "id", "first_seen", "status", "applied_at", "applied_confidence", "lat", "lon"
+                "id", "first_seen", "status", "applied_at", "applied_confidence",
+                "lat", "lon",
             })
             for key, value in data.items():
                 setattr(existing, key, value)
+            # Most ATS feeds omit coordinates and rely on WexFlow geocoding.
+            # Lidl provides precise coordinates, so accept them when present
+            # without erasing an existing geocode for other connectors.
+            if fresh.lat is not None and fresh.lon is not None:
+                existing.lat, existing.lon = fresh.lat, fresh.lon
             existing.last_seen = now
             if existing.status == "closed" and existing.applied_at is None:
                 existing.status = "seen"

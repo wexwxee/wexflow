@@ -16,3 +16,4 @@ from .base import Connector, JobItem, register, all_connectors, get  # noqa: F40
 from . import teamtailor   # noqa: F401,E402
 from . import greenhouse   # noqa: F401,E402
 from . import ashby        # noqa: F401,E402
+from . import lidl         # noqa: F401,E402
