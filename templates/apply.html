@@ -115,37 +115,26 @@
       </div>
     </form>
 
-    <form id="apply-files-form" class="glass panel" method="post" action="/job/{{ job.id }}/apply/save" enctype="multipart/form-data">
+    <form id="apply-files-form" class="glass panel" method="post" action="/job/{{ job.id }}/apply/start">
       <input type="hidden" name="resubmit_ack" id="resubmit_ack" value="">
       <h2 style="margin-top:0;">Файлы для подачи</h2>
       <div class="grid">
         <div class="file-card">
           <label>CV / резюме</label>
-          <input type="text" name="cv_path" value="{{ profile.cv_path or '' }}" placeholder="Вставь путь к CV или выбери файл ниже">
-          <div class="hint">Можно указать путь к файлу. Если на сайте CV уже сохранено, можно оставить пустым.</div>
-          <div class="file-picker">
-            <label class="file-button" for="cv_file">Выбрать файл</label>
-            <span class="file-name {{ 'saved' if file_info.cv_status == 'ok' else ('missing' if file_info.cv_status == 'missing' else '') }}" data-file-name="cv_file">{{ file_info.cv_label }}</span>
-            <input id="cv_file" type="file" name="cv_file" accept=".pdf,.doc,.docx">
-          </div>
+          <div class="file-name {{ 'saved' if file_info.cv_status == 'ok' else ('missing' if file_info.cv_status == 'missing' else '') }}">{{ file_info.cv_label }}</div>
+          <div class="hint">Источник: {{ document_selection.cv.label if document_selection.cv else 'Общий комплект' }}</div>
         </div>
         <div class="file-card">
           <label>Мотивационное письмо</label>
-          <input type="text" name="cover_letter_path" value="{{ profile.cover_letter_path or '' }}" placeholder="Вставь путь к письму или выбери файл ниже">
-          <div class="hint">WexFlow попробует приложить этот файл как мотивационное письмо.</div>
-          <div class="file-picker">
-            <label class="file-button" for="cover_letter_file">Выбрать файл</label>
-            <span class="file-name {{ 'saved' if file_info.cover_status == 'ok' else ('missing' if file_info.cover_status == 'missing' else '') }}" data-file-name="cover_letter_file">{{ file_info.cover_label }}</span>
-            <input id="cover_letter_file" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
-          </div>
+          <div class="file-name {{ 'saved' if file_info.cover_status == 'ok' else ('missing' if file_info.cover_status == 'missing' else '') }}">{{ file_info.cover_label }}</div>
+          <div class="hint">Источник: {{ document_selection.cover.label if document_selection.cover else 'Общий комплект' }}</div>
         </div>
       </div>
-      <p class="meta">WexFlow откроет форму этой вакансии, попробует войти, приложить сохранённые файлы и продолжить подачу. Перед отправкой проверь данные на странице работодателя.</p>
+      <p class="meta">Комплект выбран автоматически по правилу магазин → бренд → общий. Загружать отдельный CV перед подачей больше не нужно. <a href="/settings/documents">Все документы и комплекты →</a></p>
       <div class="actions">
         <button class="primary large" type="submit" name="mode" value="submit" formaction="/job/{{ job.id }}/apply/start"
           onclick="if(!confirm('{{ 'Ты уже подавал на эту вакансию. Точно отправить ещё раз тому же работодателю? Отменить нельзя.' if already_applied else 'WexFlow отправит эту заявку под твоим именем. Это действие нельзя отменить. Продолжить?' }}')) return false; var h=document.getElementById('resubmit_ack'); if(h) h.value='1'; return true;">{{ ic.i('send', 14) }} Запустить подачу</button>
         <button class="secondary" type="submit" name="mode" value="dry" formaction="/job/{{ job.id }}/apply/start">Только подготовить без отправки</button>
-        <button class="secondary" type="submit" formaction="/job/{{ job.id }}/apply/save">Сохранить файлы</button>
         <a href="{{ job.application_link }}">
           <button class="secondary" type="button">{{ ic.i('map', 13) }} Открыть анкету вручную</button>
         </a>
@@ -183,19 +172,6 @@
       toggle.title = show ? "Скрыть пароль" : "Показать пароль";
     });
   }
-
-  document.querySelectorAll('input[type="file"]').forEach((input) => {
-    input.addEventListener("change", () => {
-      const target = document.querySelector(`[data-file-name="${input.id}"]`);
-      if (!target) return;
-      target.textContent = input.files && input.files.length ? input.files[0].name : "Файл не выбран";
-      target.classList.remove("saved", "missing");
-      if (input.files && input.files.length) {
-        target.textContent = "Сохраняю " + input.files[0].name + "...";
-        document.getElementById("apply-files-form").submit();
-      }
-    });
-  });
 
   // --- диагностика подачи ---
   const logPanel = document.getElementById("botlogPanel");

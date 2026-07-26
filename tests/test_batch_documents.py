@@ -99,14 +99,14 @@ def test_invalid_batch_upload_does_not_start_worker():
     worker.assert_not_called()
 
 
-def test_batch_panel_contains_inline_document_controls():
+def test_batch_panel_uses_central_document_library_without_inline_uploads():
     template = (
         Path(__file__).resolve().parents[1] / "templates" / "index.html"
     ).read_text(encoding="utf-8")
-    assert 'enctype="multipart/form-data"' in template
-    assert 'name="cv_file"' in template
-    assert 'name="cover_letter_file"' in template
-    assert "data-doc-open" in template
+    assert 'enctype="multipart/form-data"' not in template
+    assert 'name="cv_file"' not in template
+    assert 'name="cover_letter_file"' not in template
+    assert "магазина, затем бренда, затем общий" in template
     assert "/settings/documents" in template
     assert 'name="ai_fill"' in template
 

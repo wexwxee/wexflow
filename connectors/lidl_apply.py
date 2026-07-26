@@ -21,6 +21,76 @@ def normalize_phone(value: str) -> str:
     return raw
 
 
+def split_address(value: str) -> tuple[str, str]:
+    """Split a Danish one-line address into street name and house number.
+
+    Lidl asks for «Gade» and «Husnummer» separately, while the WexFlow profile
+    keeps one line. Floor/door details after a comma stay out of both fields —
+    the house-number input only accepts six characters.
+    """
+    line = str(value or "").split(",")[0].strip()
+    match = re.match(r"^(.*?)[\s.]+(\d+\s*[A-Za-zÆØÅæøå]?)$", line)
+    if not match:
+        return line, ""
+    street = match.group(1).strip(" .,")
+    number = re.sub(r"\s+", "", match.group(2))
+    if not street:
+        return line, ""
+    return street, number[:6]
+
+
+def _caption_input_id(page, caption: str) -> str | None:
+    """Find the input that a bare «Gade:»-style caption belongs to.
+
+    These four address captions are rendered as plain sap.m.Label spans without
+    a `for` attribute, so get_by_label cannot see them. The input that follows
+    the caption in document order is the right one — but only when it carries no
+    label of its own, otherwise we would grab the next real question instead.
+    """
+    try:
+        return page.evaluate(
+            """(caption) => {
+                const wanted = caption.trim().toLowerCase();
+                const labels = [...document.querySelectorAll('.sapMLabel')];
+                const target = labels.find(el =>
+                    (el.innerText || '').trim().replace(/[:*\\s]+$/, '').toLowerCase() === wanted);
+                if (!target) return null;
+                const all = [...document.querySelectorAll('*')];
+                const start = all.indexOf(target);
+                for (let i = start + 1; i < all.length && i < start + 40; i++) {
+                    const node = all[i];
+                    if (node.tagName !== 'INPUT') continue;
+                    if (!node.classList.contains('sapMInputBaseInner')) continue;
+                    if (node.getAttribute('aria-labelledby')) return null;
+                    return node.id || null;
+                }
+                return null;
+            }""",
+            caption,
+        )
+    except Exception:
+        return None
+
+
+def _fill_caption(page, caption: str, value: str) -> bool:
+    """Fill an address field addressed only by its visible caption."""
+    value = str(value or "").strip()
+    if not value:
+        return False
+    control_id = _caption_input_id(page, caption)
+    if not control_id:
+        return False
+    try:
+        control = page.locator(f"#{control_id}")
+        if (control.count() and control.is_visible() and control.is_editable()
+                and not (control.input_value() or "").strip()):
+            control.fill(value)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _fill_labeled(page, label: str, value: str) -> bool:
     value = str(value or "").strip()
     if not value:
@@ -111,6 +181,14 @@ def _upload(page, selector: str, path: str) -> bool:
     return False
 
 
+def _wait_for_picker_to_close(page) -> None:
+    """Let the country popover finish closing before the summary banner shows."""
+    try:
+        page.wait_for_selector('[role="option"]:visible', state="hidden", timeout=3000)
+    except Exception:
+        pass
+
+
 def _screening_question_count(page) -> int:
     try:
         return page.locator('label[for^="__group"]').count()
@@ -137,8 +215,20 @@ def prepare(page, url: str, profile: dict) -> None:
         if _fill_labeled(page, label, value or ""):
             filled.append(key)
 
+    street, house_number = split_address(profile.get("address") or "")
+    address_fields = (
+        ("Gade", street, "street"),
+        ("Husnummer", house_number, "house number"),
+        ("Postnummer", profile.get("zip"), "zip"),
+        ("By", profile.get("city"), "city"),
+    )
+    for caption, value, key in address_fields:
+        if _fill_caption(page, caption, value or ""):
+            filled.append(key)
+
     if _select_ui5(page, "Land", profile.get("country") or ""):
         filled.append("country")
+    _wait_for_picker_to_close(page)
     if _upload(page, 'input[type="file"][name="EACVUploader"]',
                profile.get("cv_path") or ""):
         filled.append("CV")
@@ -148,6 +238,7 @@ def prepare(page, url: str, profile: dict) -> None:
 
     questions = _screening_question_count(page)
     missing = [
+        "пол (Køn)",
         "ответы Lidl и дата выхода",
         "видимость профиля",
     ]

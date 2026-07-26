@@ -96,6 +96,27 @@ def prepare(page, url: str, profile: dict) -> str:
     return key or ""
 
 
+def load_profile_for_job(job_id: str = "") -> dict:
+    """Load the canonical profile and apply store/brand document rules."""
+    from connectors.fill_common import load_profile
+
+    profile = load_profile()
+    wanted = str(job_id or "").strip()
+    if not wanted:
+        return profile
+    try:
+        import document_rules
+        from db import Job, get_session
+
+        with get_session() as session:
+            job = session.get(Job, wanted)
+        if job is not None:
+            return document_rules.resolve_profile(profile, job)
+    except Exception as exc:
+        print("  не удалось выбрать персональный комплект документов:", str(exc)[:120])
+    return profile
+
+
 def _wait_until_closed(ctx) -> None:
     while True:
         try:
@@ -108,13 +129,12 @@ def _wait_until_closed(ctx) -> None:
 
 
 def run(url: str, keep_open: bool = False, job_id: str = "") -> None:
-    from connectors.fill_common import load_profile
     from connectors.browser import launch_browser
     from playwright.sync_api import sync_playwright
 
     _write_status(job_id, "starting")
     try:
-        profile = load_profile()
+        profile = load_profile_for_job(job_id)
         key = detect(url)
         print(f"платформа: {platform_name(key) if key else 'не распознана (пробую универсально)'}")
         _write_status(job_id, "opening_browser")

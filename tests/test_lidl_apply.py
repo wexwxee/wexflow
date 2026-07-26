@@ -23,6 +23,79 @@ def test_phone_uses_lidl_international_format():
     assert lidl_apply.normalize_phone("0046 12 34 56") == "0046123456"
 
 
+def test_address_splits_into_street_and_house_number():
+    assert lidl_apply.split_address("Sonnerupvej 104") == ("Sonnerupvej", "104")
+    assert lidl_apply.split_address("Chr. Xs Vej 53") == ("Chr. Xs Vej", "53")
+    assert lidl_apply.split_address("Nørrebrogade 12B, 3. tv") == ("Nørrebrogade", "12B")
+    # No number at all: the whole line is the street, nothing is invented.
+    assert lidl_apply.split_address("Sonnerupvej") == ("Sonnerupvej", "")
+    assert lidl_apply.split_address("") == ("", "")
+
+
+def _address_page(page):
+    """The Lidl address block: bare captions, inputs without any label link."""
+    page.set_content("""
+      <label for="first">Fornavn</label><input id="first">
+      <span class="sapMLabel" id="l6"><span><bdi>Gade:</bdi></span></span>
+      <div><input id="street" class="sapMInputBaseInner"></div>
+      <span class="sapMLabel" id="l5"><span><bdi>Husnummer:</bdi></span></span>
+      <div><input id="houseno" class="sapMInputBaseInner" maxlength="6"></div>
+      <span class="sapMLabel" id="l7"><span><bdi>Postnummer:</bdi></span></span>
+      <div><input id="zip" class="sapMInputBaseInner"></div>
+      <span class="sapMLabel" id="l8"><span><bdi>By:</bdi></span></span>
+      <div><input id="city" class="sapMInputBaseInner"></div>
+      <label class="sapMLabel" id="l10">Blev du henvist til Lidl?</label>
+      <input id="referral" class="sapMInputBaseInner" aria-labelledby="l10">
+    """)
+
+
+def test_address_block_without_labels_is_filled_from_the_profile():
+    playwright, browser, page = _page()
+    try:
+        _address_page(page)
+        assert lidl_apply._fill_caption(page, "Gade", "Sonnerupvej")
+        assert lidl_apply._fill_caption(page, "Husnummer", "104")
+        assert lidl_apply._fill_caption(page, "Postnummer", "2700")
+        assert lidl_apply._fill_caption(page, "By", "København")
+        assert page.input_value("#street") == "Sonnerupvej"
+        assert page.input_value("#houseno") == "104"
+        assert page.input_value("#zip") == "2700"
+        assert page.input_value("#city") == "København"
+        # The next real question has its own label and must stay untouched.
+        assert page.input_value("#referral") == ""
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_caption_fill_never_grabs_a_labelled_question():
+    """A caption whose next input belongs to another question fills nothing."""
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <span class="sapMLabel" id="l9">Land</span>
+          <label class="sapMLabel" id="l10">Blev du henvist til Lidl?</label>
+          <input id="referral" class="sapMInputBaseInner" aria-labelledby="l10">
+        """)
+        assert not lidl_apply._fill_caption(page, "Land", "Danmark")
+        assert page.input_value("#referral") == ""
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_caption_fill_keeps_values_the_person_already_typed():
+    playwright, browser, page = _page()
+    try:
+        _address_page(page)
+        page.fill("#city", "Aarhus")
+        assert not lidl_apply._fill_caption(page, "By", "København")
+        assert page.input_value("#city") == "Aarhus"
+    finally:
+        browser.close()
+        playwright.stop()
+
+
 def test_identity_country_and_named_documents_are_filled_safely():
     playwright, browser, page = _page()
     try:

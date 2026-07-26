@@ -1067,7 +1067,7 @@
       {% if j.source == 'salling' %}
       <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>
       {% else %}
-      <form method="post" action="/job/{{ j.id }}/connector/apply"><button class="primary" type="submit" data-tip-title="Помощник анкеты" data-tip-body="Откроет отдельное окно браузера, заполнит доступные поля и остановится перед отправкой. Без твоего клика заявка не уйдёт.">{{ ic.i('send', 13) }} {{ 'Продолжить' if app_state in ['submitting', 'failed'] else 'Заполнить форму' }} →</button></form>
+      <form method="post" action="/job/{{ j.id }}/connector/apply"><button class="primary" type="submit" data-tip-title="Помощник анкеты" data-tip-body="Откроет отдельное окно браузера, заполнит доступные поля и остановится перед отправкой. Без твоего клика заявка не уйдёт. Если анкета уже начата, вернёшься к ней же.">{{ ic.i('send', 13) }} Подать →</button></form>
       {% endif %}
       {% endif %}
       <a href="/job/{{ j.id }}"><button type="button" class="ghost" data-tip-title="Подробнее" data-tip-body="Полное описание, перевод, статусы и результат подачи.">Подробнее</button></a>
@@ -1101,7 +1101,7 @@
 </div>
 {% endif %}
 
-<form id="batchform" class="batchbar" method="post" action="/apply/batch" enctype="multipart/form-data">
+<form id="batchform" class="batchbar" method="post" action="/apply/batch">
   <div class="batch-head">
     <div>
       <div class="batch-title">
@@ -1114,58 +1114,10 @@
             title="Очистить выбор">×</button>
   </div>
 
-  <div class="batch-docs">
-    <article class="batch-doc" data-batch-document="cv">
-      <span class="batch-doc-icon">{{ ic.i('file', 16) }}</span>
-      <div class="batch-doc-copy">
-        <div class="batch-doc-label">
-          Общий CV / запасной
-          <span class="batch-doc-status {{ 'missing' if apply_files.cv_status != 'ok' }}" data-doc-status>
-            {{ 'готово' if apply_files.cv_status == 'ok' else ('не найдено' if apply_files.cv_status == 'missing' else 'не добавлено') }}
-          </span>
-        </div>
-        <span class="batch-doc-name" data-doc-name title="{{ apply_files.cv_label }}">{{ apply_files.cv_label }}</span>
-      </div>
-      <div class="batch-doc-actions">
-        <a class="batch-doc-action" data-doc-open href="{{ apply_files.cv_url or '#' }}"
-           target="_blank" rel="noopener" {% if not apply_files.cv_url %}hidden{% endif %}>
-          {{ ic.i('eye', 12) }} Просмотр
-        </a>
-        <label class="batch-doc-action" for="batchCvFile">
-          {{ ic.i('edit', 12) }} {{ 'Заменить' if apply_files.cv_status == 'ok' else 'Загрузить' }}
-        </label>
-        <input id="batchCvFile" type="file" name="cv_file" accept=".pdf,.doc,.docx">
-      </div>
-    </article>
-
-    <article class="batch-doc" data-batch-document="cover">
-      <span class="batch-doc-icon">{{ ic.i('edit', 16) }}</span>
-      <div class="batch-doc-copy">
-        <div class="batch-doc-label">
-          Общее письмо / запасное
-          <span class="batch-doc-status {{ 'missing' if apply_files.cover_status == 'missing' else ('optional' if apply_files.cover_status != 'ok' else '') }}" data-doc-status>
-            {{ 'готово' if apply_files.cover_status == 'ok' else ('не найдено' if apply_files.cover_status == 'missing' else 'необязательно') }}
-          </span>
-        </div>
-        <span class="batch-doc-name" data-doc-name title="{{ apply_files.cover_label }}">{{ apply_files.cover_label }}</span>
-      </div>
-      <div class="batch-doc-actions">
-        <a class="batch-doc-action" data-doc-open href="{{ apply_files.cover_url or '#' }}"
-           target="_blank" rel="noopener" {% if not apply_files.cover_url %}hidden{% endif %}>
-          {{ ic.i('eye', 12) }} Просмотр
-        </a>
-        <label class="batch-doc-action" for="batchCoverFile">
-          {{ ic.i('edit', 12) }} {{ 'Заменить' if apply_files.cover_status == 'ok' else 'Загрузить' }}
-        </label>
-        <input id="batchCoverFile" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
-      </div>
-    </article>
-  </div>
-
   <div class="batch-doc-note">
-    Для каждой вакансии WexFlow сначала проверит комплект магазина, затем бренда. Эти файлы используются, если точного варианта нет.
+    Для каждой вакансии WexFlow автоматически выберет комплект магазина, затем бренда, затем общий. Lidl получит документы Lidl, Netto — документы Netto.
     {% if document_rule_count %}Персональных комплектов: {{ document_rule_count }}.{% endif %}
-    <a href="/settings/documents">Настроить документы →</a>
+    <a href="/settings/documents">Все документы и загрузка →</a>
   </div>
 
   <label class="batch-ai {{ 'disabled' if not batch_ai_available else '' }}">
@@ -1374,50 +1326,6 @@
     if (saved.size) selboxes.forEach(c => { if (saved.has(c.value)) c.checked = true; });
   })();
 
-  // Документы можно заменить прямо здесь. Для выбранного локального файла
-  // создаём временную ссылку просмотра; окончательная проверка размера и типа
-  // всё равно выполняется сервером перед сохранением.
-  const batchPreviewUrls = new Map();
-  document.querySelectorAll('.batch-doc input[type="file"]').forEach((input) => {
-    input.addEventListener('change', () => {
-      const file = input.files && input.files[0];
-      if (!file) return;
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      if (!['pdf', 'doc', 'docx'].includes(ext)) {
-        alert('Можно загрузить только PDF, DOC или DOCX.');
-        input.value = '';
-        return;
-      }
-      if (file.size > 25 * 1024 * 1024) {
-        alert('Файл слишком большой. Максимум 25 МБ.');
-        input.value = '';
-        return;
-      }
-      const card = input.closest('[data-batch-document]');
-      const name = card && card.querySelector('[data-doc-name]');
-      const status = card && card.querySelector('[data-doc-status]');
-      const open = card && card.querySelector('[data-doc-open]');
-      if (name) {
-        name.textContent = file.name;
-        name.title = file.name;
-      }
-      if (status) {
-        status.textContent = 'выбран новый';
-        status.classList.remove('missing', 'optional');
-      }
-      if (open) {
-        const old = batchPreviewUrls.get(input.id);
-        if (old) URL.revokeObjectURL(old);
-        const preview = URL.createObjectURL(file);
-        batchPreviewUrls.set(input.id, preview);
-        open.href = preview;
-        open.hidden = false;
-      }
-    });
-  });
-  window.addEventListener('beforeunload', () => {
-    batchPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
-  });
   refreshSel();
 
   // --- помним позицию прокрутки и адрес списка ---

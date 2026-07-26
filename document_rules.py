@@ -21,6 +21,10 @@ import settings_store
 
 SETTINGS_KEY = "document_rules"
 MAX_RULES = 100
+BRAND_ALIASES = {
+    "lidl danmark": "lidl",
+    "lidl danmark k/s": "lidl",
+}
 
 
 def _value(job: Any, name: str) -> str:
@@ -41,7 +45,8 @@ def brand_key(value_or_job: Any) -> str:
         value = value_or_job
     else:
         value = _value(value_or_job, "brand")
-    return _normalise_text(value)[:80]
+    normalised = _normalise_text(value)
+    return BRAND_ALIASES.get(normalised, normalised)[:80]
 
 
 def store_key(job: Any) -> str:

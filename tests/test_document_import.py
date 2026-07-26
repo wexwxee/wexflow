@@ -51,6 +51,22 @@ def _uploads():
     ]
 
 
+def _brand_uploads():
+    names = (
+        "Ivan_Malamen_CV_Lidl_EN_DA.docx",
+        "Ivan_Malamen_Cover_Letter_Lidl_EN_DA.docx",
+        "Ivan_Malamen_CV_Netto_EN_DA.docx",
+        "Ivan_Malamen_Cover_Letter_Netto_EN_DA.docx",
+    )
+    return [
+        UploadFile(
+            filename=name,
+            file=io.BytesIO(_docx_bytes(name.replace("_", " "))),
+        )
+        for name in names
+    ]
+
+
 def test_docx_text_is_extracted_and_sensitive_contacts_are_redacted():
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "letter.docx"
@@ -111,6 +127,92 @@ def test_ai_bulk_plan_and_confirmation_create_one_document_rule():
     assert "[email скрыт]" in prompt
 
 
+def test_local_import_recognises_lidl_and_netto_without_ai_and_keeps_them_separate():
+    brands = [
+        {"key": "lidl", "label": "Lidl", "count": 8},
+        {"key": "netto", "label": "Netto", "count": 10},
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        uploads_dir = root / "uploads"
+        settings_path = root / "settings.json"
+        with mock.patch.object(document_import.profile_store, "UPLOAD_DIR", uploads_dir), \
+                mock.patch.object(document_import.settings_store, "PATH", settings_path), \
+                mock.patch.object(document_import.ai_filters, "available", return_value=False):
+            result = document_import.analyse_uploads(_brand_uploads(), brands, [])
+            preview = document_import.get_preview()
+            created = document_import.apply_preview(preview, {}, brands, [])
+            rules = {rule["brand"]: rule for rule in document_rules.get_rules()}
+
+    assert result["ok"] is True
+    assert preview["model"] == "локальное распознавание"
+    assert {group["target"] for group in preview["groups"]} == {
+        "brand:lidl",
+        "brand:netto",
+    }
+    assert len(created) == 2
+    assert "Lidl" in Path(rules["lidl"]["cv_path"]).name
+    assert "Lidl" in Path(rules["lidl"]["cover_letter_path"]).name
+    assert "Netto" in Path(rules["netto"]["cv_path"]).name
+    assert "Netto" in Path(rules["netto"]["cover_letter_path"]).name
+
+
+def test_clear_brand_filename_overrides_a_wrong_ai_brand_guess():
+    brands = [
+        {"key": "lidl", "label": "Lidl", "count": 8},
+        {"key": "netto", "label": "Netto", "count": 10},
+    ]
+    wrong_ai_result = {
+        "ok": True,
+        "model": "wrong-test-model",
+        "data": {
+            "groups": [{
+                "target_id": "brand:netto",
+                "cv_id": "f1",
+                "cover_id": "f2",
+                "confidence": 0.9,
+            }],
+            "unassigned_file_ids": [],
+        },
+    }
+    uploads = _brand_uploads()[:2]
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        with mock.patch.object(document_import.profile_store, "UPLOAD_DIR", root / "uploads"), \
+                mock.patch.object(document_import.settings_store, "PATH", root / "settings.json"), \
+                mock.patch.object(document_import.ai_filters, "available", return_value=True), \
+                mock.patch.object(
+                    document_import.ai_filters, "generate_json", return_value=wrong_ai_result
+                ):
+            result = document_import.analyse_uploads(uploads, brands, [])
+
+    assert result["ok"] is True
+    assert len(result["preview"]["groups"]) == 1
+    assert result["preview"]["groups"][0]["target"] == "brand:lidl"
+
+
+def test_single_document_import_is_allowed_and_falls_back_to_global():
+    upload = UploadFile(
+        filename="CV_main.docx",
+        file=io.BytesIO(_docx_bytes("Curriculum Vitae")),
+    )
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        with mock.patch.object(document_import.profile_store, "UPLOAD_DIR", root / "uploads"), \
+                mock.patch.object(document_import.settings_store, "PATH", root / "settings.json"), \
+                mock.patch.object(document_import.ai_filters, "available", return_value=False), \
+                mock.patch.object(document_import.profile_store, "load_profile", return_value={}), \
+                mock.patch.object(document_import.profile_store, "save_profile") as save_profile:
+            result = document_import.analyse_uploads([upload], [], [])
+            preview = document_import.get_preview()
+            created = document_import.apply_preview(preview, {}, [], [])
+
+    assert result["ok"] is True
+    assert preview["groups"][0]["target"] == "global"
+    assert created[0]["scope"] == "global"
+    assert Path(save_profile.call_args.args[0]["cv_path"]).name.startswith("bulk_doc_")
+
+
 def test_cancelled_preview_removes_only_its_bulk_files():
     brands = [{"key": "netto", "label": "Netto", "count": 10}]
     with tempfile.TemporaryDirectory() as td:
@@ -152,6 +254,8 @@ def test_settings_template_exposes_multi_file_import_and_confirmation():
     assert "group.cover_file.url" in template
     assert "Просмотр" in template
     assert "короткие текстовые фрагменты без email и телефона" in template
+    assert "Выбрать один файл или пачку" in template
+    assert 'id="global_cv_file"' not in template
 
 
 def test_document_import_view_adds_preview_urls():

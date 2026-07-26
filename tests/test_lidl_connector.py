@@ -124,6 +124,24 @@ def test_lidl_source_badge_uses_lidl_brand_colors():
     assert "#e30613" in template
 
 
+def test_external_sources_use_the_same_apply_button_as_salling():
+    """Lidl and other connectors must not invent their own call to action."""
+    from pathlib import Path
+    templates = Path(__file__).resolve().parents[1] / "templates"
+    index = (templates / "index.html").read_text(encoding="utf-8")
+    detail = (templates / "detail.html").read_text(encoding="utf-8")
+    card_buttons = [
+        line for line in index.splitlines()
+        if "/job/{{ j.id }}/apply" in line or "connector/apply" in line
+    ]
+    assert len(card_buttons) == 2
+    for line in card_buttons:
+        assert "Подать →" in line
+        assert "Заполнить форму" not in line and "Продолжить" not in line
+    assert detail.count("Подать заявку →") == 2
+    assert "Заполнить форму" not in detail
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items())
              if name.startswith("test_") and callable(value)]

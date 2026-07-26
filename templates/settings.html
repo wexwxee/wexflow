@@ -1269,8 +1269,8 @@
       <label class="bulk-drop" id="bulkDrop" for="bulkFiles">
         <input id="bulkFiles" type="file" name="files" accept=".pdf,.doc,.docx" multiple required>
         <span>
-          <span class="bulk-drop-title">{{ ic.i('file', 16) }} Выбрать несколько документов</span>
-          <span class="bulk-drop-meta">Можно выделить сразу 4 CV и 4 письма · PDF, DOC или DOCX · до 25 МБ каждый</span>
+          <span class="bulk-drop-title">{{ ic.i('file', 16) }} Выбрать один файл или пачку</span>
+          <span class="bulk-drop-meta">Например, CV_Lidl и Cover_Letter_Lidl или сразу все бренды · до 20 файлов · PDF, DOC или DOCX</span>
         </span>
       </label>
       <div class="bulk-selected" id="bulkSelected"></div>
@@ -1278,65 +1278,54 @@
         {{ ic.i('lock', 12) }} Файлы сохраняются локально. В Gemini отправляются только названия и короткие текстовые фрагменты без email и телефона — исключительно для определения типа документа и подходящего бренда. Ничего не закрепляется без плана выше.
       </div>
       <div class="actions" style="margin-top:12px;">
-        <button id="bulkAnalyseButton" class="secondary" type="submit" {{ 'disabled' if not document_import_ai_available else '' }}>
+        <button id="bulkAnalyseButton" class="secondary" type="submit" disabled>
           {{ ic.i('sparkles', 14) }} Разобрать и собрать комплекты
         </button>
         {% if not document_import_ai_available %}
-        <span class="hint" style="margin:0;">Сначала подключи Gemini в разделе <a class="crosslink" href="/settings/forms">«Анкеты и ИИ»</a>.</span>
+        <span class="hint" style="margin:0;">Работает локально по понятным именам файлов. Gemini нужен только для неоднозначных названий.</span>
         {% endif %}
       </div>
       <div class="bulk-progress" id="bulkProgress" role="status" aria-live="polite">
         <div class="bulk-progress-track"><div class="bulk-progress-bar"></div></div>
-        <div class="bulk-progress-copy" id="bulkProgressCopy">Загружаю и читаю документы… Затем ИИ соберёт пары.</div>
+        <div class="bulk-progress-copy" id="bulkProgressCopy">Загружаю и читаю документы… Затем WexFlow соберёт комплекты.</div>
       </div>
     </form>
   </section>
 
-  <form id="global-documents" class="panel" method="post" action="/settings/documents/save" enctype="multipart/form-data">
-    <h2>{{ ic.i('file', 17) }} Общий комплект</h2>
-    <p class="hint">Используется по умолчанию и как запасной вариант. Загруженный здесь файл не перезаписывает персональные комплекты ниже.</p>
-    <div class="doc-global-note">
-      {{ ic.i('check', 15) }}
-      <span>Если для бренда задан только CV, мотивационное письмо автоматически возьмётся отсюда — и наоборот.</span>
-    </div>
-    <div class="grid2">
-      <div class="file-card">
-        <label class="lbl">CV / резюме</label>
-        <div class="file-picker">
-          <label class="file-button" for="global_cv_file">Заменить файл</label>
-          <span class="file-name {{ 'saved' if file_info.cv_status=='ok' else ('missing' if file_info.cv_status=='missing' else '') }}" data-file-name="global_cv_file">{{ file_info.cv_label }}</span>
-          {% if file_info.cv_url %}<a class="file-open" href="{{ file_info.cv_url }}" title="Открыть общий CV">{{ ic.i('eye', 14) }} Просмотр</a>{% endif %}
-          {% if file_info.cv_status != 'empty' %}
-          <button class="file-remove" type="submit" name="remove_document" value="cv"
-                  formnovalidate onclick="return confirm('Убрать общий CV из этого профиля?');"
-                  title="Убрать общий CV">{{ ic.i('trash', 13) }} Убрать</button>
-          {% endif %}
-          <input id="global_cv_file" type="file" name="cv_file" accept=".pdf,.doc,.docx">
-        </div>
-      </div>
-      <div class="file-card">
-        <label class="lbl">Мотивационное письмо</label>
-        <div class="file-picker">
-          <label class="file-button" for="global_cover_file">Заменить файл</label>
-          <span class="file-name {{ 'saved' if file_info.cover_status=='ok' else ('missing' if file_info.cover_status=='missing' else '') }}" data-file-name="global_cover_file">{{ file_info.cover_label }}</span>
-          {% if file_info.cover_url %}<a class="file-open" href="{{ file_info.cover_url }}" title="Открыть общее мотивационное письмо">{{ ic.i('eye', 14) }} Просмотр</a>{% endif %}
-          {% if file_info.cover_status != 'empty' %}
-          <button class="file-remove" type="submit" name="remove_document" value="cover"
-                  formnovalidate onclick="return confirm('Убрать общее мотивационное письмо из этого профиля?');"
-                  title="Убрать мотивационное письмо">{{ ic.i('trash', 13) }} Убрать</button>
-          {% endif %}
-          <input id="global_cover_file" type="file" name="cover_letter_file" accept=".pdf,.doc,.docx">
-        </div>
-      </div>
-    </div>
-    <div class="actions" style="margin-top:16px;"><button class="primary" type="submit">Сохранить общий комплект</button></div>
-  </form>
-
   <section id="document-rules" class="panel">
-    <h2>{{ ic.i('briefcase', 17) }} Комплекты по брендам и магазинам</h2>
-    <p class="hint">WexFlow применит их автоматически — выбирать файл вручную перед каждой подачей больше не нужно.</p>
-    {% if document_rules %}
+    <h2>{{ ic.i('briefcase', 17) }} Все комплекты документов</h2>
+    <p class="hint">Загружай один файл или сразу пачку только в блоке выше. Здесь хранятся все комплекты, а WexFlow выбирает их автоматически: магазин → бренд → общий.</p>
     <div class="doc-rule-list">
+      <article class="doc-rule">
+        <div class="doc-rule-main">
+          <div style="min-width:0;">
+            <div class="doc-rule-title">
+              <b>Общий комплект</b>
+              <span class="doc-scope">запасной</span>
+            </div>
+            <div class="hint" style="margin:4px 0 0;">Используется только там, где нет отдельного файла магазина или бренда.</div>
+            <div class="doc-files">
+              {% if file_info.cv_url %}
+                <a class="doc-file-pill ready" href="{{ file_info.cv_url }}">{{ ic.i('file', 13) }} <span class="doc-file-name">{{ file_info.cv_label }}</span> {{ ic.i('eye', 12) }}</a>
+                <form method="post" action="/settings/documents/save" onsubmit="return confirm('Убрать общий CV?');">
+                  <button class="ghost danger" type="submit" name="remove_document" value="cv" title="Убрать общий CV">{{ ic.i('trash', 13) }}</button>
+                </form>
+              {% else %}
+                <span class="doc-file-pill">Общий CV не загружен</span>
+              {% endif %}
+              {% if file_info.cover_url %}
+                <a class="doc-file-pill ready" href="{{ file_info.cover_url }}">{{ ic.i('edit', 13) }} <span class="doc-file-name">{{ file_info.cover_label }}</span> {{ ic.i('eye', 12) }}</a>
+                <form method="post" action="/settings/documents/save" onsubmit="return confirm('Убрать общее письмо?');">
+                  <button class="ghost danger" type="submit" name="remove_document" value="cover" title="Убрать общее письмо">{{ ic.i('trash', 13) }}</button>
+                </form>
+              {% else %}
+                <span class="doc-file-pill">Общее письмо не загружено</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </article>
+      {% if document_rules %}
       {% for rule in document_rules %}
       <article class="doc-rule">
         <div class="doc-rule-main">
@@ -1400,10 +1389,10 @@
         </details>
       </article>
       {% endfor %}
+      {% else %}
+      <div class="doc-empty">Брендовых комплектов пока нет. Загрузи Lidl, Netto или другие документы в блоке выше — они появятся здесь.</div>
+      {% endif %}
     </div>
-    {% else %}
-    <div class="doc-empty">Пока используется только общий комплект.<br>Добавь первый вариант — например, отдельный CV для Netto.</div>
-    {% endif %}
   </section>
 
   <form id="new-document-rule" class="panel doc-new" method="post" action="/settings/document-rules/save" enctype="multipart/form-data">
@@ -1504,7 +1493,7 @@
         item.textContent = file.name;
         selected.appendChild(item);
       });
-      if (button && !button.dataset.aiDisabled) button.disabled = !(input.files && input.files.length >= 2);
+      if (button) button.disabled = !(input.files && input.files.length >= 1);
     }
     input.addEventListener("change", renderFiles);
     ["dragenter", "dragover"].forEach(function (eventName) {
@@ -1522,12 +1511,11 @@
         renderFiles();
       }
     });
-    if (button && button.disabled) button.dataset.aiDisabled = "1";
     form.addEventListener("submit", function (event) {
       var count = input.files ? input.files.length : 0;
-      if (count < 2 || count > 20) {
+      if (count < 1 || count > 20) {
         event.preventDefault();
-        alert(count > 20 ? "За один раз можно выбрать максимум 20 файлов." : "Выбери минимум два файла.");
+        alert(count > 20 ? "За один раз можно выбрать максимум 20 файлов." : "Выбери хотя бы один файл.");
         return;
       }
       if (button) button.disabled = true;

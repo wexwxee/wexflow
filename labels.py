@@ -5,6 +5,7 @@ import unicodedata
 # Бренды — это имена, показываем красивый оригинал.
 BRANDS = {
     "netto": "Netto", "foetex": "Føtex", "bilka": "Bilka", "br": "BR",
+    "lidl": "Lidl",
     "salling": "Salling", "carlsjr": "Carl's Jr", "starbucks": "Starbucks",
     "sallinggroup": "Salling Group", "hugoboss": "Hugo Boss", "matinique": "Matinique",
 }
@@ -14,6 +15,7 @@ BRANDS = {
 # цвета отсюда, иначе телефон и приложение выглядели бы по-разному.
 BRAND_COLORS = {
     "netto": ("#ffe400", "#1a1a1a"),
+    "lidl": ("#ffec00", "#0050aa"),
     "foetex": ("#13499b", "#ffffff"),
     "bilka": ("#0098da", "#06283d"),
     "salling": ("#c0392b", "#ffffff"),

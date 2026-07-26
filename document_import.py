@@ -32,6 +32,12 @@ _COVER_RE = re.compile(
 )
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 _PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)")
+_BRAND_FILE_ALIASES = {
+    "netto": ("netto",),
+    "lidl": ("lidl", "lidl danmark"),
+    "foetex": ("føtex", "foetex", "fotex"),
+    "bilka": ("bilka",),
+}
 
 
 def _normalise(value: str) -> str:
@@ -105,7 +111,10 @@ def _candidate_stores(filename: str, text: str, stores: list[dict]) -> list[str]
         label = _normalise(store.get("label", ""))
         tokens = [
             token for token in re.findall(r"[\wæøåäöüé]{3,}|\d{4}", label)
-            if token not in {"netto", "føtex", "foetex", "bilka", "salling", "group"}
+            if token not in {
+                "netto", "føtex", "foetex", "bilka", "lidl", "danmark",
+                "salling", "group",
+            }
         ]
         matched = sum(1 for token in set(tokens) if token in haystack)
         has_zip = any(token.isdigit() and token in haystack for token in tokens)
@@ -116,7 +125,13 @@ def _candidate_stores(filename: str, text: str, stores: list[dict]) -> list[str]
 
 
 def _targets(brands: list[dict], stores: list[dict], files: list[dict]) -> list[dict]:
-    result = [
+    result = [{
+        "id": "global",
+        "scope": "global",
+        "brand": "",
+        "label": "Общий комплект",
+    }]
+    result.extend([
         {
             "id": f"brand:{item['key']}",
             "scope": "brand",
@@ -125,7 +140,7 @@ def _targets(brands: list[dict], stores: list[dict], files: list[dict]) -> list[
         }
         for item in brands
         if item.get("key")
-    ]
+    ])
     wanted_store_keys = {
         key for file in files for key in file.get("candidate_store_keys", [])
     }
@@ -162,7 +177,7 @@ def _analysis_prompt(files: list[dict], targets: list[dict]) -> str:
     ]
     return (
         "Ты сортируешь загруженные пользователем документы для откликов на вакансии "
-        "Salling Group. Определи, какой файл является CV, какой мотивационным письмом, "
+        "WexFlow, включая Salling Group и Lidl. Определи, какой файл является CV, какой мотивационным письмом, "
         "для какого бренда/магазина он подготовлен, и собери пары. Не анализируй личность "
         "кандидата и не возвращай личные данные.\n\n"
         "Правила:\n"
@@ -179,6 +194,94 @@ def _analysis_prompt(files: list[dict], targets: list[dict]) -> str:
         f"ALLOWED_TARGETS:\n{json.dumps(safe_targets, ensure_ascii=False)}\n\n"
         f"FILES:\n{json.dumps(safe_files, ensure_ascii=False)}"
     )
+
+
+def _target_hint(file: dict, targets: list[dict]) -> str:
+    """Deterministic brand hint from a filename/excerpt; AI remains optional."""
+    haystack = _normalise(
+        f"{file.get('filename', '')} {file.get('excerpt', '')}"
+    )
+    target_ids = {item.get("id") for item in targets}
+    for brand, aliases in _BRAND_FILE_ALIASES.items():
+        target_id = f"brand:{brand}"
+        if target_id in target_ids and any(alias in haystack for alias in aliases):
+            return target_id
+    return "global" if "global" in target_ids else ""
+
+
+def _complete_groups_with_hints(
+    groups: list[dict],
+    unassigned: list[str],
+    files: list[dict],
+    targets: list[dict],
+) -> tuple[list[dict], list[str]]:
+    """Fill clear CV/cover pairs missed by AI, including a single upload."""
+    file_map = {item["id"]: item for item in files}
+    displaced: list[str] = []
+    assigned: set[str] = set()
+    # A clear brand in the filename is deterministic and wins over an AI guess.
+    # This prevents e.g. CV_Lidl.pdf from ever ending up in the Netto group.
+    for group in groups:
+        for role in ("cv_id", "cover_id"):
+            file_id = str(group.get(role) or "")
+            item = file_map.get(file_id)
+            hinted_target = _target_hint(item, targets) if item else ""
+            if hinted_target not in {"", "global", group.get("target")}:
+                group[role] = ""
+                displaced.append(file_id)
+            elif file_id:
+                assigned.add(file_id)
+    pending = list(dict.fromkeys([
+        *unassigned,
+        *displaced,
+        *(item["id"] for item in files if item["id"] not in assigned),
+    ]))
+    groups_by_target = {group["target"]: group for group in groups}
+    still_unassigned: list[str] = []
+    for file_id in pending:
+        item = file_map.get(file_id)
+        if not item or item.get("kind_hint") not in {"cv", "cover"}:
+            still_unassigned.append(file_id)
+            continue
+        target_id = _target_hint(item, targets)
+        if not target_id:
+            still_unassigned.append(file_id)
+            continue
+        group = groups_by_target.get(target_id)
+        if group is None:
+            target = next(
+                (candidate for candidate in targets if candidate["id"] == target_id),
+                None,
+            )
+            if target is None:
+                still_unassigned.append(file_id)
+                continue
+            group = {
+                "id": uuid.uuid4().hex[:12],
+                "target": target_id,
+                "target_label": target["label"],
+                "name": target["label"],
+                "cv_id": "",
+                "cover_id": "",
+                "confidence": 0.99 if target_id != "global" else 0.8,
+                "reason": (
+                    "Бренд и тип документа определены по названию файла."
+                    if target_id != "global"
+                    else "Тип документа определён по названию; используется общий комплект."
+                ),
+            }
+            groups.append(group)
+            groups_by_target[target_id] = group
+        role = "cv_id" if item["kind_hint"] == "cv" else "cover_id"
+        if group.get(role):
+            still_unassigned.append(file_id)
+            continue
+        group[role] = file_id
+        group["confidence"] = max(float(group.get("confidence") or 0), 0.99)
+    groups[:] = [
+        group for group in groups if group.get("cv_id") or group.get("cover_id")
+    ]
+    return groups, still_unassigned
 
 
 def _sanitise_groups(data: dict, files: list[dict], targets: list[dict]) -> tuple[list[dict], list[str]]:
@@ -343,13 +446,10 @@ def _delete_uploaded(files: list[dict]) -> None:
 
 def analyse_uploads(uploads, brands: list[dict], stores: list[dict]) -> dict:
     uploads = [upload for upload in uploads if upload and getattr(upload, "filename", "")]
-    if len(uploads) < 2:
-        return {"ok": False, "error": "Выбери минимум два файла для массового разбора."}
+    if len(uploads) < 1:
+        return {"ok": False, "error": "Выбери хотя бы один CV или мотивационное письмо."}
     if len(uploads) > MAX_FILES:
         return {"ok": False, "error": f"За один раз можно разобрать максимум {MAX_FILES} файлов."}
-    if not ai_filters.available():
-        return {"ok": False, "error": "ИИ не подключён: сначала добавь ключ Gemini в настройках анкет."}
-
     clear_preview(delete_files=True)
     files: list[dict] = []
     try:
@@ -369,16 +469,28 @@ def analyse_uploads(uploads, brands: list[dict], stores: list[dict]) -> dict:
         return {"ok": False, "error": str(exc)}
 
     targets = _targets(brands, stores, files)
-    response = ai_filters.generate_json(_analysis_prompt(files, targets), timeout=55)
-    if not response.get("ok"):
-        _delete_uploaded(files)
-        return {"ok": False, "error": response.get("error") or "ИИ не смог разобрать документы."}
-    groups, unassigned = _sanitise_groups(response.get("data") or {}, files, targets)
+    response = (
+        ai_filters.generate_json(_analysis_prompt(files, targets), timeout=55)
+        if ai_filters.available()
+        else {"ok": False, "error": "ИИ не подключён"}
+    )
+    if response.get("ok"):
+        groups, unassigned = _sanitise_groups(
+            response.get("data") or {}, files, targets
+        )
+    else:
+        groups, unassigned = [], [item["id"] for item in files]
+    groups, unassigned = _complete_groups_with_hints(
+        groups, unassigned, files, targets
+    )
     if not groups:
         _delete_uploaded(files)
         return {
             "ok": False,
-            "error": "ИИ не смог уверенно связать файлы с брендами. Переименуй их понятнее и попробуй ещё раз.",
+            "error": (
+                "Не удалось определить тип документов. Добавь в название CV или "
+                "Cover_Letter и при необходимости бренд, например CV_Lidl.pdf."
+            ),
         }
     preview = {
         "id": uuid.uuid4().hex,
@@ -394,7 +506,7 @@ def analyse_uploads(uploads, brands: list[dict], stores: list[dict]) -> dict:
         ],
         "groups": groups,
         "unassigned": unassigned,
-        "model": response.get("model") or "",
+        "model": response.get("model") or "локальное распознавание",
     }
     save_preview(preview)
     return {"ok": True, "preview": get_preview()}
@@ -414,9 +526,12 @@ def apply_preview(
         target = str(selections.get(group["id"]) or group.get("target") or "")
         if target == "skip":
             continue
-        scope, separator, key = target.partition(":")
-        if not separator:
-            continue
+        if target == "global":
+            scope, key = "global", ""
+        else:
+            scope, separator, key = target.partition(":")
+            if not separator:
+                continue
         if scope == "brand":
             option = brand_map.get(key)
             if option is None:
@@ -425,6 +540,25 @@ def apply_preview(
             brand_label = option["label"]
             selected_store_key = ""
             store_label = ""
+        elif scope == "global" and not key:
+            cv = file_map.get(group.get("cv_id")) or {}
+            cover = file_map.get(group.get("cover_id")) or {}
+            if not cv.get("path") and not cover.get("path"):
+                continue
+            profile = profile_store.load_profile()
+            if cv.get("path"):
+                profile["cv_path"] = cv["path"]
+            if cover.get("path"):
+                profile["cover_letter_path"] = cover["path"]
+            profile_store.save_profile(profile)
+            created.append({
+                "id": "global",
+                "name": "Общий комплект",
+                "scope": "global",
+                "cv_path": cv.get("path", ""),
+                "cover_letter_path": cover.get("path", ""),
+            })
+            continue
         elif scope == "store":
             option = store_map.get(key)
             if option is None:

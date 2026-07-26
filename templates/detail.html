@@ -92,7 +92,7 @@
       <a href="/job/{{ job.id }}/apply"><button class="primary">{{ ic.i('send', 14) }} Подать заявку →</button></a>
       {% else %}
       <form method="post" action="/job/{{ job.id }}/connector/apply" style="display:inline;">
-        <button class="primary" type="submit">{{ ic.i('send', 14) }} {{ 'Продолжить заполнение' if application_state in ['submitting', 'failed'] else 'Заполнить форму' }} →</button>
+        <button class="primary" type="submit">{{ ic.i('send', 14) }} Подать заявку →</button>
       </form>
       {% endif %}
       <a href="{{ maps_url }}"><button class="secondary">{{ ic.i('map', 14) }} Маршрут в Google Maps</button></a>

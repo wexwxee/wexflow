@@ -114,6 +114,42 @@ def test_same_target_is_merged_instead_of_creating_ambiguous_duplicate():
     assert rules[0]["cover_letter_path"] == "netto_letter.pdf"
 
 
+def test_lidl_danmark_and_netto_never_mix_document_sets():
+    with tempfile.TemporaryDirectory() as td:
+        settings_path = Path(td) / "settings.json"
+        with mock.patch.object(document_rules.settings_store, "PATH", settings_path):
+            document_rules.save_rule(
+                scope="brand",
+                brand="lidl",
+                brand_label="Lidl",
+                cv_path="Ivan_CV_Lidl.pdf",
+                cover_letter_path="Ivan_Cover_Lidl.pdf",
+            )
+            document_rules.save_rule(
+                scope="brand",
+                brand="netto",
+                brand_label="Netto",
+                cv_path="Ivan_CV_Netto.pdf",
+                cover_letter_path="Ivan_Cover_Netto.pdf",
+            )
+
+            lidl = document_rules.resolve_profile(
+                {"cv_path": "global_cv.pdf", "cover_letter_path": "global_cover.pdf"},
+                _job(brand="Lidl Danmark"),
+            )
+            netto = document_rules.resolve_profile(
+                {"cv_path": "global_cv.pdf", "cover_letter_path": "global_cover.pdf"},
+                _job(brand="Netto"),
+            )
+
+    assert lidl["cv_path"] == "Ivan_CV_Lidl.pdf"
+    assert lidl["cover_letter_path"] == "Ivan_Cover_Lidl.pdf"
+    assert lidl["_document_selection"]["brand"] == "lidl"
+    assert netto["cv_path"] == "Ivan_CV_Netto.pdf"
+    assert netto["cover_letter_path"] == "Ivan_Cover_Netto.pdf"
+    assert netto["_document_selection"]["brand"] == "netto"
+
+
 if __name__ == "__main__":
     tests = [
         value for name, value in sorted(globals().items())

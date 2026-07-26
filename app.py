@@ -609,6 +609,7 @@ def _apply_result_msg(state: str, reason: str) -> str:
 
 def _handle_tg_decisions(decisions: list) -> None:
     submit_ids = []
+    connector_jobs = []
     for d in decisions or []:
         if not isinstance(d, dict):
             continue
@@ -616,10 +617,50 @@ def _handle_tg_decisions(decisions: list) -> None:
         action = d.get("action")
         if not jid or jid == "__demo__" or action not in ("submit", "skip"):
             continue
+        with get_session() as session:
+            job = session.get(Job, jid)
         if action == "skip":
-            autopilot.tg_decide(jid, approve=False, launcher=lambda ids: None)
+            if job is None or getattr(job, "source", "salling") == "salling":
+                autopilot.tg_decide(jid, approve=False, launcher=lambda ids: None)
+            continue
+        if job is not None and getattr(job, "source", "salling") != "salling":
+            connector_jobs.append(job)
         else:
             submit_ids.append(jid)
+
+    allowed = applications.offered_ids() | applications.listed_ids()
+    for job in connector_jobs:
+        if job.id not in allowed:
+            _report_apply_result_safe(
+                job.id, "failed",
+                "Вакансия не была показана в WexFlow — открытие формы отклонено",
+            )
+            continue
+        source = getattr(job, "source", "") or "manual_link"
+        state = applications.state_of(job.id, source=source)
+        if state in {"submitting", "submitted"}:
+            _report_apply_result_safe(
+                job.id, state,
+                "Форма уже открыта на ПК" if state == "submitting" else "Уже подано",
+            )
+            continue
+        if not _claim_connector_launch(job.id):
+            _report_apply_result_safe(job.id, "submitting", "Форма уже открывается на ПК")
+            continue
+        applications.mark_submitting([job.id], origin="telegram", source=source)
+        try:
+            _launch_connector_filler(job.application_link or "", job.id)
+            _report_apply_result_safe(
+                job.id,
+                "submitting",
+                "Форма открыта на ПК и заполнена. Проверь ответы и отправь сам.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            _release_connector_launch(job.id)
+            applications.mark_failed([job.id], source=source)
+            _report_apply_result_safe(
+                job.id, "failed", f"Не удалось открыть форму на ПК: {str(exc)[:100]}"
+            )
 
     if not submit_ids:
         return
@@ -1344,7 +1385,7 @@ def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
     # в детали отдельным запросом. На 500 вакансий каждая лишняя сотня символов —
     # это лишние сотни килобайт трафика телефона.
     description = _plain_snippet(job.description_ru or job.description, limit=160 if lean else 220)
-    brand_bg, brand_fg = labels.BRAND_COLORS.get(job.brand or "", ("", ""))
+    brand_bg, brand_fg = labels.BRAND_COLORS.get(document_rules.brand_key(job), ("", ""))
     categories_ru = ", ".join(
         labels.label_or_pretty(labels.CATEGORY, c.strip())
         for c in str(job.categories or "").split(",") if c.strip()
@@ -3606,19 +3647,23 @@ def _document_settings_options() -> tuple[list[dict], list[dict]]:
         jobs = list(
             s.exec(
                 select(Job).where(
-                    Job.source == "salling",
                     Job.status.not_in(["closed", "hidden", "applied"]),
                 )
             ).all()
         )
 
     brand_counts: Counter = Counter()
+    discovered_brands: dict[str, str] = {}
     stores: dict[str, dict] = {}
     for job in jobs:
         brand = document_rules.brand_key(job)
         if not brand:
             continue
         brand_counts[brand] += 1
+        discovered_brands.setdefault(
+            brand,
+            labels.BRANDS.get(brand, (job.brand or brand).strip()),
+        )
         key = document_rules.store_key(job)
         if not key:
             continue
@@ -3644,6 +3689,7 @@ def _document_settings_options() -> tuple[list[dict], list[dict]]:
         document_rules.brand_key(code): label
         for code, label in labels.BRANDS.items()
     }
+    known_brands.update(discovered_brands)
     for rule in document_rules.get_rules():
         known_brands.setdefault(rule["brand"], rule["brand_label"])
     brand_options = [
@@ -3750,10 +3796,16 @@ def _settings_context(
         document_brand_options, document_store_options = _document_settings_options()
     document_target_options = [
         {
+            "value": "global",
+            "label": "Общий комплект · для всего остального",
+        },
+        *[
+        {
             "value": f"brand:{item['key']}",
             "label": f"Бренд · {item['label']}",
         }
         for item in document_brand_options
+        ],
     ]
     document_target_options.extend(
         {
@@ -4115,14 +4167,14 @@ def settings_documents_save(
         profile_store.save_profile(profile)
         profile_store.remove_managed_document(old_path)
         return RedirectResponse(
-            "/settings/documents?saved=removed#global-documents",
+            "/settings/documents?saved=removed#document-rules",
             status_code=303,
         )
     profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
     if file_error:
         return RedirectResponse(_url_with_system_response("/settings/documents", error=file_error), status_code=303)
     profile_store.save_profile(profile)
-    return RedirectResponse("/settings/documents?saved=1#global-documents", status_code=303)
+    return RedirectResponse("/settings/documents?saved=1#document-rules", status_code=303)
 
 
 @app.post("/settings/document-rules/save")
@@ -4878,7 +4930,7 @@ def apply_prepare(request: Request, job_id: str, started: str = "", saved: str =
             ),
             status_code=303,
         )
-    profile = profile_store.load_profile()
+    profile = document_rules.resolve_profile(profile_store.load_profile(), job) if job else profile_store.load_profile()
     file_info = {
         "cv_label": profile_store.file_label(profile.get("cv_path", "")),
         "cv_status": profile_store.file_status(profile.get("cv_path", "")),
@@ -4896,6 +4948,7 @@ def apply_prepare(request: Request, job_id: str, started: str = "", saved: str =
             "job": job,
             "profile": profile,
             "file_info": file_info,
+            "document_selection": profile.get("_document_selection", {}),
             "distance": distance,
             "maps_url": _maps_url(job, home) if job else "",
             "started": started,
@@ -5135,7 +5188,7 @@ def start_apply(
         return RedirectResponse(
             _url_with_system_response(
                 f"/job/{job_id}",
-                error="Для этой вакансии автоматическая отправка отключена. Используй «Заполнить форму» — WexFlow остановится перед отправкой.",
+                error="Для этой вакансии автоматическая отправка отключена. Используй кнопку «Подать» — WexFlow заполнит анкету и остановится перед отправкой.",
             ),
             status_code=303,
         )
