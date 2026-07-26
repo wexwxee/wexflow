@@ -95,6 +95,62 @@ def test_telegram_items_are_partitioned_by_candidate_profile():
         assert [item["id"] for item in other] == ["sister"]
         assert [item["id"] for item in invalid] == ["forged"]
 
+        with mock.patch.object(candidate_profiles, "storage_root", return_value=root):
+            current, other, invalid = app._partition_tg_items(items, sister["id"])
+
+        assert [item["id"] for item in current] == ["sister"]
+        assert [item["id"] for item in other] == ["legacy"]
+        assert [item["id"] for item in invalid] == ["forged"]
+
+
+def test_telegram_job_snapshot_is_hydrated_for_the_requesting_profile():
+    saved = []
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, _model, _job_id):
+            return None
+
+        def add(self, job):
+            saved.append(job)
+
+        def commit(self):
+            pass
+
+        def refresh(self, _job):
+            pass
+
+    decision = {
+        "jobId": "lidl-42",
+        "profileId": "person_sister",
+        "job": {
+            "id": "lidl-42",
+            "source": "lidl",
+            "titleBase": "Butiksassistent",
+            "brandCode": "lidl",
+            "city": "København",
+            "hoursRaw": "15-20",
+            "url": "https://example.test/jobs/42",
+            "lat": 55.67,
+            "lon": 12.56,
+        },
+    }
+    with mock.patch.object(app, "get_session", return_value=FakeSession()), \
+            mock.patch.object(app.applications, "mark_listed") as mark_listed:
+        job = app._hydrate_tg_job_snapshot(decision)
+
+    assert job is saved[0]
+    assert job.id == "lidl-42"
+    assert job.source == "lidl"
+    assert job.brand == "lidl"
+    assert job.application_link == "https://example.test/jobs/42"
+    mark_listed.assert_called_once_with(["lidl-42"])
+
 
 def test_managed_upload_is_deleted_but_external_source_is_not():
     with TemporaryDirectory() as td:

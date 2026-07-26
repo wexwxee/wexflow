@@ -639,6 +639,61 @@ def _apply_result_msg(state: str, reason: str) -> str:
     }.get(reason or "", "Подача не запущена")
 
 
+def _hydrate_tg_job_snapshot(decision: dict):
+    """Restore a public vacancy into the requesting candidate's local DB.
+
+    Telegram can show the device-wide public catalogue while another candidate
+    is active. After the native shell restarts into the requester, that
+    candidate's isolated database may not have scanned the selected job yet.
+    The attached snapshot was sanitized by the cloud and originally came from
+    this device; no candidate documents, credentials, or history are shared.
+    """
+    if not isinstance(decision, dict):
+        return None
+    job_id = str(decision.get("jobId") or "").strip()
+    snapshot = decision.get("job")
+    if not job_id or not isinstance(snapshot, dict):
+        return None
+    if str(snapshot.get("id") or snapshot.get("jobId") or "").strip() != job_id:
+        return None
+    allowed_sources = {
+        "salling", "lidl", "teamtailor", "greenhouse", "ashby", "manual_link",
+    }
+    source = str(snapshot.get("source") or "salling").strip().lower()
+    if source not in allowed_sources:
+        source = "salling"
+    with get_session() as session:
+        existing = session.get(Job, job_id)
+        if existing is not None:
+            job = existing
+        else:
+            job = Job(
+                id=job_id,
+                source=source,
+                title=str(snapshot.get("titleBase") or snapshot.get("title") or "Vacancy")[:300],
+                brand=str(snapshot.get("brandCode") or "")[:120] or None,
+                categories=str(snapshot.get("categoriesCode") or "")[:500] or None,
+                region=str(snapshot.get("regionCode") or "")[:120] or None,
+                city=str(snapshot.get("city") or "")[:160] or None,
+                hours=str(snapshot.get("hoursRaw") or snapshot.get("hours") or "")[:80] or None,
+                employment_type=str(snapshot.get("employmentType") or "")[:120] or None,
+                job_level=str(snapshot.get("jobLevel") or "")[:120] or None,
+                pay_rate=str(snapshot.get("payRate") or "")[:120] or None,
+                start_date=str(snapshot.get("startDate") or "")[:80] or None,
+                published=str(snapshot.get("publishedRaw") or snapshot.get("published") or "")[:80] or None,
+                description=str(snapshot.get("snippet") or snapshot.get("descriptionSnippet") or "")[:1000] or None,
+                application_link=str(snapshot.get("url") or "")[:1000] or None,
+                lat=snapshot.get("lat") if isinstance(snapshot.get("lat"), (int, float)) else None,
+                lon=snapshot.get("lon") if isinstance(snapshot.get("lon"), (int, float)) else None,
+                status="new",
+            )
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+    applications.mark_listed([job_id])
+    return job
+
+
 def _handle_tg_decisions(decisions: list) -> None:
     submit_ids = []
     connector_jobs = []
@@ -651,6 +706,8 @@ def _handle_tg_decisions(decisions: list) -> None:
             continue
         with get_session() as session:
             job = session.get(Job, jid)
+        if job is None:
+            job = _hydrate_tg_job_snapshot(d)
         if action == "skip":
             if job is None or getattr(job, "source", "salling") == "salling":
                 autopilot.tg_decide(jid, approve=False, launcher=lambda ids: None)
@@ -1458,27 +1515,37 @@ def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
         "jobId": job.id,
         "titleBase": title,
         "titleRu": _title_ru(title, cached_only=not translate_title),
+        "source": job.source or "salling",
         "descriptionSnippet": description,
         "brand": labels.brand(job.brand) if job.brand else "",
+        "brandCode": job.brand or "",
         "brandColor": brand_bg,
         "brandFg": brand_fg,
         "city": job.city or "",
         "location": loc,
         "address": address,
         "region": labels.label_or_pretty(labels.REGION, job.region) if job.region else "",
+        "regionCode": job.region or "",
         "hoursLabel": f"{job.hours} ч/нед" if job.hours else "",
+        "hoursRaw": job.hours or "",
         "employment": labels.EMPLOYMENT.get(job.employment_type or "", job.employment_type or ""),
+        "employmentType": job.employment_type or "",
         "level": labels.LEVEL.get(job.job_level or "", ""),
+        "jobLevel": job.job_level or "",
         # Та же классификация, которой пользуется автопилот на ПК.
         "ageGroup": "under18" if autopilot.job_is_under18(job) else "adult",
         "categories": categories_ru,
+        "categoriesCode": job.categories or "",
         # Русская расшифровка должности — та же строка, что в карточке приложения.
         "roleRu": labels.role_summary(job.title, job.categories or "", job.job_level or ""),
         "isLead": labels.is_leadership(job.title or ""),
         "payRate": job.pay_rate or "",
         "startDate": job.start_date or "",
         "publishedShort": labels.date_short(job.published) if job.published else "",
+        "publishedRaw": job.published or "",
         "distanceKm": distance,
+        "lat": job.lat,
+        "lon": job.lon,
         "url": job.application_link or "",
         "mapsUrl": _maps_url(job, home) if (address or job.lat is not None) else "",
         "status": job.status or "",
