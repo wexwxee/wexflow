@@ -453,7 +453,10 @@
   .batch-ai input { width:17px; height:17px; margin:1px 0 0; accent-color:var(--accent); flex:0 0 auto; }
   .batch-ai-copy { min-width:0; display:grid; gap:2px; }
   .batch-ai-title { color:var(--txt-strong); font-size:12px; font-weight:750; }
-  .batch-ai-meta { color:var(--muted); font-size:10.5px; line-height:1.35; }
+  .batch-ai-meta { color:var(--muted); font-size:10.5px; line-height:1.42; }
+  .batch-ai-meta-line { display:block; }
+  .batch-ai-meta-line b { color:var(--txt); font-weight:750; }
+  .batch-ai-meta-note { display:block; margin-top:3px; color:var(--muted-2); }
   .batch-ai-meta a { color:var(--accent); text-decoration:none; font-weight:700; }
   .batch-ai-badge { display:inline-flex; align-items:center; margin-left:5px; padding:1px 5px; border-radius:999px;
     color:#a99fff; border:1px solid color-mix(in srgb, #8b7bff 45%, var(--glass-line));
@@ -1128,11 +1131,13 @@
            {{ 'checked' if batch_ai_on and batch_ai_available else '' }}
            {{ 'disabled' if not batch_ai_available else '' }}>
     <span class="batch-ai-copy">
-      <span class="batch-ai-title">{{ ic.i('sparkles', 13) }} Проверить и дозаполнить анкету с ИИ <span class="batch-ai-badge">бета</span></span>
+      <span class="batch-ai-title">{{ ic.i('sparkles', 13) }} Дозаполнить нестандартные поля с ИИ <span class="batch-ai-badge">бета</span></span>
       <span class="batch-ai-meta">
-        Работает и в прогоне, и при полной отправке: Gemini получает только нужные факты профиля, заполняет неизвестные поля, затем WexFlow продолжает обычную подачу.
-        {% if batch_ai_motivation_on %}Черновики мотивации включены.{% else %}Мотивационные черновики выключены.{% endif %}
-        {% if not batch_ai_available %}<b>Сначала добавь ключ Gemini.</b>{% endif %}
+        <span class="batch-ai-meta-line"><b>Без ИИ:</b> WexFlow заполнит знакомые поля — имя, контакты — и прикрепит выбранные для магазина CV и письмо. Нестандартные поля и списки могут остаться пустыми.</span>
+        <span class="batch-ai-meta-line"><b>С ИИ:</b> после обычного заполнения подключённый ИИ проверит оставшиеся короткие поля и списки и подставит только факты, уже сохранённые в профиле. Если подходящего факта нет — поле останется пустым.</span>
+        <span class="batch-ai-meta-note">На простой анкете разницы не будет: WexFlow и без ИИ уже заполнил всё знакомое. ИИ не придумывает опыт, гражданство или зарплату, не меняет выбранные документы и сам не нажимает «Отправить».</span>
+        {% if batch_ai_motivation_on %}<span class="batch-ai-meta-note">Отдельная функция черновиков мотивации включена: короткие ответы нужно проверить перед отправкой.</span>{% else %}<span class="batch-ai-meta-note">Черновики мотивационных ответов выключены.</span>{% endif %}
+        {% if not batch_ai_available %}<b>Сначала подключи Gemini или Groq.</b>{% endif %}
         <a href="/settings/forms">Настройки ИИ →</a>
       </span>
     </span>

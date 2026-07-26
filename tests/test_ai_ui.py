@@ -163,6 +163,19 @@ def test_sidebar_indicator_is_in_shared_shell_not_per_page():
         assert "ai_indicator.js" not in text, path.name
 
 
+def test_batch_ai_switch_explains_real_difference_and_limits():
+    html = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "Дозаполнить нестандартные поля с ИИ" in html
+    assert "<b>Без ИИ:</b>" in html
+    assert "<b>С ИИ:</b>" in html
+    assert "На простой анкете разницы не будет" in html
+    assert "Если подходящего факта нет — поле останется пустым" in html
+    assert "не меняет выбранные документы" in html
+    assert "сам не нажимает «Отправить»" in html
+    assert "подключи Gemini или Groq" in html
+
+
 def test_indicator_script_contract():
     js = (ROOT / "static" / "ai_indicator.js").read_text(encoding="utf-8")
 
