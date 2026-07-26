@@ -230,6 +230,12 @@ def run_worker(mode: str, rest: list) -> None:
         import app as salling_app  # noqa: F401
         import cloud_auth as cloud  # noqa: F401
         import version
+        # These protocols are imported lazily only when Uvicorn starts serving.
+        # Import them here so the release smoke test catches missing frozen
+        # WebSocket/HTTP dependencies before an update is published.
+        import uvicorn.protocols.http.auto  # noqa: F401
+        import uvicorn.protocols.websockets.auto  # noqa: F401
+        import websockets.legacy  # noqa: F401
         required = [
             BUNDLE_DIR / "templates" / "settings.html",
             BUNDLE_DIR / "static",
