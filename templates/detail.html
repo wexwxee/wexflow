@@ -87,9 +87,31 @@
       </form>
     </div>
     {% endif %}
+    {% if job.source == 'lidl' and selected_documents %}
+    <div class="notice" style="margin-top:14px;">
+      <b>Комплект именно для этой вакансии Lidl</b>
+      <div style="display:grid;gap:5px;margin-top:7px;">
+        <span>CV: <strong>{{ selected_documents.cv_label }}</strong> · {{ selected_documents.cv_source }} {{ '✓' if selected_documents.cv_status == 'ok' else '⚠' }}</span>
+        <span>Письмо: <strong>{{ selected_documents.cover_label }}</strong> · {{ selected_documents.cover_source }} {{ '✓' if selected_documents.cover_status == 'ok' else '⚠' }}</span>
+      </div>
+      {% if selected_documents.missing_profile %}
+      <div style="margin-top:7px;color:var(--warn-txt);">До запуска не хватает: {{ selected_documents.missing_profile|join(', ') }}.</div>
+      {% else %}
+      <div style="margin-top:7px;color:var(--ok-txt);">Профиль и оба документа готовы ✓</div>
+      {% endif %}
+      <span class="meta">Перед запуском WexFlow ещё раз разрешит документы по правилу магазин → бренд → общий.</span>
+    </div>
+    {% endif %}
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       {% if job.source == 'salling' %}
       <a href="/job/{{ job.id }}/apply"><button class="primary">{{ ic.i('send', 14) }} Подать заявку →</button></a>
+      {% elif job.source == 'lidl' %}
+      <form method="post" action="/job/{{ job.id }}/connector/apply" style="display:inline-flex;gap:8px;flex-wrap:wrap;">
+        <input type="hidden" name="submit_ack" id="lidlSubmitAck" value="">
+        <button class="secondary" type="submit" name="mode" value="prepare">{{ ic.i('eye', 14) }} Проверить без отправки</button>
+        <button class="primary" type="submit" name="mode" value="submit"
+                onclick="if(!confirm('WexFlow подготовит форму, но реальная отправка произойдёт только после ещё одного подтверждения внутри анкеты Lidl. Продолжить?')) return false; document.getElementById('lidlSubmitAck').value='1'; return true;">{{ ic.i('send', 14) }} Подать заявку →</button>
+      </form>
       {% else %}
       <form method="post" action="/job/{{ job.id }}/connector/apply" style="display:inline;">
         <button class="primary" type="submit">{{ ic.i('send', 14) }} Подать заявку →</button>

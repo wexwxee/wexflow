@@ -130,16 +130,12 @@ def test_external_sources_use_the_same_apply_button_as_salling():
     templates = Path(__file__).resolve().parents[1] / "templates"
     index = (templates / "index.html").read_text(encoding="utf-8")
     detail = (templates / "detail.html").read_text(encoding="utf-8")
-    card_buttons = [
-        line for line in index.splitlines()
-        if "/job/{{ j.id }}/apply" in line or "connector/apply" in line
-    ]
-    assert len(card_buttons) == 2
-    for line in card_buttons:
-        assert "Подать →" in line
-        assert "Заполнить форму" not in line and "Продолжить" not in line
-    assert detail.count("Подать заявку →") == 2
+    assert index.count("Подать →") == 2
+    assert "Заполнить форму" not in index and "Продолжить заполнение" not in index
+    assert detail.count("Подать заявку →") == 3
     assert "Заполнить форму" not in detail
+    assert "Проверить без отправки" in detail
+    assert 'name="mode" value="submit"' in detail
 
 
 if __name__ == "__main__":

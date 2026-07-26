@@ -200,9 +200,15 @@ def run_worker(mode: str, rest: list) -> None:
         beta_serve(int(rest[0]) if rest else BETA_PORT, open_browser=False)
 
     elif mode == "--worker-connector-apply":
-        # ассистированная подача по ссылке (открывает видимый браузер, без отправки)
+        # Ассистированная подача: подготовка безопасна; реальная отправка требует
+        # отдельной кнопки и подтверждения уже внутри открытой анкеты.
         from connectors.apply_dispatch import run as connector_apply
-        connector_apply(rest[0], keep_open=True, job_id=rest[1] if len(rest) > 1 else "")
+        connector_apply(
+            rest[0],
+            keep_open=True,
+            job_id=rest[1] if len(rest) > 1 else "",
+            submit="--submit" in rest,
+        )
 
     elif mode == "--worker-salling-apply":
         import apply as salling_apply

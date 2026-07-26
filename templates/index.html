@@ -1067,7 +1067,10 @@
       {% if j.source == 'salling' %}
       <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>
       {% else %}
-      <form method="post" action="/job/{{ j.id }}/connector/apply"><button class="primary" type="submit" data-tip-title="Помощник анкеты" data-tip-body="Откроет отдельное окно браузера, заполнит доступные поля и остановится перед отправкой. Без твоего клика заявка не уйдёт. Если анкета уже начата, вернёшься к ней же.">{{ ic.i('send', 13) }} Подать →</button></form>
+      <form method="post" action="/job/{{ j.id }}/connector/apply">
+        {% if j.source == 'lidl' %}<input type="hidden" name="mode" value="submit"><input type="hidden" name="submit_ack" value="1">{% endif %}
+        <button class="primary" type="submit" data-tip-title="Помощник анкеты" data-tip-body="{{ 'Откроет Lidl, заполнит данные и документы. Реальная отправка потребует отдельного подтверждения уже внутри анкеты.' if j.source == 'lidl' else 'Откроет отдельное окно браузера, заполнит доступные поля и остановится перед отправкой. Без твоего клика заявка не уйдёт. Если анкета уже начата, вернёшься к ней же.' }}">{{ ic.i('send', 13) }} Подать →</button>
+      </form>
       {% endif %}
       {% endif %}
       <a href="/job/{{ j.id }}"><button type="button" class="ghost" data-tip-title="Подробнее" data-tip-body="Полное описание, перевод, статусы и результат подачи.">Подробнее</button></a>

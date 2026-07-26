@@ -1,7 +1,8 @@
 """Conservative filler for Lidl Denmark's SAP UI5 EasyApply form.
 
 Only profile facts and documents are inserted. Screening answers, declarations,
-consents, profile visibility and the final submit button always stay manual.
+consents and profile visibility stay manual. The final submit can be armed as a
+separate, explicit action and is never triggered by preparation alone.
 """
 from __future__ import annotations
 
@@ -196,7 +197,103 @@ def _screening_question_count(page) -> int:
         return 0
 
 
-def prepare(page, url: str, profile: dict) -> None:
+_SUBMIT_TEXT_RE = re.compile(r"^\s*(Ansøg|Send ansøgning)\s*$", re.I)
+_RECEIPT_RE = re.compile(
+    r"(tak\s+for\s+din\s+ansøgning|ansøgning(?:en)?\s+er\s+modtaget|"
+    r"vi\s+har\s+modtaget\s+din\s+ansøgning|tak\s+for\s+din\s+interesse)",
+    re.I,
+)
+
+
+def _submit_button(page):
+    """Return Lidl's real final button, never WexFlow's overlay control."""
+    try:
+        candidates = page.get_by_role("button", name=_SUBMIT_TEXT_RE)
+        for index in range(candidates.count()):
+            candidate = candidates.nth(index)
+            if candidate.is_visible():
+                return candidate
+    except Exception:
+        pass
+    return None
+
+
+def submission_checkpoint(page) -> dict:
+    """Describe the non-destructive checkpoint at Lidl's final button."""
+    button = _submit_button(page)
+    reached = button is not None
+    enabled = False
+    if button is not None:
+        try:
+            enabled = bool(button.is_enabled())
+        except Exception:
+            enabled = False
+    return {
+        "reached_submit": reached,
+        "submit_enabled": enabled,
+        "submit_requested": bool(
+            page.evaluate("() => Boolean(window.__wexflowSubmitRequested)")
+        ) if reached else False,
+    }
+
+
+def submission_receipt_visible(page) -> bool:
+    """Require positive Lidl confirmation text; a disappearing button is not enough."""
+    try:
+        text = page.locator("body").inner_text(timeout=1500)
+    except Exception:
+        return False
+    return bool(_RECEIPT_RE.search(text or ""))
+
+
+def arm_explicit_submit(page) -> bool:
+    """Add a separate WexFlow final action that clicks Lidl only after confirmation."""
+    if _submit_button(page) is None:
+        return False
+    try:
+        return bool(page.evaluate(
+            """() => {
+                const host = document.getElementById('wexflow-banner');
+                const root = host && host.shadowRoot;
+                if (!root) return false;
+                if (root.getElementById('wexflow-real-submit')) return true;
+                const action = document.createElement('button');
+                action.id = 'wexflow-real-submit';
+                action.type = 'button';
+                action.textContent = 'Отправить заполненную анкету';
+                action.style.cssText =
+                    'width:100%;margin-top:10px;padding:10px 12px;border:0;border-radius:9px;'
+                    + 'background:#16d86b;color:#07170d;font-weight:800;cursor:pointer;';
+                const note = document.createElement('div');
+                note.textContent =
+                    'Это реальная отправка. Сначала заполни оставшиеся вопросы Lidl.';
+                note.style.cssText = 'margin-top:8px;color:#ffcf70;font-size:12px;';
+                action.addEventListener('click', () => {
+                    const buttons = [...document.querySelectorAll('button')];
+                    const nativeButton = buttons.find(button =>
+                        /^(Ansøg|Send ansøgning)$/i.test((button.innerText || '').trim()));
+                    if (!nativeButton || nativeButton.disabled
+                            || nativeButton.getAttribute('aria-disabled') === 'true') {
+                        alert('Форма Lidl ещё не готова: заполни обязательные поля и вопросы.');
+                        return;
+                    }
+                    if (!confirm(
+                        'Отправить эту заявку в Lidl сейчас? После подтверждения отменить нельзя.'
+                    )) return;
+                    window.__wexflowSubmitRequested = Date.now();
+                    nativeButton.click();
+                    action.disabled = true;
+                    action.textContent = 'Отправляю…';
+                });
+                root.querySelector('.card')?.append(note, action);
+                return true;
+            }"""
+        ))
+    except Exception:
+        return False
+
+
+def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
     print(f"  открываю Lidl EasyApply: {url}")
     page.goto(url, wait_until="domcontentloaded", timeout=90_000)
     page.get_by_label(re.compile(r"Fornavn", re.I)).first.wait_for(
@@ -251,5 +348,18 @@ def prepare(page, url: str, profile: dict) -> None:
         platform="Lidl EasyApply",
         missing=missing,
     )
+    checkpoint = submission_checkpoint(page)
+    if allow_submit and checkpoint["reached_submit"]:
+        checkpoint["submit_armed"] = arm_explicit_submit(page)
+    else:
+        checkpoint["submit_armed"] = False
     print(f"  заполнено: {filled or '—'}")
-    print("  ГОТОВО — ответы, согласия и финальная кнопка оставлены тебе.")
+    if checkpoint["reached_submit"]:
+        print("  ДОШЁЛ ДО КНОПКИ ANSØG — подготовка её не нажимала.")
+    else:
+        print("  warning: финальная кнопка Ansøg не найдена.")
+    if checkpoint["submit_armed"]:
+        print("  РЕАЛЬНАЯ ОТПРАВКА ВКЛЮЧЕНА — только через отдельное подтверждение.")
+    else:
+        print("  ПРОВЕРКА БЕЗ ОТПРАВКИ — ответы, согласия и Ansøg оставлены тебе.")
+    return checkpoint

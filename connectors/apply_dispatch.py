@@ -77,7 +77,7 @@ def platform_name(key: str) -> str:
     return key or "неизвестно"
 
 
-def prepare(page, url: str, profile: dict) -> str:
+def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> str:
     """Заполнить форму по ссылке. Возвращает ключ платформы (или '')."""
     key = detect(url)
     if key == "teamtailor":
@@ -85,7 +85,7 @@ def prepare(page, url: str, profile: dict) -> str:
         teamtailor_apply.prepare(page, url, profile)
     elif key == "lidl_easy_apply":
         from connectors import lidl_apply
-        lidl_apply.prepare(page, url, profile)
+        lidl_apply.prepare(page, url, profile, allow_submit=allow_submit)
     elif key:
         from connectors import generic_apply
         generic_apply.prepare(page, url, profile, platform=platform_name(key))
@@ -117,7 +117,34 @@ def load_profile_for_job(job_id: str = "") -> dict:
     return profile
 
 
-def _wait_until_closed(ctx) -> None:
+def _record_confirmed_submission(job_id: str) -> bool:
+    """Persist only a strong Lidl receipt; never infer success from a closed tab."""
+    wanted = str(job_id or "").strip()
+    if not wanted:
+        return False
+    try:
+        import applications
+        from db import Job, get_session, utcnow
+
+        with get_session() as session:
+            job = session.get(Job, wanted)
+            if job is None:
+                return False
+            job.status = "applied"
+            job.applied_at = job.applied_at or utcnow()
+            job.applied_confidence = "receipt"
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+        applications.record_submitted([job])
+        return True
+    except Exception as exc:
+        print("  не удалось записать подтверждённую подачу:", str(exc)[:120])
+        return False
+
+
+def _wait_until_closed(ctx, page=None, platform: str = "", job_id: str = "") -> None:
+    recorded = False
     while True:
         try:
             _ = ctx.pages
@@ -125,10 +152,28 @@ def _wait_until_closed(ctx) -> None:
                 return
         except Exception:
             return
+        if not recorded and platform == "lidl_easy_apply" and page is not None:
+            try:
+                from connectors import lidl_apply
+                if lidl_apply.submission_receipt_visible(page):
+                    recorded = _record_confirmed_submission(job_id)
+                    _write_status(
+                        job_id,
+                        "submitted",
+                        "Lidl подтвердил получение заявки.",
+                    )
+                    print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
+            except Exception:
+                pass
         time.sleep(1.0)
 
 
-def run(url: str, keep_open: bool = False, job_id: str = "") -> None:
+def run(
+    url: str,
+    keep_open: bool = False,
+    job_id: str = "",
+    submit: bool = False,
+) -> None:
     from connectors.browser import launch_browser
     from playwright.sync_api import sync_playwright
 
@@ -143,15 +188,24 @@ def run(url: str, keep_open: bool = False, job_id: str = "") -> None:
             _write_status(job_id, "browser_opened")
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
-                prepare(page, url, profile)
-                _write_status(job_id, "ready")
+                prepare(page, url, profile, allow_submit=submit)
+                _write_status(
+                    job_id,
+                    "submit_ready" if submit else "ready",
+                    (
+                        "Заполни оставшиеся вопросы и нажми зелёную кнопку WexFlow "
+                        "для реальной отправки."
+                        if submit else
+                        "Форма подготовлена до финальной кнопки без отправки."
+                    ),
+                )
             except Exception as exc:
                 # Частичное заполнение лучше закрытого окна: человек сможет
                 # закончить неизвестную или изменившуюся форму вручную.
                 print("  warning:", exc)
                 _write_status(job_id, "ready", f"Часть полей оставлена вручную: {exc}")
             if keep_open:
-                _wait_until_closed(ctx)
+                _wait_until_closed(ctx, page=page, platform=key or "", job_id=job_id)
             else:
                 input("\nНажми Enter здесь, когда закончишь, чтобы закрыть браузер...")
             try:
@@ -167,5 +221,9 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if not args:
         sys.exit("Использование: python -m connectors.apply_dispatch <url> [--keep-open]")
-    run(args[0], keep_open="--keep-open" in sys.argv,
-        job_id=args[1] if len(args) > 1 else "")
+    run(
+        args[0],
+        keep_open="--keep-open" in sys.argv,
+        job_id=args[1] if len(args) > 1 else "",
+        submit="--submit" in sys.argv,
+    )

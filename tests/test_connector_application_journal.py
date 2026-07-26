@@ -12,6 +12,7 @@ from starlette.requests import Request
 
 import app
 import applications
+from connectors import apply_dispatch
 from db import Application, Job, utcnow
 
 
@@ -92,6 +93,34 @@ def test_manual_connector_submission_keeps_connector_source():
         assert row.submitted_at == job.applied_at
 
 
+def test_positive_lidl_receipt_is_persisted_as_real_submission():
+    engine, sessions = _database()
+    job_id = "lidl:receipt"
+    with Session(engine) as session:
+        session.add(Job(
+            id=job_id,
+            source="lidl",
+            brand="Lidl Danmark",
+            title="Butiksassistent",
+            status="seen",
+        ))
+        session.commit()
+    with mock.patch("db.get_session", sessions), \
+            mock.patch.object(applications, "get_session", sessions):
+        assert apply_dispatch._record_confirmed_submission(job_id) is True
+
+    with Session(engine) as session:
+        job = session.get(Job, job_id)
+        row = session.exec(select(Application).where(
+            Application.job_id == job_id,
+            Application.source == "lidl",
+        )).one()
+        assert job.status == "applied"
+        assert job.applied_confidence == "receipt"
+        assert row.state == "submitted"
+        assert row.confidence == "receipt"
+
+
 def test_connector_routes_track_incomplete_then_submitted_result():
     engine, sessions = _database()
     job_id = "tt:demo:route"
@@ -105,7 +134,7 @@ def test_connector_routes_track_incomplete_then_submitted_result():
     with mock.patch.object(app, "get_session", sessions), \
             mock.patch.object(applications, "get_session", sessions), \
             mock.patch.object(app, "_launch_connector_filler",
-                              lambda url, job_id="": launched.append(url)):
+                              lambda url, job_id="", submit=False: launched.append(url)):
         response = app.start_connector_apply(job_id, _request(f"/job/{job_id}/connector/apply"))
         assert response.status_code == 303
         assert launched == ["https://demo.teamtailor.com/jobs/1"]
@@ -126,6 +155,57 @@ def test_connector_routes_track_incomplete_then_submitted_result():
         assert stored.status == "applied"
         assert stored.applied_at is not None
         assert stored.applied_confidence == "manual"
+
+
+def test_lidl_real_submit_mode_requires_ack_and_arms_worker():
+    _engine, sessions = _database()
+    job_id = "lidl:submit-mode"
+    with sessions() as session:
+        session.add(Job(
+            id=job_id,
+            source="lidl",
+            brand="Lidl Danmark",
+            title="Butiksassistent",
+            application_link=(
+                "https://ea-lidl.cfapps.eu20.hana.ondemand.com/"
+                "easyapply/index.html?ReqId=1"
+            ),
+        ))
+        session.commit()
+    launches = []
+    with mock.patch.object(app, "get_session", sessions), \
+            mock.patch.object(applications, "get_session", sessions), \
+            mock.patch.object(app, "_claim_connector_launch", return_value=True), \
+            mock.patch.object(
+                app,
+                "_launch_connector_filler",
+                side_effect=lambda url, job_id="", submit=False: launches.append(submit),
+            ):
+        rejected = app.start_connector_apply(
+            job_id,
+            _request(f"/job/{job_id}/connector/apply"),
+            mode="submit",
+            submit_ack="",
+        )
+        assert rejected.status_code == 303
+        assert launches == []
+
+        prepared = app.start_connector_apply(
+            job_id,
+            _request(f"/job/{job_id}/connector/apply"),
+            mode="prepare",
+        )
+        assert prepared.status_code == 303
+        assert launches == [False]
+
+        armed = app.start_connector_apply(
+            job_id,
+            _request(f"/job/{job_id}/connector/apply"),
+            mode="submit",
+            submit_ack="1",
+        )
+        assert armed.status_code == 303
+        assert launches == [False, True]
 
 
 def test_audit_renders_submitted_and_unfinished_connector_forms():

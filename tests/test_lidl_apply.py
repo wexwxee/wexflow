@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from playwright.sync_api import sync_playwright
 
 from connectors import lidl_apply
+from connectors.fill_common import add_banner
 
 
 def _page():
@@ -139,6 +140,57 @@ def test_identity_country_and_named_documents_are_filled_safely():
             ) == 0
             assert page.locator("#btnSend").evaluate("e => e.clicks || 0") == 0
             assert lidl_apply._screening_question_count(page) == 1
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_prepare_checkpoint_reaches_real_submit_without_clicking_it():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <button id="nativeSubmit" onclick="window.nativeClicks=(window.nativeClicks||0)+1">
+            Ansøg
+          </button>
+        """)
+        checkpoint = lidl_apply.submission_checkpoint(page)
+        assert checkpoint["reached_submit"] is True
+        assert checkpoint["submit_requested"] is False
+        assert page.evaluate("() => window.nativeClicks || 0") == 0
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_real_submit_requires_confirmation_then_clicks_native_lidl_button_once():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <button id="nativeSubmit" onclick="window.nativeClicks=(window.nativeClicks||0)+1">
+            Ansøg
+          </button>
+        """)
+        add_banner(page, 0, ["CV", "cover letter"], platform="Lidl EasyApply")
+        assert lidl_apply.arm_explicit_submit(page) is True
+        assert page.evaluate("() => window.nativeClicks || 0") == 0
+        page.on("dialog", lambda dialog: dialog.accept())
+        page.locator("#wexflow-banner").locator(
+            "#wexflow-real-submit"
+        ).click()
+        assert page.evaluate("() => window.nativeClicks || 0") == 1
+        assert lidl_apply.submission_checkpoint(page)["submit_requested"] is True
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_submission_is_confirmed_only_by_positive_lidl_receipt():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("<main>Udfyld venligst alle obligatoriske felter</main>")
+        assert lidl_apply.submission_receipt_visible(page) is False
+        page.set_content("<main>Tak for din ansøgning. Vi har modtaget din ansøgning.</main>")
+        assert lidl_apply.submission_receipt_visible(page) is True
     finally:
         browser.close()
         playwright.stop()

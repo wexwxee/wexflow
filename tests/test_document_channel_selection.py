@@ -29,6 +29,20 @@ def _save_brand_rules(settings_path: Path) -> None:
     with mock.patch.object(document_rules.settings_store, "PATH", settings_path):
         document_rules.save_rule(
             scope="brand",
+            brand="bilka",
+            brand_label="Bilka",
+            cv_path="pc_bilka_cv.pdf",
+            cover_letter_path="pc_bilka_cover.pdf",
+        )
+        document_rules.save_rule(
+            scope="brand",
+            brand="foetex",
+            brand_label="Føtex",
+            cv_path="pc_foetex_cv.pdf",
+            cover_letter_path="pc_foetex_cover.pdf",
+        )
+        document_rules.save_rule(
+            scope="brand",
             brand="lidl",
             brand_label="Lidl",
             cv_path="pc_lidl_cv.pdf",
@@ -41,6 +55,38 @@ def _save_brand_rules(settings_path: Path) -> None:
             cv_path="pc_netto_cv.pdf",
             cover_letter_path="pc_netto_cover.pdf",
         )
+
+
+def test_every_retail_brand_gets_only_its_own_cv_and_cover():
+    cases = (
+        ("bilka", "pc_bilka_cv.pdf", "pc_bilka_cover.pdf"),
+        ("foetex", "pc_foetex_cv.pdf", "pc_foetex_cover.pdf"),
+        ("Lidl Danmark", "pc_lidl_cv.pdf", "pc_lidl_cover.pdf"),
+        ("Netto", "pc_netto_cv.pdf", "pc_netto_cover.pdf"),
+    )
+    with tempfile.TemporaryDirectory() as td:
+        settings_path = Path(td) / "settings.json"
+        _save_brand_rules(settings_path)
+        with mock.patch.object(document_rules.settings_store, "PATH", settings_path):
+            resolved = {
+                brand: document_rules.resolve_profile(
+                    {
+                        "cv_path": "global_cv.pdf",
+                        "cover_letter_path": "global_cover.pdf",
+                    },
+                    Job(id=f"job-{index}", source="salling", brand=brand),
+                )
+                for index, (brand, _, _) in enumerate(cases)
+            }
+
+    for brand, expected_cv, expected_cover in cases:
+        profile = resolved[brand]
+        assert profile["cv_path"] == expected_cv
+        assert profile["cover_letter_path"] == expected_cover
+        assert len({
+            profile["cv_path"],
+            profile["cover_letter_path"],
+        }) == 2
 
 
 def test_pc_lidl_connector_loads_lidl_cv_and_cover():
@@ -129,7 +175,7 @@ def test_telegram_lidl_decision_opens_assisted_pc_form_with_job_id():
             mock.patch.object(app, "_report_apply_result_safe"):
         app._handle_tg_decisions([{"jobId": job.id, "action": "submit"}])
 
-    launch.assert_called_once_with(job.application_link, job.id)
+    launch.assert_called_once_with(job.application_link, job.id, submit=True)
     mark_submitting.assert_called_once_with(
         [job.id], origin="telegram", source="lidl"
     )

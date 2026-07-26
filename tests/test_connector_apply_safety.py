@@ -59,6 +59,30 @@ def test_connector_filler_waits_for_real_browser_confirmation():
         assert "tt:demo:1" in commands[0]
 
 
+def test_lidl_real_submit_mode_is_forwarded_to_worker_explicitly():
+    with tempfile.TemporaryDirectory() as folder:
+        status = Path(folder) / "status.json"
+        commands = []
+
+        def spawn(cmd, **_kwargs):
+            commands.append(cmd)
+            status.write_text(json.dumps({
+                "job_id": "lidl:1", "state": "browser_opened",
+            }), encoding="utf-8")
+            return _LiveProcess()
+
+        with mock.patch.object(app, "_connector_status_path", return_value=status), \
+                mock.patch.object(app.subprocess, "Popen", side_effect=spawn):
+            app._launch_connector_filler(
+                "https://ea-lidl.cfapps.eu20.hana.ondemand.com/easyapply/"
+                "index.html?ReqId=1",
+                "lidl:1",
+                submit=True,
+            )
+
+    assert "--submit" in commands[0]
+
+
 def test_connector_filler_surfaces_worker_error_instead_of_green_success():
     with tempfile.TemporaryDirectory() as folder:
         status = Path(folder) / "status.json"

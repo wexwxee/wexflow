@@ -649,11 +649,20 @@ def _handle_tg_decisions(decisions: list) -> None:
             continue
         applications.mark_submitting([job.id], origin="telegram", source=source)
         try:
-            _launch_connector_filler(job.application_link or "", job.id)
+            _launch_connector_filler(
+                job.application_link or "",
+                job.id,
+                submit=getattr(job, "source", "") == "lidl",
+            )
             _report_apply_result_safe(
                 job.id,
                 "submitting",
-                "Форма открыта на ПК и заполнена. Проверь ответы и отправь сам.",
+                (
+                    "Форма Lidl открыта на ПК. Заполни оставшиеся вопросы и подтверди "
+                    "реальную отправку зелёной кнопкой WexFlow."
+                    if getattr(job, "source", "") == "lidl" else
+                    "Форма открыта на ПК и заполнена. Проверь ответы и отправь сам."
+                ),
             )
         except Exception as exc:  # noqa: BLE001
             _release_connector_launch(job.id)
@@ -2372,7 +2381,11 @@ def _connector_status_path(job_id: str):
     return config.DATA_DIR / f"connector_apply_status_{token}.json"
 
 
-def _launch_connector_filler(url: str, job_id: str = "") -> str:
+def _launch_connector_filler(
+    url: str,
+    job_id: str = "",
+    submit: bool = False,
+) -> str:
     """Запустить помощника и дождаться подтверждения реального окна браузера.
 
     Раньше успешный ``Popen`` ошибочно считался успешным открытием формы: воркер
@@ -2390,6 +2403,8 @@ def _launch_connector_filler(url: str, job_id: str = "") -> str:
         cmd = [sys.executable, "--worker-connector-apply", url, job_id]
     else:
         cmd = [sys.executable, "-m", "connectors.apply_dispatch", url, job_id, "--keep-open"]
+    if submit:
+        cmd.append("--submit")
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = 0x00000008 | 0x00000200
@@ -2404,7 +2419,7 @@ def _launch_connector_filler(url: str, job_id: str = "") -> str:
             payload = {}
         if str(payload.get("job_id", "")) == job_id:
             last_state = str(payload.get("state", ""))
-            if last_state in {"browser_opened", "ready"}:
+            if last_state in {"browser_opened", "ready", "submit_ready", "submitted"}:
                 return last_state
             if last_state == "error":
                 message = str(payload.get("message", "")).strip()
@@ -2473,7 +2488,12 @@ def start_apply_by_link(request: Request, url: str = Form(...)):
 
 
 @app.post("/job/{job_id}/connector/apply")
-def start_connector_apply(job_id: str, request: Request):
+def start_connector_apply(
+    job_id: str,
+    request: Request,
+    mode: str = Form("prepare"),
+    submit_ack: str = Form(""),
+):
     with get_session() as session:
         job = session.get(Job, job_id)
     if not job:
@@ -2490,9 +2510,27 @@ def start_connector_apply(job_id: str, request: Request):
             request, f"/job/{job_id}",
             notice="Форма уже открывается — второе окно не запускаю.",
         )
+    mode = str(mode or "prepare").strip().lower()
+    real_submit = mode == "submit"
+    if real_submit and submit_ack != "1":
+        return _redirect_back(
+            request,
+            f"/job/{job_id}",
+            error="Реальная отправка не подтверждена. Заявка не отправлялась.",
+        )
+    if real_submit and getattr(job, "source", "") != "lidl":
+        return _redirect_back(
+            request,
+            f"/job/{job_id}",
+            error="Контролируемая отправка пока доступна только для Lidl.",
+        )
     applications.mark_submitting([job.id], origin="assisted", source=job.source)
     try:
-        _launch_connector_filler(job.application_link or "", job.id)
+        _launch_connector_filler(
+            job.application_link or "",
+            job.id,
+            submit=real_submit,
+        )
     except Exception as exc:  # noqa: BLE001
         _release_connector_launch(job.id)
         applications.mark_failed([job.id], source=job.source)
@@ -2502,7 +2540,12 @@ def start_connector_apply(job_id: str, request: Request):
         )
     return _redirect_back(
         request, f"/job/{job_id}",
-        notice="Форма открывается в отдельном окне. WexFlow заполнит доступные поля и остановится перед отправкой.",
+        notice=(
+            "Режим реальной отправки открыт. Заполни оставшиеся вопросы и нажми "
+            "зелёную кнопку WexFlow внутри анкеты — затем будет нажата настоящая Ansøg."
+            if real_submit else
+            "Проверка открыта: WexFlow заполнит форму до Ansøg и гарантированно не нажмёт её."
+        ),
     )
 
 
@@ -4896,6 +4939,49 @@ def detail(request: Request, job_id: str, trerror: str = ""):
         distance = round(geo.haversine_km(home["lat"], home["lon"], job.lat, job.lon), 1)
     maps_url = _maps_url(job, home) if job else ""
     facts = _job_facts(job, distance) if job else []
+    selected_documents = {}
+    if job:
+        resolved_profile = document_rules.resolve_profile(
+            profile_store.load_profile(),
+            job,
+        )
+        selection = resolved_profile.get("_document_selection", {})
+        selected_documents = {
+            "cv_label": profile_store.file_label(resolved_profile.get("cv_path", "")),
+            "cv_status": profile_store.file_status(resolved_profile.get("cv_path", "")),
+            "cv_source": (selection.get("cv") or {}).get("label", "Общий комплект"),
+            "cover_label": profile_store.file_label(
+                resolved_profile.get("cover_letter_path", "")
+            ),
+            "cover_status": profile_store.file_status(
+                resolved_profile.get("cover_letter_path", "")
+            ),
+            "cover_source": (
+                selection.get("cover") or {}
+            ).get("label", "Общий комплект"),
+        }
+        required_profile = {
+            "Имя": resolved_profile.get("first_name"),
+            "Фамилия": resolved_profile.get("last_name"),
+            "Email": resolved_profile.get("email"),
+            "Телефон": resolved_profile.get("phone"),
+            "Адрес": resolved_profile.get("address"),
+            "Индекс": resolved_profile.get("zip"),
+            "Город": resolved_profile.get("city"),
+            "Страна": resolved_profile.get("country"),
+            "CV": (
+                resolved_profile.get("cv_path")
+                if selected_documents["cv_status"] == "ok" else ""
+            ),
+            "Письмо": (
+                resolved_profile.get("cover_letter_path")
+                if selected_documents["cover_status"] == "ok" else ""
+            ),
+        }
+        selected_documents["missing_profile"] = [
+            label for label, value in required_profile.items()
+            if not str(value or "").strip()
+        ]
     return templates.TemplateResponse(
         "detail.html", {
             "request": request,
@@ -4905,6 +4991,7 @@ def detail(request: Request, job_id: str, trerror: str = ""):
                 applications.state_of(job.id, source=job.source)
                 if job and job.source != "salling" else ""
             ),
+            "selected_documents": selected_documents,
             "distance": distance,
             "has_home": bool(home),
             "maps_url": maps_url,
