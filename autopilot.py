@@ -327,6 +327,14 @@ def _age_days(job: Job) -> float | None:
     return (_dt.datetime.now() - t).total_seconds() / 86400.0
 
 
+def job_is_under18(job: Job) -> bool:
+    """Единая классификация вакансии по возрасту для ПК и Telegram."""
+    age_hay = f"{job.title or ''} {job.description or ''}".lower()
+    return (job.job_level == "employeeUnder18") or bool(
+        re.search(r"under\s*-?\s*18", age_hay)
+    )
+
+
 def _job_hours(job: Job) -> float | None:
     """Часы/неделю из job.hours — в БД это строка ('5', '37,5', '5 t/uge')."""
     raw = job.hours
@@ -380,8 +388,7 @@ def _profile_matches(job: Job, rule: dict, home: dict | None) -> bool:
         # под-18 определяем не только по полю job_level: часть вакансий приходит
         # без employeeUnder18, но с «under 18 år» в названии/описании — иначе они
         # протекают сквозь фильтр «от 18».
-        _age_hay = f"{job.title or ''} {job.description or ''}".lower()
-        is_under18 = (job.job_level == "employeeUnder18") or bool(re.search(r"under\s*-?\s*18", _age_hay))
+        is_under18 = job_is_under18(job)
         if "under18" in ages and not is_under18:
             return False
         if "adult" in ages and is_under18:

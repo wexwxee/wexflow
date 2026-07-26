@@ -1415,6 +1415,8 @@ def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
         "hoursLabel": f"{job.hours} ч/нед" if job.hours else "",
         "employment": labels.EMPLOYMENT.get(job.employment_type or "", job.employment_type or ""),
         "level": labels.LEVEL.get(job.job_level or "", ""),
+        # Та же классификация, которой пользуется автопилот на ПК.
+        "ageGroup": "under18" if autopilot.job_is_under18(job) else "adult",
         "categories": categories_ru,
         # Русская расшифровка должности — та же строка, что в карточке приложения.
         "roleRu": labels.role_summary(job.title, job.categories or "", job.job_level or ""),

@@ -113,6 +113,7 @@ def test_payload_has_app_card_fields():
     assert p["titleBase"] == "Salgsassistent p1"
     assert p["brandColor"] and p["brandFg"], "цвет бренда — как в карточке приложения"
     assert p["employment"] == "Частичная занятость"
+    assert p["ageGroup"] == "adult"
     assert p["payRate"] == "142 kr/t"
     assert p["startDate"] == "01.08.2026"
     assert p["publishedShort"]
@@ -120,6 +121,22 @@ def test_payload_has_app_card_fields():
     assert p["address"].startswith("Vej 1")
     assert p["isMatch"] is False
     assert p["status"] == "new"
+
+
+def test_payload_age_group_uses_same_rule_as_pc_autopilot():
+    by_level = _job("u1")
+    by_level.job_level = "employeeUnder18"
+    assert app._tg_job_payload(by_level, home=None)["ageGroup"] == "under18"
+
+    by_text = _job("u2")
+    by_text.title = "Butiksassistent under 18 år"
+    by_text.job_level = "employee"
+    assert app._tg_job_payload(by_text, home=None)["ageGroup"] == "under18"
+
+    adult = _job("a1")
+    adult.title = "Butiksassistent"
+    adult.description = "Almindelig stilling"
+    assert app._tg_job_payload(adult, home=None)["ageGroup"] == "adult"
 
 
 def test_sync_sends_both_kinds_and_marks_listed():

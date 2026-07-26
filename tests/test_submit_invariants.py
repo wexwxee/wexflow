@@ -71,6 +71,20 @@ def test_matches_requires_enabled_profile():
     assert autopilot._matches(_job(), r, None) is False
 
 
+def test_age_classification_is_shared_and_description_aware():
+    by_level = _job()
+    by_level.job_level = "employeeUnder18"
+    assert autopilot.job_is_under18(by_level) is True
+
+    by_text = _job(title="Butiksassistent")
+    by_text.description = "Stillingen er for unge under 18 år"
+    assert autopilot.job_is_under18(by_text) is True
+
+    adult = _job(title="Butiksassistent")
+    adult.description = "Almindelig deltidsstilling"
+    assert autopilot.job_is_under18(adult) is False
+
+
 # ── B. auto_submit_tick: гейтинг тихой автоотправки ───────────────────────
 def _rule_on(**over):
     r = dict(autopilot.DEFAULT_RULE)
