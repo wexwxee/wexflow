@@ -69,7 +69,8 @@
             <button type="button" class="candidate-profile-invite"
                     data-candidate-profile-invite="{{ person.id }}"
                     title="Привязать Telegram к профилю {{ person.name }}">
-              {{ ic.i('send', 15) }} Пригласить в Telegram
+              {{ ic.i('send', 15) }}
+              <span data-candidate-profile-invite-label>Проверяю Telegram…</span>
             </button>
             {% endif %}
           </div>

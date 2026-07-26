@@ -49,6 +49,37 @@ def test_background_cloud_session_cannot_undo_logout():
         account._sync_subscription = original_sync
 
 
+def test_family_identity_never_falls_back_to_shared_owner_account():
+    profile = {"first_name": "", "last_name": "", "email": ""}
+    owner = {
+        "signed_in": True,
+        "tg_name": "Owner",
+        "username": "owner_tg",
+        "plan": "pro",
+    }
+    sister = {
+        "linked": True,
+        "name": "Nastya Telegram",
+        "username": "nastya_tg",
+        "tgId": "777",
+        "plan": "free",
+    }
+    original = account.load
+    try:
+        account.load = lambda: dict(owner)
+        family = account.status(profile, sister)
+        unlinked = account.status(profile, {"linked": False})
+    finally:
+        account.load = original
+
+    assert family["signed_in"] is True
+    assert family["tg_name"] == "Nastya Telegram"
+    assert family["username"] == "nastya_tg"
+    assert family["plan"] == "free"
+    assert unlinked["signed_in"] is False
+    assert unlinked["username"] == ""
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items())
              if name.startswith("test_") and callable(value)]

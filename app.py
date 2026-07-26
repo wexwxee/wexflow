@@ -3651,10 +3651,24 @@ def account_page(request: Request, saved: str = "", missing: str = "",
                  deleted: str = "", delete_error: str = "",
                  unlinked: str = "", unlink_warning: str = ""):
     """Общие настройки приложения: единый профиль, документы и подписка."""
-    # если уже вошли — освежим тариф/имя из облака (подхватит выданный Pro/Max)
+    candidate = candidate_profiles.active_profile()
+    family_candidate = candidate["id"] != candidate_profiles.PRIMARY_ID
+    # Основной профиль читает владельца общей сессии устройства. Семейный
+    # профиль читает только свою отдельную profilemember-привязку.
     locally_signed_in = account_mod.is_signed_in()
     cloud_account_linked = None
-    if locally_signed_in:
+    family_identity = None
+    if family_candidate:
+        try:
+            binding = cloud_auth.fetch_profile_binding(candidate["id"])
+            if binding is not None:
+                cloud_account_linked = bool(binding.get("linked"))
+                telegram = binding.get("telegram")
+                family_identity = dict(telegram) if isinstance(telegram, dict) else {}
+                family_identity["linked"] = cloud_account_linked
+        except Exception:  # noqa: BLE001
+            pass
+    elif locally_signed_in:
         try:
             session_state = cloud_auth.fetch_session_state()
             if session_state is not None:
@@ -3667,9 +3681,21 @@ def account_page(request: Request, saved: str = "", missing: str = "",
                 account_mod.apply_session(u)
         except Exception:  # noqa: BLE001 — обновление не должно мешать открытию страницы
             pass
-    telegram_relink = bool(locally_signed_in and cloud_account_linked is False)
-    telegram_ready = bool(locally_signed_in and not telegram_relink)
+    if family_candidate:
+        telegram_relink = False
+        telegram_ready = bool(cloud_account_linked)
+    else:
+        telegram_relink = bool(locally_signed_in and cloud_account_linked is False)
+        telegram_ready = bool(locally_signed_in and not telegram_relink)
     profile = profile_store.load_profile()
+    account_view = (
+        account_mod.status(profile, family_identity or {"linked": False})
+        if family_candidate else account_mod.status(profile)
+    )
+    account_tg_id = (
+        str((family_identity or {}).get("tgId") or "")
+        if family_candidate else str(account_mod.load().get("tg_id") or "")
+    )
     city_options, country_options = _profile_choices()
     missing_fields = [x for x in missing.split(",") if x]
     return templates.TemplateResponse("account.html", {
@@ -3680,11 +3706,13 @@ def account_page(request: Request, saved: str = "", missing: str = "",
         "unlinked": unlinked, "unlink_warning": unlink_warning,
         "city_options": city_options, "country_options": country_options,
         "subscription": subscription.status(),
-        "account": account_mod.status(profile),
-        "account_tg_id": account_mod.load().get("tg_id") or "",
+        "account": account_view,
+        "account_tg_id": account_tg_id,
         "cloud_login_url": cloud_auth.login_url(),
         "telegram_ready": telegram_ready,
         "telegram_relink": telegram_relink,
+        "family_candidate": family_candidate,
+        "candidate_profile": candidate,
     })
 
 
@@ -4175,6 +4203,21 @@ def account_login_poll():
     человек подтверждает вход через Telegram; как только облако скажет «вошёл» —
     сохраняем личность и тариф локально и (один раз) переносим профиль.
     """
+    if not candidate_profiles.is_primary():
+        candidate = candidate_profiles.active_profile()
+        binding = cloud_auth.fetch_profile_binding(candidate["id"])
+        telegram = binding.get("telegram") if isinstance(binding, dict) else None
+        if binding and binding.get("linked") and isinstance(telegram, dict):
+            return JSONResponse({
+                "signed_in": True,
+                "tg_id": telegram.get("tgId") or "",
+                "name": telegram.get("name") or "",
+                "username": telegram.get("username") or "",
+                "plan": telegram.get("plan") or "free",
+                "family_profile": candidate["id"],
+            })
+        return JSONResponse({"signed_in": False, "family_profile": candidate["id"]})
+
     user = cloud_auth.fetch_session()
     if user:
         was_signed_in = account_mod.is_signed_in()
@@ -4228,6 +4271,10 @@ def account_link_code():
     """Получить одноразовый код привязки по ID. Пользователь отправляет его боту
     @wexflowbot — облако логинит аккаунт в это устройство, а /account/login/poll
     подхватит вход. Запасной путь к «Войти через Telegram», без браузера."""
+    if not candidate_profiles.is_primary():
+        candidate = candidate_profiles.active_profile()
+        return JSONResponse(cloud_auth.create_profile_invite(
+            candidate["id"], candidate["name"]))
     return JSONResponse(cloud_auth.link_new())
 
 
@@ -4828,7 +4875,7 @@ def telegram_test():
 @app.post("/api/telegram/setup-test")
 def telegram_setup_test():
     """Шаг мастера подключения: простое сообщение без вакансии и кнопок подачи."""
-    if not account_mod.is_signed_in():
+    if not _cloud_profile_enabled():
         return JSONResponse(
             {
                 "ok": False,

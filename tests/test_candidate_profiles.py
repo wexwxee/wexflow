@@ -146,6 +146,7 @@ def test_profile_controls_and_remove_buttons_are_present():
     assert "Создать профиль" in sidebar
     assert "candidate-profile-action" in sidebar
     assert "data-candidate-profile-invite" in sidebar
+    assert "Проверяю Telegram" in sidebar
     assert "Telegram каждого человека связан только с его профилем" in sidebar
     assert 'name="remove_document" value="cv"' in settings
     assert 'name="remove_document" value="cover"' in settings

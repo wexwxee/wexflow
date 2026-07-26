@@ -379,6 +379,26 @@ class WindowControls:
             "expiresIn": int(result.get("expiresIn") or 900),
         }
 
+    def candidate_profile_bindings(self):
+        """Refresh family Telegram badges without exposing the owner session."""
+        try:
+            import cloud_auth
+            profiles = candidate_profiles.load().get("profiles", [])
+            bindings = {}
+            for profile in profiles:
+                profile_id = str(profile.get("id") or "")
+                if not profile_id or profile_id == candidate_profiles.PRIMARY_ID:
+                    continue
+                state = cloud_auth.fetch_profile_binding(profile_id)
+                telegram = state.get("telegram") if isinstance(state, dict) else None
+                bindings[profile_id] = {
+                    "linked": bool(state and state.get("linked")),
+                    "telegram": telegram if isinstance(telegram, dict) else {},
+                }
+            return {"ok": True, "bindings": bindings}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)[:160]}
+
     def _native_fullscreen_state(self, window) -> bool | None:
         """Read pywebview's real state when its WinForms window is available."""
         native = getattr(window, "native", None)

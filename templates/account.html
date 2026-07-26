@@ -337,9 +337,15 @@
     <div class="tg-setup-head">
       <div class="tg-setup-title">
         <span class="tg-eyebrow">Telegram · вход и управление</span>
-        <h2>{% if telegram_relink %}Восстанови связь с Telegram{% elif telegram_ready %}Telegram подключён к WexFlow{% else %}Подключи Telegram за 3 шага{% endif %}</h2>
+        <h2>{% if family_candidate and telegram_ready %}Telegram подключён к профилю «{{ candidate_profile.name }}»
+          {% elif family_candidate %}Подключи Telegram к профилю «{{ candidate_profile.name }}»
+          {% elif telegram_relink %}Восстанови связь с Telegram{% elif telegram_ready %}Telegram подключён к WexFlow{% else %}Подключи Telegram за 3 шага{% endif %}</h2>
         <p>{% if telegram_relink %}
           Аккаунт сохранён на ПК, но облачная привязка отсутствует. Создай код и отправь его боту.
+        {% elif family_candidate and telegram_ready %}
+          Это отдельный Telegram этого человека. Команды, вакансии и заявки не смешиваются с основным профилем.
+        {% elif family_candidate %}
+          Создай одноразовое приглашение и отправь его человеку — вход владельца компьютера здесь не используется.
         {% elif telegram_ready %}
           Аккаунт подтверждён. Осталось убедиться, что бот запущен, и выбрать режим уведомлений.
         {% else %}
@@ -370,19 +376,26 @@
       <li class="tg-step {{ 'done' if telegram_ready else 'active' }}" id="tgStep1">
         <span class="tg-step-num">{{ '✓' if telegram_ready else '1' }}</span>
         <div class="tg-step-copy">
-          <h3>Войди и привяжи этот компьютер</h3>
+          <h3>{% if family_candidate %}Привяжи Telegram именно к этому профилю{% else %}Войди и привяжи этот компьютер{% endif %}</h3>
           {% if telegram_ready %}
-          <p>Личность Telegram подтверждена. Профиль и тариф могут синхронизироваться между устройствами.</p>
+          <p>{% if family_candidate %}Привязан
+            {% if account.username %}@{{ account.username }}{% else %}Telegram ID {{ account_tg_id }}{% endif %}.
+            Запросы этого Telegram выполняются только с данными «{{ candidate_profile.name }}».
+            {% else %}Личность Telegram подтверждена. Профиль и тариф могут синхронизироваться между устройствами.{% endif %}</p>
           {% else %}
-          <p>{% if telegram_relink %}Создай новый одноразовый код и отправь его обычным сообщением в @wexflowbot.{% else %}Основной способ — безопасная страница входа. Если браузерный вход не откроется, используй одноразовый код.{% endif %}</p>
+          <p>{% if family_candidate %}Код привяжет Telegram только к «{{ candidate_profile.name }}» и не изменит основной аккаунт.
+            {% elif telegram_relink %}Создай новый одноразовый код и отправь его обычным сообщением в @wexflowbot.{% else %}Основной способ — безопасная страница входа. Если браузерный вход не откроется, используй одноразовый код.{% endif %}</p>
           <div class="tg-step-actions">
-            {% if not account.signed_in %}
+            {% if not account.signed_in and not family_candidate %}
             <a class="tg-login-btn" id="tgLoginBtn" href="{{ cloud_login_url }}" target="_blank" rel="noopener">
               <span class="tg-login-ic">{{ ic.i('send', 15) }}</span>
               <span class="tg-login-text">Шаг 1 · Войти через Telegram</span>
             </a>
             {% endif %}
-            <button class="ghost link-id-btn" type="button" id="linkIdBtn">{{ 'Создать новый код' if telegram_relink else 'Получить код привязки' }}</button>
+            <button class="ghost link-id-btn" type="button" id="linkIdBtn">{{
+              'Создать приглашение для ' ~ candidate_profile.name if family_candidate
+              else ('Создать новый код' if telegram_relink else 'Получить код привязки')
+            }}</button>
           </div>
           <div class="tg-login-wait" id="tgLoginWait" hidden>
             <span id="tgLoginWaitText">Жду подтверждение входа в Telegram…</span>
@@ -433,7 +446,7 @@
 
     <p class="tg-setup-msg" id="tgSetupMsg" hidden></p>
 
-    {% if account.signed_in %}
+    {% if account.signed_in and not family_candidate %}
     <details class="tg-advanced">
       <summary>Управление привязкой</summary>
       <div class="tg-advanced-body">
@@ -453,7 +466,7 @@
     </details>
     {% endif %}
   </section>
-  {% if account.signed_in %}
+  {% if account.signed_in and not family_candidate %}
   <div class="panel privacy-card">
     <div class="privacy-row">
       <div class="privacy-copy">

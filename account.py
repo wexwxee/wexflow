@@ -123,11 +123,11 @@ def _initial(name: str, email: str) -> str:
     return email[0].upper() if email else "?"
 
 
-def status(profile: dict) -> dict:
+def status(profile: dict, identity: dict | None = None) -> dict:
     """Данные для карточки «Аккаунт» на странице настроек."""
-    acc = load()
-    signed_in = bool(acc.get("signed_in"))
-    tg_name = (acc.get("tg_name") or "").strip()
+    acc = load() if identity is None else dict(identity)
+    signed_in = bool(acc.get("signed_in") if identity is None else acc.get("linked"))
+    tg_name = (acc.get("tg_name") or acc.get("name") or "").strip()
     username = (acc.get("username") or "").strip()
     # имя для показа: профиль кандидата → имя из Telegram → «Гость»
     first = (profile.get("first_name") or "").strip()

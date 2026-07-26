@@ -208,6 +208,27 @@ def fetch_session(timeout: int = 10) -> dict | None:
     return None
 
 
+def fetch_profile_binding(profile_id: str, timeout: int = 6) -> dict | None:
+    """Return the Telegram identity linked to one family candidate.
+
+    Unlike fetch_session(), this never returns the device owner's Telegram for
+    a non-primary candidate.
+    """
+    profile_id = str(profile_id or "").strip()
+    if not profile_id or profile_id == "primary":
+        return None
+    query = urllib.parse.urlencode({
+        "device": device_id(),
+        "profileId": profile_id,
+    })
+    try:
+        with _open(f"{CLOUD_BASE}/api/session?{query}", timeout=timeout) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        return data if isinstance(data, dict) and data.get("ok") else None
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
 def push_profile(profile: dict, timeout: int = 10) -> bool:
     """Выгрузить локальный профиль в облачный аккаунт (перенос/резервная копия).
 

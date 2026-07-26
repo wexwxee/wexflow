@@ -191,6 +191,7 @@
       button.addEventListener("click", function () {
         modal.hidden = false;
         document.body.classList.add("candidate-profile-open");
+        refreshCandidateBindings();
       });
     });
     modal.querySelectorAll("[data-candidate-profile-close]").forEach(function (button) {
@@ -224,6 +225,36 @@
     var inviteCode = modal.querySelector("[data-candidate-profile-invite-code]");
     var inviteTitle = modal.querySelector("[data-candidate-profile-invite-title]");
     var inviteUrl = "";
+    var bindingsLoading = false;
+    function telegramBindingLabel(binding) {
+      var telegram = (binding && binding.telegram) || {};
+      var who = telegram.username ? ("@" + telegram.username) :
+        (telegram.name || (telegram.tgId ? ("ID " + telegram.tgId) : "Telegram"));
+      return "✓ " + who + " подключён · Сменить";
+    }
+    async function refreshCandidateBindings() {
+      if (bindingsLoading) return;
+      var bridge = api();
+      if (!bridge || !bridge.candidate_profile_bindings) return;
+      bindingsLoading = true;
+      try {
+        var result = await bridge.candidate_profile_bindings();
+        if (!result || !result.ok) return;
+        modal.querySelectorAll("[data-candidate-profile-invite]").forEach(function (button) {
+          var binding = (result.bindings || {})[button.dataset.candidateProfileInvite] || {};
+          var label = button.querySelector("[data-candidate-profile-invite-label]");
+          button.classList.toggle("connected", !!binding.linked);
+          if (label) label.textContent = binding.linked
+            ? telegramBindingLabel(binding)
+            : "Пригласить в Telegram";
+          button.title = binding.linked
+            ? "Telegram уже подключён. Нажми, чтобы создать новое приглашение и заменить привязку."
+            : "Привязать Telegram к этому профилю";
+        });
+      } finally {
+        bindingsLoading = false;
+      }
+    }
     async function copyInvite(value, button, original) {
       try {
         await navigator.clipboard.writeText(value);

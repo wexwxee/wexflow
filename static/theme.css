@@ -487,6 +487,11 @@ body.candidate-profile-open { overflow: hidden; }
   cursor: pointer;
 }
 .candidate-profile-invite:hover { background: color-mix(in srgb, var(--accent) 14%, var(--card-2)); }
+.candidate-profile-invite.connected {
+  border-color: color-mix(in srgb, var(--ok-txt) 55%, var(--glass-line));
+  background: color-mix(in srgb, var(--ok-bg) 78%, var(--card-2));
+  color: var(--ok-txt);
+}
 .candidate-profile-invite:disabled { opacity: .55; cursor: wait; }
 .candidate-profile-invite-card {
   margin-top: 12px;
