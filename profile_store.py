@@ -16,6 +16,10 @@ import candidate_profiles
 UPLOAD_DIR = config.DATA_DIR / "uploads"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".doc", ".docx"}
+_MANAGED_UPLOAD_PREFIX_RE = re.compile(
+    r"^(?:bulk_doc|cv|cover)_[0-9a-f]{10}_(?P<original>.+)$",
+    re.IGNORECASE,
+)
 
 
 def _clean_upload_filename(filename: str | None) -> str:
@@ -53,7 +57,14 @@ def _safe_copy_target(source: Path, prefix: str, safe_name: str) -> Path:
 
 
 def safe_document_upload_path(path: str, prefix: str) -> str:
-    """Return a path with a site-friendly basename, copying the file if needed."""
+    """Return an exact document copy with a site-friendly visible basename.
+
+    Bulk import keeps a collision-proof managed name such as
+    ``bulk_doc_<id>_Ivan_Cover_Letter_Lidl.pdf``. Browser file controls expose
+    that basename to the employer, and narrow controls show only the meaningless
+    ``bulk_doc_<id>`` prefix. Keep the managed source intact, but upload an
+    byte-identical alias whose visible name starts with ``cv`` or ``cover``.
+    """
     clean_path = validate_document_path(path)
     if not clean_path:
         return ""
@@ -61,6 +72,9 @@ def safe_document_upload_path(path: str, prefix: str) -> str:
     if not source.exists() or not source.is_file():
         return clean_path
     safe_name = _clean_upload_filename(source.name)
+    managed_match = _MANAGED_UPLOAD_PREFIX_RE.match(safe_name)
+    if managed_match:
+        safe_name = _clean_upload_filename(managed_match.group("original"))
     if safe_name == source.name:
         return clean_path
     target = _safe_copy_target(source, prefix, safe_name)

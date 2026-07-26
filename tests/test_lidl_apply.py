@@ -2,7 +2,9 @@
 import os
 import sys
 import tempfile
+import hashlib
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -130,16 +132,73 @@ def test_identity_country_and_named_documents_are_filled_safely():
                 assert lidl_apply._fill_labeled(page, label, value)
             assert lidl_apply._select_ui5(page, "Land", "Danmark")
             assert lidl_apply._upload(
-                page, 'input[name="EACVUploader"]', str(cv)
+                page, 'input[name="EACVUploader"]', str(cv), "cv"
             )
             assert lidl_apply._upload(
-                page, 'input[name="EACoverLetterUploader"]', str(cover)
+                page, 'input[name="EACoverLetterUploader"]', str(cover), "cover"
             )
             assert page.locator('input[name="EAOtherDocumentUploader"]').evaluate(
                 "e => e.files.length"
             ) == 0
             assert page.locator("#btnSend").evaluate("e => e.clicks || 0") == 0
             assert lidl_apply._screening_question_count(page) == 1
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_bulk_lidl_cover_is_uploaded_with_readable_name_and_identical_bytes():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <input type="file" name="EACVUploader">
+          <input type="file" name="EACoverLetterUploader">
+          <input type="file" name="EAOtherDocumentUploader">
+        """)
+        with tempfile.TemporaryDirectory() as directory:
+            uploads = Path(directory) / "uploads"
+            uploads.mkdir()
+            source = uploads / (
+                "bulk_doc_ba2538ff07_"
+                "Ivan_Malamen_Cover_Letter_Lidl_EN_DA.pdf"
+            )
+            payload = b"%PDF-1.4\nLidl cover letter test\n%%EOF"
+            source.write_bytes(payload)
+
+            with mock.patch.object(
+                lidl_apply.profile_store, "UPLOAD_DIR", uploads
+            ):
+                assert lidl_apply._upload(
+                    page,
+                    'input[name="EACoverLetterUploader"]',
+                    str(source),
+                    "cover",
+                )
+
+            uploaded = page.locator(
+                'input[name="EACoverLetterUploader"]'
+            ).evaluate(
+                """element => ({
+                    name: element.files[0]?.name || '',
+                    size: element.files[0]?.size || 0
+                })"""
+            )
+            alias = uploads / uploaded["name"]
+
+            assert uploaded["name"] == (
+                "cover_Ivan_Malamen_Cover_Letter_Lidl_EN_DA.pdf"
+            )
+            assert uploaded["size"] == len(payload)
+            assert alias.read_bytes() == source.read_bytes()
+            assert hashlib.sha256(alias.read_bytes()).digest() == hashlib.sha256(
+                source.read_bytes()
+            ).digest()
+            assert page.locator(
+                'input[name="EACVUploader"]'
+            ).evaluate("element => element.files.length") == 0
+            assert page.locator(
+                'input[name="EAOtherDocumentUploader"]'
+            ).evaluate("element => element.files.length") == 0
     finally:
         browser.close()
         playwright.stop()

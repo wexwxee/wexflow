@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import profile_store
 from connectors.fill_common import add_banner, dismiss_cookies
 
 
@@ -168,11 +169,12 @@ def _select_ui5(page, label: str, value: str) -> bool:
     return False
 
 
-def _upload(page, selector: str, path: str) -> bool:
+def _upload(page, selector: str, path: str, role: str = "document") -> bool:
     path = str(path or "").strip()
     if not path or not Path(path).is_file():
         return False
     try:
+        path = profile_store.safe_document_upload_path(path, role)
         control = page.locator(selector).first
         if control.count():
             control.set_input_files(path)
@@ -327,10 +329,10 @@ def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
         filled.append("country")
     _wait_for_picker_to_close(page)
     if _upload(page, 'input[type="file"][name="EACVUploader"]',
-               profile.get("cv_path") or ""):
+               profile.get("cv_path") or "", "cv"):
         filled.append("CV")
     if _upload(page, 'input[type="file"][name="EACoverLetterUploader"]',
-               profile.get("cover_letter_path") or ""):
+               profile.get("cover_letter_path") or "", "cover"):
         filled.append("cover letter")
 
     questions = _screening_question_count(page)
