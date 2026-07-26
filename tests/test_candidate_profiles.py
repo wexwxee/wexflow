@@ -195,6 +195,7 @@ def test_remove_global_document_clears_only_selected_profile_field():
 
 def test_profile_controls_and_remove_buttons_are_present():
     sidebar = Path("templates/_ui.html").read_text(encoding="utf-8")
+    help_page = Path("templates/help.html").read_text(encoding="utf-8")
     settings = Path("templates/settings.html").read_text(encoding="utf-8")
     assert "data-candidate-profile-open" in sidebar
     assert "Новый профиль человека" in sidebar
@@ -207,6 +208,10 @@ def test_profile_controls_and_remove_buttons_are_present():
     assert "@wexflowbot" in sidebar
     assert "WexFlow — открыт или работать в трее" in sidebar
     assert "Копировать приглашение" in sidebar
+    assert ">Помощь</span>" in sidebar
+    assert "Сайт подтвердил" in help_page
+    assert "Как работают профили семьи" in help_page
+    assert "использует только его CV и мотивационное письмо" in help_page
     assert "Telegram каждого человека связан только с его профилем" in sidebar
     assert 'name="remove_document" value="cv"' in settings
     assert 'name="remove_document" value="cover"' in settings

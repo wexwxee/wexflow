@@ -324,11 +324,11 @@ def _sync_account_from_cloud() -> None:
         account_mod.apply_cloud_session(user)
 
 
-def _report_apply_result_safe(job_id: str, state: str, msg: str = "") -> None:
+def _report_apply_result_safe(job_id: str, state: str, msg: str = "") -> bool:
     try:
-        cloud_auth.report_apply_result(job_id, state, msg)
+        return bool(cloud_auth.report_apply_result(job_id, state, msg))
     except Exception:  # noqa: BLE001
-        pass
+        return False
 
 
 # ── Сериализатор автоматической подачи ──────────────────────────────────
@@ -348,6 +348,7 @@ _manual_apply_lock = threading.Lock()
 _last_manual_apply_ts = 0.0
 _connector_launch_lock = threading.Lock()
 _connector_launches: dict[str, float] = {}
+_connector_processes: dict[str, subprocess.Popen] = {}
 
 
 # Последний запущенный НАМИ воркер подачи (шаг 4): пока держим живой хэндл,
@@ -440,9 +441,19 @@ def _claim_connector_launch(job_id: str, cooldown: float = 10.0) -> bool:
     now = time.monotonic()
     key = str(job_id or "")
     with _connector_launch_lock:
-        stale = [item for item, ts in _connector_launches.items() if now - ts > 300]
+        stale = [
+            item for item, ts in _connector_launches.items()
+            if now - ts > 300 and (
+                _connector_processes.get(item) is None
+                or _connector_processes[item].poll() is not None
+            )
+        ]
         for item in stale:
             _connector_launches.pop(item, None)
+            _connector_processes.pop(item, None)
+        active_proc = _connector_processes.get(key)
+        if key in _connector_launches and active_proc is not None and active_proc.poll() is None:
+            return False
         if now - _connector_launches.get(key, -cooldown) < cooldown:
             return False
         _connector_launches[key] = now
@@ -451,7 +462,9 @@ def _claim_connector_launch(job_id: str, cooldown: float = 10.0) -> bool:
 
 def _release_connector_launch(job_id: str) -> None:
     with _connector_launch_lock:
-        _connector_launches.pop(str(job_id or ""), None)
+        key = str(job_id or "")
+        _connector_launches.pop(key, None)
+        _connector_processes.pop(key, None)
 
 
 def _enqueue_auto_submit(ids) -> None:
@@ -753,6 +766,12 @@ def _handle_tg_decisions(decisions: list) -> None:
                     "Форма открыта на ПК и заполнена. Проверь ответы и отправь сам."
                 ),
             )
+            threading.Thread(
+                target=_watch_connector_result_for_phone,
+                args=(job.id, source),
+                daemon=True,
+                name=f"connector-result-{str(job.id)[:24]}",
+            ).start()
         except Exception as exc:  # noqa: BLE001
             _release_connector_launch(job.id)
             applications.mark_failed([job.id], source=source)
@@ -2532,6 +2551,9 @@ def _launch_connector_filler(
     if sys.platform == "win32":
         kwargs["creationflags"] = 0x00000008 | 0x00000200
     proc = subprocess.Popen(cmd, **kwargs)
+    with _connector_launch_lock:
+        if job_id in _connector_launches:
+            _connector_processes[job_id] = proc
 
     deadline = time.monotonic() + 15.0
     last_state = ""
@@ -2563,6 +2585,51 @@ def _launch_connector_filler(
         "браузер не подтвердил запуск за 15 секунд"
         + (f" (этап: {last_state})" if last_state else "")
     )
+
+
+def _watch_connector_result_for_phone(job_id: str, source: str) -> None:
+    """Send a phone result only from the connector worker's real status.
+
+    For Lidl, ``submitted`` is written only after the receipt is visible. If
+    the browser closes without that receipt, the phone must say
+    "not confirmed", never "submitted".
+    """
+    wanted = str(job_id or "")
+    path = _connector_status_path(wanted)
+    while not _tg_stop.is_set():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            payload = {}
+        state = str(payload.get("state") or "")
+        message = str(payload.get("message") or "").strip()
+        if str(payload.get("job_id") or "") == wanted and state == "submitted":
+            _report_apply_result_safe(
+                wanted, "submitted",
+                message or "Сайт подтвердил получение заявки.",
+            )
+            _release_connector_launch(wanted)
+            _sync_applied_to_cloud(force=True)
+            return
+        if str(payload.get("job_id") or "") == wanted and state == "error":
+            applications.mark_failed([wanted], source=source)
+            _report_apply_result_safe(
+                wanted, "failed",
+                message or "Окно подачи завершилось с ошибкой.",
+            )
+            _release_connector_launch(wanted)
+            return
+        with _connector_launch_lock:
+            proc = _connector_processes.get(wanted)
+        if proc is not None and proc.poll() is not None:
+            applications.mark_failed([wanted], source=source)
+            _report_apply_result_safe(
+                wanted, "failed",
+                "Окно закрыто, но сайт не подтвердил получение заявки.",
+            )
+            _release_connector_launch(wanted)
+            return
+        _tg_stop.wait(1.0)
 
 
 @app.post("/apply-by-link/start")

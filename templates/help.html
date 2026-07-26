@@ -2,7 +2,7 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}WexFlow · Справка{% endblock %}
+{% block title %}WexFlow · Помощь{% endblock %}
 
 {% block style %}
 <style>
@@ -39,7 +39,7 @@
 {{ ui.shell_start('help') }}
 <header class="wex-topbar">
   <div class="wex-title-stack">
-    <h1>{{ ui.brand('Справка') }}</h1>
+    <h1>{{ ui.brand('Помощь') }}</h1>
     <span class="wex-title-meta">Коротко о том, как всё работает</span>
   </div>
   <div class="wex-topbar-spacer"></div>
@@ -112,6 +112,16 @@
   <details class="faq-item">
     <summary><span class="faq-q">Зачем нужен Telegram?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
     <div class="faq-a">Чтобы получать новые вакансии на телефон и подтверждать подачу кнопкой ✅ прямо оттуда, а тариф и профиль не терялись при переносе на другой компьютер. Вход — в разделе <b>«Аккаунт»</b>.</div>
+  </details>
+
+  <details class="faq-item" open>
+    <summary><span class="faq-q">Как подать с телефона и понять, что заявка точно ушла?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">Открой <b>@wexflowbot → «Панель» → «Все вакансии»</b> и нажми «Подать». На телефоне появится полоса с четырьмя реальными этапами: <b>«В очереди» → «ПК принял» → «Форма» → «Сайт подтвердил»</b>. Только последний этап окрашивается в зелёный и означает, что сайт работодателя подтвердил получение. Надпись «ПК принял» ещё не означает, что заявка отправлена. Если подтверждения нет, WexFlow честно оставит ожидание или покажет ошибку.</div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-q">Как работают профили семьи и отдельные Telegram?</span><span class="faq-chev">{{ ic.i('nav', 15) }}</span></summary>
+    <div class="faq-a">В «Профилях людей» создай отдельный профиль и отправь человеку приглашение. Он открывает его в своём Telegram, запускает <b>@wexflowbot</b> и нажимает «Открыть свою панель». Когда он подаёт с телефона, свободный WexFlow на семейном ПК сам переключается на его профиль и использует только его CV и мотивационное письмо. Для выполнения заявки компьютер должен быть включён, а WexFlow — открыт или работать в трее.</div>
   </details>
 
   <div class="faq-sec">Обновления и проблемы</div>

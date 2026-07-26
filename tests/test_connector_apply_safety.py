@@ -39,6 +39,11 @@ class _LiveProcess:
         return None
 
 
+class _ClosedProcess:
+    def poll(self):
+        return 0
+
+
 def test_connector_filler_waits_for_real_browser_confirmation():
     with tempfile.TemporaryDirectory() as folder:
         status = Path(folder) / "status.json"
@@ -103,6 +108,56 @@ def test_connector_filler_surfaces_worker_error_instead_of_green_success():
                 assert "профиль кандидата" in str(exc)
             else:
                 raise AssertionError("worker error was reported as success")
+
+
+def test_phone_gets_confirmed_only_from_connector_receipt():
+    with tempfile.TemporaryDirectory() as folder:
+        status = Path(folder) / "status.json"
+        status.write_text(json.dumps({
+            "job_id": "lidl:confirmed", "state": "submitted",
+            "message": "Lidl подтвердил получение заявки.",
+        }, ensure_ascii=False), encoding="utf-8")
+        app._connector_launches["lidl:confirmed"] = 1.0
+        app._connector_processes["lidl:confirmed"] = _LiveProcess()
+        with mock.patch.object(app, "_connector_status_path", return_value=status), \
+                mock.patch.object(app, "_report_apply_result_safe", return_value=True) as report, \
+                mock.patch.object(app, "_sync_applied_to_cloud") as sync:
+            app._watch_connector_result_for_phone("lidl:confirmed", "lidl")
+        report.assert_called_once_with(
+            "lidl:confirmed", "submitted", "Lidl подтвердил получение заявки.",
+        )
+        sync.assert_called_once_with(force=True)
+        assert "lidl:confirmed" not in app._connector_launches
+        assert "lidl:confirmed" not in app._connector_processes
+
+
+def test_phone_gets_unconfirmed_when_connector_closes_without_receipt():
+    with tempfile.TemporaryDirectory() as folder:
+        status = Path(folder) / "status.json"
+        status.write_text(json.dumps({
+            "job_id": "lidl:closed", "state": "submit_ready",
+        }), encoding="utf-8")
+        app._connector_launches["lidl:closed"] = 1.0
+        app._connector_processes["lidl:closed"] = _ClosedProcess()
+        with mock.patch.object(app, "_connector_status_path", return_value=status), \
+                mock.patch.object(app.applications, "mark_failed") as failed, \
+                mock.patch.object(app, "_report_apply_result_safe", return_value=True) as report:
+            app._watch_connector_result_for_phone("lidl:closed", "lidl")
+        failed.assert_called_once_with(["lidl:closed"], source="lidl")
+        report.assert_called_once_with(
+            "lidl:closed", "failed",
+            "Окно закрыто, но сайт не подтвердил получение заявки.",
+        )
+
+
+def test_live_connector_process_cannot_be_reclaimed_after_five_minutes():
+    job_id = "lidl:still-open"
+    app._connector_launches[job_id] = app.time.monotonic() - 360
+    app._connector_processes[job_id] = _LiveProcess()
+    try:
+        assert app._claim_connector_launch(job_id) is False
+    finally:
+        app._release_connector_launch(job_id)
 
 
 def test_connector_crash_does_not_turn_successful_salling_sync_into_failure():
