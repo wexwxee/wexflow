@@ -576,19 +576,31 @@ def _watch_and_report_apply_batch(job_ids: list[str], proc=None,
     pending = set(ids)
 
     def _settle(states: dict) -> None:
-        """Разнести итоги воркера: ok → в реестр поданных, failed → в failed."""
+        """Разнести подтверждённые, неподтверждённые и ошибочные итоги."""
         ok_ids = [jid for jid in list(pending) if states.get(jid) == "ok"]
+        unconfirmed_ids = [
+            jid for jid in list(pending) if states.get(jid) == "unconfirmed"
+        ]
         failed_ids = [jid for jid in list(pending) if states.get(jid) == "failed"]
-        if ok_ids:
-            pending.difference_update(ok_ids)
+        recorded_ids = ok_ids + unconfirmed_ids
+        if recorded_ids:
+            pending.difference_update(recorded_ids)
             try:
                 with get_session() as s:
-                    jobs = [s.get(Job, jid) for jid in ok_ids]
+                    jobs = [s.get(Job, jid) for jid in recorded_ids]
                 autopilot.record_submitted([j for j in jobs if j is not None])
             except Exception:  # noqa: BLE001 — реестр не должен ронять разбор итогов
                 pass
             for jid in ok_ids:
-                _report_apply_result_safe(jid, "submitted", "Заявка отправлена")
+                _report_apply_result_safe(
+                    jid, "submitted",
+                    "Сайт показал квитанцию и подтвердил получение заявки.",
+                )
+            for jid in unconfirmed_ids:
+                _report_apply_result_safe(
+                    jid, "unconfirmed",
+                    "Форма исчезла, но сайт не показал квитанцию. Проверь письмо или кабинет Salling.",
+                )
         if failed_ids:
             pending.difference_update(failed_ids)
             autopilot.clear_submitting(failed_ids)
@@ -628,7 +640,16 @@ def _watch_and_report_apply_batch(job_ids: list[str], proc=None,
                 job = s.get(Job, jid)
                 if job is not None and job.status == "applied":
                     autopilot.record_submitted([job])
-                    _report_apply_result_safe(jid, "submitted", "Заявка отправлена")
+                    if str(job.applied_confidence or "").lower() == "receipt":
+                        _report_apply_result_safe(
+                            jid, "submitted",
+                            "Сайт показал квитанцию и подтвердил получение заявки.",
+                        )
+                    else:
+                        _report_apply_result_safe(
+                            jid, "unconfirmed",
+                            "Заявка сохранена без квитанции сайта. Проверь письмо или кабинет.",
+                        )
                 else:
                     really_failed.append(jid)
     except Exception:  # noqa: BLE001
@@ -642,6 +663,8 @@ def _watch_and_report_apply_batch(job_ids: list[str], proc=None,
 def _apply_result_msg(state: str, reason: str) -> str:
     if state == "submitted":
         return "Уже подано"
+    if state == "unconfirmed":
+        return "Сохранено без квитанции — проверь письмо или кабинет"
     if state == "submitting":
         return "Подача уже запущена"
     return {
@@ -789,7 +812,7 @@ def _handle_tg_decisions(decisions: list) -> None:
     for item in result.get("skipped") or []:
         jid = item.get("job_id")
         state = item.get("state")
-        if jid and state in ("submitting", "submitted", "failed"):
+        if jid and state in ("submitting", "submitted", "unconfirmed", "failed"):
             _report_apply_result_safe(jid, state, _apply_result_msg(state, item.get("reason", "")))
 
 
@@ -865,6 +888,7 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
                 "hours": f"{job.hours} ч/нед" if job.hours else "",
                 "url": job.application_link or "",
                 "ts": ts,
+                "confidence": str(job.applied_confidence or "").strip().lower(),
             })
         digest = _sync_digest(items)
         if not force and digest and _cloud_sync_sent_hash.get("applied") == digest:

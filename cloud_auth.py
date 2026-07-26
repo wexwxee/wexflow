@@ -504,7 +504,8 @@ def send_command_result(command: dict, text: str, timeout: int = 10) -> bool:
 
 def report_apply_result(job_id: str, state: str, msg: str = "", timeout: int = 8) -> bool:
     """Сообщить облаку статус подачи вакансии — для «живого эфира» в Mini App-панели.
-    state: submitting | submitted | failed. Панель опрашивает result:<device>:<job>."""
+    state: submitting | submitted | unconfirmed | failed.
+    Панель опрашивает result:<device>:<job>."""
     payload = {
         "kind": "apply_result",
         "deviceId": device_id(),

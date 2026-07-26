@@ -54,9 +54,10 @@ class _FakeProc:
 
 
 class _FakeJob:
-    def __init__(self, jid, status="new", title="t"):
+    def __init__(self, jid, status="new", title="t", confidence="receipt"):
         self.id, self.status, self.title = jid, status, title
         self.applied_at = None
+        self.applied_confidence = confidence
 
 
 class _FakeSession:
@@ -109,6 +110,26 @@ def test_settles_from_worker_file():
         assert p.submitted == ["A"], p.submitted
         assert p.failed == ["B"], p.failed
         assert ("A", "submitted") in p.reports and ("B", "failed") in p.reports
+
+
+def test_unconfirmed_worker_result_never_reports_submitted():
+    with _TempData() as d, _Patched(
+        db_jobs={"A": _FakeJob("A", "applied", confidence="indirect")}
+    ) as p:
+        _write_progress(d, [{"id": "A", "state": "unconfirmed"}])
+        app._watch_and_report_apply_batch(["A"], _FakeProc(0), spawn_ts=time.time() - 30)
+        assert p.submitted == ["A"], "запись должна остаться в защите от дублей"
+        assert ("A", "unconfirmed") in p.reports
+        assert ("A", "submitted") not in p.reports
+
+
+def test_db_fallback_requires_receipt_for_green_success():
+    with _TempData() as d, _Patched(
+        db_jobs={"A": _FakeJob("A", "applied", confidence="indirect")}
+    ) as p:
+        app._watch_and_report_apply_batch(["A"], _FakeProc(0), spawn_ts=time.time())
+        assert ("A", "unconfirmed") in p.reports
+        assert ("A", "submitted") not in p.reports
 
 
 def test_stale_progress_file_ignored():

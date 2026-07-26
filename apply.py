@@ -960,6 +960,16 @@ def _mark_applied(job_id: str, confidence: str = "receipt"):
     print(f"  ⚠ НЕ смог отметить applied после повторов — проверь вручную: {last_err}")
 
 
+def _applied_confidence(job_id: str) -> str:
+    """Вернуть сохранённый способ подтверждения заявки."""
+    try:
+        with get_session() as s:
+            job = s.get(Job, str(job_id))
+            return str(getattr(job, "applied_confidence", "") or "").strip().lower()
+    except Exception:
+        return ""
+
+
 def _job_for_ai(job: Job) -> dict:
     return {
         "title": job.title or "",
@@ -1118,6 +1128,7 @@ def _cloud_progress(prog: dict) -> None:
             "total": prog.get("total"),
             "done": prog.get("done"),
             "ok": prog.get("ok"),
+            "unconfirmed": prog.get("unconfirmed"),
             "failed": prog.get("failed"),
             "current": prog.get("current"),
             "updated_at": prog.get("updated_at"),
@@ -1151,6 +1162,8 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
           f"ИИ {'включён' if ai_fill else 'выключен'}")
 
     submitted = 0
+    confirmed = 0
+    unconfirmed = 0
     with sync_playwright() as p:
         ctx = _launch_browser(p)
         if effective_concurrency <= 1:
@@ -1158,7 +1171,7 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
             items = [{"id": j.id, "title": j.title, "city": j.city, "state": "pending"} for j in jobs]
             prog = {
                 "active": True, "mode": "submit" if submit else "dry",
-                "total": len(jobs), "done": 0, "ok": 0, "failed": 0,
+                "total": len(jobs), "done": 0, "ok": 0, "unconfirmed": 0, "failed": 0,
                 "current": None, "items": items,
                 "started_at": _now_iso(), "updated_at": _now_iso(), "finished_at": None,
             }
@@ -1184,9 +1197,23 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 if submit:
                     if ok:
                         submitted += 1
-                        items[i]["state"] = "ok"
-                        prog["ok"] += 1
-                        _cloud_report(job.id, "submitted", "Заявка отправлена")
+                        confidence = _applied_confidence(job.id)
+                        if confidence == "receipt":
+                            confirmed += 1
+                            items[i]["state"] = "ok"
+                            prog["ok"] += 1
+                            _cloud_report(
+                                job.id, "submitted",
+                                "Сайт показал квитанцию и подтвердил получение заявки.",
+                            )
+                        else:
+                            unconfirmed += 1
+                            items[i]["state"] = "unconfirmed"
+                            prog["unconfirmed"] += 1
+                            _cloud_report(
+                                job.id, "unconfirmed",
+                                "Форма исчезла, но сайт не показал квитанцию. Проверь письмо или кабинет Salling.",
+                            )
                     else:
                         items[i]["state"] = "failed"
                         prog["failed"] += 1
@@ -1210,9 +1237,12 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
             _write_progress(prog)
             if submit:
                 _cloud_progress(prog)
-                print(f"\n========\nИТОГ: реально отправлено и отмечено «подано»: {submitted} из {len(jobs)}")
-                if submitted < len(jobs):
-                    print("Остальные не подтвердили отправку — проверь их вручную.")
+                print(
+                    f"\n========\nИТОГ: сайт подтвердил квитанцией: {confirmed} из {len(jobs)}; "
+                    f"без квитанции: {unconfirmed}; не подтверждено: {len(jobs) - submitted}."
+                )
+                if unconfirmed:
+                    print("Заявки без квитанции сохранены от дублей, но их нужно проверить по письму или кабинету.")
             else:
                 print(f"\n========\nПрогон завершён ({len(jobs)} вакансий обработано) — НЕ отправлял, ничего не отмечал.")
 
