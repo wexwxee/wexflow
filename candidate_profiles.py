@@ -14,6 +14,7 @@ from pathlib import Path
 APP_NAME = "WexFlow"
 PRIMARY_ID = "primary"
 REGISTRY_FILENAME = "candidate_profiles.json"
+REMOTE_SWITCH_FILENAME = "candidate_profile_switch.json"
 _LOCK = threading.RLock()
 
 
@@ -30,6 +31,10 @@ def storage_root() -> Path:
 
 def registry_path(root: Path | None = None) -> Path:
     return Path(root or storage_root()) / REGISTRY_FILENAME
+
+
+def remote_switch_path(root: Path | None = None) -> Path:
+    return Path(root or storage_root()) / REMOTE_SWITCH_FILENAME
 
 
 def data_dir(profile_id: str, root: Path | None = None) -> Path:
@@ -172,6 +177,49 @@ def set_active(profile_id: str, root: Path | None = None) -> dict:
         data_dir(profile_id, base).mkdir(parents=True, exist_ok=True)
         _save(state, base)
         return profile
+
+
+def get_profile(profile_id: str, root: Path | None = None) -> dict | None:
+    profile_id = str(profile_id or "").strip()
+    return next((p for p in load(root)["profiles"] if p["id"] == profile_id), None)
+
+
+def request_remote_switch(profile_id: str, root: Path | None = None) -> dict:
+    """Ask the native desktop shell to restart into an existing candidate.
+
+    The web worker cannot safely hot-swap SQLAlchemy/browser/profile module
+    globals, so it writes a tiny authenticated local hand-off. The native shell
+    consumes it and performs the same clean restart as a manual profile switch.
+    """
+    base = Path(root or storage_root())
+    profile = get_profile(profile_id, base)
+    if profile is None:
+        raise ValueError("Профиль не найден.")
+    path = remote_switch_path(base)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps({
+        "profile_id": profile["id"],
+        "requested_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }, ensure_ascii=False), encoding="utf-8")
+    os.replace(temp, path)
+    return profile
+
+
+def take_remote_switch(root: Path | None = None) -> dict | None:
+    """Atomically consume a pending remote switch request, if valid."""
+    base = Path(root or storage_root())
+    path = remote_switch_path(base)
+    with _LOCK:
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, AttributeError):
+            return None
+        try:
+            path.unlink()
+        except OSError:
+            return None
+        return get_profile(str(raw.get("profile_id") or ""), base)
 
 
 def ui_state(root: Path | None = None) -> dict:

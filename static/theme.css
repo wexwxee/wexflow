@@ -457,6 +457,12 @@ body.candidate-profile-open { overflow: hidden; }
   cursor: pointer;
 }
 .candidate-profile-list { display: grid; gap: 8px; }
+.candidate-profile-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
 .candidate-profile-row {
   width: 100%;
   display: flex;
@@ -470,6 +476,50 @@ body.candidate-profile-open { overflow: hidden; }
   text-align: left;
   cursor: pointer;
 }
+.candidate-profile-invite {
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--glass-line));
+  border-radius: 12px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-2));
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.candidate-profile-invite:hover { background: color-mix(in srgb, var(--accent) 14%, var(--card-2)); }
+.candidate-profile-invite:disabled { opacity: .55; cursor: wait; }
+.candidate-profile-invite-card {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--glass-line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-2));
+}
+.candidate-profile-invite-card[hidden] { display: none; }
+.candidate-profile-invite-card > p { margin: 5px 0 11px; color: var(--muted); font-size: 12px; }
+.candidate-profile-invite-code,
+.candidate-profile-invite-actions { display: flex; gap: 8px; align-items: center; }
+.candidate-profile-invite-code code {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--txt-strong);
+  font-size: 17px;
+  letter-spacing: .12em;
+  text-align: center;
+}
+.candidate-profile-invite-card button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--txt);
+  font-weight: 750;
+  cursor: pointer;
+}
+.candidate-profile-invite-actions { margin-top: 8px; justify-content: flex-end; }
 .candidate-profile-row:hover {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--glass-line));
 }
@@ -583,6 +633,8 @@ body.candidate-profile-open { overflow: hidden; }
 .candidate-profile-error { margin: 8px 0 0; color: var(--err-txt); font-size: 13px; }
 .candidate-profile-note { margin-top: 14px; }
 @media (max-width: 560px) {
+  .candidate-profile-item { grid-template-columns: 1fr; }
+  .candidate-profile-invite { min-height: 40px; }
   .candidate-profile-add-controls { grid-template-columns: 1fr; }
   .candidate-profile-add button { min-height: 44px; }
   .candidate-profile-action { font-size: 0; }

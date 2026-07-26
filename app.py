@@ -392,6 +392,38 @@ def _submit_in_progress() -> bool:
     return _apply_runner_busy or _apply_progress_active()
 
 
+def _desktop_busy_for_profile_switch() -> bool:
+    with _connector_launch_lock:
+        connector_busy = bool(_connector_launches)
+    return _submit_in_progress() or bool(_sync_state.get("running")) or connector_busy
+
+
+def _cloud_profile_enabled() -> bool:
+    """Family candidates use the device's cloud binding, not the owner's login."""
+    return account_mod.is_signed_in() or not candidate_profiles.is_primary()
+
+
+def _tg_item_profile(item: dict) -> str:
+    return str((item or {}).get("profileId") or candidate_profiles.PRIMARY_ID)
+
+
+def _partition_tg_items(items: list, active_profile_id: str) -> tuple[list, list, list]:
+    """Split a device queue into current, another valid candidate, and invalid."""
+    current, other, invalid = [], [], []
+    for item in items or []:
+        if not isinstance(item, dict):
+            invalid.append(item)
+            continue
+        profile_id = _tg_item_profile(item)
+        if profile_id == active_profile_id:
+            current.append(item)
+        elif candidate_profiles.get_profile(profile_id):
+            other.append(item)
+        else:
+            invalid.append(item)
+    return current, other, invalid
+
+
 def _claim_apply_slot() -> bool:
     """Занять «слот» ручной подачи. False — если подача уже идёт или была запущена
     только что (двойной клик). True — слот занят, можно запускать."""
@@ -732,7 +764,7 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
     чтобы раздел «Поданные» в Mini App был виден (подал на ПК → видно в телефоне),
     а поданные карточки ушли из «ждут решения»."""
     global _applied_sync_last
-    if not account_mod.is_signed_in():
+    if not _cloud_profile_enabled():
         return False
     attempt = _begin_cloud_sync("applied", _applied_sync_last, 300, force)
     if attempt is None:
@@ -837,7 +869,7 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
     Синк троттлим, чтобы не жечь Upstash.
     """
     global _jobs_sync_last
-    if not account_mod.is_signed_in():
+    if not _cloud_profile_enabled():
         return False
     attempt = _begin_cloud_sync("jobs", _jobs_sync_last, 900, force)
     if attempt is None:
@@ -916,7 +948,7 @@ def _sync_job_texts_to_cloud(force: bool = False) -> bool:
     pending (панель покажет датский + «готовится»), а если переводчик совсем
     недоступен — unavailable. Отпечатки отправленного не гоняем повторно."""
     global _jobtexts_sync_last
-    if not account_mod.is_signed_in():
+    if not _cloud_profile_enabled():
         return False
     attempt = _begin_cloud_sync("jobtexts", _jobtexts_sync_last, 600, force)
     if attempt is None:
@@ -1051,7 +1083,7 @@ def _sync_filters_to_cloud(force: bool = False) -> bool:
     значения + варианты (категории/сети со счётчиками), чтобы панель ничего не
     выдумывала сама. Троттлинг — как у jobs_sync."""
     global _filters_sync_last
-    if not account_mod.is_signed_in():
+    if not _cloud_profile_enabled():
         return False
     attempt = _begin_cloud_sync("filters", _filters_sync_last, 900, force)
     if attempt is None:
@@ -1163,8 +1195,9 @@ def _tg_poller_loop() -> None:
         signed_in = False
         had_work = False
         try:
-            _sync_account_from_cloud()
-            signed_in = account_mod.is_signed_in()
+            if candidate_profiles.is_primary():
+                _sync_account_from_cloud()
+            signed_in = _cloud_profile_enabled()
             # Явный локальный выход означает «не слушать старый Telegram».
             # Войти снова можно только осознанно со страницы аккаунта.
             if not signed_in:
@@ -1197,22 +1230,43 @@ def _tg_poller_loop() -> None:
                 decisions = cycle.get("decisions") or []
                 commands = cycle.get("commands") or []
                 had_work = bool(decisions or commands)
-                _handle_tg_decisions(decisions)
+                active_profile_id = candidate_profiles.active_profile_id()
+                current_decisions, other_decisions, invalid_decisions = _partition_tg_items(
+                    decisions, active_profile_id)
+                current_commands, other_commands, invalid_commands = _partition_tg_items(
+                    commands, active_profile_id)
+                _handle_tg_decisions(current_decisions)
                 _sync_applied_to_cloud()  # одно облако: держим «Поданные» свежими (троттлинг 30с)
                 _sync_jobs_to_cloud()     # фаза 2b: список подходящих вакансий в Mini App
                 _sync_job_texts_to_cloud()  # полные тексты вакансий для экрана детали в панели
                 _sync_filters_to_cloud()  # текущие фильтры + варианты для настройки с телефона
-                for cmd in commands:
+                for cmd in current_commands:
                     if _tg_remote_command_expired(cmd):
                         continue
                     result_text = _handle_tg_remote_command(cmd)
                     if result_text:  # пустой ответ (напр. ИИ-диалог) в чат не шлём
                         cloud_auth.send_command_result(cmd, result_text)
+                for cmd in invalid_commands:
+                    if isinstance(cmd, dict):
+                        cloud_auth.send_command_result(
+                            cmd, "⚠️ Профиль этой команды не найден на компьютере.")
                 # Подтверждаем (и тем «сливаем» очередь) только когда реально что-то
                 # пришло. Пустой ack на каждом холостом пульсе = лишний HTTP-запрос и
                 # лишние команды Redis — именно это доедало бесплатный лимит облака.
-                if cycle.get("ack") and (decisions or commands):
-                    cloud_auth.acknowledge_poll(decisions, commands)
+                handled_decisions = current_decisions + invalid_decisions
+                handled_commands = current_commands + invalid_commands
+                if cycle.get("ack") and (handled_decisions or handled_commands):
+                    cloud_auth.acknowledge_poll(handled_decisions, handled_commands)
+
+                # A command for another family member stays unacknowledged. Once
+                # the current candidate is idle, ask the native shell for the same
+                # clean restart used by manual profile switching. The new worker
+                # will poll and execute this exact queue item in the right profile.
+                waiting = other_decisions + other_commands
+                if waiting and not _desktop_busy_for_profile_switch():
+                    target_id = _tg_item_profile(waiting[0])
+                    candidate_profiles.request_remote_switch(target_id)
+                    had_work = True
         except Exception as e:  # noqa: BLE001 — слушатель не должен падать
             _tg_poll_state["fail_streak"] = int(_tg_poll_state.get("fail_streak") or 0) + 1
             _tg_poll_state["last_error"] = str(e)[:180]

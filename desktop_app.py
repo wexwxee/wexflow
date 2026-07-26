@@ -351,6 +351,34 @@ class WindowControls:
         self._restart_for_candidate()
         return {"ok": True, "profile": profile}
 
+    def create_candidate_invite(self, profile_id):
+        profile = candidate_profiles.get_profile(str(profile_id or ""))
+        if profile is None:
+            return {"ok": False, "error": "Профиль не найден."}
+        if profile["id"] == candidate_profiles.PRIMARY_ID:
+            return {
+                "ok": False,
+                "error": "Твой Telegram уже подключается через раздел «Аккаунт».",
+            }
+        try:
+            import cloud_auth
+            result = cloud_auth.create_profile_invite(profile["id"], profile["name"])
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"Не удалось создать приглашение: {exc}"}
+        if not result.get("ok"):
+            return {
+                "ok": False,
+                "error": result.get("error") or "Облако Telegram временно недоступно.",
+            }
+        return {
+            "ok": True,
+            "profile": profile,
+            "code": result.get("code") or "",
+            "inviteUrl": result.get("inviteUrl") or "",
+            "botUsername": result.get("botUsername") or "",
+            "expiresIn": int(result.get("expiresIn") or 900),
+        }
+
     def _native_fullscreen_state(self, window) -> bool | None:
         """Read pywebview's real state when its WinForms window is available."""
         native = getattr(window, "native", None)
@@ -1183,6 +1211,26 @@ def _on_window_closing(window):
     return False
 
 
+def _watch_remote_profile_switch(window):
+    """Let the server worker request a safe whole-app candidate restart."""
+    global _profile_restart_requested, _tray_quit
+    while not _stopping and not _profile_restart_requested:
+        request = candidate_profiles.take_remote_switch()
+        if request:
+            try:
+                candidate_profiles.set_active(request["id"])
+            except (ValueError, KeyError):
+                return
+            _profile_restart_requested = True
+            _tray_quit = True
+            try:
+                window.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            return
+        time.sleep(0.75)
+
+
 def _error_page(title: str, body_html: str, download_url: str) -> str:
     """HTML экрана ошибки с кнопкой «Скачать свежую версию» (открывает GitHub в
     браузере) и видимой ссылкой — на случай, если приложение сломалось и
@@ -1283,6 +1331,12 @@ def run_window(minimized: bool = False):
                 "(кнопка ниже) или добавь папку WexFlow в исключения антивируса.",
                 _rel),
             **win_kwargs)
+    threading.Thread(
+        target=_watch_remote_profile_switch,
+        args=(native_window,),
+        daemon=True,
+        name="candidate-profile-switch",
+    ).start()
     # перетаскивание — через pywebview drag-region (класс .desktop-drag),
     # ресайз — через window_chrome.js + resize_window. Нативный WndProc-хук на
     # родительском окне для WebView2 не работает (хиты ловит дочернее окно),

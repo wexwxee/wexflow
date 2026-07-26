@@ -219,7 +219,10 @@ def test_simple_telegram_message_returns_full_cloud_result():
     assert returned is result
     post.assert_called_once_with(
         "/api/offer",
-        {"deviceId": "device-42", "digest": True, "text": "hello"},
+        {
+            "deviceId": "device-42", "profileId": "primary",
+            "digest": True, "text": "hello",
+        },
         7,
     )
 

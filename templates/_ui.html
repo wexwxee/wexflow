@@ -51,20 +51,41 @@
         </div>
         <div class="candidate-profile-list">
           {% for person in candidate_state.profiles %}
-          <button type="button" class="candidate-profile-row {{ 'active' if person.active }}"
-                  data-candidate-profile-switch="{{ person.id }}" {{ 'disabled' if person.active }}>
-            <span class="candidate-profile-avatar">{{ person.initials }}</span>
-            <span class="candidate-profile-copy">
-              <b>{{ person.name }}</b>
-              <small>{{ 'Текущий профиль' if person.active else ('Ваш основной профиль' if person.primary else 'Отдельный чистый профиль') }}</small>
-            </span>
-            {% if person.active %}
-              <span class="candidate-profile-check">{{ ic.i('check', 17) }}</span>
-            {% else %}
-              <span class="candidate-profile-action">Открыть <span aria-hidden="true">›</span></span>
+          <div class="candidate-profile-item {{ 'active' if person.active }}">
+            <button type="button" class="candidate-profile-row {{ 'active' if person.active }}"
+                    data-candidate-profile-switch="{{ person.id }}" {{ 'disabled' if person.active }}>
+              <span class="candidate-profile-avatar">{{ person.initials }}</span>
+              <span class="candidate-profile-copy">
+                <b>{{ person.name }}</b>
+                <small>{{ 'Текущий профиль' if person.active else ('Ваш основной профиль' if person.primary else 'Отдельный чистый профиль') }}</small>
+              </span>
+              {% if person.active %}
+                <span class="candidate-profile-check">{{ ic.i('check', 17) }}</span>
+              {% else %}
+                <span class="candidate-profile-action">Открыть <span aria-hidden="true">›</span></span>
+              {% endif %}
+            </button>
+            {% if not person.primary %}
+            <button type="button" class="candidate-profile-invite"
+                    data-candidate-profile-invite="{{ person.id }}"
+                    title="Привязать Telegram к профилю {{ person.name }}">
+              {{ ic.i('send', 15) }} Пригласить в Telegram
+            </button>
             {% endif %}
-          </button>
+          </div>
           {% endfor %}
+        </div>
+        <div class="candidate-profile-invite-card" data-candidate-profile-invite-card hidden>
+          <b data-candidate-profile-invite-title>Приглашение готово</b>
+          <p>Отправь человеку ссылку или код. Код одноразовый и действует 15 минут.</p>
+          <div class="candidate-profile-invite-code">
+            <code data-candidate-profile-invite-code></code>
+            <button type="button" data-candidate-profile-copy-code>Копировать код</button>
+          </div>
+          <div class="candidate-profile-invite-actions">
+            <button type="button" data-candidate-profile-copy-link>Копировать ссылку</button>
+            <button type="button" data-candidate-profile-open-link>Открыть Telegram</button>
+          </div>
         </div>
         <form class="candidate-profile-add" data-candidate-profile-add>
           <div class="candidate-profile-add-head">
@@ -85,7 +106,8 @@
           <p class="candidate-profile-error" data-candidate-profile-error hidden></p>
         </form>
         <p class="candidate-profile-note">
-          При переключении WexFlow безопасно перезапустится. Подачи другого профиля здесь не появятся.
+          Telegram каждого человека связан только с его профилем. Если с телефона
+          придёт заявка другого профиля, свободный WexFlow сам переключится и продолжит её после перезапуска.
         </p>
       </section>
     </div>

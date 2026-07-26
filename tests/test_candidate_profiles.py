@@ -61,6 +61,41 @@ def test_duplicate_and_unknown_profiles_are_rejected():
             raise AssertionError("unknown profile id was accepted")
 
 
+def test_remote_switch_request_is_one_use_and_only_accepts_existing_profile():
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        sister = candidate_profiles.create_profile("Сестра", root, activate=False)
+
+        requested = candidate_profiles.request_remote_switch(sister["id"], root)
+        assert requested["id"] == sister["id"]
+        assert candidate_profiles.take_remote_switch(root)["id"] == sister["id"]
+        assert candidate_profiles.take_remote_switch(root) is None
+
+        try:
+            candidate_profiles.request_remote_switch("missing", root)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("remote switch accepted an unknown profile")
+
+
+def test_telegram_items_are_partitioned_by_candidate_profile():
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        sister = candidate_profiles.create_profile("Сестра", root, activate=False)
+        items = [
+            {"id": "legacy", "action": "scan"},
+            {"id": "sister", "action": "scan", "profileId": sister["id"]},
+            {"id": "forged", "action": "scan", "profileId": "person_missing"},
+        ]
+        with mock.patch.object(candidate_profiles, "storage_root", return_value=root):
+            current, other, invalid = app._partition_tg_items(items, candidate_profiles.PRIMARY_ID)
+
+        assert [item["id"] for item in current] == ["legacy"]
+        assert [item["id"] for item in other] == ["sister"]
+        assert [item["id"] for item in invalid] == ["forged"]
+
+
 def test_managed_upload_is_deleted_but_external_source_is_not():
     with TemporaryDirectory() as td:
         root = Path(td)
@@ -110,5 +145,7 @@ def test_profile_controls_and_remove_buttons_are_present():
     assert "Данные, документы и подачи начнутся с нуля" in sidebar
     assert "Создать профиль" in sidebar
     assert "candidate-profile-action" in sidebar
+    assert "data-candidate-profile-invite" in sidebar
+    assert "Telegram каждого человека связан только с его профилем" in sidebar
     assert 'name="remove_document" value="cv"' in settings
     assert 'name="remove_document" value="cover"' in settings

@@ -220,6 +220,51 @@
         }
       });
     });
+    var inviteCard = modal.querySelector("[data-candidate-profile-invite-card]");
+    var inviteCode = modal.querySelector("[data-candidate-profile-invite-code]");
+    var inviteTitle = modal.querySelector("[data-candidate-profile-invite-title]");
+    var inviteUrl = "";
+    async function copyInvite(value, button, original) {
+      try {
+        await navigator.clipboard.writeText(value);
+        button.textContent = "Скопировано ✓";
+        setTimeout(function () { button.textContent = original; }, 1400);
+      } catch (_) {
+        showError("Не получилось скопировать. Выдели код вручную.");
+      }
+    }
+    modal.querySelectorAll("[data-candidate-profile-invite]").forEach(function (button) {
+      button.addEventListener("click", async function () {
+        error.hidden = true;
+        var bridge = api();
+        if (!bridge || !bridge.create_candidate_invite) {
+          showError("Приглашение работает в окне приложения WexFlow.");
+          return;
+        }
+        button.disabled = true;
+        var result = await bridge.create_candidate_invite(button.dataset.candidateProfileInvite);
+        button.disabled = false;
+        if (!result || !result.ok) {
+          showError((result && result.error) || "Не получилось создать приглашение.");
+          return;
+        }
+        inviteUrl = result.inviteUrl || "";
+        inviteCode.textContent = result.code || "";
+        inviteTitle.textContent = "Telegram → " + ((result.profile && result.profile.name) || "профиль");
+        inviteCard.hidden = false;
+        inviteCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      });
+    });
+    modal.querySelector("[data-candidate-profile-copy-code]").addEventListener("click", function () {
+      copyInvite(inviteCode.textContent, this, "Копировать код");
+    });
+    modal.querySelector("[data-candidate-profile-copy-link]").addEventListener("click", function () {
+      if (inviteUrl) copyInvite(inviteUrl, this, "Копировать ссылку");
+    });
+    modal.querySelector("[data-candidate-profile-open-link]").addEventListener("click", function () {
+      var bridge = api();
+      if (inviteUrl && bridge && bridge.open_external) bridge.open_external(inviteUrl);
+    });
     var addForm = modal.querySelector("[data-candidate-profile-add]");
     addForm.addEventListener("submit", async function (event) {
       event.preventDefault();

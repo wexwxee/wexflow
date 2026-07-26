@@ -115,6 +115,15 @@ def device_secret() -> str:
     return _device_record()["secret"]
 
 
+def active_profile_id() -> str:
+    """Candidate scope attached to every cloud write."""
+    try:
+        import candidate_profiles
+        return candidate_profiles.active_profile_id()
+    except Exception:  # noqa: BLE001 - primary is the compatibility fallback
+        return "primary"
+
+
 _registered = False
 _register_lock = threading.Lock()
 
@@ -300,6 +309,15 @@ def link_new(timeout: int = 10) -> dict:
     return _post_json("/api/link/new", {"deviceId": device_id()}, timeout)
 
 
+def create_profile_invite(profile_id: str, profile_name: str, timeout: int = 10) -> dict:
+    """Create a one-use Telegram invite for an existing non-primary candidate."""
+    return _post_json("/api/link/new", {
+        "deviceId": device_id(),
+        "profileId": str(profile_id or ""),
+        "profileName": str(profile_name or "")[:40],
+    }, timeout)
+
+
 def rebind_start(timeout: int = 10) -> dict:
     """Шаг 1 перепривязки: попросить облако прислать код в СТАРЫЙ Telegram."""
     return _post_json("/api/rebind", {"action": "start", "device": device_id()}, timeout)
@@ -320,7 +338,8 @@ def offer(text: str, job_id: str, timeout: int = 15, *,
     job_payload = dict(job or {})
     job_payload["id"] = job_id
     payload = {
-        "deviceId": device_id(), "job": job_payload, "text": text, "panel": bool(panel),
+        "deviceId": device_id(), "profileId": active_profile_id(),
+        "job": job_payload, "text": text, "panel": bool(panel),
     }
     try:
         with _open(url, payload, timeout) as r:
@@ -341,13 +360,18 @@ def send_test_message(text: str, timeout: int = 10) -> dict:
     В отличие от send_digest возвращает полный ответ облака, чтобы мастер
     подключения мог объяснить needsBotStart и другие причины, а не просто False.
     """
-    payload = {"deviceId": device_id(), "digest": True, "text": str(text or "")[:2000]}
+    payload = {
+        "deviceId": device_id(), "profileId": active_profile_id(),
+        "digest": True, "text": str(text or "")[:2000],
+    }
     return _post_json("/api/offer", payload, timeout)
 
 
 def clear_panel(timeout: int = 5) -> bool:
     """Очистить сохранённые вакансии в Telegram Mini App для этого устройства."""
-    payload = {"deviceId": device_id(), "clearPanel": True}
+    payload = {
+        "deviceId": device_id(), "profileId": active_profile_id(), "clearPanel": True,
+    }
     return bool(_post_json("/api/offer", payload, timeout).get("ok"))
 
 
@@ -449,6 +473,7 @@ def send_command_result(command: dict, text: str, timeout: int = 10) -> bool:
     payload = {
         "kind": "command_result",
         "deviceId": device_id(),
+        "profileId": str(command.get("profileId") or active_profile_id()),
         "commandId": command.get("id") or "",
         "chatId": command.get("chatId") or "",
         "text": text,
@@ -462,6 +487,7 @@ def report_apply_result(job_id: str, state: str, msg: str = "", timeout: int = 8
     payload = {
         "kind": "apply_result",
         "deviceId": device_id(),
+        "profileId": active_profile_id(),
         "jobId": str(job_id),
         "state": str(state),
         "msg": str(msg or ""),
@@ -476,6 +502,7 @@ def report_applied(items, timeout: int = 8) -> bool:
     payload = {
         "kind": "applied_sync",
         "deviceId": device_id(),
+        "profileId": active_profile_id(),
         "applied": list(items or [])[:60],
     }
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
@@ -489,6 +516,7 @@ def report_jobs(items, timeout: int = 12) -> bool:
     payload = {
         "kind": "jobs_sync",
         "deviceId": device_id(),
+        "profileId": active_profile_id(),
         "jobs": list(items or [])[:500],
     }
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
@@ -501,6 +529,7 @@ def report_job_texts(items, timeout: int = 8) -> bool:
     payload = {
         "kind": "jobtext_sync",
         "deviceId": device_id(),
+        "profileId": active_profile_id(),
         "texts": list(items or [])[:40],
     }
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
@@ -512,6 +541,7 @@ def report_ai_reply(req_id: str, reply: str, done: bool, fields, error: str = ""
     payload = {
         "kind": "ai_reply",
         "deviceId": device_id(),
+        "profileId": active_profile_id(),
         "reqId": str(req_id or ""),
         "reply": str(reply or ""),
         "done": bool(done),
@@ -528,6 +558,7 @@ def report_filters(payload: dict, timeout: int = 8) -> bool:
     body = {
         "kind": "filters_sync",
         "deviceId": device_id(),
+        "profileId": active_profile_id(),
         "filters": dict(payload or {}),
     }
     return bool(_post_json("/api/decisions", body, timeout).get("ok"))
@@ -540,6 +571,7 @@ def report_apply_progress(progress: dict, timeout: int = 6) -> bool:
     payload = {
         "kind": "apply_progress",
         "deviceId": device_id(),
+        "profileId": active_profile_id(),
         "progress": progress or {},
     }
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
