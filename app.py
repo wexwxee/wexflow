@@ -725,9 +725,66 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
     return False
 
 
+CLOUD_JOBS_LIMIT = 500   # сколько вакансий держим в телефоне (как в приложении, но с потолком)
+
+
+def _all_active_jobs() -> list:
+    """Активные вакансии — ровно тот набор, что показывает главный экран
+    приложения (без закрытых, скрытых и поданных)."""
+    with get_session() as s:
+        return list(s.exec(select(Job).where(
+            Job.status.not_in(["closed", "hidden", "applied"]),
+            Job.applied_at.is_(None),
+        )).all())
+
+
+def _cloud_job_list(limit: int = CLOUD_JOBS_LIMIT) -> list[tuple]:
+    """Вакансии для телефона: сначала подходящие под фильтры, затем остальные
+    активные — тем же порядком, что на главном экране приложения (с домашним
+    адресом ближние сверху, без него — свежие). Возвращает [(job, is_match)].
+
+    Полностью весь список (тысячи вакансий) в облако не отправляем: телефон
+    качал бы мегабайты на каждом открытии панели, а лимит Upstash сгорал бы за
+    дни. Потолок CLOUD_JOBS_LIMIT покрывает всё, до чего реально можно доехать.
+    """
+    limit = max(0, int(limit))
+    skip = applications.submitted_ids() | applications.skipped_ids() | applications.submitting_ids()
+    home = settings_store.get_home()
+
+    matches = [j for j in autopilot.find_matches() if j.id not in skip]
+    matches.sort(key=lambda j: getattr(j, "first_seen", None) or utcnow(), reverse=True)
+    matches = matches[:limit]
+    out: list[tuple] = [(j, True) for j in matches]
+    if len(out) >= limit:
+        return out
+
+    taken = {j.id for j in matches}
+    rest = [j for j in _all_active_jobs() if j.id not in taken and j.id not in skip]
+
+    def _km(job) -> float:
+        if not home or job.lat is None or job.lon is None:
+            return 10 ** 9
+        try:
+            return geo.haversine_km(home["lat"], home["lon"], job.lat, job.lon)
+        except Exception:  # noqa: BLE001
+            return 10 ** 9
+
+    def _seen(job):
+        t = getattr(job, "first_seen", None) or utcnow()
+        return t.replace(tzinfo=None) if getattr(t, "tzinfo", None) else t
+
+    if home:
+        rest.sort(key=lambda j: (_km(j), -_seen(j).timestamp()))
+    else:
+        rest.sort(key=_seen, reverse=True)
+    out.extend((j, False) for j in rest[: limit - len(out)])
+    return out
+
+
 def _sync_jobs_to_cloud(force: bool = False) -> bool:
-    """Фаза 2b: телефон видит не только офферы автопилота, а полный текущий
-    список подходящих вакансий. Синк троттлим, чтобы не жечь Upstash.
+    """Фаза 2b: телефон видит не только офферы автопилота, а тот же список
+    вакансий, что и приложение (подходящие + ближайшие активные).
+    Синк троттлим, чтобы не жечь Upstash.
     """
     global _jobs_sync_last
     if not account_mod.is_signed_in():
@@ -736,11 +793,14 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
     if attempt is None:
         return False
     try:
-        skip = applications.submitted_ids() | applications.skipped_ids() | applications.submitting_ids()
-        jobs = [j for j in autopilot.find_matches() if j.id not in skip]
-        jobs.sort(key=lambda j: getattr(j, "first_seen", None) or utcnow(), reverse=True)
-        jobs = jobs[:100]
-        payload = [_tg_job_payload(j) for j in jobs]
+        pairs = _cloud_job_list()
+        jobs = [j for j, _ in pairs]
+        home = settings_store.get_home()
+        # Название переводим онлайн только для подходящих: у остальных берём
+        # уже готовый перевод из кэша, иначе один синк = сотни запросов к
+        # переводчику. Роль по-русски (roleRu) считается локально и есть у всех.
+        payload = [_tg_job_payload(j, is_match=m, home=home, translate_title=m, lean=True)
+                   for j, m in pairs]
         digest = _sync_digest(payload)
         if not force and digest and _cloud_sync_sent_hash.get("jobs") == digest:
             _jobs_sync_last = attempt
@@ -759,6 +819,47 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
     return False
 
 
+def _translate_job_now(job_id: str) -> bool:
+    """Перевести описание ОДНОЙ вакансии по запросу из панели и сразу отправить
+    её текст в облако. Нужно для вакансий вне фильтров: фоновый воркер переводит
+    только подходящие, а в телефоне теперь виден список шире."""
+    job_id = str(job_id or "").strip()
+    if not job_id:
+        return False
+    with get_session() as s:
+        job = s.get(Job, job_id)
+        if job is None or not (job.description or "").strip():
+            return False
+        title, description, ru = job.title, job.description, job.description_ru
+    if not translator._plain_text(ru or ""):
+        try:
+            ru_html = translator.translate_to_ru(description, title=title or "")
+        except translator.TranslationError as e:
+            print(f"translate-on-demand: переводчик недоступен — {e}")
+            ru_html = ""
+        if translator._plain_text(ru_html or ""):
+            with get_session() as s:
+                fresh = s.get(Job, job_id)
+                if fresh is not None:
+                    fresh.description_ru = ru_html
+                    s.add(fresh)
+                    s.commit()
+            ru = ru_html
+    ru_plain = translator._plain_text(ru or "")
+    # Перевод либо получился (done), либо переводчик не смог — тогда честное
+    # «unavailable»: панель покажет оригинал и не будет обещать перевод.
+    item = {
+        "id": job_id,
+        "ru": ru_plain[:6000],
+        "orig": translator._plain_text(description or "")[:6000],
+        "st": "done" if ru_plain else "unavailable",
+    }
+    if cloud_auth.report_job_texts([item]):
+        _jobtexts_sent[job_id] = f"{item['st']}:{len(item['ru'])}:{len(item['orig'])}"
+        return True
+    return False
+
+
 def _sync_job_texts_to_cloud(force: bool = False) -> bool:
     """Полные тексты вакансий (перевод + оригинал) в облако — для экрана детали
     в Mini App. Переведённые уходят как st=done, ещё непереведённые — как
@@ -772,6 +873,11 @@ def _sync_job_texts_to_cloud(force: bool = False) -> bool:
         return False
     try:
         import translate_worker
+        # Заранее шлём тексты только подходящих: их переводит фоновый воркер.
+        # Остальные вакансии (в телефоне список теперь шире, как в приложении)
+        # переводятся по запросу — панель просит командой translate, когда
+        # человек реально открыл карточку. Иначе 500 описаний жгли бы и
+        # переводчик, и лимит облака впустую.
         skip = applications.submitted_ids() | applications.skipped_ids() | applications.submitting_ids()
         jobs = [j for j in autopilot.find_matches() if j.id not in skip]
         jobs.sort(key=lambda j: getattr(j, "first_seen", None) or utcnow(), reverse=True)
@@ -1082,14 +1188,20 @@ TG_REMOTE_COMMAND_TTL_MS = 10 * 60 * 1000
 _title_ru_cache: dict[str, str] = {}
 
 
-def _title_ru(title: str) -> str:
+def _title_ru(title: str, cached_only: bool = False) -> str:
     """Русский перевод названия вакансии для карточки (для тех, кто не знает датский).
-    Кэшируется в памяти; при сбое перевода тихо возвращает пусто."""
+    Кэшируется в памяти; при сбое перевода тихо возвращает пусто.
+
+    cached_only=True — не ходить в переводчик: так собирается длинный список для
+    телефона (сотни вакансий), иначе один синк устроил бы сотни запросов подряд.
+    Понятность не страдает: в карточке есть роль по-русски (role_summary)."""
     title = (title or "").strip()
     if not title:
         return ""
     if title in _title_ru_cache:
         return _title_ru_cache[title]
+    if cached_only:
+        return ""
     ru = ""
     try:
         raw = translator.translate_to_ru(title) or ""
@@ -1197,12 +1309,24 @@ def _tg_display_title(job) -> str:
     return " · ".join(p for p in parts if p)
 
 
-def _tg_job_payload(job) -> dict:
-    """Структурные поля для Mini App-панели: фильтры не должны парсить только текст."""
-    home = None
+_SHORT_SOURCES = {
+    "salling": "Salling", "teamtailor": "Teamtailor", "greenhouse": "Greenhouse",
+    "ashby": "Ashby", "lidl": "Lidl", "manual_link": "По ссылке",
+}
+
+
+def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
+                    translate_title: bool = True, lean: bool = False) -> dict:
+    """Структурные поля для Mini App-панели: фильтры не должны парсить только текст.
+
+    Набор полей намеренно повторяет карточку главного экрана приложения (бренд с
+    фирменным цветом, расстояние, роль по-русски, часы/занятость/старт, оплата,
+    дата публикации, статус) — телефон должен показывать то же и так же.
+    """
     distance = None
     try:
-        home = settings_store.get_home()
+        if home is None:
+            home = settings_store.get_home()
         if home and job.lat is not None and job.lon is not None:
             distance = round(geo.haversine_km(home["lat"], home["lon"], job.lat, job.lon), 1)
     except Exception:  # noqa: BLE001
@@ -1216,38 +1340,77 @@ def _tg_job_payload(job) -> dict:
     title = job.title or ""
     display_title = _tg_display_title(job)
     summary = _job_summary_line(job, loc=loc, address=address)
-    description = _plain_snippet(job.description_ru or job.description)
-    return {
+    # В списке сниппет короткий (две строки карточки): полный текст открывается
+    # в детали отдельным запросом. На 500 вакансий каждая лишняя сотня символов —
+    # это лишние сотни килобайт трафика телефона.
+    description = _plain_snippet(job.description_ru or job.description, limit=160 if lean else 220)
+    brand_bg, brand_fg = labels.BRAND_COLORS.get(job.brand or "", ("", ""))
+    categories_ru = ", ".join(
+        labels.label_or_pretty(labels.CATEGORY, c.strip())
+        for c in str(job.categories or "").split(",") if c.strip()
+    )
+    payload = {
         "id": job.id,
         "jobId": job.id,
+        "titleBase": title,
+        "titleRu": _title_ru(title, cached_only=not translate_title),
+        "descriptionSnippet": description,
+        "brand": labels.brand(job.brand) if job.brand else "",
+        "brandColor": brand_bg,
+        "brandFg": brand_fg,
+        "city": job.city or "",
+        "location": loc,
+        "address": address,
+        "region": labels.label_or_pretty(labels.REGION, job.region) if job.region else "",
+        "hoursLabel": f"{job.hours} ч/нед" if job.hours else "",
+        "employment": labels.EMPLOYMENT.get(job.employment_type or "", job.employment_type or ""),
+        "level": labels.LEVEL.get(job.job_level or "", ""),
+        "categories": categories_ru,
+        # Русская расшифровка должности — та же строка, что в карточке приложения.
+        "roleRu": labels.role_summary(job.title, job.categories or "", job.job_level or ""),
+        "isLead": labels.is_leadership(job.title or ""),
+        "payRate": job.pay_rate or "",
+        "startDate": job.start_date or "",
+        "publishedShort": labels.date_short(job.published) if job.published else "",
+        "distanceKm": distance,
+        "url": job.application_link or "",
+        "mapsUrl": _maps_url(job, home) if (address or job.lat is not None) else "",
+        "status": job.status or "",
+        "sourceLabel": "" if (job.source or "salling") == "salling"
+                       else _SHORT_SOURCES.get(job.source or "", job.source or ""),
+        # Подходит ли под фильтры подбора: в телефоне список шире (как в
+        # приложении), и подходящие надо отличать от «просто активных».
+        "isMatch": True if is_match is None else bool(is_match),
+        # Панель показывает один и тот же полный список подходящих — без этой
+        # пометки не видно, что появилось недавно, а что висит давно.
+        "isNew": bool(job.first_seen and (utcnow() - job.first_seen).days < 3),
+    }
+    if lean:
+        # Длинный список (сотни вакансий) — только то, что реально рисует панель.
+        return payload
+    # Полная карточка (оффер в Telegram): прежние поля на месте, их читают и
+    # старые версии панели, и текст карточки в чате.
+    payload.update({
         "publicId": public_id,
         "shortId": short_id,
         "requisitionId": job.requisition_id or "",
         "title": display_title,
         "displayTitle": display_title,
-        "titleBase": title,
-        "titleRu": _title_ru(title),
         "summary": summary,
         "subtitle": summary,
         "description": description,
-        "descriptionSnippet": description,
-        "brand": labels.brand(job.brand) if job.brand else "",
-        "city": job.city or "",
-        "location": loc,
-        "address": address,
+        "brandCode": job.brand or "",
+        "street": job.street or "",
+        "zip": job.zip or "",
+        "country": job.country or "",
         "hours": job.hours or "",
-        "hoursLabel": f"{job.hours} ч/нед" if job.hours else "",
         "published": job.published or "",
         "publishedDate": (job.published or "")[:10],
-        "distanceKm": distance,
-        "url": job.application_link or "",
-        "mapsUrl": _maps_url(job, home) if (address or job.lat is not None) else "",
         "lat": job.lat,
         "lon": job.lon,
-        # Панель показывает один и тот же полный список подходящих — без этой
-        # пометки не видно, что появилось недавно, а что висит давно.
-        "isNew": bool(job.first_seen and (utcnow() - job.first_seen).days < 3),
-    }
+        "source": job.source or "",
+    })
+    return payload
 
 
 def _tg_offer_jobs(jobs, panel: bool = False) -> dict:
@@ -1484,6 +1647,18 @@ def _handle_tg_remote_command(command: dict) -> str:
                 return "🔄 Проверка уже идёт. Скоро пришлю новые подходящие вакансии, если они появятся."
             threading.Thread(target=_sync_jobs, daemon=True).start()
             return "🔄 Запустил проверку вакансий на ПК. Если появятся новые подходящие, пришлю сюда."
+
+        if action == "translate":
+            # Панель открыла вакансию, которая НЕ подходит под фильтры — фоновый
+            # переводчик такие не берёт. Переводим одну по запросу и сразу
+            # досылаем её текст в облако. В чат ничего не пишем (return "").
+            job_id = str(command.get("jobId") or "").strip()
+            if job_id:
+                try:
+                    _translate_job_now(job_id)
+                except Exception as e:  # noqa: BLE001 — перевод не должен ронять опрос
+                    print(f"translate-on-demand: ошибка — {e}")
+            return ""
 
         if action == "set_filters":
             # Настройка с телефона меняет только ЧТО ИЩЕМ (первый набор фильтров).

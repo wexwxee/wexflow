@@ -993,18 +993,9 @@
   </span>
 </div>
 
-{% set brand_colors = {
-  'netto': ('#ffe400', '#1a1a1a'),
-  'foetex': ('#13499b', '#ffffff'),
-  'bilka': ('#0098da', '#06283d'),
-  'salling': ('#c0392b', '#ffffff'),
-  'br': ('#e2001a', '#ffffff'),
-  'carlsjr': ('#e8470f', '#ffffff'),
-  'starbucks': ('#00704a', '#ffffff'),
-  'sallinggroup': ('#0f766e', '#ffffff'),
-  'hugoboss': ('#111111', '#ffffff'),
-  'matinique': ('#3a3a3a', '#ffffff')
-} %}
+{# цвета брендов — из labels.BRAND_COLORS, чтобы карточки в приложении и в
+   Mini App-панели телефона выглядели одинаково #}
+{% set brand_colors = L.BRAND_COLORS %}
 <div class="grid">
   {% if group %}
   {% for g in groups %}

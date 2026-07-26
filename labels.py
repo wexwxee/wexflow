@@ -9,6 +9,22 @@ BRANDS = {
     "sallinggroup": "Salling Group", "hugoboss": "Hugo Boss", "matinique": "Matinique",
 }
 
+# Фирменные цвета брендов (фон, текст) для бейджа на карточке вакансии.
+# Один источник правды: шаблон index.html и карточки Mini App-панели берут
+# цвета отсюда, иначе телефон и приложение выглядели бы по-разному.
+BRAND_COLORS = {
+    "netto": ("#ffe400", "#1a1a1a"),
+    "foetex": ("#13499b", "#ffffff"),
+    "bilka": ("#0098da", "#06283d"),
+    "salling": ("#c0392b", "#ffffff"),
+    "br": ("#e2001a", "#ffffff"),
+    "carlsjr": ("#e8470f", "#ffffff"),
+    "starbucks": ("#00704a", "#ffffff"),
+    "sallinggroup": ("#0f766e", "#ffffff"),
+    "hugoboss": ("#111111", "#ffffff"),
+    "matinique": ("#3a3a3a", "#ffffff"),
+}
+
 EMPLOYMENT = {
     "fullTime": "Полная занятость",
     "partTime": "Частичная занятость",
