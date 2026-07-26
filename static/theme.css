@@ -502,6 +502,21 @@ body.candidate-profile-open { overflow: hidden; }
 }
 .candidate-profile-invite-card[hidden] { display: none; }
 .candidate-profile-invite-card > p { margin: 5px 0 11px; color: var(--muted); font-size: 12px; }
+.candidate-profile-invite-steps {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 12px;
+  color: var(--txt);
+  font-size: 12px;
+  line-height: 1.42;
+}
+.candidate-profile-invite-steps span {
+  padding: 8px 10px;
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+}
+.candidate-profile-invite-steps b { color: var(--accent); }
 .candidate-profile-invite-code,
 .candidate-profile-invite-actions { display: flex; gap: 8px; align-items: center; }
 .candidate-profile-invite-code code {

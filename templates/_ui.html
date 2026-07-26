@@ -78,14 +78,20 @@
         </div>
         <div class="candidate-profile-invite-card" data-candidate-profile-invite-card hidden>
           <b data-candidate-profile-invite-title>Приглашение готово</b>
-          <p>Отправь человеку ссылку или код. Код одноразовый и действует 15 минут.</p>
+          <p>Код одноразовый и действует 15 минут. Чтобы у человека сразу появились его вакансии:</p>
+          <div class="candidate-profile-invite-steps">
+            <span><b>1.</b> Отправь ему ссылку приглашения — открывать её нужно в его Telegram.</span>
+            <span><b>2.</b> В личном чате с <b>@wexflowbot</b> он нажимает Start.</span>
+            <span><b>3.</b> После подтверждения нажимает зелёную кнопку «Открыть свою панель».</span>
+            <span><b>4.</b> Для подачи семейный ПК должен быть включён, а WexFlow — открыт или работать в трее.</span>
+          </div>
           <div class="candidate-profile-invite-code">
             <code data-candidate-profile-invite-code></code>
             <button type="button" data-candidate-profile-copy-code>Копировать код</button>
           </div>
           <div class="candidate-profile-invite-actions">
-            <button type="button" data-candidate-profile-copy-link>Копировать ссылку</button>
-            <button type="button" data-candidate-profile-open-link>Открыть Telegram</button>
+            <button type="button" data-candidate-profile-copy-link>Копировать приглашение</button>
+            <button type="button" data-candidate-profile-open-link>Открыть чат бота</button>
           </div>
         </div>
         <form class="candidate-profile-add" data-candidate-profile-add>
