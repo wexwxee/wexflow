@@ -337,6 +337,18 @@
   .toggle-applied.on:hover { border-color:#c4b5fd; }
   html[data-theme="light"] .toggle-applied.on { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
   .badge.brand { font-weight:700; }
+  .badge.source-badge { border-color:#6b66ff; color:#9c98ff; }
+  .badge.source-lidl {
+    display:inline-flex; align-items:center; gap:5px;
+    background:#ffec00; color:#004c9b; border-color:#0050aa;
+    font-weight:900; letter-spacing:-.015em;
+    box-shadow:inset 0 -1px 0 rgba(0,80,170,.16);
+  }
+  .badge.source-lidl::before {
+    content:""; width:9px; height:9px; flex:0 0 9px;
+    border:2px solid #0050aa; border-radius:50%;
+    background:#e30613; box-sizing:border-box;
+  }
   .badge.dist { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
   .badge.st-new { background:var(--accent-soft); color:var(--accent); border-color:rgba(30,215,96,.32); }
   .badge.st-seen { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
@@ -1032,7 +1044,7 @@
     {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','hidden':'скрыто','closed':'закрыта'} %}
     <div class="badges">
       {% set short_sources = {'lidl':'Lidl','teamtailor':'Teamtailor','greenhouse':'Greenhouse','ashby':'Ashby','manual_link':'По ссылке'} %}
-      {% if j.source != 'salling' %}<span class="badge" style="border-color:#6b66ff;color:#9c98ff;">{{ short_sources.get(j.source, j.source) }}</span>{% endif %}
+      {% if j.source != 'salling' %}<span class="badge source-badge source-{{ j.source }}">{{ short_sources.get(j.source, j.source) }}</span>{% endif %}
       {% set app_state = application_states.get((j.source, j.id), '') %}
       {% if app_state == 'submitting' %}<span class="badge" style="color:var(--info-txt);border-color:var(--info-line);" data-tip-title="Анкета в работе" data-tip-body="WexFlow открыл форму, но отправка ещё не подтверждена. После завершения отметь результат на странице вакансии. Забытое состояние само сменится через 6 часов.">анкета в работе</span>{% endif %}
       {% if app_state == 'failed' %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);" data-tip-title="Анкета не завершена" data-tip-body="Форма открывалась, но отправка не была подтверждена. Можно безопасно продолжить с того же места.">не завершено</span>{% endif %}

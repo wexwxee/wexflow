@@ -112,6 +112,18 @@ def test_lidl_is_registered_for_normal_sync_and_apply_detection():
     assert platform_name(key) == "Lidl EasyApply"
 
 
+def test_lidl_source_badge_uses_lidl_brand_colors():
+    from pathlib import Path
+    template = (
+        Path(__file__).resolve().parents[1] / "templates" / "index.html"
+    ).read_text(encoding="utf-8")
+    assert "source-{{ j.source }}" in template
+    assert ".badge.source-lidl" in template
+    assert "#ffec00" in template
+    assert "#0050aa" in template
+    assert "#e30613" in template
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items())
              if name.startswith("test_") and callable(value)]
