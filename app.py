@@ -730,15 +730,67 @@ def _hydrate_tg_job_snapshot(decision: dict):
     return job
 
 
+def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> None:
+    """Пробный прогон с телефона: заполнить анкеты на ПК и НЕ отправлять.
+
+    Ровно то же, что кнопка «Подготовить · без отправки» в приложении: окно
+    открывается, поля заполняются, отправка не жмётся. Ничего не помечается
+    поданным, вакансия остаётся неразобранной — это проверка связи телефон→ПК.
+    """
+    blocked = 0
+    ready_ids = []
+    for jid in salling_ids:
+        if jid in allowed:
+            ready_ids.append(jid)
+        else:
+            blocked += 1
+    opened = 0
+    errors = []
+    for job in connector_jobs:
+        # F27: открываем только то, что WexFlow сам показывал
+        if job.id not in allowed:
+            blocked += 1
+            continue
+        try:
+            _launch_connector_filler(job.application_link or "", job.id, submit=False)
+            opened += 1
+        except Exception as exc:  # noqa: BLE001
+            errors.append(str(exc)[:100])
+    if ready_ids:
+        try:
+            _launch_salling_apply(ready_ids, submit=False)
+            opened += len(ready_ids)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(str(exc)[:100])
+
+    if opened:
+        text = (
+            "🧪 <b>Пробный прогон без отправки</b>\n"
+            f"Открываю на компьютере анкет: {opened}. WexFlow заполнит поля и "
+            "остановится перед отправкой — заявка не уйдёт.\n"
+            "Посмотри окно на ПК: так же выглядит и настоящая подача."
+        )
+    else:
+        text = ("⚠️ <b>Пробный прогон не начался</b>\n"
+                "Не нашёл, что открыть без отправки.")
+    if blocked:
+        text += f"\nПропустил вакансий, которых не было в списке WexFlow: {blocked}."
+    if errors:
+        text += "\nОшибка на ПК: " + errors[0]
+    cloud_auth.send_digest(text)
+
+
 def _handle_tg_decisions(decisions: list) -> None:
     submit_ids = []
     connector_jobs = []
+    prepare_ids = []          # пробный прогон Salling: заполнить и не отправлять
+    prepare_connectors = []   # то же для коннекторов (Lidl и др.)
     for d in decisions or []:
         if not isinstance(d, dict):
             continue
         jid = d.get("jobId")
         action = d.get("action")
-        if not jid or jid == "__demo__" or action not in ("submit", "skip"):
+        if not jid or jid == "__demo__" or action not in ("submit", "skip", "prepare"):
             continue
         with get_session() as session:
             job = session.get(Job, jid)
@@ -748,12 +800,22 @@ def _handle_tg_decisions(decisions: list) -> None:
             if job is None or getattr(job, "source", "salling") == "salling":
                 autopilot.tg_decide(jid, approve=False, launcher=lambda ids: None)
             continue
+        if action == "prepare":
+            # «Подготовить без отправки» с телефона — то же, что кнопка
+            # «Подготовить» в приложении. Ничего не помечаем поданным.
+            if job is not None and getattr(job, "source", "salling") != "salling":
+                prepare_connectors.append(job)
+            else:
+                prepare_ids.append(jid)
+            continue
         if job is not None and getattr(job, "source", "salling") != "salling":
             connector_jobs.append(job)
         else:
             submit_ids.append(jid)
 
     allowed = applications.offered_ids() | applications.listed_ids()
+    if prepare_ids or prepare_connectors:
+        _run_tg_prepare(prepare_ids, prepare_connectors, allowed)
     for job in connector_jobs:
         if job.id not in allowed:
             _report_apply_result_safe(
