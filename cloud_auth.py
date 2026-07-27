@@ -352,9 +352,13 @@ def rebind_confirm(code: str, timeout: int = 10) -> dict:
 
 
 def offer(text: str, job_id: str, timeout: int = 15, *,
-          job: dict | None = None, panel: bool = False) -> dict | None:
+          job: dict | None = None, panel: bool = False,
+          demo: bool = False) -> dict | None:
     """Отправить карточку вакансии через облако — бот пришлёт её пользователю с
-    кнопками ✅/❌. text — уже собранная карточка (с переводом)."""
+    кнопками ✅/❌. text — уже собранная карточка (с переводом).
+
+    demo=True — проверочная карточка: всегда идёт в чат (даже в режиме «только
+    в приложении») и не попадает в список панели, чтобы пример нельзя было подать."""
     url = f"{CLOUD_BASE}/api/offer"
     job_payload = dict(job or {})
     job_payload["id"] = job_id
@@ -362,6 +366,8 @@ def offer(text: str, job_id: str, timeout: int = 15, *,
         "deviceId": device_id(), "profileId": active_profile_id(),
         "job": job_payload, "text": text, "panel": bool(panel),
     }
+    if demo:
+        payload["demo"] = True
     try:
         with _open(url, payload, timeout) as r:
             return json.loads(r.read().decode("utf-8"))

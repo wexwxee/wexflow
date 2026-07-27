@@ -1864,6 +1864,16 @@ def _handle_tg_remote_command(command: dict) -> str:
             threading.Thread(target=_sync_jobs, daemon=True).start()
             return "🔄 Запустил проверку вакансий на ПК. Если появятся новые подходящие, пришлю сюда."
 
+        if action == "test":
+            # «Отправить проверочное» с телефона: тот же путь, что и кнопка в
+            # приложении. Карточка-пример уходит в чат сама, поэтому при успехе
+            # в чат ничего не дописываем (return "") — иначе будет два сообщения.
+            res = _send_telegram_demo_card()
+            if res.get("ok"):
+                return ""
+            return ("⚠️ Проверочное сообщение не ушло: "
+                    f"{res.get('error') or 'нет связи с облаком'}.")
+
         if action == "translate":
             # Панель открыла вакансию, которая НЕ подходит под фильтры — фоновый
             # переводчик такие не берёт. Переводим одну по запросу и сразу
@@ -4997,20 +5007,12 @@ async def telegram_approval(request: Request):
     return {"ok": True, "on": on}
 
 
-@app.post("/api/telegram/test")
-def telegram_test():
-    """Проверочное сообщение = РЕАЛЬНЫЙ вид карточки вакансии с кнопками
-    (на примере подходящей вакансии). Кнопки в примере ничего не отправляют."""
-    if not account_mod.is_signed_in():
-        return JSONResponse(
-            {
-                "ok": False,
-                "code": "login_required",
-                "error": "Сначала войди через Telegram в разделе «Аккаунт».",
-                "setupUrl": "/account#telegram-setup",
-            },
-            status_code=401,
-        )
+def _send_telegram_demo_card() -> dict:
+    """Отправить проверочную карточку — РЕАЛЬНЫЙ вид сообщения автопилота
+    на примере подходящей вакансии. Кнопки примера ничего не подают.
+
+    Один и тот же путь для кнопки «Отправить проверочное» в приложении и для
+    такой же кнопки в Telegram-панели (команда test)."""
     sample = None
     try:
         matches = autopilot.find_matches()
@@ -5026,8 +5028,25 @@ def telegram_test():
         return {"ok": False, "error": "Подходящих вакансий для примера сейчас нет."}
     text = ("🔔 <b>Пример сообщения автопилота</b>\n"
             "Вот так будет приходить вакансия на подтверждение:\n\n" + _tg_card(sample))
-    r = cloud_auth.offer(text, "__demo__")
+    r = cloud_auth.offer(text, "__demo__", demo=True)
     return {"ok": bool(r and r.get("ok")), "error": (r or {}).get("error", "")}
+
+
+@app.post("/api/telegram/test")
+def telegram_test():
+    """Проверочное сообщение = РЕАЛЬНЫЙ вид карточки вакансии с кнопками
+    (на примере подходящей вакансии). Кнопки в примере ничего не отправляют."""
+    if not account_mod.is_signed_in():
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "login_required",
+                "error": "Сначала войди через Telegram в разделе «Аккаунт».",
+                "setupUrl": "/account#telegram-setup",
+            },
+            status_code=401,
+        )
+    return _send_telegram_demo_card()
 
 
 @app.post("/api/telegram/setup-test")

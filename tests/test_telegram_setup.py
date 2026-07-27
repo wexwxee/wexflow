@@ -243,3 +243,31 @@ def test_telegram_settings_locked_state_points_back_to_wizard():
     )[0]
     assert "нужен вход" in template_source
     assert 'data-setup="/account#telegram-setup"' in template_source
+
+
+def test_phone_test_command_sends_same_demo_card_as_the_app_button():
+    """Кнопка «Отправить проверочное» в Telegram-панели = кнопка в приложении."""
+    with (
+        mock.patch.object(app.account_mod, "is_signed_in", return_value=True),
+        mock.patch.object(app, "_tg_card", return_value="карточка"),
+        mock.patch.object(app.autopilot, "find_matches", return_value=[object()]),
+        mock.patch.object(app.cloud_auth, "offer", return_value={"ok": True}) as offer,
+    ):
+        answer = app._handle_tg_remote_command({"action": "test"})
+
+    assert answer == ""  # карточка сама и есть ответ — второе сообщение не шлём
+    assert offer.call_args.args[1] == "__demo__"
+    assert offer.call_args.kwargs.get("demo") is True
+
+
+def test_phone_test_command_explains_failure_in_chat():
+    with (
+        mock.patch.object(app.account_mod, "is_signed_in", return_value=True),
+        mock.patch.object(app, "_tg_card", return_value="карточка"),
+        mock.patch.object(app.autopilot, "find_matches", return_value=[object()]),
+        mock.patch.object(app.cloud_auth, "offer", return_value=None),
+    ):
+        answer = app._handle_tg_remote_command({"action": "test"})
+
+    assert answer.startswith("⚠️")
+    assert "нет связи с облаком" in answer
