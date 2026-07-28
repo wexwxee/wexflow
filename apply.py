@@ -1176,8 +1176,9 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 "started_at": _now_iso(), "updated_at": _now_iso(), "finished_at": None,
             }
             _write_progress(prog)
-            if submit:
-                _cloud_progress(prog)
+            # Прогресс шлём и для прогона без отправки: телефон — пульт, человек
+            # должен видеть, что компьютер работает, а не гадать (mode="dry").
+            _cloud_progress(prog)
             for i, job in enumerate(jobs):
                 if page.is_closed():
                     page = ctx.new_page()
@@ -1187,6 +1188,9 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 _write_progress(prog)
                 if submit:
                     _cloud_report(job.id, "submitting", "WexFlow заполняет форму")
+                else:
+                    _cloud_report(job.id, "preparing",
+                                  "WexFlow заполняет анкету — отправку не нажимает")
                 ok = False
                 try:
                     job_profile = document_rules.resolve_profile(profile, job)
@@ -1220,11 +1224,18 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                         _cloud_report(job.id, "failed", "Подача не подтверждена — проверь вручную")
                 else:
                     items[i]["state"] = "ok" if ok else "done"
+                    _cloud_report(
+                        job.id,
+                        "prepared" if ok else "prepare_failed",
+                        "Анкета заполнена и ждёт тебя на ПК — отправка НЕ нажата."
+                        if ok else
+                        "Не получилось заполнить анкету — открой WexFlow на ПК и посмотри.",
+                    )
                 prog["done"] = i + 1
                 prog["updated_at"] = _now_iso()
                 _write_progress(prog)
+                _cloud_progress(prog)
                 if submit:
-                    _cloud_progress(prog)
                     try:
                         page.goto("about:blank", wait_until="domcontentloaded", timeout=10000)
                     except Exception:
@@ -1235,8 +1246,8 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
             prog["finished_at"] = _now_iso()
             prog["updated_at"] = _now_iso()
             _write_progress(prog)
+            _cloud_progress(prog)
             if submit:
-                _cloud_progress(prog)
                 print(
                     f"\n========\nИТОГ: сайт подтвердил квитанцией: {confirmed} из {len(jobs)}; "
                     f"без квитанции: {unconfirmed}; не подтверждено: {len(jobs) - submitted}."

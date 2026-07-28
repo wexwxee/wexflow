@@ -730,38 +730,124 @@ def _hydrate_tg_job_snapshot(decision: dict):
     return job
 
 
+def _watch_connector_prepare_for_phone(job_id: str) -> None:
+    """Довести пробный прогон коннектора до телефона.
+
+    Телефон — пульт: нажал «Подготовить» — и должен видеть, что происходит на
+    ПК. Воркер пишет свой статус в файл; отдаём его в облако как prepare-состояние
+    (никакого «подано»: prepared значит «анкета заполнена, отправка НЕ нажата»).
+    """
+    wanted = str(job_id or "")
+    path = _connector_status_path(wanted)
+    deadline = time.monotonic() + 900       # 15 мин — дольше прогон не ждём
+    last_state = ""                         # шлём в облако ТОЛЬКО смену этапа:
+    while not _tg_stop.is_set():            # частые записи выедают лимит Redis
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            payload = {}
+        same = str(payload.get("job_id") or "") == wanted
+        state = str(payload.get("state") or "") if same else ""
+        message = str(payload.get("message") or "").strip()
+        if state in ("ready", "submit_ready", "submitted"):
+            _report_apply_result_safe(
+                wanted, "prepared",
+                message or "Анкета заполнена и ждёт тебя — отправка не нажата.",
+            )
+            _release_connector_launch(wanted)
+            return
+        if state == "error":
+            _report_apply_result_safe(
+                wanted, "prepare_failed",
+                message or "Окно подготовки завершилось с ошибкой.",
+            )
+            _release_connector_launch(wanted)
+            return
+        if state and state != last_state:
+            last_state = state
+            _report_apply_result_safe(
+                wanted, "preparing",
+                message or "WexFlow открыл браузер и заполняет анкету.",
+            )
+        with _connector_launch_lock:
+            proc = _connector_processes.get(wanted)
+        if proc is not None and proc.poll() is not None:
+            _report_apply_result_safe(
+                wanted, "prepare_failed",
+                "Окно закрылось раньше, чем анкета была заполнена.",
+            )
+            _release_connector_launch(wanted)
+            return
+        if time.monotonic() > deadline:
+            _release_connector_launch(wanted)
+            return
+        _tg_stop.wait(2.0)
+
+
 def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> None:
     """Пробный прогон с телефона: заполнить анкеты на ПК и НЕ отправлять.
 
     Ровно то же, что кнопка «Подготовить · без отправки» в приложении: окно
     открывается, поля заполняются, отправка не жмётся. Ничего не помечается
     поданным, вакансия остаётся неразобранной — это проверка связи телефон→ПК.
+    Каждый шаг уходит в облако (preparing → prepared/prepare_failed), чтобы в
+    панели телефона было видно, что именно делает компьютер.
     """
     blocked = 0
+    blocked_ids = []
     ready_ids = []
     for jid in salling_ids:
         if jid in allowed:
             ready_ids.append(jid)
         else:
             blocked += 1
+            blocked_ids.append(jid)
     opened = 0
     errors = []
     for job in connector_jobs:
         # F27: открываем только то, что WexFlow сам показывал
         if job.id not in allowed:
             blocked += 1
+            blocked_ids.append(job.id)
             continue
+        if not _claim_connector_launch(job.id):
+            _report_apply_result_safe(
+                job.id, "preparing", "Форма этой вакансии уже открывается на ПК.")
+            continue
+        _report_apply_result_safe(
+            job.id, "preparing", "Открываю анкету на компьютере — без отправки.")
         try:
             _launch_connector_filler(job.application_link or "", job.id, submit=False)
             opened += 1
+            threading.Thread(
+                target=_watch_connector_prepare_for_phone,
+                args=(job.id,),
+                daemon=True,
+                name=f"connector-prepare-{str(job.id)[:24]}",
+            ).start()
         except Exception as exc:  # noqa: BLE001
             errors.append(str(exc)[:100])
+            _release_connector_launch(job.id)
+            _report_apply_result_safe(
+                job.id, "prepare_failed",
+                f"Не удалось открыть форму на ПК: {str(exc)[:100]}")
     if ready_ids:
+        for jid in ready_ids:
+            _report_apply_result_safe(
+                jid, "preparing", "Открываю анкету на компьютере — без отправки.")
         try:
             _launch_salling_apply(ready_ids, submit=False)
             opened += len(ready_ids)
         except Exception as exc:  # noqa: BLE001
             errors.append(str(exc)[:100])
+            for jid in ready_ids:
+                _report_apply_result_safe(
+                    jid, "prepare_failed",
+                    f"Не удалось запустить прогон на ПК: {str(exc)[:100]}")
+    for jid in blocked_ids:
+        _report_apply_result_safe(
+            jid, "prepare_failed",
+            "Этой вакансии нет в списке WexFlow — форму не открываю.")
 
     if opened:
         text = (
