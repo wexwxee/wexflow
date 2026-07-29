@@ -1739,6 +1739,24 @@ _SHORT_SOURCES = {
 }
 
 
+def _transit_fields(job, home: dict | None) -> dict:
+    """Готовое время в пути из кэша (без сети). Пусто, если ещё не считали."""
+    if not home or getattr(job, "lat", None) is None or getattr(job, "lon", None) is None:
+        return {}
+    try:
+        res = transit.cached(home["lat"], home["lon"], job.lat, job.lon)
+    except Exception:  # noqa: BLE001
+        return {}
+    if not res or not res.get("ok"):
+        return {}
+    out = {"transitMin": int(res.get("minutes") or 0),
+           "transitTransfers": int(res.get("transfers") or 0)}
+    modes = [str(m) for m in (res.get("modes") or []) if m][:3]
+    if modes:
+        out["transitModes"] = ", ".join(modes)
+    return out
+
+
 def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
                     translate_title: bool = True, lean: bool = False) -> dict:
     """Структурные поля для Mini App-панели: фильтры не должны парсить только текст.
@@ -1807,6 +1825,10 @@ def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
         "publishedShort": labels.date_short(job.published) if job.published else "",
         "publishedRaw": job.published or "",
         "distanceKm": distance,
+        # Реальное время в пути (Transitous, считается в фоне и кэшируется).
+        # Расстояние по прямой врёт там, где дорога идёт в обход — озеро, ж/д,
+        # залив: «≈1 км» превращалось в 20 минут пути.
+        **_transit_fields(job, home),
         "lat": job.lat,
         "lon": job.lon,
         "url": job.application_link or "",
@@ -2094,6 +2116,22 @@ def _handle_tg_remote_command(command: dict) -> str:
             return ("⚠️ Проверочное сообщение не ушло: "
                     f"{res.get('error') or 'нет связи с облаком'}.")
 
+        if action == "transit":
+            # «Сколько ехать» из панели: считаем маршрут для одной вакансии и
+            # сразу досылаем список (в карточке появится время в пути).
+            job_id = str(command.get("jobId") or "").strip()
+            if job_id:
+                try:
+                    home = settings_store.get_home()
+                    with get_session() as s:
+                        job = s.get(Job, job_id)
+                    if home and job is not None and job.lat is not None and job.lon is not None:
+                        transit.summary(home["lat"], home["lon"], job.lat, job.lon)
+                        _sync_jobs_to_cloud(force=True)
+                except Exception as e:  # noqa: BLE001 — маршрут не критичен
+                    print(f"transit-on-demand: ошибка — {e}")
+            return ""
+
         if action == "translate":
             # Панель открыла вакансию, которая НЕ подходит под фильтры — фоновый
             # переводчик такие не берёт. Переводим одну по запросу и сразу
@@ -2147,6 +2185,11 @@ async def _lifespan(app):
         translate_worker.start(sync_fn=_sync_job_texts_to_cloud, busy_fn=_submit_in_progress)
     except Exception as _exc:  # noqa: BLE001 — перевод не критичен для запуска
         print(f"translate-worker: не запустился — {_exc}")
+    try:                          # фоновое время в пути (дом → магазин) для карточки
+        import transit_worker
+        transit_worker.start(sync_fn=_sync_jobs_to_cloud, busy_fn=_submit_in_progress)
+    except Exception as _exc:  # noqa: BLE001 — маршруты не критичны для запуска
+        print(f"transit-worker: не запустился — {_exc}")
     age = _data_age_minutes()
     if age is None or age >= 30:  # данные устарели — обновить сразу, в фоне
         threading.Thread(target=_sync_jobs, daemon=True).start()
@@ -2159,6 +2202,11 @@ async def _lifespan(app):
     try:
         import translate_worker
         translate_worker.stop()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import transit_worker
+        transit_worker.stop()
     except Exception:  # noqa: BLE001
         pass
     sched.shutdown(wait=False)

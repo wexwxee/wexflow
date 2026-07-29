@@ -32,9 +32,23 @@ def _save(d: dict):
         pass
 
 
+def cache_key(flat: float, flng: float, tlat: float, tlng: float) -> str:
+    return f"{round(flat, 4)},{round(flng, 4)}|{round(tlat, 4)},{round(tlng, 4)}"
+
+
+def cached(flat: float, flng: float, tlat: float, tlng: float) -> dict | None:
+    """Готовый ответ из кэша или None. Без сети — годится и для списка из 500
+    вакансий (payload в телефон), и для отбора кандидатов фоновым воркером."""
+    try:
+        with _CACHE_LOCK:
+            return _load().get(cache_key(flat, flng, tlat, tlng))
+    except Exception:  # noqa: BLE001 — кэш не должен ронять вызывающего
+        return None
+
+
 def summary(flat: float, flng: float, tlat: float, tlng: float) -> dict:
     """Лучший маршрут на ОТ: {ok, minutes, transfers, modes:[...]}."""
-    key = f"{round(flat, 4)},{round(flng, 4)}|{round(tlat, 4)},{round(tlng, 4)}"
+    key = cache_key(flat, flng, tlat, tlng)
     with _CACHE_LOCK:
         cache = _load()
         if key in cache:
