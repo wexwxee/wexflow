@@ -136,3 +136,14 @@ def test_request_ignores_duplicates_and_jobs_without_coords():
     assert added == 1 and list(transit_worker._wanted) == ["a"]
     transit_worker._forget("a")
     assert transit_worker._wanted == {}
+
+
+def test_same_address_takes_one_slot():
+    """Пять вакансий одного магазина — одна точка в очереди: маршрут у них общий,
+    иначе очередь займут дубли вместо пяти РАЗНЫХ адресов."""
+    transit_worker._wanted.clear()
+    same = [_Job(f"s{i}", 55.7060, 12.4930) for i in range(5)]
+    other = _Job("other", 55.6877, 12.4908)
+    added = transit_worker.request(same + [other])
+    assert added == 2, f"в очередь ушло {added} точек вместо 2"
+    transit_worker._wanted.clear()

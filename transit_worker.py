@@ -45,20 +45,32 @@ class _Wanted:
         self.lon = lon
 
 
-def request(jobs) -> int:
+def request(jobs, home=None) -> int:
     """Поставить вакансии в начало очереди: человек открыл список и смотрит
-    именно на них — их время в пути нужно раньше всех остальных."""
+    именно на них — их время в пути нужно раньше всех остальных.
+
+    Одинаковые адреса схлопываем: в одном магазине бывает пять вакансий, а
+    маршрут у них общий, и держать в очереди пять одинаковых точек — значит
+    занять её место вместо пяти РАЗНЫХ магазинов.
+    """
     added = 0
+    seen_points = set()
     with _wanted_lock:
+        for ll in _wanted.values():
+            seen_points.add((round(ll[0], 4), round(ll[1], 4)))
         for j in jobs or []:
             lat = getattr(j, "lat", None)
             lon = getattr(j, "lon", None)
             jid = str(getattr(j, "id", "") or "")
             if lat is None or lon is None or not jid or jid in _wanted:
                 continue
+            point = (round(lat, 4), round(lon, 4))
+            if point in seen_points:
+                continue
             if len(_wanted) >= MAX_WANTED:
                 break
             _wanted[jid] = (lat, lon)
+            seen_points.add(point)
             added += 1
     return added
 
