@@ -75,3 +75,29 @@ def test_missing_proof_is_silent():
         sys.modules["cloud_auth"].report_apply_proof = mock.Mock()
         apply._cloud_proof(mock.Mock(id="j2"), None, "receipt")
         sys.modules["cloud_auth"].report_apply_proof.assert_not_called()
+
+
+def test_prepared_run_has_its_own_caption(tmp_path):
+    """Прогон «Подготовить» тоже шлёт скрин — но подпись не должна врать «отправлено»."""
+    job = mock.Mock(id="j3", title="Ungarbejder", brand="Lidl", city="Brønshøj")
+    path = _fake_screenshot(tmp_path, size=(700, 900))
+    with mock.patch.dict(sys.modules, {"cloud_auth": mock.Mock()}):
+        sys.modules["cloud_auth"].report_apply_proof = mock.Mock(return_value=True)
+        apply._cloud_proof(job, path, "prepared")
+        caption = sys.modules["cloud_auth"].report_apply_proof.call_args.args[2]
+    assert "подготовлена" in caption.lower()
+    assert "НЕ нажата" in caption
+    assert "отправлена" not in caption.lower().replace("отправка не нажата", "")
+
+
+def test_prepared_screenshots_go_to_separate_folder(tmp_path, monkeypatch):
+    """Скрин прогона не должен попасть в журнал подач как доказательство отправки."""
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    page = mock.Mock()
+    page.screenshot = mock.Mock()
+    job = mock.Mock(id="j4", requisition_id="req4")
+    path = apply._save_proof(page, job, subdir="prepared")
+    assert path is not None and path.parent.name == "prepared"
+    assert (tmp_path / "logs" / "prepared").is_dir()
+    assert not (tmp_path / "logs" / "applied").exists()

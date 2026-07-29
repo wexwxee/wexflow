@@ -143,17 +143,28 @@ def _record_confirmed_submission(job_id: str) -> bool:
         return False
 
 
+def _send_prepared_proof_to_chat(page, job_id: str) -> None:
+    """Скрин подготовленной анкеты — в чат: «вот что открыто на ПК, не отправлено»."""
+    _proof_to_chat(page, job_id, prepared=True)
+
+
 def _send_proof_to_chat(page, job_id: str) -> None:
     """Скрин квитанции — в чат телефона, как у Salling. Никогда не роняет подачу."""
+    _proof_to_chat(page, job_id, prepared=False)
+
+
+def _proof_to_chat(page, job_id: str, prepared: bool) -> None:
+    """Снять страницу и отправить её в чат. Скрины прогона лежат отдельно от
+    доказательств подачи — иначе журнал прицепит их как «отправлено»."""
     try:
         from datetime import datetime
 
         import config
-        out = config.DATA_DIR / "logs" / "applied"
+        out = config.DATA_DIR / "logs" / ("prepared" if prepared else "applied")
         out.mkdir(parents=True, exist_ok=True)
         path = out / f"{datetime.now():%Y%m%d_%H%M%S}_{job_id}.png"
         page.screenshot(path=str(path), full_page=True)
-        print(f"  скрин-пруф: logs/applied/{path.name}")
+        print(f"  скрин-пруф: logs/{out.name}/{path.name}")
 
         import apply as _apply
         import cloud_auth
@@ -169,11 +180,14 @@ def _send_proof_to_chat(page, job_id: str) -> None:
                 title = " · ".join(x for x in [job.title, job.brand, job.city] if x) or job_id
         except Exception:  # noqa: BLE001
             pass
-        cloud_auth.report_apply_proof(
-            job_id, b64,
+        caption = (
+            "🧪 <b>Анкета подготовлена</b>\n" + str(title)
+            + "\nЗаполнена на компьютере, отправка НЕ нажата — проверь и реши сам."
+            if prepared else
             "✅ <b>Заявка отправлена</b>\n" + str(title)
-            + "\nСайт показал квитанцию — скрин страницы приложен.",
+            + "\nСайт показал квитанцию — скрин страницы приложен."
         )
+        cloud_auth.report_apply_proof(job_id, b64, caption)
     except Exception as exc:  # noqa: BLE001
         print("  скрин не ушёл в чат:", str(exc)[:120])
 
@@ -235,6 +249,8 @@ def run(
                         "Форма подготовлена до финальной кнопки без отправки."
                     ),
                 )
+                if not submit:
+                    _send_prepared_proof_to_chat(page, job_id)
             except Exception as exc:
                 # Частичное заполнение лучше закрытого окна: человек сможет
                 # закончить неизвестную или изменившуюся форму вручную.

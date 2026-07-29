@@ -914,18 +914,20 @@ def submit_application(page) -> str:
     return outcome
 
 
-def _save_proof(page, job):
-    """Сохраняет скриншот результата подачи в logs/applied/ как доказательство.
-    Возвращает путь к файлу (или None) — его же отправляем в чат телефона."""
+def _save_proof(page, job, subdir: str = "applied"):
+    """Сохраняет скриншот результата в logs/<subdir>/ как доказательство.
+    Возвращает путь к файлу (или None) — его же отправляем в чат телефона.
+    subdir="prepared" — прогон без отправки: такие скрины НЕ должны попадать в
+    журнал подач как доказательство отправки."""
     try:
         from datetime import datetime
-        out = config.DATA_DIR / "logs" / "applied"
+        out = config.DATA_DIR / "logs" / subdir
         out.mkdir(parents=True, exist_ok=True)
         rid = job.requisition_id or job.id
         name = f"{datetime.now():%Y%m%d_%H%M%S}_{rid}.png"
         path = out / name
         page.screenshot(path=str(path), full_page=True)
-        print(f"  📸 скрин-пруф: logs/applied/{name}")
+        print(f"  📸 скрин-пруф: logs/{subdir}/{name}")
         return path
     except Exception as e:
         print("  не смог сохранить скрин:", e)
@@ -973,10 +975,15 @@ def _cloud_proof(job, path, confidence: str = "receipt") -> None:
         if not b64:
             return
         where = " · ".join(x for x in [getattr(job, "brand", ""), getattr(job, "city", "")] if x)
-        head = ("✅ <b>Заявка отправлена</b>" if confidence == "receipt"
-                else "⚠️ <b>Отправлено без квитанции</b>")
-        tail = ("Скрин страницы сразу после отправки." if confidence == "receipt"
-                else "Сайт не показал квитанцию — проверь письмо или кабинет.")
+        if confidence == "prepared":
+            head = "🧪 <b>Анкета подготовлена</b>"
+            tail = "Заполнена на компьютере, отправка НЕ нажата — проверь и реши сам."
+        elif confidence == "receipt":
+            head = "✅ <b>Заявка отправлена</b>"
+            tail = "Скрин страницы сразу после отправки."
+        else:
+            head = "⚠️ <b>Отправлено без квитанции</b>"
+            tail = "Сайт не показал квитанцию — проверь письмо или кабинет."
         caption = f"{head}\n{getattr(job, 'title', '') or 'Вакансия'}"
         if where:
             caption += f"\n{where}"
@@ -1101,6 +1108,8 @@ def process_job(page, job, profile, submit: bool, ai_fill: bool = False):
             print("  отправка не подтвердилась — проверь вручную")
     else:
         print("  Прогон без отправки — проверь форму и нажми Ansøg сам.")
+        # телефон должен видеть, что прогон реально дошёл до заполненной формы
+        _cloud_proof(job, _save_proof(page, job, subdir="prepared"), "prepared")
     return sent
 
 
