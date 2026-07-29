@@ -1177,6 +1177,20 @@ def _write_progress(state: dict) -> None:
         pass
 
 
+def _prepare_report(job_error: str = "") -> tuple[str, str]:
+    """Итог прогона «Подготовить» для телефона.
+
+    process_job возвращает «отправлено ли», а в прогоне мы намеренно НЕ
+    отправляем — значит False там всегда. Успех прогона = дошли до формы без
+    ошибки. Пока это считалось по process_job, панель писала «Прогон не удался»
+    даже над идеально заполненной анкетой.
+    """
+    if job_error:
+        return ("prepare_failed",
+                f"Не получилось заполнить анкету: {job_error} — открой WexFlow на ПК и посмотри.")
+    return ("prepared", "Анкета заполнена и ждёт тебя на ПК — отправка НЕ нажата.")
+
+
 def _cloud_report(job_id, state: str, msg: str = "") -> None:
     """Best-effort: сообщить облаку статус заявки, чтобы карточка в Mini App
     обновлялась вживую и для подачи из самого приложения тоже. Никогда не падает."""
@@ -1262,12 +1276,14 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                     _cloud_report(job.id, "preparing",
                                   "WexFlow заполняет анкету — отправку не нажимает")
                 ok = False
+                job_error = ""
                 try:
                     job_profile = document_rules.resolve_profile(profile, job)
                     ok = process_job(page, job, job_profile, submit, ai_fill=ai_fill)
                 except Exception as e:  # одна вакансия не должна валить всю пачку
                     print("  job error:", str(e)[:120])
                     ok = False
+                    job_error = str(e)[:120]
                 if submit:
                     if ok:
                         submitted += 1
@@ -1293,14 +1309,13 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                         prog["failed"] += 1
                         _cloud_report(job.id, "failed", "Подача не подтверждена — проверь вручную")
                 else:
-                    items[i]["state"] = "ok" if ok else "done"
-                    _cloud_report(
-                        job.id,
-                        "prepared" if ok else "prepare_failed",
-                        "Анкета заполнена и ждёт тебя на ПК — отправка НЕ нажата."
-                        if ok else
-                        "Не получилось заполнить анкету — открой WexFlow на ПК и посмотри.",
-                    )
+                    # ВАЖНО: в прогоне process_job ВСЕГДА возвращает False — он
+                    # возвращает «отправлено ли», а мы намеренно не отправляем.
+                    # Раньше телефон из-за этого писал «Прогон не удался» даже
+                    # над идеально заполненной анкетой. Успех прогона = дошли до
+                    # формы без ошибки.
+                    items[i]["state"] = "done" if job_error else "ok"
+                    _cloud_report(job.id, *_prepare_report(job_error))
                 prog["done"] = i + 1
                 prog["updated_at"] = _now_iso()
                 _write_progress(prog)

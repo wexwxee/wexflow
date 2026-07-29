@@ -157,7 +157,7 @@ def test_dry_run_reports_prepared_states_to_cloud():
     ).read()
     body = source.split("def run_batch(")[1]
     assert '"preparing"' in body, "прогон не сообщает о старте заполнения"
-    assert '"prepared" if ok else "prepare_failed"' in body, "прогон не сообщает итог"
+    assert "_prepare_report(job_error)" in body, "прогон не сообщает итог"
     # сводка прогресса больше не только для реальной подачи
     assert not re.search(r"if submit:\n\s+_cloud_progress\(prog\)", body)
 

@@ -101,3 +101,24 @@ def test_prepared_screenshots_go_to_separate_folder(tmp_path, monkeypatch):
     assert path is not None and path.parent.name == "prepared"
     assert (tmp_path / "logs" / "prepared").is_dir()
     assert not (tmp_path / "logs" / "applied").exists()
+
+
+def test_successful_dry_run_is_reported_as_prepared():
+    """Скрин 29.07: анкета была заполнена, а телефон писал «Прогон не удался».
+    Причина — успех прогона считали по process_job, который возвращает
+    «отправлено ли» и в прогоне ВСЕГДА False."""
+    state, msg = apply._prepare_report("")
+    assert state == "prepared"
+    assert "НЕ нажата" in msg
+
+    state, msg = apply._prepare_report("Timeout 30000ms")
+    assert state == "prepare_failed"
+    assert "Timeout 30000ms" in msg, "причину сбоя надо показывать, а не прятать"
+
+
+def test_run_batch_reports_prepared_without_submitting():
+    """Страховка от возврата бага: в ветке прогона нельзя опираться на ok."""
+    import inspect
+    src = inspect.getsource(apply.run_batch)
+    assert "_prepare_report(job_error)" in src
+    assert '"prepared" if ok' not in src, "успех прогона снова считается по отправке"
