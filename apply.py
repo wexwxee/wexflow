@@ -13,6 +13,7 @@
 placeholder/name) и сознательно не жмёт Submit. После первого реального прохода
 поля можно «прибить гвоздями» под конкретную форму.
 """
+import io
 import json
 import re
 import subprocess
@@ -914,17 +915,76 @@ def submit_application(page) -> str:
 
 
 def _save_proof(page, job):
-    """Сохраняет скриншот результата подачи в logs/applied/ как доказательство."""
+    """Сохраняет скриншот результата подачи в logs/applied/ как доказательство.
+    Возвращает путь к файлу (или None) — его же отправляем в чат телефона."""
     try:
         from datetime import datetime
         out = config.DATA_DIR / "logs" / "applied"
         out.mkdir(parents=True, exist_ok=True)
         rid = job.requisition_id or job.id
         name = f"{datetime.now():%Y%m%d_%H%M%S}_{rid}.png"
-        page.screenshot(path=str(out / name), full_page=True)
+        path = out / name
+        page.screenshot(path=str(path), full_page=True)
         print(f"  📸 скрин-пруф: logs/applied/{name}")
+        return path
     except Exception as e:
         print("  не смог сохранить скрин:", e)
+        return None
+
+
+# Телеграм не любит очень длинные картинки (страница целиком бывает в десятки
+# тысяч пикселей), да и смотреть их с телефона неудобно. Берём верх страницы —
+# там и висит подтверждение сайта — ужимаем по ширине и жмём в JPEG.
+PROOF_MAX_W = 1000
+PROOF_MAX_H = 2400
+PROOF_MAX_BYTES = 2_600_000
+
+
+def _proof_photo_b64(path) -> str:
+    """PNG со страницы → компактный JPEG в base64. Пусто, если не вышло."""
+    try:
+        import base64
+        from PIL import Image
+
+        with Image.open(path) as im:
+            im = im.convert("RGB")
+            if im.width > PROOF_MAX_W:
+                h = max(1, round(im.height * PROOF_MAX_W / im.width))
+                im = im.resize((PROOF_MAX_W, h), Image.LANCZOS)
+            if im.height > PROOF_MAX_H:
+                im = im.crop((0, 0, im.width, PROOF_MAX_H))
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=78, optimize=True)
+        raw = buf.getvalue()
+        if len(raw) > PROOF_MAX_BYTES:
+            return ""
+        return base64.b64encode(raw).decode("ascii")
+    except Exception as e:  # noqa: BLE001 — пруф не должен ронять подачу
+        print("  скрин не подготовился к отправке:", str(e)[:120])
+        return ""
+
+
+def _cloud_proof(job, path, confidence: str = "receipt") -> None:
+    """Отправить скрин-доказательство в чат Telegram. Никогда не падает."""
+    if not path:
+        return
+    try:
+        b64 = _proof_photo_b64(path)
+        if not b64:
+            return
+        where = " · ".join(x for x in [getattr(job, "brand", ""), getattr(job, "city", "")] if x)
+        head = ("✅ <b>Заявка отправлена</b>" if confidence == "receipt"
+                else "⚠️ <b>Отправлено без квитанции</b>")
+        tail = ("Скрин страницы сразу после отправки." if confidence == "receipt"
+                else "Сайт не показал квитанцию — проверь письмо или кабинет.")
+        caption = f"{head}\n{getattr(job, 'title', '') or 'Вакансия'}"
+        if where:
+            caption += f"\n{where}"
+        caption += f"\n{tail}"
+        import cloud_auth
+        cloud_auth.report_apply_proof(str(job.id), b64, caption)
+    except Exception as e:  # noqa: BLE001
+        print("  скрин не ушёл в чат:", str(e)[:120])
 
 
 def _mark_applied(job_id: str, confidence: str = "receipt"):
@@ -1032,8 +1092,9 @@ def process_job(page, job, profile, submit: bool, ai_fill: bool = False):
             outcome = "none"
         if outcome in ("receipt", "indirect"):
             print("  ОТПРАВЛЕНО ✔" if outcome == "receipt" else "  ВЕРОЯТНО ОТПРАВЛЕНО — проверь письмо от Salling")
-            _save_proof(page, job)
+            proof = _save_proof(page, job)
             _mark_applied(job.id, confidence=outcome)
+            _cloud_proof(job, proof, outcome)
             sent = True
         else:
             _save_proof(page, job)   # скрин даже при неуспехе — для разбора/восстановления

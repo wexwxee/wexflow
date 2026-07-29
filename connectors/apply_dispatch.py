@@ -143,6 +143,41 @@ def _record_confirmed_submission(job_id: str) -> bool:
         return False
 
 
+def _send_proof_to_chat(page, job_id: str) -> None:
+    """Скрин квитанции — в чат телефона, как у Salling. Никогда не роняет подачу."""
+    try:
+        from datetime import datetime
+
+        import config
+        out = config.DATA_DIR / "logs" / "applied"
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / f"{datetime.now():%Y%m%d_%H%M%S}_{job_id}.png"
+        page.screenshot(path=str(path), full_page=True)
+        print(f"  скрин-пруф: logs/applied/{path.name}")
+
+        import apply as _apply
+        import cloud_auth
+        b64 = _apply._proof_photo_b64(path)
+        if not b64:
+            return
+        title = job_id
+        try:
+            from db import Job, get_session
+            with get_session() as s:
+                job = s.get(Job, job_id)
+            if job is not None:
+                title = " · ".join(x for x in [job.title, job.brand, job.city] if x) or job_id
+        except Exception:  # noqa: BLE001
+            pass
+        cloud_auth.report_apply_proof(
+            job_id, b64,
+            "✅ <b>Заявка отправлена</b>\n" + str(title)
+            + "\nСайт показал квитанцию — скрин страницы приложен.",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print("  скрин не ушёл в чат:", str(exc)[:120])
+
+
 def _wait_until_closed(ctx, page=None, platform: str = "", job_id: str = "") -> None:
     recorded = False
     while True:
@@ -163,6 +198,7 @@ def _wait_until_closed(ctx, page=None, platform: str = "", job_id: str = "") -> 
                         "Lidl подтвердил получение заявки.",
                     )
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
+                    _send_proof_to_chat(page, job_id)
             except Exception:
                 pass
         time.sleep(1.0)

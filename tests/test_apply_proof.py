@@ -1,0 +1,77 @@
+"""Скрин-доказательство подачи уходит в чат Telegram.
+
+Иван: «после отправки в чат бота кидался пруф скрина, где видно отправку».
+Проверяем ровно то, что может сломаться молча:
+  - страница целиком (бывает в десятки тысяч пикселей) превращается в компактный
+    JPEG, который Telegram примет: ширина ограничена, высота обрезана сверху —
+    там и висит подтверждение сайта;
+  - подача не падает, если скрин почему-то не подготовился;
+  - успешная подача действительно зовёт отправку пруфа.
+"""
+import base64
+import io
+import os
+import sys
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import apply
+
+
+def _fake_screenshot(tmp_path, size=(1440, 9000)):
+    from PIL import Image
+    path = tmp_path / "shot.png"
+    Image.new("RGB", size, (18, 20, 21)).save(path)
+    return path
+
+
+def test_full_page_screenshot_becomes_small_jpeg(tmp_path):
+    from PIL import Image
+    b64 = apply._proof_photo_b64(_fake_screenshot(tmp_path))
+    assert b64, "скрин не подготовился"
+    raw = base64.b64decode(b64)
+    assert len(raw) < apply.PROOF_MAX_BYTES
+    with Image.open(io.BytesIO(raw)) as im:
+        assert im.format == "JPEG"
+        assert im.width == apply.PROOF_MAX_W
+        assert im.height <= apply.PROOF_MAX_H, "очень длинную картинку Telegram не примет"
+
+
+def test_small_screenshot_keeps_its_size(tmp_path):
+    from PIL import Image
+    b64 = apply._proof_photo_b64(_fake_screenshot(tmp_path, size=(600, 800)))
+    with Image.open(io.BytesIO(base64.b64decode(b64))) as im:
+        assert im.size == (600, 800)
+
+
+def test_broken_file_does_not_raise(tmp_path):
+    bad = tmp_path / "not-an-image.png"
+    bad.write_text("это не картинка", encoding="utf-8")
+    assert apply._proof_photo_b64(bad) == ""
+
+
+def test_proof_is_sent_with_honest_caption(tmp_path):
+    job = mock.Mock(id="j1", title="Kasseassistent", brand="Netto", city="København")
+    path = _fake_screenshot(tmp_path, size=(800, 1200))
+    with mock.patch.dict(sys.modules, {"cloud_auth": mock.Mock()}):
+        sys.modules["cloud_auth"].report_apply_proof = mock.Mock(return_value=True)
+        apply._cloud_proof(job, path, "receipt")
+        sent = sys.modules["cloud_auth"].report_apply_proof
+        assert sent.call_count == 1
+        job_id, b64, caption = sent.call_args.args[0], sent.call_args.args[1], sent.call_args.args[2]
+        assert job_id == "j1" and b64
+        assert "Заявка отправлена" in caption and "Kasseassistent" in caption
+
+        # без квитанции подпись обязана быть честной, а не «отправлено»
+        sent.reset_mock()
+        apply._cloud_proof(job, path, "indirect")
+        assert "без квитанции" in sent.call_args.args[2].lower()
+
+
+def test_missing_proof_is_silent():
+    """Скрина нет — просто ничего не шлём, подача от этого не страдает."""
+    with mock.patch.dict(sys.modules, {"cloud_auth": mock.Mock()}):
+        sys.modules["cloud_auth"].report_apply_proof = mock.Mock()
+        apply._cloud_proof(mock.Mock(id="j2"), None, "receipt")
+        sys.modules["cloud_auth"].report_apply_proof.assert_not_called()

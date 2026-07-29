@@ -1357,6 +1357,30 @@ def _sanitize_remote_filters(fields: dict) -> dict:
 _filters_sync_last = 0.0
 
 
+def _autopilot_reason() -> str:
+    """Короткое объяснение для панели: почему сейчас нечего показывать.
+    Пусто — значит объяснять нечего (работает и есть что предлагать)."""
+    try:
+        rule = autopilot.get_rule()
+        if autopilot.get_mode() == "off":
+            return "Автопилот на паузе — новые вакансии не приходят."
+        if not autopilot.within_schedule():
+            return (f"Сейчас вне часов активности "
+                    f"({int(rule.get('active_from') or 0)}:00–{int(rule.get('active_to') or 24)}:00) — "
+                    "жду подходящего времени.")
+        stats = autopilot.tg_queue_stats()
+        if not stats.get("found"):
+            return "Под твои фильтры сейчас ничего не подходит — измени их ниже."
+        if not stats.get("eligible_current"):
+            return ("Всё подходящее уже предлагал или разобрано — новые появятся, "
+                    "когда выйдут свежие вакансии.")
+        if autopilot.tg_daily_remaining() <= 0:
+            return "Дневной потолок карточек исчерпан — продолжу завтра."
+        return ""
+    except Exception:  # noqa: BLE001 — объяснение не должно ронять синк
+        return ""
+
+
 def _sync_filters_to_cloud(force: bool = False) -> bool:
     """Панель Mini App показывает и меняет фильтры первого набора. Шлём текущие
     значения + варианты (категории/сети со счётчиками), чтобы панель ничего не
@@ -1425,6 +1449,8 @@ def _sync_filters_to_cloud(force: bool = False) -> bool:
             # живое состояние автопилота — для карточки в панели (управление с телефона)
             "autopilot": {
                 "mode": autopilot.get_mode(),
+                # почему в «ждут решения» пусто: раньше телефон об этом молчал
+                "reason": _autopilot_reason(),
                 "found": autopilot.match_count(),
                 "submittedToday": autopilot.submitted_today(),
                 "submittedTotal": autopilot.submitted_total(),

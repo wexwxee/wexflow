@@ -526,6 +526,23 @@ def report_apply_result(job_id: str, state: str, msg: str = "", timeout: int = 8
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
 
+def report_apply_proof(job_id: str, photo_b64: str, caption: str = "",
+                       timeout: int = 20) -> bool:
+    """Отправить в чат скрин-доказательство подачи (через облако — токена бота у
+    ПК нет). Картинка нигде не хранится: облако сразу пересылает её в Telegram."""
+    if not photo_b64:
+        return False
+    payload = {
+        "kind": "apply_proof",
+        "deviceId": device_id(),
+        "profileId": active_profile_id(),
+        "jobId": str(job_id),
+        "caption": str(caption or "")[:900],
+        "photo": photo_b64,
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
+
+
 def report_applied(items, timeout: int = 8) -> bool:
     """Отправить в облако список поданных вакансий — для раздела «Поданные» в Mini App
     (одно облако: подал на ПК → видно в телефоне). Облако заодно убирает эти вакансии
