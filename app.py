@@ -808,6 +808,17 @@ def _tg_prepare_expired(item: dict, now_ms: float | None = None) -> bool:
     return (now - ts) > TG_PREPARE_TTL_MS
 
 
+def _write_prepare_signal(job_id: str, action: str) -> None:
+    """Положить решение из чата рядом с воркером, который держит анкету открытой."""
+    try:
+        path = config.prepare_signal_path(job_id)
+        from json_store import atomic_write_json
+        atomic_write_json(path, {"action": action, "ts": time.time()})
+        print(f"prepare-signal: {job_id} → {action}")
+    except Exception as e:  # noqa: BLE001
+        print(f"prepare-signal: не записался — {e}")
+
+
 def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> None:
     """Пробный прогон с телефона: заполнить анкеты на ПК и НЕ отправлять.
 
@@ -860,7 +871,7 @@ def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> No
             _report_apply_result_safe(
                 jid, "preparing", "Открываю анкету на компьютере — без отправки.")
         try:
-            _launch_salling_apply(ready_ids, submit=False)
+            _launch_salling_apply(ready_ids, submit=False, phone_confirm=True)
             opened += len(ready_ids)
         except Exception as exc:  # noqa: BLE001
             errors.append(str(exc)[:100])
@@ -900,7 +911,8 @@ def _handle_tg_decisions(decisions: list) -> None:
             continue
         jid = d.get("jobId")
         action = d.get("action")
-        if not jid or jid == "__demo__" or action not in ("submit", "skip", "prepare"):
+        if not jid or jid == "__demo__" or action not in (
+                "submit", "skip", "prepare", "prepare_submit", "prepare_cancel"):
             continue
         with get_session() as session:
             job = session.get(Job, jid)
@@ -909,6 +921,11 @@ def _handle_tg_decisions(decisions: list) -> None:
         if action == "skip":
             if job is None or getattr(job, "source", "salling") == "salling":
                 autopilot.tg_decide(jid, approve=False, launcher=lambda ids: None)
+            continue
+        if action in ("prepare_submit", "prepare_cancel"):
+            # кнопка под скрином подготовленной анкеты: воркер держит её открытой
+            # и ждёт этого сигнала. Отправку подтвердил ЧЕЛОВЕК, а не автопилот.
+            _write_prepare_signal(jid, "submit" if action == "prepare_submit" else "cancel")
             continue
         if action == "prepare":
             # «Подготовить без отправки» с телефона — то же, что кнопка
@@ -5755,6 +5772,7 @@ def _run_apply_worker(
     submit: bool = False,
     auto_close: bool = False,
     ai_fill: bool | None = None,
+    phone_confirm: bool = False,
 ):
     """ЕДИНСТВЕННОЕ место, запускающее воркер подачи apply.py (общая «воротина»).
     Возвращает Popen или None. Здесь действует последний барьер источника;
@@ -5790,6 +5808,9 @@ def _run_apply_worker(
         cmd.append("--auto-close")
     if ai_fill:
         cmd.append("--ai-fill")
+    if phone_confirm:
+        # прогон с телефона: воркер дождётся кнопки «Отправить»/«Отмена» из чата
+        cmd.append("--phone-confirm")
     log = open(config.DATA_DIR / "apply_last.log", "w", encoding="utf-8")
     global _last_apply_proc, _last_apply_spawn_ts
     try:
@@ -5814,7 +5835,8 @@ def _run_apply_worker(
         log.close()  # потомок унаследовал свой хэндл; родительский больше не нужен
 
 
-def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool = False):
+def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool = False,
+                         phone_confirm: bool = False):
     """Запуск apply.py для авто/фоновой подачи (очередь автопилота/Mini App).
     Для submit=True применяет страховочный отсев (_partition_submit_ids): руководящие
     и уже поданные не уйдут. Сам запуск — через единый воркер _run_apply_worker."""
@@ -5828,10 +5850,12 @@ def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool 
             print("  нечего подавать после страховочного отсева — процесс не запускаю")
             return None
         ids = safe
-    return _run_apply_worker(ids, submit=submit, auto_close=auto_close)
+    return _run_apply_worker(ids, submit=submit, auto_close=auto_close,
+                             phone_confirm=phone_confirm)
 
 
-def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot: bool = False) -> None:
+def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot: bool = False,
+                          phone_confirm: bool = False) -> None:
     """Запустить подачу Salling по списку id.
     submit=False — режим подготовки: WexFlow заполняет и останавливается перед отправкой.
     submit + track_autopilot — фоновая подача из Mini App/автопилота: идёт через
@@ -5841,7 +5865,7 @@ def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot:
     if submit and track_autopilot:
         _enqueue_auto_submit(list(ids))
         return
-    _spawn_salling_apply(ids, submit=submit, auto_close=False)
+    _spawn_salling_apply(ids, submit=submit, auto_close=False, phone_confirm=phone_confirm)
 
 
 @app.post("/job/{job_id}/apply/start")

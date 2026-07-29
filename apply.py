@@ -563,6 +563,56 @@ def upload_documents(page, profile: dict):
     if cv and not cv_uploaded:
         print("  CV не прикрепил (возможно, сайт уже помнит резюме).")
 
+    # Дождаться, пока сайт покажет ИМЕННО наши файлы: до этого на странице висит
+    # документ от прошлой заявки (для другой сети), и отправлять/снимать скрин рано.
+    wait_documents_settled(page, {
+        "CV": Path(cv).name if (cv and cv_uploaded) else "",
+        "письмо": Path(cover).name if (cover and cover_uploaded) else "",
+    })
+
+
+DOCS_SETTLE_MS = 20000        # сколько ждём подмены документов на странице
+DOCS_POLL_MS = 500
+
+
+def _page_mentions(page, needle: str) -> bool:
+    """Есть ли имя файла в тексте страницы (во всех фреймах)."""
+    if not needle:
+        return True
+    for fr in _all_frames(page):
+        try:
+            if needle.lower() in (fr.inner_text("body") or "").lower():
+                return True
+        except Exception:  # noqa: BLE001 — фрейм мог отвалиться
+            continue
+    return False
+
+
+def wait_documents_settled(page, expected: dict, timeout_ms: int = DOCS_SETTLE_MS) -> bool:
+    """Ждём появления имён наших файлов на странице. True — дождались всех.
+
+    Не бросает: если сайт показывает документы иначе, просто идём дальше по
+    таймауту, как было раньше.
+    """
+    names = {label: name for label, name in (expected or {}).items() if name}
+    if not names:
+        return True
+    waited = 0
+    while waited < timeout_ms:
+        missing = [label for label, name in names.items() if not _page_mentions(page, name)]
+        if not missing:
+            if waited:
+                print(f"  документы обновились на странице за {waited / 1000:.1f} c")
+            return True
+        try:
+            page.wait_for_timeout(DOCS_POLL_MS)
+        except Exception:  # noqa: BLE001
+            return False
+        waited += DOCS_POLL_MS
+    print(f"  документы не подтвердились за {timeout_ms / 1000:.0f} c: "
+          f"{', '.join(names.values())} — проверь вручную")
+    return False
+
 
 def best_effort_fill(page, profile: dict):
     filled = 0
@@ -966,7 +1016,7 @@ def _proof_photo_b64(path) -> str:
         return ""
 
 
-def _cloud_proof(job, path, confidence: str = "receipt") -> None:
+def _cloud_proof(job, path, confidence: str = "receipt", ask_send: bool = False) -> None:
     """Отправить скрин-доказательство в чат Telegram. Никогда не падает."""
     if not path:
         return
@@ -977,7 +1027,9 @@ def _cloud_proof(job, path, confidence: str = "receipt") -> None:
         where = " · ".join(x for x in [getattr(job, "brand", ""), getattr(job, "city", "")] if x)
         if confidence == "prepared":
             head = "🧪 <b>Анкета подготовлена</b>"
-            tail = "Заполнена на компьютере, отправка НЕ нажата — проверь и реши сам."
+            tail = ("Проверь, всё ли верно, и решай кнопками ниже: отправлю или закрою."
+                    if ask_send else
+                    "Заполнена на компьютере, отправка НЕ нажата — проверь и реши сам.")
         elif confidence == "receipt":
             head = "✅ <b>Заявка отправлена</b>"
             tail = "Скрин страницы сразу после отправки."
@@ -989,7 +1041,7 @@ def _cloud_proof(job, path, confidence: str = "receipt") -> None:
             caption += f"\n{where}"
         caption += f"\n{tail}"
         import cloud_auth
-        cloud_auth.report_apply_proof(str(job.id), b64, caption)
+        cloud_auth.report_apply_proof(str(job.id), b64, caption, ask_send=ask_send)
     except Exception as e:  # noqa: BLE001
         print("  скрин не ушёл в чат:", str(e)[:120])
 
@@ -1071,7 +1123,45 @@ def _log_document_selection(profile: dict) -> None:
     print(f"  документы: CV — {cv}; письмо — {cover}")
 
 
-def process_job(page, job, profile, submit: bool, ai_fill: bool = False):
+PHONE_CONFIRM_WAIT_S = 900     # 15 минут ждём решение из телефона
+_close_requested = False       # человек нажал «Отмена» — браузер не держим открытым
+
+
+def read_phone_decision(job_id) -> str:
+    """Забрать решение из телефона: "submit" | "cancel" | "" (ещё не нажал)."""
+    path = config.prepare_signal_path(job_id)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    action = str((data or {}).get("action") or "").strip().lower()
+    return action if action in ("submit", "cancel") else ""
+
+
+def wait_phone_decision(page, job, timeout_s: int = PHONE_CONFIRM_WAIT_S) -> str:
+    """Держим анкету открытой и ждём кнопку из чата. Пусто — не дождались."""
+    print("  жду решение из телефона: «Отправить» или «Отмена»…")
+    waited = 0
+    while waited < timeout_s:
+        action = read_phone_decision(job.id)
+        if action:
+            print(f"  из телефона пришло: {action}")
+            return action
+        try:
+            page.wait_for_timeout(2000)
+        except Exception:  # noqa: BLE001 — окно закрыли руками
+            return ""
+        waited += 2
+    print("  решение из телефона не пришло — оставляю анкету открытой")
+    return ""
+
+
+def process_job(page, job, profile, submit: bool, ai_fill: bool = False,
+                phone_confirm: bool = False):
     """Открывает вакансию, ждёт логин, открывает форму, грузит файлы, опц. отправляет."""
     print(f"\n=== {job.title} — {job.city} ===\n{job.application_link}")
     _log_document_selection(profile)
@@ -1108,9 +1198,56 @@ def process_job(page, job, profile, submit: bool, ai_fill: bool = False):
             print("  отправка не подтвердилась — проверь вручную")
     else:
         print("  Прогон без отправки — проверь форму и нажми Ansøg сам.")
+        # хвост прошлого прогона не должен сработать за человека — чистим ДО
+        # того, как отправим скрин с кнопками
+        if phone_confirm:
+            read_phone_decision(job.id)
         # телефон должен видеть, что прогон реально дошёл до заполненной формы
-        _cloud_proof(job, _save_proof(page, job, subdir="prepared"), "prepared")
+        _cloud_proof(job, _save_proof(page, job, subdir="prepared"), "prepared",
+                     ask_send=phone_confirm)
+        if phone_confirm:
+            sent = _finish_by_phone(page, job)
     return sent
+
+
+def _finish_by_phone(page, job) -> bool:
+    """Дождаться кнопки из чата и довести анкету до конца (или закрыть).
+
+    Отправку запускает ЧЕЛОВЕК — кнопкой под скрином, увидев, что всё верно.
+    """
+    global _close_requested
+    action = wait_phone_decision(page, job)
+    if action == "cancel":
+        print("  отмена из телефона — заявка НЕ отправлена, закрываю анкету")
+        _cloud_report(job.id, "prepare_cancelled",
+                      "Отменено с телефона — заявка не отправлена, окно закрыто.")
+        _close_requested = True
+        return False
+    if action != "submit":
+        return False
+    print("  подтверждение из телефона — отправляю заявку")
+    try:
+        outcome = submit_application(page)
+    except Exception as e:  # noqa: BLE001
+        print("  отправка сорвалась:", str(e)[:120])
+        outcome = "none"
+    if outcome in ("receipt", "indirect"):
+        proof = _save_proof(page, job)
+        _mark_applied(job.id, confidence=outcome)
+        _cloud_report(
+            job.id,
+            "submitted" if outcome == "receipt" else "unconfirmed",
+            "Сайт показал квитанцию и подтвердил получение заявки."
+            if outcome == "receipt" else
+            "Форма исчезла, но сайт не показал квитанцию. Проверь письмо или кабинет Salling.",
+        )
+        _cloud_proof(job, proof, outcome)
+        _close_requested = True
+        return True
+    _save_proof(page, job)
+    _cloud_report(job.id, "failed",
+                  "Отправка не подтвердилась — анкета осталась открытой на ПК.")
+    return False
 
 
 def run(job_id: str | None, login_only: bool = False, web_mode: bool = False,
@@ -1223,7 +1360,8 @@ def _cloud_progress(prog: dict) -> None:
 
 
 def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
-              concurrency: int = 1, keep_open: bool = True, ai_fill: bool = False):
+              concurrency: int = 1, keep_open: bool = True, ai_fill: bool = False,
+              phone_confirm: bool = False):
     """Пакетная подача.
 
     Реальная отправка всегда идёт последовательно в одной вкладке: так меньше
@@ -1279,7 +1417,8 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 job_error = ""
                 try:
                     job_profile = document_rules.resolve_profile(profile, job)
-                    ok = process_job(page, job, job_profile, submit, ai_fill=ai_fill)
+                    ok = process_job(page, job, job_profile, submit, ai_fill=ai_fill,
+                                     phone_confirm=phone_confirm)
                 except Exception as e:  # одна вакансия не должна валить всю пачку
                     print("  job error:", str(e)[:120])
                     ok = False
@@ -1342,7 +1481,7 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
             else:
                 print(f"\n========\nПрогон завершён ({len(jobs)} вакансий обработано) — НЕ отправлял, ничего не отмечал.")
 
-            if web_mode and keep_open:
+            if web_mode and keep_open and not _close_requested:
                 print("\n>>> Готово. Браузер остаётся открытым — проверь/закрой сам.")
                 _wait_until_browser_closed(ctx)
             ctx.close()
@@ -1420,6 +1559,7 @@ def main(argv=None):
     web_mode = "--web" in args
     submit = "--submit" in args
     ai_fill = "--ai-fill" in args
+    phone_confirm = "--phone-confirm" in args
     keep_open = "--auto-close" not in args
     ids = [a for a in args if not a.startswith("--")]
     if "--login" in args:
@@ -1430,7 +1570,8 @@ def main(argv=None):
         # полоска прогресса (шаг 4 — воркер возвращает результат, а не «приложение
         # угадывает по базе»). Раньше одиночный dry шёл через run() — прогресс
         # в интерфейсе оставался пустым.
-        run_batch(ids, submit=submit, web_mode=web_mode, keep_open=keep_open, ai_fill=ai_fill)
+        run_batch(ids, submit=submit, web_mode=web_mode, keep_open=keep_open, ai_fill=ai_fill,
+                  phone_confirm=phone_confirm)
     else:
         run(ids[0], web_mode=web_mode, submit=submit, keep_open=keep_open, ai_fill=ai_fill)
 

@@ -60,3 +60,14 @@ DEEPL_API_URL = (
     or _secret_data.get("deepl_api_url")
     or ("https://api-free.deepl.com/v2/translate" if str(DEEPL_API_KEY).endswith(":fx") else "https://api.deepl.com/v2/translate")
 )
+
+
+def prepare_signal_path(job_id: str) -> Path:
+    """Файл-сигнал «что делать с подготовленной анкетой» (submit | cancel).
+
+    Приложение кладёт его, когда человек нажал кнопку под скрином в Telegram;
+    воркер подачи, который держит анкету открытой, его читает и удаляет.
+    """
+    import re as _re
+    safe = _re.sub(r"[^A-Za-z0-9_.-]", "_", str(job_id or ""))[:60] or "job"
+    return DATA_DIR / f"prepare_go_{safe}.json"

@@ -33,7 +33,8 @@ def test_prepare_from_phone_opens_salling_form_without_submitting():
     ):
         app._handle_tg_decisions([{"jobId": job.id, "action": "prepare"}])
 
-    launch.assert_called_once_with([job.id], submit=False)
+    # phone_confirm=True: воркер дождётся кнопки «Отправить»/«Отмена» из чата
+    launch.assert_called_once_with([job.id], submit=False, phone_confirm=True)
     submit_batch.assert_not_called()          # никакой настоящей подачи
     assert "без отправки" in digest.call_args.args[0]
 

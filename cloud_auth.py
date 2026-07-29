@@ -527,7 +527,7 @@ def report_apply_result(job_id: str, state: str, msg: str = "", timeout: int = 8
 
 
 def report_apply_proof(job_id: str, photo_b64: str, caption: str = "",
-                       timeout: int = 20) -> bool:
+                       timeout: int = 20, ask_send: bool = False) -> bool:
     """Отправить в чат скрин-доказательство подачи (через облако — токена бота у
     ПК нет). Картинка нигде не хранится: облако сразу пересылает её в Telegram."""
     if not photo_b64:
@@ -539,6 +539,8 @@ def report_apply_proof(job_id: str, photo_b64: str, caption: str = "",
         "jobId": str(job_id),
         "caption": str(caption or "")[:900],
         "photo": photo_b64,
+        # под скрином подготовленной анкеты бот покажет «Отправить»/«Отмена»
+        "askSend": bool(ask_send),
     }
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
