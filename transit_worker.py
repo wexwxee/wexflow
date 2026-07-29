@@ -22,13 +22,55 @@ import time
 import transit
 
 IDLE_SLEEP = 300.0      # считать нечего — редко проверяем
-STEP_SLEEP = 20.0       # пауза между запросами (Transitous не любит частые)
+STEP_SLEEP = 12.0       # пауза между запросами (Transitous не любит частые)
+MAX_WANTED = 120        # сколько «срочных» вакансий помним (то, что на экране)
 BACKOFF_SLEEP = 900.0   # после серии сбоев сети — длинная пауза
 MAX_FAILS = 3
 SYNC_EVERY_SEC = 300.0  # как часто подталкивать синк списка в облако
 
 _stop = threading.Event()
 _thread = None
+_wanted: dict[str, tuple] = {}     # job_id -> (lat, lon): что человек видит СЕЙЧАС
+_wanted_lock = threading.RLock()
+
+
+class _Wanted:
+    """Лёгкая «вакансия» для очереди срочных: воркеру нужны только координаты."""
+
+    __slots__ = ("id", "lat", "lon")
+
+    def __init__(self, jid, lat, lon):
+        self.id = jid
+        self.lat = lat
+        self.lon = lon
+
+
+def request(jobs) -> int:
+    """Поставить вакансии в начало очереди: человек открыл список и смотрит
+    именно на них — их время в пути нужно раньше всех остальных."""
+    added = 0
+    with _wanted_lock:
+        for j in jobs or []:
+            lat = getattr(j, "lat", None)
+            lon = getattr(j, "lon", None)
+            jid = str(getattr(j, "id", "") or "")
+            if lat is None or lon is None or not jid or jid in _wanted:
+                continue
+            if len(_wanted) >= MAX_WANTED:
+                break
+            _wanted[jid] = (lat, lon)
+            added += 1
+    return added
+
+
+def _wanted_jobs() -> list:
+    with _wanted_lock:
+        return [_Wanted(jid, ll[0], ll[1]) for jid, ll in _wanted.items()]
+
+
+def _forget(job_id: str) -> None:
+    with _wanted_lock:
+        _wanted.pop(str(job_id), None)
 
 
 def needs_transit(job, home) -> bool:
@@ -79,7 +121,12 @@ def _run(candidates_fn=_candidates, home_fn=_home, compute_fn=compute_one,
     while not _stop.is_set():
         try:
             home = home_fn()
-            job = pick_next(candidates_fn(), home) if home else None
+            job = None
+            if home:
+                # сперва то, что человек видит на экране, потом фоновый разбор
+                job = pick_next(_wanted_jobs(), home)
+                if job is None:
+                    job = pick_next(candidates_fn(), home)
         except Exception as e:  # noqa: BLE001 — БД занята и т.п.
             print(f"transit-worker: отбор — {e}")
             job = None
@@ -91,6 +138,7 @@ def _run(candidates_fn=_candidates, home_fn=_home, compute_fn=compute_one,
             continue
         try:
             res = compute_fn(job, home)
+            _forget(job.id)          # посчитали (или узнали, что маршрута нет)
             if res.get("ok"):
                 fails = 0
                 # Синк списка не чаще раза в 5 минут: каждая отправка — запись в

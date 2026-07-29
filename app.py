@@ -1161,6 +1161,15 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
         # уже готовый перевод из кэша, иначе один синк = сотни запросов к
         # переводчику. Роль по-русски (roleRu) считается локально и есть у всех.
         tcache = transit.snapshot()   # один раз на весь список, а не 500 чтений
+        try:                          # первые карточки телефона — в начало очереди
+            import transit_worker
+            transit_worker.request([
+                j for j, _ in pairs[:60]
+                if j.lat is not None and j.lon is not None
+                and transit.from_snapshot(tcache, home["lat"], home["lon"], j.lat, j.lon) is None
+            ] if home else [])
+        except Exception:  # noqa: BLE001
+            pass
         payload = [_tg_job_payload(j, is_match=m, home=home, translate_title=m, lean=True,
                                    transit_cache=tcache)
                    for j, m in pairs]
@@ -3287,6 +3296,7 @@ def index(
     trips = {}          # id -> {"minutes","transfers","modes"} из кэша маршрутов
     if home:
         tcache = transit.snapshot()
+        need_route = []
         for j in jobs:
             if j.lat is None or j.lon is None:
                 continue
@@ -3297,6 +3307,16 @@ def index(
                     "transfers": int(res.get("transfers") or 0),
                     "modes": ", ".join(str(m) for m in (res.get("modes") or [])[:3] if m),
                 }
+            elif res is None:
+                need_route.append(j)
+        # то, что человек открыл, считаем первым — иначе время в пути появлялось
+        # бы у случайных вакансий, а не у тех, на которые он смотрит
+        if need_route:
+            try:
+                import transit_worker
+                transit_worker.request(need_route[:60])
+            except Exception:  # noqa: BLE001 — очередь маршрутов не критична
+                pass
     if home:
         for j in jobs:
             if j.lat is not None and j.lon is not None:

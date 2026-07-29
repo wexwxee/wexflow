@@ -368,8 +368,10 @@
   .row button:disabled { cursor:default; color:#c4b5fd; border-color:rgba(167,139,250,.38); background:rgba(167,139,250,.14); opacity:1; }
   html[data-theme="light"] .row button:disabled { color:#6d28d9; border-color:#d8ccff; background:#f1edff; }
   .row .primary { font-weight:700; }
-  .row.external-actions form:first-child { flex:1 1 190px; }
-  .row.external-actions form:first-child button { width:100%; }
+  /* Кнопка «Подать» у Lidl и других коннекторов раньше растягивалась на всю
+     строку и выглядела чужой рядом с обычными карточками. Теперь она такая же,
+     как у всех. */
+  .row.external-actions form:first-child { flex:0 0 auto; }
   .meta { font-size:12.5px; line-height:1.45; display:grid; gap:3px; }
   .meta-line { display:flex; align-items:flex-start; gap:6px; color:var(--muted); }
   .meta-line svg { flex:0 0 auto; margin-top:2px; }

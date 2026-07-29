@@ -111,3 +111,28 @@ def test_pause_while_applying():
         )
     transit_worker._stop.set()
     assert calls == [], "во время подачи маршруты считать нельзя"
+
+
+def test_screen_jobs_are_computed_before_background():
+    """Открытый список важнее фоновой очереди: человек смотрит именно на него."""
+    transit_worker._wanted.clear()
+    seen = _Job("on-screen", 56.1600, 10.2100)      # далёкая, но на экране
+    background = _Job("bg", 55.7060, 12.4930)       # ближняя, но в фоне
+    transit_worker.request([seen])
+    with mock.patch.object(transit, "cached", return_value=None):
+        picked = transit_worker.pick_next(transit_worker._wanted_jobs(), HOME)
+        assert picked.id == "on-screen"
+        # фоновый список используется только когда срочных не осталось
+        transit_worker._wanted.clear()
+        assert transit_worker.pick_next(transit_worker._wanted_jobs(), HOME) is None
+        assert transit_worker.pick_next([background], HOME).id == "bg"
+
+
+def test_request_ignores_duplicates_and_jobs_without_coords():
+    transit_worker._wanted.clear()
+    added = transit_worker.request([
+        _Job("a", 55.7, 12.5), _Job("a", 55.7, 12.5), _Job("b", None, None),
+    ])
+    assert added == 1 and list(transit_worker._wanted) == ["a"]
+    transit_worker._forget("a")
+    assert transit_worker._wanted == {}
