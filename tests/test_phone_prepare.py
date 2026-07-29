@@ -160,3 +160,29 @@ def test_dry_run_reports_prepared_states_to_cloud():
     assert '"prepared" if ok else "prepare_failed"' in body, "прогон не сообщает итог"
     # сводка прогресса больше не только для реальной подачи
     assert not re.search(r"if submit:\n\s+_cloud_progress\(prog\)", body)
+
+
+def test_stale_prepare_does_not_open_browser_next_morning():
+    """Прогон — действие «здесь и сейчас». Если ПК проснулся через сутки, он не
+    должен сам открыть браузер: человек давно не у экрана."""
+    import time as _time
+    now = _time.time() * 1000
+    assert app._tg_prepare_expired({"ts": now - 31 * 60 * 1000}, now) is True
+    assert app._tg_prepare_expired({"ts": now - 60 * 1000}, now) is False
+    assert app._tg_prepare_expired({}, now) is False        # старое облако без ts
+
+    job = Job(id="salling-prep-old", source="salling", brand="Netto")
+    stale = now - 45 * 60 * 1000
+    with (
+        mock.patch.object(app, "get_session", side_effect=lambda: _session_for(job)),
+        mock.patch.object(app.applications, "offered_ids", return_value={job.id}),
+        mock.patch.object(app.applications, "listed_ids", return_value=set()),
+        mock.patch.object(app, "_launch_salling_apply") as launch,
+        mock.patch.object(app.cloud_auth, "send_digest"),
+        mock.patch.object(app, "_report_apply_result_safe") as report,
+    ):
+        app._handle_tg_decisions([{"jobId": job.id, "action": "prepare", "ts": stale}])
+
+    launch.assert_not_called()
+    assert report.call_args.args[1] == "prepare_failed"
+    assert "устарел" in report.call_args.args[2]

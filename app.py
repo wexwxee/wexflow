@@ -784,6 +784,30 @@ def _watch_connector_prepare_for_phone(job_id: str) -> None:
         _tg_stop.wait(2.0)
 
 
+def _app_version() -> str:
+    """Версия WexFlow — уезжает в панель телефона вместе с фильтрами."""
+    try:
+        import version as _v
+        return str(_v.__version__)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+TG_PREPARE_TTL_MS = 30 * 60 * 1000   # пробный прогон живёт полчаса
+
+
+def _tg_prepare_expired(item: dict, now_ms: float | None = None) -> bool:
+    """Устарел ли пробный прогон из очереди. Без ts (старое облако) — не трогаем."""
+    try:
+        ts = float((item or {}).get("ts") or 0)
+    except (TypeError, ValueError):
+        return False
+    if ts <= 0:
+        return False
+    now = now_ms if now_ms is not None else time.time() * 1000
+    return (now - ts) > TG_PREPARE_TTL_MS
+
+
 def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> None:
     """Пробный прогон с телефона: заполнить анкеты на ПК и НЕ отправлять.
 
@@ -889,6 +913,13 @@ def _handle_tg_decisions(decisions: list) -> None:
         if action == "prepare":
             # «Подготовить без отправки» с телефона — то же, что кнопка
             # «Подготовить» в приложении. Ничего не помечаем поданным.
+            # Прогон — действие «здесь и сейчас»: если ПК спал полчаса и дольше,
+            # он НЕ должен вдруг сам открыть браузер (человек уже не у экрана).
+            if _tg_prepare_expired(d):
+                _report_apply_result_safe(
+                    jid, "prepare_failed",
+                    "Прогон устарел — ПК был офлайн. Нажми «Подготовить» ещё раз.")
+                continue
             if job is not None and getattr(job, "source", "salling") != "salling":
                 prepare_connectors.append(job)
             else:
@@ -1387,6 +1418,9 @@ def _sync_filters_to_cloud(force: bool = False) -> bool:
             },
             "profileName": str(prof.get("name") or "Набор 1"),
             "profilesTotal": len(profs),
+            # версия WexFlow на ПК: в панели сразу видно, что компьютер старый —
+            # иначе «кнопка не работает» выглядит как поломка облака
+            "appVersion": _app_version(),
             "matchCount": autopilot.profile_match_count(prof),
             # живое состояние автопилота — для карточки в панели (управление с телефона)
             "autopilot": {
@@ -1420,15 +1454,23 @@ def _sync_filters_to_cloud(force: bool = False) -> bool:
 # 120 c снижают постоянный расход примерно втрое. После найденной работы интервал
 # временно падает до 2 c, поэтому серия команд остаётся отзывчивой.
 TG_IDLE_POLL_SEC = 120
+# Пока панель открыта в телефоне, облако помечает устройство «живым», и ПК
+# слушает часто: телефон — пульт, ждать реакции 2 минуты нельзя. Флаг в облаке
+# живёт 90 c, поэтому закрытая панель возвращает экономный пульс сама.
+TG_LIVE_POLL_SEC = 4
 
 
-def _tg_poll_delay(fail_streak: int, signed_in: bool, had_work: bool = False) -> int:
-    """Адаптивный интервал: быстрый ответ после работы, редкий холостой heartbeat
-    (бережём лимит облачного Redis) и экспоненциальный backoff при сбоях сети."""
+def _tg_poll_delay(fail_streak: int, signed_in: bool, had_work: bool = False,
+                   panel_active: bool = False) -> int:
+    """Адаптивный интервал: быстрый ответ после работы, быстрый пульс пока
+    человек держит панель открытой, редкий холостой heartbeat (бережём лимит
+    облачного Redis) и экспоненциальный backoff при сбоях сети."""
     if fail_streak > 0:
         return min(900, 15 * (2 ** min(fail_streak - 1, 6)))
     if had_work:
         return 2
+    if panel_active and signed_in:
+        return TG_LIVE_POLL_SEC
     return TG_IDLE_POLL_SEC if signed_in else 20
 
 
@@ -1439,6 +1481,7 @@ def _tg_poller_loop() -> None:
     Заменяет старый getUpdates: бот теперь общий и работает через webhook, поэтому
     нажатия кнопок собирает облако, а приложение забирает готовые решения."""
     binding_sync_last = 0.0
+    panel_active = False
     while not _tg_stop.is_set():
         signed_in = False
         had_work = False
@@ -1460,6 +1503,7 @@ def _tg_poller_loop() -> None:
                 sync_binding=sync_binding,
             )
             if cycle is None:
+                panel_active = False
                 _tg_poll_state["fail_streak"] = int(_tg_poll_state.get("fail_streak") or 0) + 1
                 poll_error = cloud_auth.last_poll_error()
                 _tg_poll_state["last_error"] = (
@@ -1478,6 +1522,8 @@ def _tg_poller_loop() -> None:
                 decisions = cycle.get("decisions") or []
                 commands = cycle.get("commands") or []
                 had_work = bool(decisions or commands)
+                panel_active = bool(cycle.get("active"))
+                _tg_poll_state["panel_active"] = panel_active
                 active_profile_id = candidate_profiles.active_profile_id()
                 current_decisions, other_decisions, invalid_decisions = _partition_tg_items(
                     decisions, active_profile_id)
@@ -1520,7 +1566,7 @@ def _tg_poller_loop() -> None:
             _tg_poll_state["last_error"] = str(e)[:180]
             print(f"telegram(cloud): ошибка опроса решений — {e}")
         _tg_stop.wait(_tg_poll_delay(
-            int(_tg_poll_state.get("fail_streak") or 0), signed_in, had_work))
+            int(_tg_poll_state.get("fail_streak") or 0), signed_in, had_work, panel_active))
 
 
 def _ensure_tg_poller() -> None:

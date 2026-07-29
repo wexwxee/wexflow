@@ -106,3 +106,15 @@ if __name__ == "__main__":
         fn()
         print(f"OK   {fn.__name__}")
     print(f"\nВСЕ {len(tests)} ТЕСТА ПРОШЛИ")
+
+
+def test_open_panel_makes_pc_listen_fast():
+    """Телефон — пульт: пока панель открыта, ПК опрашивает облако за секунды.
+    Без этого команда ждала холостого пульса (до двух минут) и кнопка казалась
+    неработающей."""
+    assert app._tg_poll_delay(0, signed_in=True, panel_active=True) == app.TG_LIVE_POLL_SEC
+    assert app.TG_LIVE_POLL_SEC <= 5
+    # закрытая панель возвращает экономный режим
+    assert app._tg_poll_delay(0, signed_in=True, panel_active=False) == app.TG_IDLE_POLL_SEC
+    # сбой связи важнее живого режима — иначе долбили бы облако каждые 4 c
+    assert app._tg_poll_delay(3, signed_in=True, panel_active=True) == 60

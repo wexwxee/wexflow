@@ -107,7 +107,8 @@ def test_requests_carry_token_and_register_once():
 def test_combined_poll_uses_one_authenticated_request():
     with _TempDevice(), _Patched() as cloud:
         result = cloud_auth.fetch_poll(tg_id="42", sync_binding=True)
-        assert result == {"decisions": [], "commands": [], "ack": True}
+        # active — признак «панель открыта в телефоне» (ПК слушает часто)
+        assert result == {"decisions": [], "commands": [], "ack": True, "active": False}
         polls = [r for r in cloud.requests if "kind=poll2" in r["url"]]
         assert len(polls) == 1
         assert "tgId=42" in polls[0]["url"]
@@ -170,7 +171,7 @@ def test_combined_poll_falls_back_for_old_cloud():
             result = cloud_auth.fetch_poll(tg_id="42")
         finally:
             cloud_auth.urllib.request.urlopen = original
-        assert result == {"decisions": [], "commands": [], "ack": False}
+            assert result == {"decisions": [], "commands": [], "ack": False, "active": False}
         assert len([r for r in old_cloud.requests if "/api/decisions" in r["url"]]) == 2
 
 

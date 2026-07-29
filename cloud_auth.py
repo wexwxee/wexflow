@@ -463,6 +463,9 @@ def fetch_poll(
             "decisions": data.get("decisions") if isinstance(data.get("decisions"), list) else [],
             "commands": commands,
             "ack": bool(data.get("ack")),
+            # облако говорит, открыта ли сейчас панель на телефоне: пока открыта,
+            # ПК слушает часто, чтобы кнопки срабатывали за секунды, а не за 2 минуты
+            "active": bool(data.get("active")),
         }
         _clear_poll_error()
         return result
