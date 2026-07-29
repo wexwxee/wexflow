@@ -82,6 +82,24 @@ class Application(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class TransitRoute(SQLModel, table=True):
+    """Кэш маршрутов «дом → место работы» (общественный транспорт).
+
+    Ключ — округлённые координаты обеих точек, поэтому все вакансии одного
+    магазина делят одну запись. Раньше это лежало в transit_cache.json, который
+    переписывался целиком на каждый новый маршрут.
+
+    ok=False — «маршрута нет» или сбой сети: такие перепроверяем чаще удачных.
+    """
+    key: str = Field(primary_key=True)      # "55.7090,12.4813|55.7105,12.4781"
+    ok: bool = True
+    minutes: int = 0
+    transfers: int = 0
+    modes: str = ""                         # "5C, 22" — чем ехать
+    error: str = ""
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 # timeout=30: ждать освобождения блокировки до 30с, а не падать сразу «database is
 # locked». База открыта двумя процессами (приложение + воркер apply.py) и многими
 # потоками, поэтому ожидание блокировки критично для надёжной отметки applied (F34).

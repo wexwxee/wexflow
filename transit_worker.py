@@ -89,12 +89,23 @@ def _straight_km(job, home) -> float:
 
 
 def pick_next(jobs, home):
-    """Следующая вакансия на расчёт: ближняя по прямой первой — она с большей
-    вероятностью реально доступна, и её время нужнее всего."""
+    """Следующая вакансия на расчёт.
+
+    Порядок: сперва те, у кого маршрута НИКОГДА не было (человек видит пустое
+    место), потом обновление просроченных; внутри — ближние по прямой первыми.
+    """
     todo = [j for j in (jobs or []) if needs_transit(j, home)]
     if not todo:
         return None
-    todo.sort(key=lambda j: _straight_km(j, home))
+
+    def _rank(j):
+        try:
+            refresh = transit.has_record(home["lat"], home["lon"], j.lat, j.lon)
+        except Exception:  # noqa: BLE001
+            refresh = False
+        return (1 if refresh else 0, _straight_km(j, home))
+
+    todo.sort(key=_rank)
     return todo[0]
 
 
