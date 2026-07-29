@@ -1160,7 +1160,9 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
         # Название переводим онлайн только для подходящих: у остальных берём
         # уже готовый перевод из кэша, иначе один синк = сотни запросов к
         # переводчику. Роль по-русски (roleRu) считается локально и есть у всех.
-        payload = [_tg_job_payload(j, is_match=m, home=home, translate_title=m, lean=True)
+        tcache = transit.snapshot()   # один раз на весь список, а не 500 чтений
+        payload = [_tg_job_payload(j, is_match=m, home=home, translate_title=m, lean=True,
+                                   transit_cache=tcache)
                    for j, m in pairs]
         digest = _sync_digest(payload)
         if not force and digest and _cloud_sync_sent_hash.get("jobs") == digest:
@@ -1739,12 +1741,15 @@ _SHORT_SOURCES = {
 }
 
 
-def _transit_fields(job, home: dict | None) -> dict:
-    """Готовое время в пути из кэша (без сети). Пусто, если ещё не считали."""
+def _transit_fields(job, home: dict | None, cache: dict | None = None) -> dict:
+    """Готовое время в пути из кэша (без сети). Пусто, если ещё не считали.
+    cache — снимок кэша (transit.snapshot()); без него читаем сами."""
     if not home or getattr(job, "lat", None) is None or getattr(job, "lon", None) is None:
         return {}
     try:
-        res = transit.cached(home["lat"], home["lon"], job.lat, job.lon)
+        res = (transit.from_snapshot(cache, home["lat"], home["lon"], job.lat, job.lon)
+               if cache is not None else
+               transit.cached(home["lat"], home["lon"], job.lat, job.lon))
     except Exception:  # noqa: BLE001
         return {}
     if not res or not res.get("ok"):
@@ -1758,7 +1763,8 @@ def _transit_fields(job, home: dict | None) -> dict:
 
 
 def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
-                    translate_title: bool = True, lean: bool = False) -> dict:
+                    translate_title: bool = True, lean: bool = False,
+                    transit_cache: dict | None = None) -> dict:
     """Структурные поля для Mini App-панели: фильтры не должны парсить только текст.
 
     Набор полей намеренно повторяет карточку главного экрана приложения (бренд с
@@ -1828,7 +1834,7 @@ def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
         # Реальное время в пути (Transitous, считается в фоне и кэшируется).
         # Расстояние по прямой врёт там, где дорога идёт в обход — озеро, ж/д,
         # залив: «≈1 км» превращалось в 20 минут пути.
-        **_transit_fields(job, home),
+        **_transit_fields(job, home, transit_cache),
         "lat": job.lat,
         "lon": job.lon,
         "url": job.application_link or "",
@@ -3278,6 +3284,19 @@ def index(
 
     # расстояние от дома (если задан) + сортировка по близости
     distances = {}
+    trips = {}          # id -> {"minutes","transfers","modes"} из кэша маршрутов
+    if home:
+        tcache = transit.snapshot()
+        for j in jobs:
+            if j.lat is None or j.lon is None:
+                continue
+            res = transit.from_snapshot(tcache, home["lat"], home["lon"], j.lat, j.lon)
+            if res and res.get("ok"):
+                trips[j.id] = {
+                    "minutes": int(res.get("minutes") or 0),
+                    "transfers": int(res.get("transfers") or 0),
+                    "modes": ", ".join(str(m) for m in (res.get("modes") or [])[:3] if m),
+                }
     if home:
         for j in jobs:
             if j.lat is not None and j.lon is not None:
@@ -3494,7 +3513,7 @@ def index(
         "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
         "sync_running": _sync_state["running"],
         "sync_error": _sync_state["last_error"],
-        "home": home, "distances": distances, "geoerror": geoerror,
+        "home": home, "distances": distances, "trips": trips, "geoerror": geoerror,
         "presets": _preset_views,
         "active_preset": _active_preset,
         "active_profile_modified": _active_profile_modified,

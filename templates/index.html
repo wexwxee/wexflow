@@ -350,6 +350,10 @@
     background:#e30613; box-sizing:border-box;
   }
   .badge.dist { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
+  /* время в пути важнее прямой линии — выделяем акцентом */
+  .badge.trip { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line);
+    font-weight:800; display:inline-flex; align-items:center; gap:5px; }
+  .badge.trip svg { display:block; }
   .badge.st-new { background:var(--accent-soft); color:var(--accent); border-color:rgba(30,215,96,.32); }
   .badge.st-seen { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
   .badge.st-applied { background:rgba(167,139,250,.14); color:#c4b5fd; border-color:rgba(167,139,250,.38); font-weight:800; }
@@ -1017,7 +1021,7 @@
   <div class="card group-card">
     <div class="badges">
       {% if g.brand %}{% set bc = brand_colors.get(g.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(g.brand) }}</span>{% endif %}
-      {% if g.dist is not none %}<span class="badge dist">≈ {{ g.dist }} км</span>{% endif %}
+      {% if g.dist is not none %}<span class="badge dist">≈ {{ g.dist }} км по прямой</span>{% endif %}
       <span class="badge st-interview">{{ ic.i('store', 12) }} {{ g.jobs|length }} {{ L.plural(g.jobs|length, 'вакансия', 'вакансии', 'вакансий') }}</span>
     </div>
     <h3>{{ ic.i('pin') }} {{ g.street or '' }}{% if g.zip or g.city %}{{ ', ' if g.street }}{{ g.zip or '' }} {{ g.city or '' }}{% endif %}{% if g.country %}, {{ g.country }}{% endif %}</h3>
@@ -1052,7 +1056,8 @@
       {% if app_state == 'submitting' %}<span class="badge" style="color:var(--info-txt);border-color:var(--info-line);" data-tip-title="Анкета в работе" data-tip-body="WexFlow открыл форму, но отправка ещё не подтверждена. После завершения отметь результат на странице вакансии. Забытое состояние само сменится через 6 часов.">анкета в работе</span>{% endif %}
       {% if app_state == 'failed' %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);" data-tip-title="Анкета не завершена" data-tip-body="Форма открывалась, но отправка не была подтверждена. Можно безопасно продолжить с того же места.">не завершено</span>{% endif %}
       {% if j.brand %}{% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(j.brand) }}</span>{% endif %}
-      {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно по прямой от домашнего адреса. Маршрут общественным транспортом смотри через кнопку Маршрут.">≈ {{ distances[j.id] }} км</span>{% endif %}
+      {% if j.id in trips %}<span class="badge trip" data-tip-title="Время в пути" data-tip-body="Реальный маршрут на общественном транспорте от домашнего адреса (посчитан и сохранён заранее). Расстояние по прямой бывает обманчивым: короткая линия на карте может означать долгий объезд.">{{ ic.i('map', 11) }} {{ trips[j.id].minutes }} мин{% if trips[j.id].modes %} · {{ trips[j.id].modes }}{% endif %}</span>{% endif %}
+      {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно ПО ПРЯМОЙ от домашнего адреса — не путь. Реальное время в пути показано соседним бейджем, когда посчитано.">≈ {{ distances[j.id] }} км по прямой</span>{% endif %}
       {% if j.status != 'new' %}<span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>{% endif %}
     </div>
     <h3>{{ j.title }}</h3>

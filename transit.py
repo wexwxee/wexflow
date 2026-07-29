@@ -36,6 +36,24 @@ def cache_key(flat: float, flng: float, tlat: float, tlng: float) -> str:
     return f"{round(flat, 4)},{round(flng, 4)}|{round(tlat, 4)},{round(tlng, 4)}"
 
 
+def snapshot() -> dict:
+    """Весь кэш маршрутов одним чтением. Нужен там, где ищем время в пути сразу
+    для сотен вакансий (список приложения, синк в телефон): по-элементно это
+    было бы сотнями чтений одного и того же файла."""
+    try:
+        with _CACHE_LOCK:
+            return dict(_load())
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def from_snapshot(cache: dict, flat: float, flng: float, tlat: float, tlng: float) -> dict | None:
+    """Готовый маршрут из уже прочитанного кэша (без диска и сети)."""
+    if not cache:
+        return None
+    return cache.get(cache_key(flat, flng, tlat, tlng))
+
+
 def cached(flat: float, flng: float, tlat: float, tlng: float) -> dict | None:
     """Готовый ответ из кэша или None. Без сети — годится и для списка из 500
     вакансий (payload в телефон), и для отбора кандидатов фоновым воркером."""
