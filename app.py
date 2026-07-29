@@ -669,6 +669,7 @@ def _apply_result_msg(state: str, reason: str) -> str:
         return "Подача уже запущена"
     return {
         "missing": "Вакансия больше не доступна",
+        "inactive": "Вакансия уже неактуальна — закрыта или заявка подана",
         "stale": "Карточка больше не подходит под текущие фильтры",
         "launch_error": "Не удалось запустить подачу на ПК",
         "not_offered": "Заявка под эту вакансию не предлагалась — подача отклонена",
@@ -1785,6 +1786,9 @@ def _transit_fields(job, home: dict | None, cache: dict | None = None) -> dict:
     modes = [str(m) for m in (res.get("modes") or []) if m][:3]
     if modes:
         out["transitModes"] = ", ".join(modes)
+        # вид транспорта каждой линии (bus/train/metro/tram/ferry) — телефон
+        # рисует по нему иконку «чем добраться» вместо эмодзи
+        out["transitKinds"] = ", ".join(transit.kinds_of(res)[:3])
     return out
 
 
@@ -3323,6 +3327,8 @@ def index(
                     "minutes": int(res.get("minutes") or 0),
                     "transfers": int(res.get("transfers") or 0),
                     "modes": ", ".join(str(m) for m in (res.get("modes") or [])[:3] if m),
+                    # виды транспорта (bus/train/metro/…) — иконки в бейдже
+                    "kinds": transit.kinds_of(res)[:3],
                 }
             elif res is None:
                 need_route.append(j)

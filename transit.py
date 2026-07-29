@@ -4,6 +4,7 @@
 поэтому повторно — мгновенно. Для всего списка из 2400 не вызываем (Transitous
 сериализует запросы по IP и медленный).
 """
+import re
 import threading
 from datetime import timedelta
 
@@ -29,6 +30,47 @@ TRANSIT_MODES = {
 _CACHE_LOCK = threading.RLock()
 _MIGRATED = False
 
+# Вид транспорта (для иконки «чем добраться»): ответ Transitous → наше имя.
+# Названий видов немного, и они одинаковы во всех интерфейсах — приложение,
+# карточка, Mini App: bus | train | metro | tram | ferry.
+MODE_KINDS = {
+    "BUS": "bus", "COACH": "bus",
+    "TRAM": "tram",
+    "SUBWAY": "metro", "METRO": "metro",
+    "RAIL": "train", "REGIONAL_RAIL": "train", "REGIONAL_FAST_RAIL": "train",
+    "SUBURBAN": "train", "HIGHSPEED_RAIL": "train", "LONG_DISTANCE": "train",
+    "NIGHT_RAIL": "train",
+    "FERRY": "ferry",
+}
+# Маршруты, посчитанные до появления колонки kinds, знают только номер линии.
+# Датские обозначения читаются однозначно: M1–M4 — метро, одиночная буква —
+# S-tog (A, B, Bx, C, E, F, H), Re/IC/ICL/EN/L — поезд, остальное — автобус.
+_METRO_RX = re.compile(r"^M\s?\d", re.IGNORECASE)
+_STOG_RX = re.compile(r"^(?:A|B|Bx|C|E|F|H)$", re.IGNORECASE)
+_TRAIN_RX = re.compile(r"^(?:RE|IC|ICL|ICE|EN|L|R|LYN|ØR|OR)\b", re.IGNORECASE)
+
+
+def kind_from_line(name: str) -> str:
+    """Вид транспорта по номеру линии — запасной вариант для старых маршрутов."""
+    line = str(name or "").strip()
+    if _METRO_RX.match(line):
+        return "metro"
+    if _STOG_RX.match(line) or _TRAIN_RX.match(line):
+        return "train"
+    return "bus"
+
+
+def kinds_of(res: dict | None) -> list[str]:
+    """Виды транспорта маршрута — по одному на линию из `modes`.
+
+    Берём сохранённый вид; если его нет (маршрут посчитан старой версией) —
+    угадываем по номеру линии, чтобы иконка была у каждого маршрута сразу, а
+    не только через две недели после пересчёта.
+    """
+    modes = [str(m) for m in ((res or {}).get("modes") or []) if m]
+    kinds = [str(k) for k in ((res or {}).get("kinds") or []) if k]
+    return [kinds[i] if i < len(kinds) else kind_from_line(m) for i, m in enumerate(modes)]
+
 
 def _row_to_dict(row) -> dict:
     if not row.ok:
@@ -38,6 +80,7 @@ def _row_to_dict(row) -> dict:
         "minutes": int(row.minutes or 0),
         "transfers": int(row.transfers or 0),
         "modes": [m.strip() for m in str(row.modes or "").split(",") if m.strip()],
+        "kinds": [k.strip() for k in str(getattr(row, "kinds", "") or "").split(",") if k.strip()],
         "ts": row.updated_at,
     }
 
@@ -94,6 +137,7 @@ def _store(key: str, res: dict) -> None:
             row.minutes = int(res.get("minutes") or 0)
             row.transfers = int(res.get("transfers") or 0)
             row.modes = ", ".join(str(m) for m in (res.get("modes") or []) if m)[:120]
+            row.kinds = ", ".join(str(k) for k in (res.get("kinds") or []) if k)[:120]
             row.error = str(res.get("error") or "")[:120]
             row.updated_at = utcnow()
             s.add(row)
@@ -190,11 +234,17 @@ def summary(flat: float, flng: float, tlat: float, tlng: float) -> dict:
         return res
     best = min(its, key=lambda it: it.get("duration", 1e12))
     minutes = round(best.get("duration", 0) / 60)
-    modes = []
+    modes, kinds = [], []
     for leg in best.get("legs", []):
-        if leg.get("mode") in TRANSIT_MODES:
-            modes.append(leg.get("routeShortName") or leg.get("routeLongName") or leg.get("mode"))
-    res = {"ok": True, "minutes": minutes, "transfers": max(0, len(modes) - 1), "modes": modes[:5]}
+        mode = leg.get("mode")
+        if mode in TRANSIT_MODES:
+            name = leg.get("routeShortName") or leg.get("routeLongName") or mode
+            modes.append(name)
+            # вид транспорта — для иконки «чем добраться»; если сервис прислал
+            # незнакомый mode, читаем его по номеру линии
+            kinds.append(MODE_KINDS.get(str(mode).upper()) or kind_from_line(name))
+    res = {"ok": True, "minutes": minutes, "transfers": max(0, len(modes) - 1),
+           "modes": modes[:5], "kinds": kinds[:5]}
     # Пишется ровно одна строка базы — соседние маршруты не трогаются,
     # параллельный расчёт ничего не теряет.
     _store(key, res)

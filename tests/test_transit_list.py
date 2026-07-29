@@ -40,9 +40,20 @@ def test_snapshot_is_read_once_for_many_jobs():
 def test_ready_route_becomes_payload_fields():
     job = _Job("j1", 55.7060, 12.4930)
     key = transit.cache_key(HOME["lat"], HOME["lon"], job.lat, job.lon)
-    cache = {key: {"ok": True, "minutes": 18, "transfers": 0, "modes": ["22"]}}
+    cache = {key: {"ok": True, "minutes": 18, "transfers": 0, "modes": ["22"],
+                   "kinds": ["bus"]}}
     fields = app._transit_fields(job, HOME, cache)
-    assert fields == {"transitMin": 18, "transitTransfers": 0, "transitModes": "22"}
+    assert fields == {"transitMin": 18, "transitTransfers": 0,
+                      "transitModes": "22", "transitKinds": "bus"}
+
+
+def test_old_route_without_kinds_still_gets_transport_icon():
+    """Маршруты, посчитанные до появления вида транспорта, не остаются без
+    иконки: вид читается по номеру линии (M3 — метро, A — S-tog, 5C — автобус)."""
+    job = _Job("j4", 55.7060, 12.4930)
+    key = transit.cache_key(HOME["lat"], HOME["lon"], job.lat, job.lon)
+    cache = {key: {"ok": True, "minutes": 25, "transfers": 2, "modes": ["5C", "A", "M3"]}}
+    assert app._transit_fields(job, HOME, cache)["transitKinds"] == "bus, train, metro"
 
 
 def test_unknown_or_failed_route_adds_nothing():
@@ -62,4 +73,5 @@ def test_list_template_shows_minutes_and_transport():
                              "templates", "index.html"), encoding="utf-8").read()
     assert "trips[j.id].minutes" in html, "в списке нет времени в пути"
     assert "trips[j.id].modes" in html, "в списке не видно, на чём ехать"
+    assert "trips[j.id].kinds" in html, "в бейдже нет иконки вида транспорта"
     assert "км по прямой" in html, "расстояние не подписано как «по прямой»"

@@ -95,7 +95,8 @@ class TransitRoute(SQLModel, table=True):
     ok: bool = True
     minutes: int = 0
     transfers: int = 0
-    modes: str = ""                         # "5C, 22" — чем ехать
+    modes: str = ""                         # "5C, 22" — чем ехать (номера линий)
+    kinds: str = ""                         # "bus, train" — вид транспорта тех же линий
     error: str = ""
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -140,6 +141,11 @@ def _migrate():
         ]:
             if name not in cols:
                 conn.execute(text(f"ALTER TABLE job ADD COLUMN {ddl}"))
+        # вид транспорта у сохранённых маршрутов: у старых записей пусто,
+        # интерфейс до пересчёта угадывает его по номеру линии
+        troute = {row[1] for row in conn.execute(text("PRAGMA table_info(transitroute)"))}
+        if troute and "kinds" not in troute:
+            conn.execute(text("ALTER TABLE transitroute ADD COLUMN kinds VARCHAR NOT NULL DEFAULT ''"))
         conn.commit()
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_job_source ON job (source)"))
         _deduplicate_applications(conn)

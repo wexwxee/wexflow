@@ -575,8 +575,14 @@ def profile_match_count(p: dict) -> int:
     return sum(1 for j in jobs if _profile_matches(j, p, home))
 
 
-def _matches(job: Job, rule: dict, home: dict | None) -> bool:
-    """Вакансия подходит, если совпала хотя бы с ОДНИМ включённым профилем."""
+def can_submit(job: Job) -> bool:
+    """Можно ли ещё подать на вакансию — БЕЗ фильтров подбора.
+
+    Фильтры («Наборы») отвечают на вопрос «предлагать ли самим», а не «можно
+    ли подать». Ручную подачу с телефона человек делает по конкретной карточке
+    из списка, а список живёт по СВОИМ фильтрам — поэтому такую подачу здесь
+    проверяем только на то, что мешает ей по факту.
+    """
     if job.status in ("closed", "hidden", "applied"):
         return False
     # ATS-коннекторы пока работают в безопасном assisted-режиме: форма
@@ -588,7 +594,12 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
     # даже если статус ушёл вперёд по воронке (interview/offer/rejected). Иначе
     # после подачи и перевода в «Собеседование» вакансия снова стала бы «подходящей»
     # и тихий автопилот подал бы на неё повторно. applied_at — нерушимая правда.
-    if job.applied_at is not None:
+    return job.applied_at is None
+
+
+def _matches(job: Job, rule: dict, home: dict | None) -> bool:
+    """Вакансия подходит, если совпала хотя бы с ОДНИМ включённым профилем."""
+    if not can_submit(job):
         return False
     profs = [p for p in get_profiles(rule) if p.get("enabled", True)]
     if not profs:
@@ -912,7 +923,6 @@ def tg_decide(job_id: str, approve: bool, launcher) -> str:
         applications.mark_skipped(job_id)
         log_event("info", f"TG: пропущено — {title}")
         return f"❌ <b>Пропущено</b>\n{t}"
-    latest = get_rule()
     state = applications.state_of(job_id)
     if state == "submitted":
         return f"ℹ️ <b>Уже подавалось ранее</b>\n{t}"
@@ -920,9 +930,12 @@ def tg_decide(job_id: str, approve: bool, launcher) -> str:
         return f"ℹ️ <b>Подача уже запущена</b>\n{t}"
     if not job:
         return "⚠️ Вакансия больше недоступна."
-    if not _matches(job, latest, settings_store.get_home()):
-        log_event("info", f"TG: карточка устарела и не подходит под текущие фильтры — {title}")
-        return f"⚠️ <b>Карточка устарела</b>\n{t}\n\nЭта вакансия больше не подходит под текущие фильтры."
+    # Фильтры подбора здесь НЕ проверяем: человек ответил ✅ по конкретной
+    # карточке — это его решение, а не предложение автопилота. Смотрим только,
+    # можно ли ещё подать (не закрыта, не подана).
+    if not can_submit(job):
+        log_event("info", f"TG: подача отклонена — вакансия уже неактуальна: {title}")
+        return f"⚠️ <b>Вакансия уже неактуальна</b>\n{t}\n\nОна закрыта или заявка уже подана."
     mark_submitting([job_id], origin="telegram")
     try:
         launcher([job_id])
@@ -983,8 +996,6 @@ def tg_submit_batch(job_ids, launcher) -> dict:
     pend = [p for p in (r.get("tg_pending") or []) if p.get("job_id") not in pending_ids]
     save_rule({"tg_pending": pend})
 
-    latest = get_rule()
-    home = settings_store.get_home()
     submitted = applications.submitted_ids()
     submitting = applications.submitting_ids()
     started: list[str] = []
@@ -1013,11 +1024,15 @@ def tg_submit_batch(job_ids, launcher) -> dict:
                 "job_id": job_id, "state": "failed",
                 "reason": "missing", "title": title,
             })
-        elif not _matches(job, latest, home):
-            log_event("info", f"TG: карточка устарела и не подходит под текущие фильтры — {title}")
+        elif not can_submit(job):
+            # Раньше здесь стояли фильтры автопилота, и подача карточки, которую
+            # человек только что видел в списке на телефоне, отбивалась как
+            # «не подходит под текущие фильтры». Список на телефоне живёт по
+            # своим фильтрам — гейт на подачу проверяет только актуальность.
+            log_event("info", f"TG: подача отклонена — вакансия уже неактуальна: {title}")
             skipped.append({
                 "job_id": job_id, "state": "failed",
-                "reason": "stale", "title": title,
+                "reason": "inactive", "title": title,
             })
         else:
             started.append(job_id)
