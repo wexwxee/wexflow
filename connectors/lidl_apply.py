@@ -570,6 +570,15 @@ def blockers(page, profile: dict) -> list[str]:
         if not answer:
             reasons.append("нет сохранённого ответа: " + (question[:80] or "вопрос без подписи"))
     reasons.extend("не заполнено обязательное поле: " + name for name in required_left(page))
+    # Подстраховка от «не увидел вопрос»: Lidl показывает N вопросов вакансии,
+    # а мы разобрали меньше — значит какой-то вопрос отрисован иначе. Жать
+    # нельзя: непонятый вопрос опаснее неотправленной заявки.
+    declared = _screening_question_count(page)
+    seen = len(_radio_groups(page))
+    if declared > seen:
+        reasons.append(
+            f"распознано {seen} вопросов из {declared} — остальные WexFlow не понял"
+        )
     button = _submit_button(page)
     if button is None:
         reasons.append("кнопка Ansøg не найдена")

@@ -22,22 +22,22 @@ PROFILE = {
 }
 
 QUESTIONS = """
-  <div class="sapMRbG" role="radiogroup" aria-labelledby="q1lbl">
-    <span id="q1lbl" class="sapMLabel">Har du erfaring med (detail) branchen?</span>
+  <label id="q1lbl" for="__group1">Har du erfaring med (detail) branchen?</label>
+  <div class="sapMRbG" id="__group1" role="radiogroup" aria-labelledby="q1lbl">
     <div class="sapMRb" id="q1ja" role="radio" aria-checked="false"
          onclick="this.setAttribute('aria-checked','true')">Ja</div>
     <div class="sapMRb" id="q1nej" role="radio" aria-checked="false"
          onclick="this.setAttribute('aria-checked','true')">Nej</div>
   </div>
-  <div class="sapMRbG" role="radiogroup" aria-labelledby="q2lbl">
-    <span id="q2lbl" class="sapMLabel">Er du villig til at arbejde hver 2. weekend?</span>
+  <label id="q2lbl" for="__group2">Er du villig til at arbejde hver 2. weekend?</label>
+  <div class="sapMRbG" id="__group2" role="radiogroup" aria-labelledby="q2lbl">
     <div class="sapMRb" id="q2ja" role="radio" aria-checked="false"
          onclick="this.setAttribute('aria-checked','true')">Ja</div>
     <div class="sapMRb" id="q2nej" role="radio" aria-checked="false"
          onclick="this.setAttribute('aria-checked','true')">Nej</div>
   </div>
-  <div class="sapMRbG" role="radiogroup" aria-labelledby="q3lbl">
-    <span id="q3lbl" class="sapMLabel">Kan du møde kl 06.00 om morgenen?</span>
+  <label id="q3lbl" for="__group3">Kan du møde kl 06.00 om morgenen?</label>
+  <div class="sapMRbG" id="__group3" role="radiogroup" aria-labelledby="q3lbl">
     <div class="sapMRb" id="q3ja" role="radio" aria-checked="false"
          onclick="this.setAttribute('aria-checked','true')">Ja</div>
     <div class="sapMRb" id="q3nej" role="radio" aria-checked="false"
@@ -194,6 +194,24 @@ def test_prepare_stops_on_a_changed_form_before_typing_anything():
             assert "загрузка CV" in changed.report["missing"]
         assert raised, "изменённая форма обязана останавливать подготовку"
         assert page.input_value("#first") == "", "поля не должны заполняться"
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_unrecognised_question_blocks_the_click():
+    """Lidl показал вопрос, который мы не разобрали — не жмём вообще."""
+    playwright, browser, page = _page()
+    try:
+        page.set_content(QUESTIONS + """
+          <label for="__group99">Hvor har du hørt om os?</label>
+          <select id="__group99"><option></option><option>Google</option></select>
+        """ + SUBMIT_BUTTON)
+        lidl_apply.fill_answers(page, PROFILE)
+        result = lidl_apply.submit(page, PROFILE)
+        assert result["state"] == "blocked"
+        assert "не понял" in result["message"]
+        assert page.locator("p").count() == 0, "кнопка была нажата!"
     finally:
         browser.close()
         playwright.stop()
