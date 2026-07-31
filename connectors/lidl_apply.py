@@ -253,7 +253,12 @@ def _screening_question_count(page) -> int:
 _GENDER_LABELS = {
     "male": ("Mand", "Male", "Mænd"),
     "female": ("Kvinde", "Female", "Kvinder"),
-    "other": ("Andet", "Other", "Ønsker ikke at oplyse"),
+    "other": ("Andet", "Other", "Non-binary"),
+    "prefer_not_say": (
+        "Ønsker ikke at oplyse",
+        "Prefer not to say",
+        "Vil ikke oplyse",
+    ),
 }
 
 _YES_RE = re.compile(r"^\s*(ja|yes)\s*$", re.I)
@@ -598,12 +603,13 @@ def arm_explicit_submit(page) -> bool:
                 action.type = 'button';
                 action.textContent = 'Отправить до конца';
                 action.style.cssText =
-                    'width:100%;margin-top:10px;padding:10px 12px;border:0;border-radius:9px;'
-                    + 'background:#16d86b;color:#07170d;font-weight:800;cursor:pointer;';
+                    'display:block;width:100%;min-height:42px;padding:10px 12px;border:0;border-radius:9px;'
+                    + 'background:#16d86b;color:#07170d;font:800 14px/1.2 Inter,Segoe UI,sans-serif;'
+                    + 'white-space:normal;cursor:pointer;';
                 const note = document.createElement('div');
                 note.textContent =
                     'Проверит готовность и завершит подачу в этом же окне.';
-                note.style.cssText = 'margin-top:8px;color:#ffcf70;font-size:12px;';
+                note.style.cssText = 'margin-bottom:8px;color:#ffcf70;font-size:12px;line-height:1.35;';
                 action.addEventListener('click', () => {
                     const buttons = [...document.querySelectorAll('button')];
                     const nativeButton = buttons.find(button =>
@@ -623,7 +629,8 @@ def arm_explicit_submit(page) -> bool:
                     action.disabled = true;
                     action.textContent = 'Отправляю…';
                 });
-                root.querySelector('.card')?.append(note, action);
+                const actions = root.querySelector('.actions') || root.querySelector('.card');
+                actions?.append(note, action);
                 return true;
             }"""
         ))

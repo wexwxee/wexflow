@@ -834,13 +834,15 @@
       <summary>{{ ic.i('check', 14) if ic else '' }} Ответы для анкет магазинов <span class="ai-extra-tag">нужно для полной подачи</span></summary>
       <p class="hint" style="margin:10px 0 14px;">Магазины спрашивают одно и то же: пол, дата выхода, готов ли работать по выходным, вечерам и с раннего утра. Ответь один раз — и WexFlow сможет доводить анкету до конца сам. Что не отвечено — <b>не выдумывается</b>: такой вопрос останется пустым, а подача остановится и подождёт тебя.</p>
       <div class="grid2">
-        <div class="field"><label class="lbl">Пол</label>
+        <div class="field"><label class="lbl">Пол / вариант ответа в анкете</label>
           <select name="gender" class="{{ 'answered' if profile.gender else '' }}">
             <option value=""{{ ' selected' if not profile.gender else '' }}>Не указывать</option>
             <option value="male"{{ ' selected' if profile.gender == 'male' else '' }}>Мужской</option>
             <option value="female"{{ ' selected' if profile.gender == 'female' else '' }}>Женский</option>
             <option value="other"{{ ' selected' if profile.gender == 'other' else '' }}>Другое</option>
-          </select></div>
+            <option value="prefer_not_say"{{ ' selected' if profile.gender == 'prefer_not_say' else '' }}>Не хочу указывать</option>
+          </select>
+          <p class="wf-field-note">Некоторые работодатели спрашивают это в своей форме. WexFlow не определяет пол по имени и подставляет только выбранный тобой вариант.</p></div>
         <div class="field"><label class="lbl">С какой даты можешь выйти</label>
           <input type="date" name="start_date" value="{{ profile.start_date or '' }}"></div>
         {% for key, human in [
@@ -858,7 +860,7 @@
           </select></div>
         {% endfor %}
         <div class="field" style="grid-column:1/-1;"><label class="lbl">Где видишь себя через два года <span class="hint">(Hvor ser du dig selv om to år?)</span></label>
-          <input type="text" name="two_year_goal" value="{{ profile.two_year_goal or '' }}" placeholder="Напиши свой короткий ответ — WexFlow не будет его придумывать"></div>
+          <input type="text" name="two_year_goal" value="{{ profile.two_year_goal or '' }}" placeholder="Напиши свой короткий ответ — WexFlow не будет его придумывать" data-ai-writing data-recommended-language="da"></div>
       </div>
     </details>
 
@@ -881,25 +883,60 @@
             <option value="no"{{ ' selected' if profile.lidl_current_employee == 'no' else '' }}>Нет</option>
           </select></div>
         <div class="field"><label class="lbl">Если раньше работал(а) в этой компании — где и когда <span class="hint">(необязательно)</span></label>
-          <input type="text" name="lidl_previous_employment" value="{{ profile.lidl_previous_employment or '' }}" placeholder="Оставь пустым, если не работал(а)"></div>
+          <input type="text" name="lidl_previous_employment" value="{{ profile.lidl_previous_employment or '' }}" placeholder="Оставь пустым, если не работал(а)" data-ai-writing data-recommended-language="da"></div>
         <div class="field"><label class="lbl">Как узнал(а) об этой вакансии?</label>
-          <input type="text" name="lidl_discovery" value="{{ profile.lidl_discovery or '' }}" placeholder="Точный вариант Lidl, например Jobindex"></div>
+          <input type="text" name="lidl_discovery" value="{{ profile.lidl_discovery or '' }}" placeholder="Точный вариант Lidl, например Jobindex" data-ai-writing data-recommended-language="da"></div>
         <div class="field"><label class="lbl">Гражданство <span class="hint">(statsborgerskab)</span></label>
-          <input type="text" name="citizenship" value="{{ profile.citizenship or '' }}" placeholder="Например: Ukraine"></div>
+          <select name="citizenship" data-searchable="true" data-search-placeholder="Страна по-русски или как в датской форме">
+            <option value=""{{ ' selected' if not profile.citizenship else '' }}>Не отвечать</option>
+            {% set citizenship_state = namespace(found=false) %}
+            {% for value, russian in citizenship_options %}
+            {% if profile.citizenship == value %}{% set citizenship_state.found = true %}{% endif %}
+            <option value="{{ value }}" data-description="В форму: {{ value }}"{{ ' selected' if profile.citizenship == value else '' }}>{{ russian }} — {{ value }}</option>
+            {% endfor %}
+            {% if profile.citizenship and not citizenship_state.found %}
+            <option value="{{ profile.citizenship }}" selected>{{ profile.citizenship }} — сохранённый вариант</option>
+            {% endif %}
+          </select>
+          <p class="wf-field-note">Выбирай только своё настоящее гражданство. Русское название — подсказка; работодателю подставляется значение справа.</p></div>
         <div class="field"><label class="lbl">Есть действующее разрешение на проживание/работу?</label>
           <select name="work_permit" class="{{ 'answered' if profile.work_permit else '' }}">
             <option value=""{{ ' selected' if not profile.work_permit else '' }}>Не отвечать</option>
-            <option value="yes"{{ ' selected' if profile.work_permit == 'yes' else '' }}>Да</option>
-            <option value="no"{{ ' selected' if profile.work_permit == 'no' else '' }}>Нет</option>
+            <option value="yes"{{ ' selected' if profile.work_permit == 'yes' else '' }}>Да — у меня есть право работать в Дании</option>
+            <option value="no"{{ ' selected' if profile.work_permit == 'no' else '' }}>Нет / право ещё не получено</option>
           </select></div>
         <div class="field"><label class="lbl">Можешь предоставить чистую справку о несудимости?</label>
           <select name="clean_criminal_record" class="{{ 'answered' if profile.clean_criminal_record else '' }}">
             <option value=""{{ ' selected' if not profile.clean_criminal_record else '' }}>Не отвечать</option>
-            <option value="yes"{{ ' selected' if profile.clean_criminal_record == 'yes' else '' }}>Да</option>
-            <option value="no"{{ ' selected' if profile.clean_criminal_record == 'no' else '' }}>Нет</option>
+            <option value="yes"{{ ' selected' if profile.clean_criminal_record == 'yes' else '' }}>Да — могу предоставить чистую справку</option>
+            <option value="no"{{ ' selected' if profile.clean_criminal_record == 'no' else '' }}>Нет / не могу подтвердить чистую справку</option>
           </select></div>
+        <details class="wf-answer-help">
+          <summary>Как понять, есть ли право работать в Дании?</summary>
+          <div class="wf-answer-help-body">
+            <p><strong>Граждане Северных стран</strong> могут работать сразу. <strong>Граждане ЕС/ЕЭЗ и Швейцарии</strong> могут начать работу без отдельного разрешения и затем оформить документ о проживании.</p>
+            <p><strong>Украина:</strong> разрешение по Special Act даёт право работать. После подачи по Special Act и сдачи биометрии право на работу может действовать уже во время рассмотрения, если заявление не является очевидно неподходящим; при трудоустройстве нужно передать SIRI контракт. Проверяй своё письмо/карту и условия именно своего дела.</p>
+            <p><strong>Остальные страны:</strong> обычно нужно действующее разрешение; ограничения указаны в письме SIRI или на карте. Туристическое/безвизовое пребывание само по себе права на работу не даёт.</p>
+            <p><a href="https://nyidanmark.dk/en-GB/Words-and-concepts/SIRI/Illegal-work" target="_blank" rel="noopener">Официально: право на работу в Дании</a> · <a href="https://www.nyidanmark.dk/en-GB/You-are-waiting-for-an-answer/Fordreven-fra-Ukraine" target="_blank" rel="noopener">Украина и Special Act</a> · <a href="https://www.nyidanmark.dk/en-GB/News-Front-Page/2025/10/Extension-of-residence-permit-under-the-Ukraine-Special-Act" target="_blank" rel="noopener">продление подходящих разрешений до 17.03.2027</a></p>
+            <p>Проверено 31 июля 2026 года. Иммиграционные правила меняются — перед ответом сверяй последнее письмо SIRI и официальные ссылки.</p>
+          </div>
+        </details>
+        <details class="wf-answer-help">
+          <summary>Где получить справку о несудимости?</summary>
+          <div class="wf-answer-help-body">
+            <p><strong>В Дании:</strong> приватная straffeattest заказывается бесплатно через MitID/Digital Post; без MitID — письменно или в отделении полиции с удостоверением личности. Работодатель может запросить её только с твоего согласия. Наличие записи не означает автоматический отказ — оценивается её отношение к работе.</p>
+            <p><strong>Для граждан Украины:</strong> официальный витяг можно бесплатно заказать в «Дії». Для датской вакансии сначала уточни у работодателя, нужен ли ему именно украинский документ и потребуются ли перевод или апостиль.</p>
+            <p><a href="https://politi.dk/en/services-and-permits/certificate-of-criminal-record" target="_blank" rel="noopener">Danish Police: criminal record</a> · <a href="https://diia.gov.ua/services/vityag-pro-nesudimist" target="_blank" rel="noopener">Дія: витяг про несудимість</a></p>
+          </div>
+        </details>
         <div class="field"><label class="lbl">Заболевания, существенно влияющие на работу <span class="hint">(необязательно)</span></label>
-          <input type="text" name="relevant_health_condition" value="{{ profile.relevant_health_condition or '' }}" placeholder="Оставь пустым, если сообщать нечего"></div>
+          <input type="text" name="relevant_health_condition" value="{{ profile.relevant_health_condition or '' }}" placeholder="Оставь пустым, если сообщать нечего" data-ai-writing data-recommended-language="da">
+          <div class="wf-quick-options">
+            <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="">Оставить пустым</button>
+            <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="Ingen relevante helbredsforhold, som påvirker min arbejdsevne.">Нет влияющих состояний</button>
+            <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="Jeg vil gerne drøfte eventuelle nødvendige hensyn ved en samtale.">Обсудить необходимые условия на собеседовании</button>
+          </div>
+          <p class="wf-field-note">Не сообщай диагноз без необходимости. Выбирай готовую фразу только если она правдива; ИИ не должен придумывать медицинские сведения.</p></div>
       </div>
       <p class="hint" style="margin:14px 0 0;">Имя рекомендующего сотрудника и ответы о работе в компании часто различаются — задай исключение ниже, если общий ответ подходит не всем работодателям.</p>
     </details>
@@ -991,10 +1028,11 @@
             <select name="gender" data-company-answer>
               <option value="">Без замены</option><option value="male">Мужской</option>
               <option value="female">Женский</option><option value="other">Другое</option>
+              <option value="prefer_not_say">Не хочу указывать</option>
             </select></div>
           <div class="field"><label class="lbl">Дата выхода</label><input type="date" name="start_date" data-company-answer></div>
           <div class="field" style="grid-column:1/-1;"><label class="lbl">Где видишь себя через два года</label>
-            <input type="text" name="two_year_goal" data-company-answer></div>
+            <input type="text" name="two_year_goal" data-company-answer data-ai-writing data-recommended-language="da"></div>
           {% for key, human in [
               ('retail_experience', 'Есть опыт в рознице/магазине'),
               ('work_weekends', 'Готов работать каждые вторые выходные'),
@@ -1013,12 +1051,24 @@
           {% for key, human, placeholder in [
               ('lidl_referral_name', 'Имя сотрудника, который порекомендовал', 'Пусто, если никто не рекомендовал'),
               ('lidl_previous_employment', 'Где и когда раньше работал в этой компании', 'Пусто, если не работал'),
-              ('lidl_discovery', 'Как узнал об этой вакансии', 'Например: Jobindex'),
-              ('citizenship', 'Гражданство', 'Например: Ukraine'),
-              ('relevant_health_condition', 'Сведения о здоровье, влияющие на работу', 'Пусто, если сообщать нечего')] %}
+              ('lidl_discovery', 'Как узнал об этой вакансии', 'Например: Jobindex')] %}
           <div class="field"><label class="lbl">{{ human }}</label>
-            <input type="text" name="{{ key }}" data-company-answer placeholder="{{ placeholder }}"></div>
+            <input type="text" name="{{ key }}" data-company-answer placeholder="{{ placeholder }}"{% if key != 'lidl_referral_name' %} data-ai-writing data-recommended-language="da"{% endif %}></div>
           {% endfor %}
+          <div class="field"><label class="lbl">Гражданство</label>
+            <select name="citizenship" data-company-answer data-searchable="true">
+              <option value="">Без замены</option>
+              {% for value, russian in citizenship_options %}
+              <option value="{{ value }}" data-description="В форму: {{ value }}">{{ russian }} — {{ value }}</option>
+              {% endfor %}
+            </select></div>
+          <div class="field"><label class="lbl">Сведения о здоровье, влияющие на работу</label>
+            <input type="text" name="relevant_health_condition" data-company-answer placeholder="Пусто, если сообщать нечего" data-ai-writing data-recommended-language="da">
+            <div class="wf-quick-options">
+              <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="">Без замены</button>
+              <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="Ingen relevante helbredsforhold, som påvirker min arbejdsevne.">Нет влияющих состояний</button>
+              <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="Jeg vil gerne drøfte eventuelle nødvendige hensyn ved en samtale.">Обсудить условия</button>
+            </div></div>
         </div>
       </details>
 
@@ -1067,18 +1117,22 @@
     if (!form || !company) return;
     const fields = [...form.querySelectorAll('[data-company-answer]')];
 
-    function clearAnswers() { fields.forEach(input => { input.value = ''; }); }
+    function syncInput(input, value) {
+      input.value = value || '';
+      input.dispatchEvent(new Event('wf:refresh'));
+    }
+    function clearAnswers() { fields.forEach(input => syncInput(input, '')); }
     function loadRule(key) {
       clearAnswers();
       const rule = rules[key] || null;
       const option = [...company.options].find(item => item.value === key);
-      company.value = option ? key : '';
+      syncInput(company, option ? key : '');
       custom.value = option ? '' : (rule?.label || '');
       label.value = option ? option.textContent.replace(/ · \d+ вакансий$/, '').trim() : (rule?.label || '');
-      inherit.value = rule?.inherit_defaults === 'no' ? 'no' : 'yes';
+      syncInput(inherit, rule?.inherit_defaults === 'no' ? 'no' : 'yes');
       Object.entries(rule?.answers || {}).forEach(([name, value]) => {
         const input = form.elements.namedItem(name);
-        if (input) input.value = value || '';
+        if (input) syncInput(input, value || '');
       });
       remove.hidden = !rule;
       removeKey.value = rule ? key : '';
@@ -1092,10 +1146,10 @@
     });
     custom.addEventListener('input', () => {
       if (!custom.value.trim()) return;
-      company.value = '';
+      syncInput(company, '');
       label.value = custom.value.trim();
       clearAnswers();
-      inherit.value = 'yes';
+      syncInput(inherit, 'yes');
       remove.hidden = true;
     });
     document.querySelectorAll('[data-load-company]').forEach(button => {

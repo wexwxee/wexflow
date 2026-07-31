@@ -258,15 +258,18 @@ def add_banner(page, questions: int, filled: list[str], platform: str = "",
                 const old=document.getElementById(id); if(old) old.remove();
                 const host=document.createElement('div'); host.id=id;
                 host.style.cssText='position:fixed;top:16px;right:16px;z-index:2147483647;'
-                  +'width:min(420px,calc(100vw - 32px));color-scheme:dark;';
+                  +'width:min(420px,calc(100vw - 32px));max-height:calc(100vh - 32px);color-scheme:dark;';
                 const root=host.attachShadow({mode:'open'});
                 root.innerHTML=`<style>
                   *{box-sizing:border-box} .card{font:13px/1.42 Inter,Segoe UI,sans-serif;color:#e9efeb;
                     background:#111513;border:1px solid #304039;border-radius:14px;padding:14px;
-                    box-shadow:0 18px 60px rgba(0,0,0,.45)}
+                    box-shadow:0 18px 60px rgba(0,0,0,.45);max-height:calc(100vh - 32px);
+                    display:flex;flex-direction:column;overflow:hidden}
                   .head{display:flex;align-items:center;gap:9px;margin-bottom:10px}.mark{color:#1ed760;font-size:17px}
                   .title{flex:1;font-weight:800;font-size:14px}.platform{color:#96a39c;font-size:11px;font-weight:600}
                   button{border:0;background:#222a26;color:#b9c3bd;border-radius:7px;width:27px;height:27px;cursor:pointer;font-size:17px}
+                  .body{min-height:0;overflow:auto;padding-right:3px;scrollbar-color:#425048 transparent}
+                  .actions{flex:none;background:#111513;padding-top:10px}
                   .row{margin-top:7px;padding:8px 10px;border-radius:9px;background:#19201c;color:#bdc7c1}
                   .ok{border:1px solid #235f39;background:#102a1a;color:#8ff0ae}.warn{border:1px solid #66511e;background:#29230f;color:#f5d778}
                   .label{font-weight:800}.foot{margin-top:10px;color:#aab4ae;font-size:11.5px}
@@ -278,11 +281,12 @@ def add_banner(page, questions: int, filled: list[str], platform: str = "",
                 </style><section class="card" role="status"><div class="head"><span class="mark">◆</span>
                   <div class="title">WexFlow · форма подготовлена<div class="platform"></div></div>
                   <button type="button" aria-label="Закрыть">×</button></div>
-                  <div class="row ok"><span class="label">Заполнено:</span> <span class="filled"></span></div>
+                  <div class="body"><div class="row ok"><span class="label">Заполнено:</span> <span class="filled"></span></div>
                   <div class="row ai-run" hidden></div>
                   <div class="row ai" hidden></div>
                   <div class="row questions" hidden></div><div class="row warn missing" hidden></div>
-                  <div class="foot">Проверь данные, поставь нужные согласия и отправь анкету сам. WexFlow не нажимает финальную кнопку.</div>
+                  <div class="foot">Проверь данные и обязательные согласия. Финальная отправка произойдёт только после твоего отдельного подтверждения.</div></div>
+                  <div class="actions"></div>
                 </section>`;
                 root.querySelector('.platform').textContent=data.platform;
                 root.querySelector('.filled').textContent=data.filled.length?data.filled.join(', '):'распознанных полей нет';

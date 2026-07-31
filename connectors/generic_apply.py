@@ -58,6 +58,12 @@ def _choice_aliases(value: str) -> set[str]:
         "male": {"male", "man", "mand", "mænd"},
         "female": {"female", "woman", "kvinde", "kvinder"},
         "other": {"other", "andet", "non-binary"},
+        "prefer_not_say": {
+            "prefer not to say",
+            "ønsker ikke at oplyse",
+            "vil ikke oplyse",
+            "decline to answer",
+        },
         "international": {"international", "lidl international", "global talent pool"},
         "country": {"country of residence", "bopælsland", "local talent pool"},
         "applied_only": {"only positions i applied", "stillinger, jeg selv har søgt"},

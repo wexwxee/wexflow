@@ -104,7 +104,11 @@ COUNTRY_FIXES = {
 # подставляются как есть. Правило прежнее: чего человек не ответил, то WexFlow
 # не выдумывает — вопрос остаётся пустым, а автоподача просто не жмёт кнопку.
 ANSWER_FIELDS: tuple[tuple[str, str, str], ...] = (
-    ("gender", "Пол (магазины спрашивают в анкете)", "choice:male,female,other"),
+    (
+        "gender",
+        "Пол (магазины иногда спрашивают в анкете)",
+        "choice:male,female,other,prefer_not_say",
+    ),
     ("start_date", "С какой даты можешь выйти", "date"),
     ("two_year_goal", "Где видишь себя через два года", "text"),
     ("retail_experience", "Есть опыт работы в рознице/магазине", "yesno"),
@@ -166,6 +170,80 @@ COMPANY_CONSENT_KEYS: tuple[str, ...] = (
 )
 
 COMPANY_OVERRIDE_KEYS = REUSABLE_ANSWER_KEYS + COMPANY_CONSENT_KEYS
+
+# Значения сохраняются в том виде, в котором их обычно ожидают датские формы.
+# Русская подпись живёт только в интерфейсе и не попадает работодателю.
+CITIZENSHIP_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Danmark", "Дания"),
+    ("Ukraine", "Украина"),
+    ("Polen", "Польша"),
+    ("Sverige", "Швеция"),
+    ("Norge", "Норвегия"),
+    ("Finland", "Финляндия"),
+    ("Island", "Исландия"),
+    ("Tyskland", "Германия"),
+    ("Storbritannien", "Великобритания"),
+    ("Irland", "Ирландия"),
+    ("Frankrig", "Франция"),
+    ("Spanien", "Испания"),
+    ("Italien", "Италия"),
+    ("Portugal", "Португалия"),
+    ("Nederlandene", "Нидерланды"),
+    ("Belgien", "Бельгия"),
+    ("Luxembourg", "Люксембург"),
+    ("Østrig", "Австрия"),
+    ("Schweiz", "Швейцария"),
+    ("Tjekkiet", "Чехия"),
+    ("Slovakiet", "Словакия"),
+    ("Ungarn", "Венгрия"),
+    ("Rumænien", "Румыния"),
+    ("Bulgarien", "Болгария"),
+    ("Litauen", "Литва"),
+    ("Letland", "Латвия"),
+    ("Estland", "Эстония"),
+    ("Kroatien", "Хорватия"),
+    ("Slovenien", "Словения"),
+    ("Grækenland", "Греция"),
+    ("Cypern", "Кипр"),
+    ("Malta", "Мальта"),
+    ("Albanien", "Албания"),
+    ("Bosnien-Hercegovina", "Босния и Герцеговина"),
+    ("Kosovo", "Косово"),
+    ("Montenegro", "Черногория"),
+    ("Nordmakedonien", "Северная Македония"),
+    ("Serbien", "Сербия"),
+    ("Moldova", "Молдова"),
+    ("Georgien", "Грузия"),
+    ("Armenien", "Армения"),
+    ("Aserbajdsjan", "Азербайджан"),
+    ("Belarus", "Беларусь"),
+    ("Rusland", "Россия"),
+    ("Tyrkiet", "Турция"),
+    ("USA", "США"),
+    ("Canada", "Канада"),
+    ("Australien", "Австралия"),
+    ("New Zealand", "Новая Зеландия"),
+    ("Indien", "Индия"),
+    ("Kina", "Китай"),
+    ("Japan", "Япония"),
+    ("Sydkorea", "Южная Корея"),
+    ("Syrien", "Сирия"),
+    ("Afghanistan", "Афганистан"),
+    ("Irak", "Ирак"),
+    ("Iran", "Иран"),
+    ("Israel", "Израиль"),
+    ("Egypten", "Египет"),
+    ("Marokko", "Марокко"),
+    ("Tunesien", "Тунис"),
+    ("Sydafrika", "ЮАР"),
+    ("Brasilien", "Бразилия"),
+    ("Argentina", "Аргентина"),
+    ("Chile", "Чили"),
+    ("Mexico", "Мексика"),
+    ("Andet", "Другое / страны нет в списке"),
+)
+
+
 def clean_answer(key: str, value) -> str:
     """Привести ответ к хранимому виду. Мусор и «не выбрано» → пустая строка."""
     raw = str(value or "").strip().lower()
