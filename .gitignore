@@ -17,6 +17,7 @@ jobs.db-journal
 account.json
 device.json
 license.json
+form_questions.json
 geocache.json
 transit_cache.json
 browser_profile/

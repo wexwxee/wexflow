@@ -154,7 +154,7 @@ def _send_proof_to_chat(page, job_id: str) -> None:
     _proof_to_chat(page, job_id, prepared=False)
 
 
-def _proof_to_chat(page, job_id: str, prepared: bool) -> None:
+def _proof_to_chat(page, job_id: str, prepared: bool, note: str = "") -> None:
     """Снять страницу и отправить её в чат. Скрины прогона лежат отдельно от
     доказательств подачи — иначе журнал прицепит их как «отправлено»."""
     try:
@@ -181,13 +181,14 @@ def _proof_to_chat(page, job_id: str, prepared: bool) -> None:
                 title = " · ".join(x for x in [job.title, job.brand, job.city] if x) or job_id
         except Exception:  # noqa: BLE001
             pass
-        caption = (
-            "🧪 <b>Анкета подготовлена</b>\n" + str(title)
-            + "\nЗаполнена на компьютере, отправка НЕ нажата — проверь и реши сам."
-            if prepared else
-            "✅ <b>Заявка отправлена</b>\n" + str(title)
-            + "\nСайт показал квитанцию — скрин страницы приложен."
-        )
+        if note:
+            caption = ("⚠️ <b>Подача остановлена</b>\n" + str(title) + "\n" + str(note)[:600])
+        elif prepared:
+            caption = ("🧪 <b>Анкета подготовлена</b>\n" + str(title)
+                       + "\nЗаполнена на компьютере, отправка НЕ нажата — проверь и реши сам.")
+        else:
+            caption = ("✅ <b>Заявка отправлена</b>\n" + str(title)
+                       + "\nСайт показал квитанцию — скрин страницы приложен.")
         cloud_auth.report_apply_proof(job_id, b64, caption)
     except Exception as exc:  # noqa: BLE001
         print("  скрин не ушёл в чат:", str(exc)[:120])
@@ -283,13 +284,12 @@ def run(
                         _send_prepared_proof_to_chat(page, job_id)
                         done = True
                     else:
-                        _write_status(
-                            job_id, "needs_answers",
-                            "Не хватает ответов для автоматической подачи: "
-                            + result["message"]
-                            + ". Открой «Профиль → Ответы для анкет» или ответь в окне сам.",
-                        )
-                        _send_prepared_proof_to_chat(page, job_id)
+                        note = ("Не хватает ответов для автоматической подачи: "
+                                + result["message"]
+                                + ". Ответь в приложении: раздел «Вопросы анкет» "
+                                  "(или «Профиль → Ответы для анкет») — и нажми «Подать» ещё раз.")
+                        _write_status(job_id, "needs_answers", note)
+                        _proof_to_chat(page, job_id, prepared=True, note=note)
                         done = True
                 if not done:
                     _write_status(
@@ -313,6 +313,8 @@ def run(
                     site_changed_banner(page, changed.report)
                 except Exception:
                     pass
+                # скрин с плашкой — в чат: человек сам видит, что стало с формой
+                _proof_to_chat(page, job_id, prepared=True, note=message)
                 _write_status(job_id, "site_changed", site_contract.short_message(changed.report))
             except Exception as exc:
                 # Частичное заполнение лучше закрытого окна: человек сможет

@@ -32,6 +32,7 @@ import translator
 import translator_setup
 import html_sanitize
 import profile_store
+import form_questions
 import document_rules
 import document_import
 import credentials_store
@@ -973,10 +974,15 @@ def _handle_tg_decisions(decisions: list) -> None:
             continue
         applications.mark_submitting([job.id], origin="telegram", source=source)
         try:
+            # Режим подачи выбирает человек в настройках: «отправлять самому»
+            # или «только заполнять». Даже в auto отправки не будет, пока есть
+            # неотвеченный вопрос анкеты — это проверяет коннектор.
+            auto_send = (getattr(job, "source", "") == "lidl"
+                         and settings_store.get_apply_mode() == "auto")
             _launch_connector_filler(
                 job.application_link or "",
                 job.id,
-                submit=getattr(job, "source", "") == "lidl",
+                submit=auto_send,
             )
             _report_apply_result_safe(
                 job.id,
@@ -984,7 +990,7 @@ def _handle_tg_decisions(decisions: list) -> None:
                 (
                     "Форма Lidl открыта на ПК. Отвечаю сохранёнными ответами и подаю; "
                     "если на какой-то вопрос ответа нет — остановлюсь и скажу."
-                    if getattr(job, "source", "") == "lidl" else
+                    if auto_send else
                     "Форма открыта на ПК и заполнена. Проверь ответы и отправь сам."
                 ),
             )
@@ -2392,6 +2398,18 @@ templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 templates.env.globals["brand_label"] = labels.brand
 templates.env.globals["L"] = labels
 templates.env.globals["candidate_profiles_state"] = candidate_profiles.ui_state
+def _questions_pending_badge() -> int:
+    """Сколько вопросов анкет ждут ответа (бейдж в боковом меню).
+
+    Банк вопросов — обычный файл; его недоступность не должна ронять страницы.
+    """
+    try:
+        return form_questions.pending_count()
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+templates.env.globals["questions_pending"] = _questions_pending_badge
 # Текущий тариф доступен во всех шаблонах (бейдж в боковом меню и т.п.).
 templates.env.globals["current_plan"] = subscription.plan
 templates.env.globals["plan_label"] = lambda p=None: subscription.PLANS.get(p or subscription.plan(), subscription.PLANS["free"])["name"]
@@ -4158,6 +4176,33 @@ def help_page(request: Request):
     return templates.TemplateResponse("help.html", {"request": request})
 
 
+@app.get("/questions")
+def questions_page(request: Request):
+    """Вопросы, которые задают анкеты магазинов, и ответы человека.
+
+    Смысл раздела: WexFlow не имеет права отвечать за человека, поэтому
+    неотвеченный вопрос останавливает автоматическую подачу. Ответил здесь
+    один раз — дальше подставляется само.
+    """
+    rows = form_questions.all_items()
+    return templates.TemplateResponse("questions.html", {
+        "request": request,
+        "pending": [r for r in rows if not r.get("answer")],
+        "answered": [r for r in rows if r.get("answer")],
+    })
+
+
+@app.post("/questions/answer")
+async def questions_answer(request: Request):
+    form = await request.form()
+    key = str(form.get("key") or "").strip()
+    value = str(form.get("value") or "").strip().lower()
+    if value not in {"yes", "no", ""}:
+        return JSONResponse({"ok": False, "error": "ответ бывает только да/нет"}, status_code=400)
+    ok = form_questions.set_answer(key, value)
+    return JSONResponse({"ok": ok, "pending": form_questions.pending_count()})
+
+
 @app.get("/api/transit/{job_id}")
 def api_transit(job_id: str):
     home = settings_store.get_home()
@@ -4507,6 +4552,8 @@ def _settings_context(
         "home_city": _home_city(settings_store.get_home()),
         "ai_available": ai_filters.available(),
         "ai_fill_on": settings_store.get_ai_fill(),
+        "apply_mode": settings_store.get_apply_mode(),
+        "questions_pending": _questions_pending_badge(),
         "ai_fill_motivation_on": settings_store.get_ai_fill_motivation(),
         "ai_fill_available": ai_gateway.available(),
         "ai_usage": _ai_usage_payload(),
@@ -4644,6 +4691,15 @@ def account_save(
         return RedirectResponse("/account?missing=" + quote_plus(",".join(missing)), status_code=303)
     profile_store.save_profile(profile)
     return RedirectResponse("/account?saved=1", status_code=303)
+
+
+@app.post("/settings/apply-mode")
+async def settings_apply_mode(request: Request):
+    """Режим подачи: «auto» — WexFlow жмёт финальную кнопку сам, «fill» — только
+    заполняет. Неотвеченный вопрос анкеты останавливает отправку в обоих."""
+    form = await request.form()
+    mode = settings_store.set_apply_mode(str(form.get("mode") or ""))
+    return JSONResponse({"ok": True, "mode": mode})
 
 
 @app.post("/settings/ai-fill")

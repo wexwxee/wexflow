@@ -9,9 +9,17 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
 from playwright.sync_api import sync_playwright
 
+import form_questions
 from connectors import lidl_apply
+
+
+@pytest.fixture(autouse=True)
+def _bank(tmp_path, monkeypatch):
+    """Банк вопросов у каждого теста свой: подача не должна писать в рабочие данные."""
+    monkeypatch.setattr(form_questions, "path", lambda: tmp_path / "form_questions.json")
 
 PROFILE = {
     "first_name": "Ivan", "last_name": "Malamen",

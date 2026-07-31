@@ -1577,6 +1577,25 @@
   <section class="panel ai-toggle-card">
     <div class="ai-toggle-row">
       <div class="ai-toggle-copy">
+        <h2>{{ ic.i('send', 17) }} Что делать с анкетой магазина</h2>
+        <p class="hint" style="margin:6px 0 0;">
+          <b>Отправлять самому</b> — WexFlow заполняет анкету и жмёт финальную кнопку сам (смысл приложения).
+          <b>Только заполнять</b> — доводит до финальной кнопки и останавливается, отправляешь ты.
+          В любом режиме действует железное правило: пока есть хоть один <a href="/questions">неотвеченный вопрос анкеты</a>,
+          отправка не происходит вообще.{% if questions_pending %} <b style="color:var(--warn-txt)">Сейчас ждут ответа: {{ questions_pending }}.</b>{% endif %}
+        </p>
+      </div>
+      <label class="switch" title="Отправлять заявку самому">
+        <input type="checkbox" id="applyModeToggle" {{ 'checked' if apply_mode == 'auto' else '' }}>
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+      </label>
+    </div>
+    <span id="applyModeStatus" class="autosave" style="margin-top:10px; display:inline-block;"></span>
+  </section>
+
+  <section class="panel ai-toggle-card">
+    <div class="ai-toggle-row">
+      <div class="ai-toggle-copy">
         <h2>{{ ic.i('sparkles', 17) }} Умное ИИ-заполнение форм <span class="ai-beta">бета</span></h2>
         <p class="hint" style="margin:6px 0 0;">Для Teamtailor и других внешних анкет: когда обычный помощник не узнаёт короткое поле, Google Gemini сопоставляет его с конкретным фактом профиля, а WexFlow подставляет <b>точно сохранённое значение</b>. Анкету по-прежнему <b>отправляешь ты сам</b>.</p>
         <p class="hint" style="margin:8px 0 0; font-size:12px;">Включая, ты соглашаешься на передачу ограниченного набора данных профиля в Google Gemini для сопоставления вопросов. Чувствительные данные отправляются только при похожем вопросе.{% if not ai_fill_available %} <b style="color:var(--warn-txt)">Нужен ключ Gemini в secrets.json — сейчас его нет, ИИ не заработает.</b>{% endif %}</p>
@@ -1647,6 +1666,43 @@
           limitStatus.className = 'autosave error';
         });
     });
+
+    // Режим подачи: отправлять самому или только заполнять
+    (function () {
+      var modeToggle = document.getElementById('applyModeToggle');
+      var modeStatus = document.getElementById('applyModeStatus');
+      if (!modeToggle) return;
+      modeToggle.addEventListener('change', function () {
+        var auto = modeToggle.checked;
+        modeToggle.disabled = true;
+        modeStatus.textContent = 'Сохраняю…';
+        modeStatus.className = 'autosave';
+        var fd = new FormData();
+        fd.append('mode', auto ? 'auto' : 'fill');
+        fetch('/settings/apply-mode', { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            modeToggle.disabled = false;
+            if (d && d.ok) {
+              modeToggle.checked = d.mode === 'auto';
+              modeStatus.textContent = d.mode === 'auto'
+                ? 'WexFlow будет отправлять заявку сам'
+                : 'WexFlow заполнит и остановится — отправляешь ты';
+              modeStatus.className = 'autosave saved';
+            } else {
+              modeToggle.checked = !auto;
+              modeStatus.textContent = 'Не удалось сохранить';
+              modeStatus.className = 'autosave error';
+            }
+          })
+          .catch(function () {
+            modeToggle.disabled = false;
+            modeToggle.checked = !auto;
+            modeStatus.textContent = 'Нет связи';
+            modeStatus.className = 'autosave error';
+          });
+      });
+    })();
 
     var toggle = document.getElementById('aiFillToggle');
     if (!toggle) return;

@@ -190,6 +190,25 @@ def set_ai_fill(enabled: bool) -> None:
     mutate(_m)
 
 
+def get_apply_mode() -> str:
+    """Что делать с анкетой внешнего магазина: «auto» или «fill».
+
+    auto — заполнить и отправить самому (смысл приложения: подача без человека).
+    fill — заполнить и остановиться перед финальной кнопкой; отправляет человек.
+    По умолчанию auto: отправка всё равно не произойдёт, пока есть хоть один
+    неотвеченный вопрос анкеты — за это отвечает проверка в коннекторе.
+    """
+    value = str(load().get("apply_mode") or "").strip().lower()
+    return value if value in {"auto", "fill"} else "auto"
+
+
+def set_apply_mode(mode: str) -> str:
+    mode = str(mode or "").strip().lower()
+    mode = mode if mode in {"auto", "fill"} else "auto"
+    mutate(lambda d: d.__setitem__("apply_mode", mode))
+    return mode
+
+
 def get_ai_fill_motivation() -> bool:
     """Разрешён ли ИИ-черновик мотивации (свободные вопросы «почему к нам»).
     По умолчанию False — единственное место, где ИИ сочиняет текст."""

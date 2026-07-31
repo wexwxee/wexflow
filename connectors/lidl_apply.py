@@ -18,6 +18,7 @@ import re
 import time
 from pathlib import Path
 
+import form_questions
 import profile_store
 from connectors import site_contract
 from connectors.fill_common import add_banner, dismiss_cookies
@@ -234,8 +235,17 @@ _NO_RE = re.compile(r"^\s*(nej|no)\s*$", re.I)
 
 
 def question_answer(text: str, answers: dict) -> tuple[str, str]:
-    """(ключ ответа, «yes»/«no»/'') для текста вопроса анкеты."""
+    """(ключ ответа, «yes»/«no»/'') для текста вопроса анкеты.
+
+    Сначала смотрим личный банк ответов: там лежит то, что человек ответил
+    ИМЕННО на этот вопрос в приложении. Не нашли — пробуем узнать вопрос по
+    ключевым словам и взять ответ из профиля. Не узнали — пусто, и подача
+    остановится: выдумывать за человека нельзя.
+    """
     clean = str(text or "")
+    saved = form_questions.answer_for(clean)
+    if saved in {"yes", "no"}:
+        return "saved", saved
     for key, rx in _QUESTION_RULES:
         if rx.search(clean):
             return key, str(answers.get(key) or "")
@@ -303,6 +313,23 @@ def fill_answers(page, profile: dict) -> dict:
     answers = profile_store.answers(profile)
     filled: list[str] = []
     unanswered: list[str] = []
+
+    # Всё, что спросил магазин, попадает в банк вопросов приложения: человек
+    # ответит один раз, и следующая такая анкета заполнится сама.
+    try:
+        form_questions.record(
+            [
+                {
+                    "text": str(group.get("question") or "").strip(),
+                    "options": [str(o.get("text") or "") for o in (group.get("options") or [])],
+                }
+                for group in _radio_groups(page)
+            ],
+            source="lidl",
+            job_title=str(profile.get("_job_title") or ""),
+        )
+    except Exception:
+        pass
 
     gender_value = answers.get("gender") or ""
     if gender_value:

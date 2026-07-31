@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% import "_icons.html" as ic %}
+{% import "_ui.html" as ui %}
+
+{% block title %}WexFlow · Вопросы анкет{% endblock %}
+
+{% block style %}
+<style>
+  .q-intro { display:flex; align-items:flex-start; gap:10px; margin:0 0 18px; padding:12px 14px;
+    border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--glass);
+    color:var(--txt); font-size:13.5px; line-height:1.5; }
+  .q-intro svg { flex:0 0 auto; margin-top:1px; color:var(--accent); }
+  .q-section { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--muted); margin:20px 0 8px; }
+  .q-section:first-of-type { margin-top:0; }
+  .q-row { display:flex; align-items:center; gap:14px; padding:12px 14px; margin-bottom:8px;
+    border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--card); }
+  .q-row.answered { opacity:.72; }
+  .q-main { flex:1; min-width:0; display:grid; gap:3px; }
+  .q-text { color:var(--txt-strong); font-weight:650; font-size:14px; line-height:1.3; }
+  .q-meta { color:var(--muted); font-size:12px; }
+  .q-actions { display:flex; gap:7px; flex:0 0 auto; }
+  .q-actions button { border:1px solid var(--glass-line); background:var(--glass); color:var(--muted);
+    border-radius:9px; padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer; }
+  .q-actions button:hover { border-color:var(--hover-line); color:var(--txt); }
+  .q-actions button.on { background:var(--accent); color:var(--on-accent); border-color:var(--accent); }
+  .q-actions button.clear { font-weight:600; }
+  .q-empty { display:grid; place-items:center; gap:10px; padding:44px 20px; text-align:center; color:var(--muted); }
+  .q-empty svg { color:var(--accent); opacity:.8; }
+</style>
+{% endblock %}
+
+{% block body %}
+{{ ui.shell_start('questions') }}
+<header class="wex-topbar">
+  <div class="wex-title-stack">
+    <h1>{{ ui.brand('Вопросы анкет') }}</h1>
+    <span class="wex-title-meta">Ответь один раз — WexFlow будет заполнять их сам</span>
+  </div>
+  <div class="wex-topbar-spacer"></div>
+  <div class="wex-header-actions">{{ ui.theme_toggle() }}</div>
+</header>
+<section class="wex-workbench wex-narrow">
+  <p class="q-intro">{{ ic.i('user', 16) }}
+    <span>Магазины спрашивают в анкете одно и то же: опыт, готовность к выходным, вечерним сменам,
+    раннему утру. WexFlow <b>никогда не отвечает за тебя</b> — поэтому вопрос без ответа останавливает
+    автоматическую подачу. Ответь здесь, и в следующий раз (и в этой же анкете) он подставит ответ сам.
+    Передумал — можно поменять в любой момент.</span></p>
+
+  {% if pending %}
+  <div class="q-section">Ждут ответа · {{ pending|length }}</div>
+  {% for q in pending %}
+  <div class="q-row" data-key="{{ q.key }}">
+    <div class="q-main">
+      <div class="q-text">{{ q.text }}</div>
+      <div class="q-meta">{{ q.source or 'анкета' }}{% if q.job_title %} · {{ q.job_title }}{% endif %}{% if q.seen_count and q.seen_count > 1 %} · встречался {{ q.seen_count }} раз{% endif %}</div>
+    </div>
+    <div class="q-actions">
+      <button type="button" data-value="yes">Да</button>
+      <button type="button" data-value="no">Нет</button>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="q-empty">{{ ic.i('check', 26) }}
+    <p>Неотвеченных вопросов нет. Новые появятся здесь сами, как только встретятся в анкете.</p>
+  </div>
+  {% endif %}
+
+  {% if answered %}
+  <div class="q-section">Ответы сохранены · {{ answered|length }}</div>
+  {% for q in answered %}
+  <div class="q-row answered" data-key="{{ q.key }}">
+    <div class="q-main">
+      <div class="q-text">{{ q.text }}</div>
+      <div class="q-meta">{{ q.source or 'анкета' }}{% if q.seen_count and q.seen_count > 1 %} · встречался {{ q.seen_count }} раз{% endif %}</div>
+    </div>
+    <div class="q-actions">
+      <button type="button" data-value="yes" class="{{ 'on' if q.answer == 'yes' else '' }}">Да</button>
+      <button type="button" data-value="no" class="{{ 'on' if q.answer == 'no' else '' }}">Нет</button>
+      <button type="button" data-value="" class="clear">Сбросить</button>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+
+<script>
+  // Ответ сохраняется сразу: страница-опросник не должна требовать «Сохранить».
+  document.querySelectorAll('.q-row').forEach(function (row) {
+    row.querySelectorAll('.q-actions button').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        const key = row.dataset.key;
+        const value = btn.dataset.value || '';
+        try {
+          const fd = new FormData();
+          fd.append('key', key);
+          fd.append('value', value);
+          const res = await fetch('/questions/answer', { method: 'POST', body: fd });
+          if (!res.ok) throw new Error('save failed');
+          location.reload();
+        } catch (e) {
+          btn.textContent = 'не вышло';
+        }
+      });
+    });
+  });
+</script>
+{{ ui.shell_end() }}
+{% endblock %}
