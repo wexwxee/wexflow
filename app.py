@@ -4315,6 +4315,18 @@ def account_page(request: Request, saved: str = "", missing: str = "",
         if family_candidate else str(account_mod.load().get("tg_id") or "")
     )
     city_options, country_options = _profile_choices()
+    answer_brand_options, _answer_store_options = _document_settings_options()
+    known_answer_keys = {item["key"] for item in answer_brand_options}
+    for key, rule in profile_store.company_overrides(profile).items():
+        if key not in known_answer_keys:
+            answer_brand_options.append({
+                "key": key,
+                "label": rule["label"],
+                "count": 0,
+            })
+    answer_brand_options.sort(
+        key=lambda item: (-int(item.get("count") or 0), item["label"].casefold())
+    )
     missing_fields = [x for x in missing.split(",") if x]
     return templates.TemplateResponse("account.html", {
         "request": request, "profile": profile,
@@ -4331,6 +4343,8 @@ def account_page(request: Request, saved: str = "", missing: str = "",
         "telegram_relink": telegram_relink,
         "family_candidate": family_candidate,
         "candidate_profile": candidate,
+        "answer_brand_options": answer_brand_options,
+        "company_answer_overrides": profile_store.company_overrides(profile),
     })
 
 
@@ -4710,6 +4724,7 @@ def account_save(
     citizenship: str = Form(""), work_permit: str = Form(""),
     clean_criminal_record: str = Form(""), relevant_health_condition: str = Form(""),
     lidl_newsletter: str = Form(""), lidl_profile_scope: str = Form(""),
+    answer_reuse_consent: str = Form(""),
     profile_visible: str = Form(""),
 ):
     """Общий профиль — только личные данные. Документы (CV/письмо) — в настройках фирмы.
@@ -4747,12 +4762,56 @@ def account_save(
         "experience_years": experience_years.strip(), "current_role": current_role.strip(),
         "education": education.strip(), "available_from": available_from.strip(),
         "date_of_birth": date_of_birth.strip(), "about": about.strip(),
+        "answer_reuse_consent": (
+            answer_reuse_consent if answer_reuse_consent in {"yes", "no"} else ""
+        ),
     })
     missing = _profile_missing(profile)
     if missing:
         return RedirectResponse("/account?missing=" + quote_plus(",".join(missing)), status_code=303)
     profile_store.save_profile(profile)
     return RedirectResponse("/account?saved=1", status_code=303)
+
+
+@app.post("/account/company-answers/save")
+async def account_company_answers_save(request: Request):
+    """Save one sparse company rule; blank fields keep inheriting defaults."""
+    form = await request.form()
+    raw_company = str(form.get("company_key") or form.get("company_custom") or "")
+    company_key = profile_store.normalize_company_key(raw_company)
+    if not company_key:
+        return RedirectResponse("/account?missing=Компания#company-answers", status_code=303)
+    label = str(
+        form.get("company_label") or form.get("company_custom") or company_key
+    ).strip()[:80] or company_key
+    inherit_defaults = "no" if str(form.get("inherit_defaults") or "") == "no" else "yes"
+    answers = {
+        key: profile_store.clean_answer(key, form.get(key))
+        for key in profile_store.COMPANY_OVERRIDE_KEYS
+    }
+    answers = {key: value for key, value in answers.items() if value}
+    profile = profile_store.load_profile()
+    overrides = profile_store.company_overrides(profile)
+    overrides[company_key] = {
+        "label": label,
+        "inherit_defaults": inherit_defaults,
+        "answers": answers,
+    }
+    profile["company_answer_overrides"] = overrides
+    profile_store.save_profile(profile)
+    return RedirectResponse("/account?saved=company#company-answers", status_code=303)
+
+
+@app.post("/account/company-answers/delete")
+async def account_company_answers_delete(request: Request):
+    form = await request.form()
+    company_key = profile_store.normalize_company_key(str(form.get("company_key") or ""))
+    profile = profile_store.load_profile()
+    overrides = profile_store.company_overrides(profile)
+    overrides.pop(company_key, None)
+    profile["company_answer_overrides"] = overrides
+    profile_store.save_profile(profile)
+    return RedirectResponse("/account?saved=company-deleted#company-answers", status_code=303)
 
 
 @app.post("/settings/apply-mode")
@@ -5652,6 +5711,7 @@ async def settings_profile_autosave(request: Request):
         ("experience_years", "experience_years"), ("current_role", "current_role"),
         ("education", "education"), ("available_from", "available_from"),
         ("date_of_birth", "date_of_birth"), ("about", "about"),
+        ("answer_reuse_consent", "answer_reuse_consent"),
     ]:
         if form_key in form:
             profile[profile_key] = str(form.get(form_key) or "").strip()

@@ -56,6 +56,12 @@ def prepare(page, job_url: str, profile: dict) -> None:
     page.wait_for_timeout(1200)
     dismiss_cookies(page)
     filled = fill_fields(page, profile)
+    try:
+        from connectors.generic_apply import fill_answer_fields
+
+        filled.extend(fill_answer_fields(page, profile))
+    except Exception:
+        pass
     print(f"  заполнено полей: {filled or '—'}")
     if upload_cv(page, profile):
         filled.append("CV")

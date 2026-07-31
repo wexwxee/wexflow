@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import time
+from urllib.parse import urlparse
 
 import paths
 from connectors import site_contract
@@ -80,9 +81,37 @@ def platform_name(key: str) -> str:
     return key or "неизвестно"
 
 
+def company_key(url: str, platform: str, profile: dict) -> str:
+    """Best available company identity for answer consent/overrides."""
+    contextual = str(profile.get("_job_brand") or "").strip()
+    if contextual:
+        return contextual
+    if platform == "lidl_easy_apply":
+        return "lidl"
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").casefold()
+        parts = [part for part in parsed.path.split("/") if part]
+        if platform == "teamtailor" and host.endswith(".teamtailor.com"):
+            return host.removesuffix(".teamtailor.com").split(".")[-1]
+        if platform in {"greenhouse", "ashby", "lever"} and parts:
+            return parts[0]
+        if host:
+            return host.removeprefix("www.").split(".")[0]
+    except Exception:
+        pass
+    return platform
+
+
 def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> str:
     """Заполнить форму по ссылке. Возвращает ключ платформы (или '')."""
     key = detect(url)
+    import profile_store
+
+    profile = profile_store.resolve_company_answers(
+        profile,
+        company_key(url, key or "", profile),
+    )
     if key == "teamtailor":
         from connectors import teamtailor_apply
         teamtailor_apply.prepare(page, url, profile)

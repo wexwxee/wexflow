@@ -87,6 +87,58 @@ def test_lidl_profile_scope_is_validated_and_legacy_yes_stays_local():
     )["lidl_profile_scope"] == ""
 
 
+def test_company_answers_require_consent_and_keep_legal_choices_local():
+    profile = {
+        "answer_reuse_consent": "yes",
+        "citizenship": "Ukraine",
+        "work_weekends": "yes",
+        "lidl_newsletter": "yes",
+        "lidl_profile_scope": "country",
+    }
+    other = profile_store.resolve_company_answers(profile, "Netto")
+    assert other["citizenship"] == "Ukraine"
+    assert other["work_weekends"] == "yes"
+    assert other["lidl_newsletter"] == ""
+    assert other["lidl_profile_scope"] == ""
+
+    lidl = profile_store.resolve_company_answers(profile, "Lidl")
+    assert lidl["lidl_newsletter"] == "yes"
+    assert lidl["lidl_profile_scope"] == "country"
+
+    denied = profile_store.resolve_company_answers(
+        dict(profile, answer_reuse_consent="no"),
+        "Netto",
+    )
+    assert denied["citizenship"] == ""
+    assert denied["work_weekends"] == ""
+
+
+def test_company_override_can_replace_or_disable_common_answers():
+    profile = {
+        "answer_reuse_consent": "yes",
+        "citizenship": "Ukraine",
+        "work_weekends": "yes",
+        "company_answer_overrides": {
+            "netto": {
+                "label": "Netto",
+                "inherit_defaults": "yes",
+                "answers": {"work_weekends": "no"},
+            },
+            "ikea": {
+                "label": "IKEA",
+                "inherit_defaults": "no",
+                "answers": {"citizenship": "Denmark"},
+            },
+        },
+    }
+    netto = profile_store.resolve_company_answers(profile, "Netto")
+    assert netto["citizenship"] == "Ukraine"
+    assert netto["work_weekends"] == "no"
+    ikea = profile_store.resolve_company_answers(profile, "IKEA")
+    assert ikea["citizenship"] == "Denmark"
+    assert ikea["work_weekends"] == ""
+
+
 if __name__ == "__main__":
     tests = [
         test_round_trip,
@@ -95,6 +147,8 @@ if __name__ == "__main__":
         test_corrupt_recovers_from_bak,
         test_corrupt_without_backup_does_not_crash,
         test_lidl_profile_scope_is_validated_and_legacy_yes_stays_local,
+        test_company_answers_require_consent_and_keep_legal_choices_local,
+        test_company_override_can_replace_or_disable_common_answers,
     ]
     failures = 0
     for fn in tests:

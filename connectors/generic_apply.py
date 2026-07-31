@@ -23,6 +23,47 @@ CITY = ["city", "town", "bopæl", "kommune"]
 COUNTRY = ["country", "land"]
 LINKEDIN = ["linkedin"]
 
+ANSWER_TEXT_FIELDS = (
+    (["start date", "available from", "earliest start", "startdato", "hvornår kan du tidligst"], "start_date"),
+    (["where do you see yourself in two years", "hvor ser du dig selv om to år"], "two_year_goal"),
+    (["referred by", "referral", "henvist", "anbefalet af"], "lidl_referral_name"),
+    (["previously employed", "formerly employed", "tidligere har været ansat"], "lidl_previous_employment"),
+    (["how did you hear", "how did you find", "kendskab til denne stilling", "hørt om"], "lidl_discovery"),
+    (["citizenship", "nationality", "statsborgerskab"], "citizenship"),
+    (["health condition", "medical condition", "sygdomme", "arbejdsdygtighed"], "relevant_health_condition"),
+)
+
+ANSWER_CHOICE_FIELDS = (
+    (["gender", "køn", "koen"], "gender"),
+    (["retail experience", "detail branchen", "experience in retail"], "retail_experience"),
+    (["every second weekend", "hver 2. weekend", "weekend work"], "work_weekends"),
+    (["work evenings", "arbejde om aftenen", "evening shifts"], "work_evenings"),
+    (["early morning", "06.00 om morgenen", "morning shifts"], "work_early"),
+    (["night shifts", "work nights", "nattevagt"], "work_night"),
+    (["driver's license", "driving licence", "kørekort"], "has_drivers_license"),
+    (["already employed", "currently employed", "allerede ansat"], "lidl_current_employee"),
+    (["work permit", "residence permit", "arbejdstilladelse", "opholdstilladelse"], "work_permit"),
+    (["criminal record", "straffeattest", "background check"], "clean_criminal_record"),
+    (["job alerts", "career opportunities", "relevante stillinger"], "lidl_newsletter"),
+    (["talent pool", "profile consideration", "profil må gerne tages"], "lidl_profile_scope"),
+)
+
+
+def _choice_aliases(value: str) -> set[str]:
+    wanted = str(value or "").strip().casefold()
+    aliases = {wanted}
+    aliases.update({
+        "yes": {"yes", "ja", "true"},
+        "no": {"no", "nej", "false"},
+        "male": {"male", "man", "mand", "mænd"},
+        "female": {"female", "woman", "kvinde", "kvinder"},
+        "other": {"other", "andet", "non-binary"},
+        "international": {"international", "lidl international", "global talent pool"},
+        "country": {"country of residence", "bopælsland", "local talent pool"},
+        "applied_only": {"only positions i applied", "stillinger, jeg selv har søgt"},
+    }.get(wanted, set()))
+    return {alias for alias in aliases if alias}
+
 
 def _fill_by_keywords(page, keywords, value) -> bool:
     if not value:
@@ -71,7 +112,7 @@ def _fill_select_by_keywords(page, keywords, value) -> bool:
     except Exception:
         return False
     wanted = str(value).strip().casefold()
-    aliases = {wanted}
+    aliases = _choice_aliases(wanted)
     if wanted in {"danmark", "denmark", "dk"}:
         aliases.update({"danmark", "denmark", "dk"})
     for el in controls:
@@ -85,12 +126,78 @@ def _fill_select_by_keywords(page, keywords, value) -> bool:
             for index, option in enumerate(options):
                 label = (option.inner_text() or "").strip().casefold()
                 option_value = (option.get_attribute("value") or "").strip().casefold()
-                if label in aliases or option_value in aliases:
+                long_fragment = any(
+                    len(alias) >= 5 and (alias in label or alias in option_value)
+                    for alias in aliases
+                )
+                if label in aliases or option_value in aliases or long_fragment:
                     el.select_option(index=index)
                     return True
         except Exception:
             continue
     return False
+
+
+def _fill_radio_by_keywords(page, keywords, value) -> bool:
+    if not value:
+        return False
+    aliases = _choice_aliases(value)
+    try:
+        radios = page.locator('input[type="radio"]').all()
+    except Exception:
+        return False
+    for radio in radios:
+        try:
+            if not radio.is_visible() or not radio.is_enabled() or radio.is_checked():
+                continue
+            context = _control_text(radio) + " " + str(radio.evaluate(
+                """e => {
+                    const group = e.closest(
+                        'fieldset,[role="radiogroup"],.form-group,.field,[data-field]'
+                    );
+                    if (!group) return '';
+                    const title = group.querySelector(
+                        'legend,.question-title,.field-label,[data-question],label'
+                    );
+                    return ((title && title.innerText) || '').toLowerCase();
+                }"""
+            ) or "")
+            if not any(str(keyword).lower() in context for keyword in keywords):
+                continue
+            option = str(radio.evaluate(
+                """e => {
+                    const bits = [e.value, e.getAttribute('aria-label')];
+                    if (e.labels) for (const label of e.labels) bits.push(label.innerText);
+                    return bits.filter(Boolean).join(' ').toLowerCase();
+                }"""
+            ) or "")
+            option_words = set(option.replace("/", " ").replace(",", " ").split())
+            if any(
+                option.strip() == alias
+                or alias in option_words
+                or (len(alias) >= 5 and alias in option)
+                for alias in aliases
+            ):
+                radio.check()
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def fill_answer_fields(page, profile: dict) -> list[str]:
+    """Fill known questionnaire facts already resolved for this company."""
+    filled: list[str] = []
+    for keywords, key in ANSWER_TEXT_FIELDS:
+        value = str(profile.get(key) or "").strip()
+        if _fill_by_keywords(page, keywords, value):
+            filled.append(key)
+    for keywords, key in ANSWER_CHOICE_FIELDS:
+        value = str(profile.get(key) or "").strip()
+        if (_fill_select_by_keywords(page, keywords, value)
+                or _fill_radio_by_keywords(page, keywords, value)):
+            filled.append(key)
+    return filled
 
 
 def _fill_email(page, value) -> bool:
@@ -151,6 +258,7 @@ def prepare(page, url: str, profile: dict, platform: str = "") -> None:
         if (_fill_by_keywords(page, keys, value)
                 or _fill_select_by_keywords(page, keys, value)):
             filled.append(key)
+    filled.extend(fill_answer_fields(page, profile))
 
     print(f"  заполнено полей: {filled or '—'}")
     if upload_cv(page, profile):

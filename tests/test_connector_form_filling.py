@@ -44,6 +44,34 @@ def test_semantic_labels_and_country_select_are_filled_without_overwrite():
         playwright.stop()
 
 
+def test_generic_filler_uses_resolved_common_company_answers():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <label for="citizenship">Citizenship</label>
+          <input id="citizenship">
+          <label for="permit">Do you have a valid work permit?</label>
+          <select id="permit"><option value="">Choose</option><option>No</option><option>Yes</option></select>
+          <fieldset>
+            <legend>Are you willing to work every second weekend?</legend>
+            <label><input type="radio" name="weekend" value="yes">Yes</label>
+            <label><input type="radio" name="weekend" value="no">No</label>
+          </fieldset>
+        """)
+        filled = generic_apply.fill_answer_fields(page, {
+            "citizenship": "Ukraine",
+            "work_permit": "yes",
+            "work_weekends": "no",
+        })
+        assert page.input_value("#citizenship") == "Ukraine"
+        assert page.locator("#permit").input_value() == "Yes"
+        assert page.locator('input[name="weekend"][value="no"]').is_checked()
+        assert {"citizenship", "work_permit", "work_weekends"} <= set(filled)
+    finally:
+        browser.close()
+        playwright.stop()
+
+
 def test_cv_and_cover_letter_go_to_their_own_inputs():
     playwright, browser, page = _page()
     try:

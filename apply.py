@@ -50,6 +50,13 @@ def load_profile() -> dict:
     return profile_store.load_profile()
 
 
+def resolve_job_profile(profile: dict, job: Job) -> dict:
+    """Documents plus consent-aware questionnaire answers for one brand."""
+    selected = document_rules.resolve_profile(profile, job)
+    company = document_rules.brand_key(job) or str(job.brand or "sallinggroup").strip()
+    return profile_store.resolve_company_answers(selected, company)
+
+
 def _mask_email(email: str) -> str:
     """ivan@gmail.com -> iv***@gmail.com (чтобы email не светился в логах)."""
     name, _, domain = (email or "").partition("@")
@@ -636,6 +643,12 @@ def best_effort_fill(page, profile: dict):
                     break
         except Exception:
             continue
+    try:
+        from connectors.generic_apply import fill_answer_fields
+
+        filled += len(fill_answer_fields(page, profile))
+    except Exception:
+        pass
     upload_documents(page, profile)
     print(f"  Предзаполнено полей: {filled}")
 
@@ -1283,7 +1296,7 @@ def run(job_id: str | None, login_only: bool = False, web_mode: bool = False,
                 print("  goto warning:", e)
             print("\n>>> Войди/создай аккаунт кандидата вручную. Сессия сохранится в browser_profile/.")
         else:
-            job_profile = document_rules.resolve_profile(profile, job)
+            job_profile = resolve_job_profile(profile, job)
             process_job(page, job, job_profile, submit, ai_fill=ai_fill)
 
         if web_mode and keep_open:
@@ -1426,7 +1439,7 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 ok = False
                 job_error = ""
                 try:
-                    job_profile = document_rules.resolve_profile(profile, job)
+                    job_profile = resolve_job_profile(profile, job)
                     ok = process_job(page, job, job_profile, submit, ai_fill=ai_fill,
                                      phone_confirm=phone_confirm)
                 except Exception as e:  # одна вакансия не должна валить всю пачку
@@ -1513,7 +1526,7 @@ def run_batch(job_ids, submit: bool = False, web_mode: bool = True,
                 pg.bring_to_front()
                 print(f"\n=== {job.title} — {job.city} ===")
                 pg.wait_for_timeout(1500)
-                job_profile = document_rules.resolve_profile(profile, job)
+                job_profile = resolve_job_profile(profile, job)
                 _log_document_selection(job_profile)
                 try:
                     wait_for_login_if_needed(pg, job_profile)

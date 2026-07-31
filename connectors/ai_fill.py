@@ -39,6 +39,12 @@ _PROFILE_WHITELIST = (
     "experience_years", "current_role", "education", "available_from",
     "notice_period", "relocation", "about", "summary", "salary_expectation",
     "date_of_birth", "age",
+    "gender", "start_date", "two_year_goal", "retail_experience",
+    "work_weekends", "work_evenings", "work_early", "work_night",
+    "has_drivers_license", "lidl_referral_name", "lidl_current_employee",
+    "lidl_previous_employment", "lidl_discovery", "citizenship",
+    "work_permit", "clean_criminal_record", "relevant_health_condition",
+    "lidl_newsletter", "lidl_profile_scope",
 )
 
 _MAX_FIELDS = 15          # за один заход не больше — и по стоимости, и по осторожности
@@ -67,6 +73,36 @@ _SENSITIVE_SOURCE_HINTS = {
     "age": re.compile(r"\b(?:age|alder|years?\s+old)\b", re.I),
     "salary_expectation": re.compile(
         r"\b(?:salary|compensation|pay|løn|loen|wage)\b",
+        re.I,
+    ),
+    "citizenship": re.compile(r"\b(?:citizenship|nationality|statsborgerskab)\b", re.I),
+    "work_permit": re.compile(
+        r"\b(?:work\s+permit|residence\s+permit|arbejdstilladelse|opholdstilladelse)\b",
+        re.I,
+    ),
+    "clean_criminal_record": re.compile(
+        r"\b(?:criminal\s+record|background\s+check|straffeattest)\b",
+        re.I,
+    ),
+    "relevant_health_condition": re.compile(
+        r"\b(?:health|medical|disease|illness|sygdom|arbejdsdygtighed)\b",
+        re.I,
+    ),
+    "lidl_referral_name": re.compile(r"\b(?:refer|referral|henvist|anbefalet)\b", re.I),
+    "lidl_previous_employment": re.compile(
+        r"\b(?:previously\s+employed|former\s+employee|tidligere.*ansat)\b",
+        re.I,
+    ),
+    "lidl_current_employee": re.compile(
+        r"\b(?:currently\s+employed|already\s+employed|allerede\s+ansat)\b",
+        re.I,
+    ),
+    "lidl_newsletter": re.compile(
+        r"\b(?:job\s+alerts?|career\s+news|relevante\s+stillinger)\b",
+        re.I,
+    ),
+    "lidl_profile_scope": re.compile(
+        r"\b(?:talent\s+pool|profile\s+consideration|profil.*betragtning)\b",
         re.I,
     ),
 }

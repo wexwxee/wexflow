@@ -863,18 +863,24 @@
     </details>
 
     <details class="ai-extra wex-answers" open>
-      <summary>{{ ic.i('store', 14) if ic else '' }} Lidl — данные и согласия <span class="ai-extra-tag">для полной подачи</span></summary>
-      <p class="hint" style="margin:10px 0 14px;">Эти ответы Lidl спрашивает отдельно. Выбери их один раз — WexFlow сохранит и подставит в следующую анкету. Пустые ответы не угадываются.</p>
+      <summary>{{ ic.i('store', 14) if ic else '' }} Общие ответы для компаний <span class="ai-extra-tag">заполняются один раз</span></summary>
+      <p class="hint" style="margin:10px 0 14px;">Эти факты встречаются в анкетах разных работодателей. WexFlow использует их в других компаниях только после твоего разрешения. Для отдельной компании ниже можно заменить любой ответ или отключить наследование целиком.</p>
       <div class="grid2">
-        <div class="field"><label class="lbl">Тебя порекомендовал сотрудник Lidl? Укажи полное имя <span class="hint">(необязательно)</span></label>
+        <div class="field" style="grid-column:1/-1;"><label class="lbl">Использовать эти общие ответы в анкетах разных компаний?</label>
+          <select name="answer_reuse_consent" class="{{ 'answered' if profile.answer_reuse_consent else '' }}">
+            <option value=""{{ ' selected' if not profile.answer_reuse_consent else '' }}>Сначала спросить — пока не использовать</option>
+            <option value="yes"{{ ' selected' if profile.answer_reuse_consent == 'yes' else '' }}>Да, разрешаю WexFlow подставлять общие ответы</option>
+            <option value="no"{{ ' selected' if profile.answer_reuse_consent == 'no' else '' }}>Нет, использовать только исключения компаний</option>
+          </select></div>
+        <div class="field"><label class="lbl">Тебя порекомендовал сотрудник компании? Укажи полное имя <span class="hint">(необязательно)</span></label>
           <input type="text" name="lidl_referral_name" value="{{ profile.lidl_referral_name or '' }}" placeholder="Оставь пустым, если никто не рекомендовал"></div>
-        <div class="field"><label class="lbl">Ты уже работаешь в Lidl?</label>
+        <div class="field"><label class="lbl">Ты уже работаешь в этой компании?</label>
           <select name="lidl_current_employee" class="{{ 'answered' if profile.lidl_current_employee else '' }}">
             <option value=""{{ ' selected' if not profile.lidl_current_employee else '' }}>Не отвечать</option>
             <option value="yes"{{ ' selected' if profile.lidl_current_employee == 'yes' else '' }}>Да</option>
             <option value="no"{{ ' selected' if profile.lidl_current_employee == 'no' else '' }}>Нет</option>
           </select></div>
-        <div class="field"><label class="lbl">Если раньше работал(а) в Lidl — где и когда <span class="hint">(необязательно)</span></label>
+        <div class="field"><label class="lbl">Если раньше работал(а) в этой компании — где и когда <span class="hint">(необязательно)</span></label>
           <input type="text" name="lidl_previous_employment" value="{{ profile.lidl_previous_employment or '' }}" placeholder="Оставь пустым, если не работал(а)"></div>
         <div class="field"><label class="lbl">Как узнал(а) об этой вакансии?</label>
           <input type="text" name="lidl_discovery" value="{{ profile.lidl_discovery or '' }}" placeholder="Точный вариант Lidl, например Jobindex"></div>
@@ -894,21 +900,8 @@
           </select></div>
         <div class="field"><label class="lbl">Заболевания, существенно влияющие на работу <span class="hint">(необязательно)</span></label>
           <input type="text" name="relevant_health_condition" value="{{ profile.relevant_health_condition or '' }}" placeholder="Оставь пустым, если сообщать нечего"></div>
-        <div class="field"><label class="lbl">Получать новости Lidl о вакансиях?</label>
-          <select name="lidl_newsletter" class="{{ 'answered' if profile.lidl_newsletter else '' }}">
-            <option value=""{{ ' selected' if not profile.lidl_newsletter else '' }}>Не отвечать</option>
-            <option value="yes"{{ ' selected' if profile.lidl_newsletter == 'yes' else '' }}>Да</option>
-            <option value="no"{{ ' selected' if profile.lidl_newsletter == 'no' else '' }}>Нет</option>
-          </select></div>
-        <div class="field" style="grid-column:1/-1;"><label class="lbl">Для каких вакансий Lidl может учитывать твой профиль?</label>
-          <select name="lidl_profile_scope" class="{{ 'answered' if profile.lidl_profile_scope else '' }}">
-            <option value=""{{ ' selected' if not profile.lidl_profile_scope else '' }}>Не выбрано — оставить вопрос тебе</option>
-            <option value="international"{{ ' selected' if profile.lidl_profile_scope == 'international' else '' }}>Все подходящие вакансии Lidl International и международные кадровые резервы</option>
-            <option value="country"{{ ' selected' if profile.lidl_profile_scope == 'country' else '' }}>Подходящие вакансии в стране проживания и местные кадровые резервы</option>
-            <option value="applied_only"{{ ' selected' if profile.lidl_profile_scope == 'applied_only' else '' }}>Только вакансии, на которые я подал(а) сам(а)</option>
-          </select></div>
       </div>
-      <p class="hint" style="margin:14px 0 0;"><b>Что означает длинный текст перед «Ansøg»:</b> финальным нажатием ты принимаешь пользовательские условия Lidl и подтверждаешь, что ознакомился(ась) с информацией о защите данных. Отдельной галочки у этого текста нет. Перед реальной отправкой WexFlow ещё раз явно предупредит об этом.</p>
+      <p class="hint" style="margin:14px 0 0;">Имя рекомендующего сотрудника и ответы о работе в компании часто различаются — задай исключение ниже, если общий ответ подходит не всем работодателям.</p>
     </details>
 
     <details class="ai-extra">
@@ -934,6 +927,196 @@
 
     <div class="actions" style="margin-top:16px;"><span id="autosaveStatus" class="autosave">{{ ic.i('check', 13) }} Изменения сохраняются автоматически</span></div>
   </form>
+
+  <section class="panel company-answers-panel" id="company-answers">
+    <style>
+      .company-answer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+      .company-answer-rules { display:flex; flex-wrap:wrap; gap:7px; margin:12px 0 16px; }
+      .company-answer-rule {
+        border:1px solid var(--glass-line); border-radius:999px; padding:7px 11px;
+        background:var(--glass); color:var(--txt); font:600 12px/1 inherit; cursor:pointer;
+      }
+      .company-answer-rule:hover, .company-answer-rule.active {
+        border-color:var(--accent); color:var(--txt-strong);
+      }
+      .company-answer-editor {
+        border-top:1px solid var(--glass-line); margin-top:12px; padding-top:16px;
+      }
+      .company-answer-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:16px; }
+      .company-answer-actions .danger { margin-left:auto; }
+      .company-answer-actions [hidden] { display:none !important; }
+      @media (max-width:720px) {
+        .company-answer-head { display:block; }
+        .company-answer-actions .danger { margin-left:0; }
+      }
+    </style>
+    <div class="company-answer-head">
+      <div>
+        <h2 style="margin-bottom:6px;">Исключения по компаниям</h2>
+        <p class="hint" style="margin:0;">Выбери работодателя и укажи только то, что должно отличаться. Остальное наследуется из общих ответов. Можно также полностью отключить наследование для этой компании.</p>
+      </div>
+    </div>
+    {% if company_answer_overrides %}
+    <div class="company-answer-rules" aria-label="Сохранённые исключения">
+      {% for company_key, rule in company_answer_overrides.items() %}
+      <button type="button" class="company-answer-rule" data-load-company="{{ company_key }}">{{ rule.label }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <form class="company-answer-editor wex-answers" id="companyAnswerForm" method="post" action="/account/company-answers/save">
+      <div class="grid2">
+        <div class="field"><label class="lbl">Компания</label>
+          <select name="company_key" id="companyAnswerCompany">
+            <option value="">Выбери из вакансий</option>
+            {% for item in answer_brand_options %}
+            <option value="{{ item.key }}">{{ item.label }}{% if item.count %} · {{ item.count }} вакансий{% endif %}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="company_label" id="companyAnswerLabel"></div>
+        <div class="field"><label class="lbl">Или введи другую компанию</label>
+          <input type="text" name="company_custom" id="companyAnswerCustom" placeholder="Например: IKEA"></div>
+        <div class="field" style="grid-column:1/-1;"><label class="lbl">Наследовать общие ответы?</label>
+          <select name="inherit_defaults" id="companyAnswerInherit">
+            <option value="yes">Да — заменить только заполненные ниже поля</option>
+            <option value="no">Нет — для этой компании начать с пустых ответов</option>
+          </select></div>
+      </div>
+
+      <details class="ai-extra">
+        <summary>{{ ic.i('sliders', 14) if ic else '' }} Ответы, отличающиеся для этой компании <span class="ai-extra-tag">пусто = наследовать</span></summary>
+        <p class="hint" style="margin:10px 0 14px;">При включённом наследовании пустое поле берётся из общего набора. При выключенном — остаётся пустым. WexFlow никогда не придумывает замену.</p>
+        <div class="grid2">
+          <div class="field"><label class="lbl">Пол</label>
+            <select name="gender" data-company-answer>
+              <option value="">Без замены</option><option value="male">Мужской</option>
+              <option value="female">Женский</option><option value="other">Другое</option>
+            </select></div>
+          <div class="field"><label class="lbl">Дата выхода</label><input type="date" name="start_date" data-company-answer></div>
+          <div class="field" style="grid-column:1/-1;"><label class="lbl">Где видишь себя через два года</label>
+            <input type="text" name="two_year_goal" data-company-answer></div>
+          {% for key, human in [
+              ('retail_experience', 'Есть опыт в рознице/магазине'),
+              ('work_weekends', 'Готов работать каждые вторые выходные'),
+              ('work_evenings', 'Готов на вечерние смены'),
+              ('work_early', 'Готов выходить рано утром'),
+              ('work_night', 'Готов на ночные смены'),
+              ('has_drivers_license', 'Есть водительские права'),
+              ('lidl_current_employee', 'Уже работаешь в этой компании'),
+              ('work_permit', 'Есть действующее разрешение на проживание/работу'),
+              ('clean_criminal_record', 'Можешь предоставить чистую справку о несудимости')] %}
+          <div class="field"><label class="lbl">{{ human }}</label>
+            <select name="{{ key }}" data-company-answer>
+              <option value="">Без замены</option><option value="yes">Да</option><option value="no">Нет</option>
+            </select></div>
+          {% endfor %}
+          {% for key, human, placeholder in [
+              ('lidl_referral_name', 'Имя сотрудника, который порекомендовал', 'Пусто, если никто не рекомендовал'),
+              ('lidl_previous_employment', 'Где и когда раньше работал в этой компании', 'Пусто, если не работал'),
+              ('lidl_discovery', 'Как узнал об этой вакансии', 'Например: Jobindex'),
+              ('citizenship', 'Гражданство', 'Например: Ukraine'),
+              ('relevant_health_condition', 'Сведения о здоровье, влияющие на работу', 'Пусто, если сообщать нечего')] %}
+          <div class="field"><label class="lbl">{{ human }}</label>
+            <input type="text" name="{{ key }}" data-company-answer placeholder="{{ placeholder }}"></div>
+          {% endfor %}
+        </div>
+      </details>
+
+      <details class="ai-extra">
+        <summary>{{ ic.i('shield', 14) if ic else '' }} Согласия только этой компании <span class="ai-extra-tag">никогда не наследуются</span></summary>
+        <p class="hint" style="margin:10px 0 14px;">Рассылка и кадровый резерв — отдельные разрешения конкретному работодателю. WexFlow не переносит их в другие компании, даже когда общие ответы разрешены.</p>
+        <div class="grid2">
+          <div class="field"><label class="lbl">Получать новости этой компании о вакансиях?</label>
+            <select name="lidl_newsletter" data-company-answer>
+              <option value="">Не отвечать автоматически</option>
+              <option value="yes">Да</option><option value="no">Нет</option>
+            </select></div>
+          <div class="field"><label class="lbl">Для каких вакансий компания может учитывать профиль?</label>
+            <select name="lidl_profile_scope" data-company-answer>
+              <option value="">Не отвечать автоматически</option>
+              <option value="international">Все подходящие международные вакансии и кадровые резервы</option>
+              <option value="country">Вакансии в стране проживания и местные кадровые резервы</option>
+              <option value="applied_only">Только вакансии, на которые я подал сам</option>
+            </select></div>
+        </div>
+        <p class="hint" style="margin:12px 0 0;"><b>Для Lidl:</b> финальное «Ansøg» также означает принятие пользовательских условий и подтверждение ознакомления с информацией о защите данных. Перед отправкой WexFlow показывает отдельное предупреждение.</p>
+      </details>
+
+      <div class="company-answer-actions">
+        <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить исключение</button>
+        <span class="hint">Можно изменить позже — общие ответы не затрагиваются.</span>
+        <button class="ghost danger" type="button" id="companyAnswerDelete" hidden>Удалить исключение</button>
+      </div>
+    </form>
+    <form method="post" action="/account/company-answers/delete" id="companyAnswerDeleteForm" hidden>
+      <input type="hidden" name="company_key" id="companyAnswerDeleteKey">
+    </form>
+  </section>
+
+  <script>
+  (function () {
+    const rules = {{ company_answer_overrides|default({}, true)|tojson }};
+    const form = document.getElementById('companyAnswerForm');
+    const company = document.getElementById('companyAnswerCompany');
+    const custom = document.getElementById('companyAnswerCustom');
+    const label = document.getElementById('companyAnswerLabel');
+    const inherit = document.getElementById('companyAnswerInherit');
+    const remove = document.getElementById('companyAnswerDelete');
+    const removeForm = document.getElementById('companyAnswerDeleteForm');
+    const removeKey = document.getElementById('companyAnswerDeleteKey');
+    if (!form || !company) return;
+    const fields = [...form.querySelectorAll('[data-company-answer]')];
+
+    function clearAnswers() { fields.forEach(input => { input.value = ''; }); }
+    function loadRule(key) {
+      clearAnswers();
+      const rule = rules[key] || null;
+      const option = [...company.options].find(item => item.value === key);
+      company.value = option ? key : '';
+      custom.value = option ? '' : (rule?.label || '');
+      label.value = option ? option.textContent.replace(/ · \d+ вакансий$/, '').trim() : (rule?.label || '');
+      inherit.value = rule?.inherit_defaults === 'no' ? 'no' : 'yes';
+      Object.entries(rule?.answers || {}).forEach(([name, value]) => {
+        const input = form.elements.namedItem(name);
+        if (input) input.value = value || '';
+      });
+      remove.hidden = !rule;
+      removeKey.value = rule ? key : '';
+      document.querySelectorAll('[data-load-company]').forEach(button => {
+        button.classList.toggle('active', button.dataset.loadCompany === key);
+      });
+    }
+    company.addEventListener('change', () => {
+      custom.value = '';
+      loadRule(company.value);
+    });
+    custom.addEventListener('input', () => {
+      if (!custom.value.trim()) return;
+      company.value = '';
+      label.value = custom.value.trim();
+      clearAnswers();
+      inherit.value = 'yes';
+      remove.hidden = true;
+    });
+    document.querySelectorAll('[data-load-company]').forEach(button => {
+      button.addEventListener('click', () => loadRule(button.dataset.loadCompany));
+    });
+    remove.addEventListener('click', () => {
+      if (!removeKey.value) return;
+      if (confirm('Удалить исключение этой компании? После этого снова будут действовать общие ответы.')) {
+        removeForm.submit();
+      }
+    });
+    form.addEventListener('submit', () => {
+      if (company.value) {
+        const option = company.options[company.selectedIndex];
+        label.value = option.textContent.replace(/ · \d+ вакансий$/, '').trim();
+      } else {
+        label.value = custom.value.trim();
+      }
+    });
+  })();
+  </script>
 
   <!-- Подписка показывается только после включения биллинга -->
   {% if show_billing() %}
@@ -1079,7 +1262,7 @@
      'work_early','work_night','has_drivers_license',
      'lidl_referral_name','lidl_current_employee','lidl_previous_employment',
      'lidl_discovery','citizenship','work_permit','clean_criminal_record',
-     'relevant_health_condition','lidl_newsletter','lidl_profile_scope'].forEach((name) => {
+     'relevant_health_condition','answer_reuse_consent'].forEach((name) => {
       const input = profileForm.querySelector(`[name="${name}"]`);
       if (input) fd.append(name, input.value || '');
     });

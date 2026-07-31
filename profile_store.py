@@ -133,6 +133,39 @@ ANSWER_FIELDS: tuple[tuple[str, str, str], ...] = (
 ANSWER_KEYS = tuple(key for key, _human, _kind in ANSWER_FIELDS)
 
 _YESNO = {"yes", "no"}
+
+# Факты, которые человек может один раз разрешить использовать во всех анкетах.
+# Контактные данные живут отдельно в основном профиле, документы — в правилах
+# документов. Здесь только ответы на вопросы работодателя.
+REUSABLE_ANSWER_KEYS: tuple[str, ...] = (
+    "gender",
+    "start_date",
+    "two_year_goal",
+    "retail_experience",
+    "work_weekends",
+    "work_evenings",
+    "work_early",
+    "work_night",
+    "has_drivers_license",
+    "lidl_referral_name",
+    "lidl_current_employee",
+    "lidl_previous_employment",
+    "lidl_discovery",
+    "citizenship",
+    "work_permit",
+    "clean_criminal_record",
+    "relevant_health_condition",
+)
+
+# Эти значения — не общие факты, а отдельное согласие конкретному работодателю.
+# Они никогда не наследуются между компаниями, даже если повторное использование
+# общих ответов включено.
+COMPANY_CONSENT_KEYS: tuple[str, ...] = (
+    "lidl_newsletter",
+    "lidl_profile_scope",
+)
+
+COMPANY_OVERRIDE_KEYS = REUSABLE_ANSWER_KEYS + COMPANY_CONSENT_KEYS
 def clean_answer(key: str, value) -> str:
     """Привести ответ к хранимому виду. Мусор и «не выбрано» → пустая строка."""
     raw = str(value or "").strip().lower()
@@ -159,6 +192,85 @@ def answers(profile: dict | None = None) -> dict:
     return {key: clean_answer(key, data.get(key)) for key in ANSWER_KEYS}
 
 
+def normalize_company_key(value: str) -> str:
+    """Stable local key for a brand/company label or connector slug."""
+    raw = str(value or "").strip().casefold()
+    aliases = {
+        "lidl easyapply": "lidl",
+        "lidl_easy_apply": "lidl",
+        "salling group": "sallinggroup",
+        "føtex": "foetex",
+        "f\u00f8tex": "foetex",
+    }
+    raw = aliases.get(raw, raw)
+    clean = re.sub(r"[^a-z0-9æøå]+", "-", raw, flags=re.I).strip("-")
+    return clean[:64]
+
+
+def company_overrides(profile: dict | None = None) -> dict[str, dict]:
+    """Return validated per-company answer overrides from the candidate profile."""
+    raw_items = (profile or {}).get("company_answer_overrides")
+    if not isinstance(raw_items, dict):
+        return {}
+    clean_items: dict[str, dict] = {}
+    for raw_key, raw_rule in raw_items.items():
+        if not isinstance(raw_rule, dict):
+            continue
+        key = normalize_company_key(raw_key)
+        if not key:
+            continue
+        raw_answers = raw_rule.get("answers")
+        if not isinstance(raw_answers, dict):
+            raw_answers = {}
+        rule_answers = {
+            answer_key: clean_answer(answer_key, raw_answers.get(answer_key))
+            for answer_key in COMPANY_OVERRIDE_KEYS
+            if clean_answer(answer_key, raw_answers.get(answer_key))
+        }
+        clean_items[key] = {
+            "label": str(raw_rule.get("label") or raw_key).strip()[:80] or key,
+            "inherit_defaults": (
+                "no" if str(raw_rule.get("inherit_defaults") or "").lower() == "no"
+                else "yes"
+            ),
+            "answers": rule_answers,
+        }
+    return clean_items
+
+
+def resolve_company_answers(profile: dict, company: str) -> dict:
+    """Apply reuse consent and one company's sparse overrides to a profile.
+
+    Common questionnaire answers are exposed only after the candidate has
+    explicitly allowed reuse. A company rule can inherit those defaults or
+    start empty, then replace only selected values. Employer-specific legal
+    consents are always empty unless that company's rule contains them.
+    """
+    data = clean_profile(profile)
+    resolved = dict(data)
+    company_key = normalize_company_key(company)
+    reuse_allowed = str(data.get("answer_reuse_consent") or "").lower() == "yes"
+    common = answers(data)
+
+    for key in REUSABLE_ANSWER_KEYS:
+        resolved[key] = common.get(key, "") if reuse_allowed else ""
+    for key in COMPANY_CONSENT_KEYS:
+        resolved[key] = ""
+
+    rule = company_overrides(data).get(company_key)
+    if rule:
+        if rule["inherit_defaults"] == "no":
+            for key in REUSABLE_ANSWER_KEYS:
+                resolved[key] = ""
+        for key, value in rule["answers"].items():
+            resolved[key] = value
+
+    resolved["_answers_company_key"] = company_key
+    resolved["_allow_shared_answers"] = reuse_allowed
+    resolved["_company_override_active"] = bool(rule)
+    return resolved
+
+
 def missing_answers(profile: dict | None = None, keys=None) -> list[str]:
     """Человеческие названия неотвеченных вопросов (для честного стопа подачи)."""
     ready = answers(profile)
@@ -179,6 +291,30 @@ def clean_profile(data: dict) -> dict:
             data["lidl_profile_scope"] = "country"
         elif legacy_visible == "no":
             data["lidl_profile_scope"] = "applied_only"
+    consent = str(data.get("answer_reuse_consent") or "").strip().lower()
+    data["answer_reuse_consent"] = consent if consent in {"yes", "no"} else ""
+
+    # 1.3.63 хранил юридические ответы Lidl плоско. Переносим их в правило Lidl,
+    # чтобы они никогда случайно не ушли другому работодателю.
+    overrides = company_overrides(data)
+    if "lidl" not in overrides:
+        legacy_lidl_keys = (
+            COMPANY_OVERRIDE_KEYS
+            if not data["answer_reuse_consent"]
+            else COMPANY_CONSENT_KEYS
+        )
+        lidl_legacy = {
+            key: clean_answer(key, data.get(key))
+            for key in legacy_lidl_keys
+            if clean_answer(key, data.get(key))
+        }
+        if lidl_legacy:
+            overrides["lidl"] = {
+                "label": "Lidl",
+                "inherit_defaults": "yes",
+                "answers": lidl_legacy,
+            }
+    data["company_answer_overrides"] = overrides
     city_key = str(data.get("city") or "").strip().lower()
     country_key = str(data.get("country") or "").strip().lower()
     if city_key in CITY_FIXES:

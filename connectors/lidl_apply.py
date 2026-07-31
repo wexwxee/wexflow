@@ -260,7 +260,7 @@ _YES_RE = re.compile(r"^\s*(ja|yes)\s*$", re.I)
 _NO_RE = re.compile(r"^\s*(nej|no)\s*$", re.I)
 
 
-def question_answer(text: str, answers: dict) -> tuple[str, str]:
+def question_answer(text: str, answers: dict, *, allow_saved: bool = True) -> tuple[str, str]:
     """(ключ ответа, «yes»/«no»/'') для текста вопроса анкеты.
 
     Сначала смотрим личный банк ответов: там лежит то, что человек ответил
@@ -269,9 +269,10 @@ def question_answer(text: str, answers: dict) -> tuple[str, str]:
     остановится: выдумывать за человека нельзя.
     """
     clean = str(text or "")
-    saved = form_questions.answer_for(clean)
-    if saved in {"yes", "no"}:
-        return "saved", saved
+    if allow_saved:
+        saved = form_questions.answer_for(clean)
+        if saved in {"yes", "no"}:
+            return "saved", saved
     key = form_questions.profile_key_for(clean)
     if key:
         return key, str(answers.get(key) or "")
@@ -489,7 +490,11 @@ def fill_answers(page, profile: dict) -> dict:
         if not yes or not no:
             unanswered.append(question[:120] or "вопрос без подписи")
             continue                      # не «да/нет» — без сохранённого выбора не трогаем
-        key, answer = question_answer(question, answers)
+        key, answer = question_answer(
+            question,
+            answers,
+            allow_saved=bool(profile.get("_allow_shared_answers")),
+        )
         if not answer:
             unanswered.append(question[:120] or "вопрос без подписи")
             continue
@@ -731,7 +736,11 @@ def blockers(page, profile: dict) -> list[str]:
         if not (yes and no):
             reasons.append("вопрос анкеты не «да/нет»: " + (question[:80] or "без подписи"))
             continue
-        key, answer = question_answer(question, answers)
+        key, answer = question_answer(
+            question,
+            answers,
+            allow_saved=bool(profile.get("_allow_shared_answers")),
+        )
         if not answer:
             reasons.append("нет сохранённого ответа: " + (question[:80] or "вопрос без подписи"))
     reasons.extend("не заполнено обязательное поле: " + name for name in required_left(page))

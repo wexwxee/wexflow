@@ -81,3 +81,39 @@ def test_saved_answer_is_used_by_the_lidl_filler(client):
     key = form_questions.all_items()[0]["key"]
     form_questions.set_answer(key, "no")
     assert lidl_apply.question_answer(question, {}) == ("saved", "no")
+
+
+def test_company_answer_override_endpoint_saves_sparse_rule(client):
+    existing = {
+        "first_name": "Ivan",
+        "answer_reuse_consent": "yes",
+        "company_answer_overrides": {},
+    }
+    saved = {}
+    with (
+        mock.patch.object(app_module.profile_store, "load_profile", return_value=existing),
+        mock.patch.object(
+            app_module.profile_store,
+            "save_profile",
+            side_effect=lambda profile: saved.update(profile),
+        ),
+    ):
+        response = client.post(
+            "/account/company-answers/save",
+            data={
+                "company_key": "netto",
+                "company_label": "Netto",
+                "inherit_defaults": "yes",
+                "work_weekends": "no",
+                "citizenship": "",
+                "lidl_newsletter": "no",
+            },
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    rule = saved["company_answer_overrides"]["netto"]
+    assert rule["inherit_defaults"] == "yes"
+    assert rule["answers"] == {
+        "work_weekends": "no",
+        "lidl_newsletter": "no",
+    }
