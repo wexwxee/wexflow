@@ -39,6 +39,7 @@ import credentials_store
 import lidl_credentials_store
 import lidl_followup
 import lidl_monitor
+import application_tracker
 import subscription
 import account as account_mod
 import cloud_auth
@@ -66,7 +67,10 @@ PROFILE_REQUIRED = [
     ("country", "Страна"),
 ]
 
-SAFE_JOB_STATUSES = {"new", "seen", "applied", "hidden", "interview", "offer", "rejected", "closed"}
+SAFE_JOB_STATUSES = {
+    "new", "seen", "applied", "hidden", "interview", "offer",
+    "rejected", "no_response", "closed",
+}
 JOB_SOURCE_LABELS = {
     "salling": "Salling Group",
     "teamtailor": "Другие компании · Teamtailor",
@@ -2286,6 +2290,7 @@ def _handle_tg_remote_command(command: dict) -> str:
 
 _lidl_followup_tick_lock = threading.Lock()
 _lidl_monitor_spawn_lock = threading.Lock()
+_application_tracking_tick_lock = threading.Lock()
 
 
 def _lidl_followup_tick() -> None:
@@ -2359,6 +2364,32 @@ def _lidl_monitor_tick() -> None:
     _launch_lidl_monitor_worker("check")
 
 
+def _application_tracking_tick() -> None:
+    """Move stale submitted applications to ``no_response`` exactly once."""
+    if not _application_tracking_tick_lock.acquire(blocking=False):
+        return
+    try:
+        changed = application_tracker.mark_no_response()
+        if not changed:
+            return
+        threading.Thread(
+            target=_sync_application_views_to_cloud,
+            kwargs={"force": True},
+            daemon=True,
+        ).start()
+        if _cloud_profile_enabled():
+            titles = ", ".join(item["title"] for item in changed[:3])
+            suffix = f" и ещё {len(changed) - 3}" if len(changed) > 3 else ""
+            cloud_auth.send_digest(
+                "⏳ WexFlow: 60 дней без ответа. Статус «Нет ответа» поставлен для: "
+                f"{titles}{suffix}. Если работодатель ответит позже, статус обновится."
+            )
+    except Exception as exc:  # noqa: BLE001
+        print("application-tracker: не удалось обновить статусы —", str(exc)[:140])
+    finally:
+        _application_tracking_tick_lock.release()
+
+
 @asynccontextmanager
 async def _lifespan(app):
     global _scheduler
@@ -2377,6 +2408,14 @@ async def _lifespan(app):
         "interval",
         hours=3,
         id="lidl_monitor",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        _application_tracking_tick,
+        "interval",
+        hours=6,
+        id="application_tracking",
         max_instances=1,
         coalesce=True,
     )
@@ -2403,6 +2442,7 @@ async def _lifespan(app):
         threading.Thread(target=_tg_offer_tick, daemon=True).start()
     threading.Thread(target=_lidl_followup_tick, daemon=True).start()
     threading.Thread(target=_lidl_monitor_tick, daemon=True).start()
+    threading.Thread(target=_application_tracking_tick, daemon=True).start()
     # Repair any stale phone cache left by an older build immediately on start.
     threading.Thread(
         target=_sync_application_views_to_cloud,
@@ -3299,8 +3339,7 @@ def connector_apply_result(
             return _redirect_back(request, f"/job/{job_id}", error="Этот результат относится только к внешним анкетам.")
         source = job.source
         if outcome == "submitted":
-            job.status = "applied"
-            job.applied_at = job.applied_at or utcnow()
+            application_tracker.set_status(job, "applied", source="manual")
             job.applied_confidence = "manual"
             session.add(job)
             session.commit()
@@ -3428,9 +3467,12 @@ def index(
             stmt = stmt.where(Job.source == source_key)
         if status == "active":
             excluded_statuses = ["closed", "hidden"]
-            if not show_applied:
-                excluded_statuses.append("applied")
             stmt = stmt.where(Job.status.not_in(excluded_statuses))
+            if not show_applied:
+                stmt = stmt.where(Job.applied_at.is_(None))
+        elif status == "applied":
+            # «Поданные» — это весь путь заявки, а не только начальный этап.
+            stmt = stmt.where(Job.applied_at.is_not(None))
         elif status:
             stmt = stmt.where(Job.status == status)
         if period == "today":
@@ -3514,10 +3556,13 @@ def index(
         cats = sorted({c for row in cat_rows for c in row.split(",") if c})
         counts = _active_counts(s)
         total_active = s.exec(
-            select(func.count()).select_from(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))
+            select(func.count()).select_from(Job).where(
+                Job.status.not_in(["closed", "hidden"]),
+                Job.applied_at.is_(None),
+            )
         ).one()
         applied_count = s.exec(
-            select(func.count()).select_from(Job).where(Job.status == "applied")
+            select(func.count()).select_from(Job).where(Job.applied_at.is_not(None))
         ).one()
         last = s.exec(select(func.max(Job.last_seen))).one()
 
@@ -3812,13 +3857,17 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
         "interview": "Статус обновлён: собеседование.",
         "offer": "Статус обновлён: оффер.",
         "rejected": "Статус обновлён: отказ.",
+        "no_response": "Статус обновлён: ответа от работодателя пока нет.",
     }
     with get_session() as s:
         job = s.get(Job, job_id)
         if job:
-            job.status = status
-            if status == "applied":
-                job.applied_at = utcnow()
+            was_submitted = job.applied_at is not None
+            if status in application_tracker.STATUS_LABELS:
+                application_tracker.set_status(job, status, source="manual")
+            else:
+                job.status = status
+            if status == "applied" and not was_submitted:
                 # ручная пометка — не отправка: в журнале доверия она должна
                 # отличаться от заявок, которые WexFlow реально отправил
                 job.applied_confidence = "manual"
@@ -3827,8 +3876,9 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
             s.refresh(job)
         else:
             return _redirect_back(request, "/", error="Вакансия не найдена. Возможно, список обновился.")
-    if status == "applied":
+    if status == "applied" and not was_submitted:
         applications.record_submitted([job])
+    if status in application_tracker.STATUS_LABELS:
         threading.Thread(
             target=_sync_application_views_to_cloud,
             kwargs={"force": True},
@@ -4585,13 +4635,17 @@ def audit_log(request: Request):
         rows = s.exec(
             select(Job).where(Job.applied_at.is_not(None)).order_by(Job.applied_at.desc())
         ).all()
-        entries = [{
-            "id": j.id, "title": j.title, "city": j.city, "brand": j.brand,
-            "status": j.status, "applied_at": j.applied_at,
-            "confidence": j.applied_confidence or "",
-            "source": j.source, "activity": "submitted",
-            "proof": proofs.get(str(j.requisition_id or "")) or proofs.get(str(j.id)) or "",
-        } for j in rows]
+        entries = []
+        for j in rows:
+            tracker = application_tracker.view(j)
+            entries.append({
+                "id": j.id, "title": j.title, "city": j.city, "brand": j.brand,
+                "status": j.status, "applied_at": j.applied_at,
+                "confidence": j.applied_confidence or "",
+                "source": j.source, "activity": "submitted",
+                "proof": proofs.get(str(j.requisition_id or "")) or proofs.get(str(j.id)) or "",
+                "tracker": tracker,
+            })
         pending = s.exec(select(Application).where(
             Application.source != "salling",
             Application.state.in_(("submitting", "failed")),
@@ -4612,6 +4666,7 @@ def audit_log(request: Request):
                 "source": application.source,
                 "activity": "preparing" if application.state == "submitting" else "incomplete",
                 "proof": "",
+                "tracker": {},
             })
         entries.sort(key=lambda row: row.get("applied_at") or utcnow(), reverse=True)
     return templates.TemplateResponse("audit.html", {
@@ -4985,8 +5040,17 @@ def _settings_context(
         for item in document_store_options
     )
     saved_document_rules = document_rules.get_rules()
+    with get_session() as session:
+        lidl_applied_jobs = session.exec(
+            select(Job).where(
+                Job.source == "lidl",
+                Job.applied_at.is_not(None),
+            ).order_by(Job.applied_at.desc())
+        ).all()
+    lidl_latest_job = lidl_applied_jobs[0] if lidl_applied_jobs else None
     titles = {
         "salling": ("Salling", "Логин, домашний адрес и управление сохранённой сессией"),
+        "lidl": ("Lidl", "Вход в кандидатский кабинет и автоматическое отслеживание заявок"),
         "documents": ("Документы", "CV и мотивационные письма для брендов и отдельных магазинов"),
         "autopilot": ("Автопилот", "Наборы фильтров, режим работы и автоотправка"),
         "telegram": ("Telegram", "Статус @wexflowbot, проверка и ручная отправка текущих"),
@@ -5000,6 +5064,10 @@ def _settings_context(
         "profile": profile, "file_info": _profile_file_info(profile),
         "citizenship_options": profile_store.CITIZENSHIP_OPTIONS,
         "creds": credentials_store.status(), "home": settings_store.get_home(),
+        "lidl_credentials": lidl_credentials_store.status(profile.get("email") or ""),
+        "lidl_monitor": lidl_monitor.view(),
+        "lidl_applied_count": len(lidl_applied_jobs),
+        "lidl_latest_job": lidl_latest_job,
         "saved": saved, "geoerror": geoerror,
         "subscription": subscription.status(),
         "account_tg_id": account_mod.load().get("tg_id") or "",
@@ -5077,6 +5145,96 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
 @app.get("/settings/salling", response_class=HTMLResponse)
 def settings_salling(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     return _render_settings_section(request, "salling", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.get("/settings/lidl", response_class=HTMLResponse)
+def settings_lidl(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
+    return _render_settings_section(request, "lidl", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.post("/settings/lidl/credentials")
+def settings_lidl_credentials(
+    lidl_email: str = Form(""),
+    lidl_password: str = Form(""),
+):
+    target = "/settings/lidl"
+    email = str(lidl_email or "").strip()
+    existing = lidl_credentials_store.status()
+    if not email or "@" not in email:
+        return RedirectResponse(_url_with_system_response(
+            target, error="Укажи email кандидатского кабинета Lidl."
+        ), status_code=303)
+    if not lidl_password and not existing.get("has_password"):
+        return RedirectResponse(_url_with_system_response(
+            target, error="Введи пароль Lidl — он сохранится зашифрованным через Windows DPAPI."
+        ), status_code=303)
+    try:
+        lidl_credentials_store.save(email, lidl_password)
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(_url_with_system_response(
+            target, error=f"Не удалось безопасно сохранить вход Lidl: {str(exc)[:140]}"
+        ), status_code=303)
+    lidl_monitor.set_enabled(True)
+    launched = False if lidl_monitor.is_busy() else _launch_lidl_monitor_worker("login")
+    message = (
+        "Email и пароль Lidl сохранены. Выполняю вход и первую проверку кабинета."
+        if launched else
+        "Email и пароль Lidl сохранены. Окно входа уже открыто или проверка уже выполняется."
+    )
+    return RedirectResponse(_url_with_system_response(target, notice=message), status_code=303)
+
+
+@app.post("/settings/lidl/connect")
+def settings_lidl_connect():
+    target = "/settings/lidl"
+    state = lidl_monitor.load_state()
+    if state.get("connected") and state.get("phase") not in ("needs_login", "error"):
+        lidl_monitor.save_state(enabled=True, phase="connected", last_error="")
+        _launch_lidl_monitor_worker("check")
+        message = "Мониторинг Lidl включён; запускаю проверку поданных заявок."
+    elif lidl_monitor.is_busy():
+        message = "Окно Lidl уже открыто. Заверши вход в нём."
+    else:
+        lidl_monitor.set_enabled(True)
+        launched = _launch_lidl_monitor_worker("login")
+        message = (
+            "Открываю отдельное безопасное окно Lidl для входа."
+            if launched else "Не удалось открыть окно входа Lidl."
+        )
+    return RedirectResponse(_url_with_system_response(target, notice=message), status_code=303)
+
+
+@app.post("/settings/lidl/check")
+def settings_lidl_check():
+    target = "/settings/lidl"
+    state = lidl_monitor.load_state()
+    if not state.get("connected"):
+        return RedirectResponse(_url_with_system_response(
+            target, error="Сначала подключи кандидатский кабинет Lidl."
+        ), status_code=303)
+    launched = _launch_lidl_monitor_worker("check")
+    message = (
+        "Проверяю статусы заявок Lidl в фоне."
+        if launched else "Проверка уже идёт или кабинет сейчас занят."
+    )
+    return RedirectResponse(_url_with_system_response(target, notice=message), status_code=303)
+
+
+@app.post("/settings/lidl/disable")
+def settings_lidl_disable():
+    lidl_monitor.set_enabled(False)
+    return RedirectResponse(_url_with_system_response(
+        "/settings/lidl", notice="Автоматическая проверка Lidl выключена. Данные входа сохранены."
+    ), status_code=303)
+
+
+@app.post("/settings/lidl/credentials/clear")
+def settings_lidl_credentials_clear():
+    lidl_credentials_store.clear()
+    lidl_monitor.set_enabled(False)
+    return RedirectResponse(_url_with_system_response(
+        "/settings/lidl", notice="Сохранённые email и пароль Lidl удалены."
+    ), status_code=303)
 
 
 @app.get("/settings/documents", response_class=HTMLResponse)
@@ -6254,6 +6412,9 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             ),
             "selected_documents": selected_documents,
             "lidl_post_apply": lidl_post_apply,
+            "application_tracking": (
+                application_tracker.view(job) if job and job.applied_at else None
+            ),
             "distance": distance,
             "has_home": bool(home),
             "maps_url": maps_url,

@@ -103,7 +103,7 @@
   {% if not job %}
     <p>Вакансия не найдена.</p>
   {% else %}
-    {% set st_ru = {'new':'новая','seen':'просмотрено','applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','closed':'закрыта'} %}
+    {% set st_ru = {'new':'новая','seen':'просмотрено','applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','no_response':'нет ответа','closed':'закрыта'} %}
     <h1 style="font-size:26px;margin:14px 0 8px;">{{ job.title }}</h1>
     {% set cat0 = (job.categories or '').split(',')[0] %}
     <div>
@@ -114,14 +114,21 @@
     </div>
     <div class="status-row">
       <span class="lbl">Статус заявки:</span>
-      {% set sticons = {'applied':'check','interview':'phone','offer':'award','rejected':'x','seen':'undo'} %}
+      {% set sticons = {'applied':'check','interview':'phone','offer':'award','rejected':'x','no_response':'clock','seen':'undo'} %}
       <form method="post" action="/job/{{ job.id }}/status" style="display:inline-flex;gap:7px;flex-wrap:wrap;">
-        {% for val,txt in [('applied','Подано'),('interview','Собеседование'),('offer','Оффер'),('rejected','Отказ'),('seen','Сброс')] %}
+        {% for val,txt in [('applied','Подано'),('interview','Собеседование'),('offer','Оффер'),('rejected','Отказ'),('no_response','Нет ответа'),('seen','Сброс')] %}
           <button class="st {{ 'cur' if job.status==val }}" name="status" value="{{ val }}"
                   {% if val == 'applied' and job.status != 'applied' %}onclick="return confirm('Отметить как поданную ВРУЧНУЮ?\n\nЗаявка при этом НЕ отправляется — это пометка для списка. Чтобы подать по-настоящему, нажми «Подать заявку» ниже.')"{% endif %}>{{ ic.i(sticons[val], 13) }} {{ txt }}</button>
         {% endfor %}
       </form>
     </div>
+    {% if application_tracking %}
+    <div class="notice" style="margin-top:12px;">
+      {{ ic.i('clock', 14) }} Подано {{ application_tracking.age_days }} дн. назад.
+      {% if application_tracking.no_response_due_at %}Если ответа не будет, {{ application_tracking.no_response_due_at.strftime('%d.%m.%Y') }} WexFlow автоматически поставит «Нет ответа».{% endif %}
+      {% if application_tracking.source_label %} Последнее изменение: {{ application_tracking.source_label }}.{% endif %}
+    </div>
+    {% endif %}
     {% if job.source != 'salling' and application_state in ['submitting', 'failed'] %}
     <div class="notice" style="margin-top:14px;">
       {% if application_state == 'submitting' %}

@@ -426,6 +426,7 @@
 
   <nav class="sec-nav">
     <a class="{{ 'active' if settings_section == 'salling' else '' }}" href="/settings/salling">{{ ic.i('cart', 13) }} Salling</a>
+    <a class="{{ 'active' if settings_section == 'lidl' else '' }}" href="/settings/lidl">{{ ic.i('store', 13) }} Lidl</a>
     <a class="{{ 'active' if settings_section == 'documents' else '' }}" href="/settings/documents">{{ ic.i('file', 13) }} Документы</a>
     <a class="{{ 'active' if settings_section == 'autopilot' else '' }}" href="/settings/autopilot">{{ ic.i('zap', 13) }} Автопилот</a>
     <a class="{{ 'active' if settings_section == 'telegram' else '' }}" href="/settings/telegram">{{ ic.i('send', 13) }} Telegram</a>
@@ -437,6 +438,57 @@
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить в профиле: {{ missing_fields|join(', ') }}.</div>{% endif %}
   {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее (улица, город или индекс).</div>{% endif %}
+
+  {% if settings_section == 'lidl' %}
+  <div class="panel" id="lidl-login" style="border-color:var(--ok-line);">
+    <h2>{{ ic.i('unlock', 17) }} Вход в кандидатский кабинет Lidl</h2>
+    <p class="hint">Этот раздел виден постоянно. Здесь сохраняются данные именно от <b>Lidl Recruiting / SuccessFactors</b>, а не от Salling. Пароль шифруется Windows DPAPI и может быть расшифрован только твоей учётной записью Windows на этом компьютере.</p>
+    <form method="post" action="/settings/lidl/credentials">
+      <div class="grid2">
+        <div class="field">
+          <label class="lbl">Email кабинета Lidl</label>
+          <input type="email" name="lidl_email" value="{{ lidl_credentials.email or '' }}" autocomplete="email" placeholder="email, указанный при подаче">
+        </div>
+        <div class="field">
+          <label class="lbl">Пароль {% if lidl_credentials.has_password %}<span style="color:var(--ok-txt);text-transform:none;">(сохранён)</span>{% endif %}</label>
+          <div class="pwd-wrap">
+            <input id="lidl_pwd" type="password" name="lidl_password" value="" autocomplete="current-password" placeholder="{{ '•••••••• сохранён — пусто значит не менять' if lidl_credentials.has_password else 'пароль кабинета Lidl' }}">
+            <button type="button" class="pwd-eye" onclick="var p=document.getElementById('lidl_pwd');p.type=p.type==='password'?'text':'password'" title="Показать или скрыть пароль">{{ ic.i('eye', 16) }}</button>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="primary" type="submit">{{ ic.i('unlock', 13) }} Сохранить и подключить</button>
+        {% if lidl_credentials.has_password %}<span class="hint" style="margin:0;color:var(--ok-txt);">Данные входа сохранены</span>{% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>{{ ic.i('clock', 17) }} Отслеживание заявок Lidl</h2>
+    <p class="hint">WexFlow проверяет раздел <b>Søgte jobs</b> каждые 3 часа и переносит найденные этапы в общий Журнал. Если работодатель нигде не публикует статус, его можно изменить вручную.</p>
+    <div class="actions" style="margin-bottom:12px;">
+      <span class="badge {{ 'ok' if lidl_monitor.connected and lidl_monitor.enabled else '' }}">Кабинет: {{ lidl_monitor.phase_label }}</span>
+      <span class="badge">Подано в Lidl: {{ lidl_applied_count }}</span>
+      {% if lidl_monitor.last_success_at %}<span class="hint" style="margin:0;">Последняя проверка: {{ lidl_monitor.last_success_at }}</span>{% endif %}
+    </div>
+    {% if lidl_monitor.last_error %}<div class="err">{{ lidl_monitor.last_error }}</div>{% endif %}
+    <div class="actions">
+      <form method="post" action="/settings/lidl/connect"><button class="primary" type="submit">{{ ic.i('unlock', 13) }} {{ 'Переподключить' if lidl_monitor.connected else 'Подключить кабинет' }}</button></form>
+      <form method="post" action="/settings/lidl/check"><button class="secondary" type="submit" {{ 'disabled' if not lidl_monitor.connected else '' }}>{{ ic.i('refresh', 13) }} Проверить сейчас</button></form>
+      <a class="crosslink" href="/audit">Открыть журнал заявок →</a>
+    </div>
+  </div>
+
+  <div class="panel" style="border-color:var(--err-line);background:var(--err-bg);">
+    <h2>{{ ic.i('sliders', 17) }} Управление Lidl</h2>
+    <p class="hint">Отключение останавливает фоновые проверки, но сохраняет вход. Удаление стирает локально сохранённые email и пароль.</p>
+    <div class="actions">
+      <form method="post" action="/settings/lidl/disable"><button class="secondary" type="submit">Отключить мониторинг</button></form>
+      <form method="post" action="/settings/lidl/credentials/clear" onsubmit="return confirm('Удалить сохранённые email и пароль Lidl?')"><button class="secondary" type="submit">{{ ic.i('trash', 13) }} Удалить данные входа</button></form>
+    </div>
+  </div>
+  {% endif %}
 
   {% if settings_section == 'ai' %}
   <!-- ═══ ИИ и лимиты: провайдеры, мастера подключения, раздельные лимиты ═══ -->

@@ -32,6 +32,7 @@ for _stream in (sys.stdout, sys.stderr):
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 import config
+import application_tracker
 import profile_store
 import document_rules
 from connectors import site_contract
@@ -1079,8 +1080,7 @@ def _mark_applied(job_id: str, confidence: str = "receipt"):
             with get_session() as s:
                 j = s.get(Job, job_id)
                 if j:
-                    j.status = "applied"
-                    j.applied_at = utcnow()
+                    application_tracker.set_status(j, "applied", source="submission")
                     j.applied_confidence = confidence
                     s.add(j)
                     s.commit()

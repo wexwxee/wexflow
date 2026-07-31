@@ -10,6 +10,7 @@ import re
 import httpx
 
 import config
+import application_tracker
 from db import Job, init_db, get_session, select, utcnow
 
 PAGE_SIZE = 1000
@@ -131,7 +132,7 @@ def sync():
                 Job.status.in_(["closed", "seen", "new"]),
             )
         ).all():
-            job.status = "applied"
+            application_tracker.set_status(job, "applied", source="recovered")
             s.add(job)
             healed += 1
         if healed:

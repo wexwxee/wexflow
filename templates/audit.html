@@ -19,11 +19,12 @@
   }
   .audit-day:first-of-type { margin-top:0; }
   .audit-row {
-    display:flex; align-items:center; gap:14px; padding:11px 13px; margin-bottom:7px;
+    display:flex; align-items:center; gap:12px; padding:11px 13px; margin-bottom:7px;
     border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--card);
     text-decoration:none; color:var(--txt); transition:border-color .14s ease, background .14s ease;
   }
   .audit-row:hover { border-color:var(--hover-line); background:var(--card-2); }
+  .audit-open { display:flex; align-items:center; gap:14px; flex:1; min-width:0; color:inherit; text-decoration:none; }
   .audit-time {
     flex:0 0 auto; width:46px; font-size:13px; font-weight:700; color:var(--muted);
     font-family:"Space Grotesk", system-ui, sans-serif;
@@ -32,6 +33,15 @@
   .audit-title { color:var(--txt-strong); font-weight:650; font-size:14px; line-height:1.25;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .audit-sub { color:var(--muted); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .audit-track { flex:0 0 auto; position:relative; }
+  .audit-track summary { list-style:none; cursor:pointer; border:1px solid var(--glass-line); border-radius:9px;
+    padding:6px 9px; font-size:12px; font-weight:750; color:var(--txt); background:var(--glass); }
+  .audit-track summary::-webkit-details-marker { display:none; }
+  .audit-track-menu { position:absolute; right:0; top:calc(100% + 6px); z-index:30; width:230px; padding:10px;
+    border:1px solid var(--glass-line); border-radius:12px; background:var(--card); box-shadow:0 18px 45px rgba(0,0,0,.34); }
+  .audit-track-menu p { margin:0 0 8px; color:var(--muted); font-size:11.5px; line-height:1.4; }
+  .audit-track-menu form { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .audit-track-menu button { min-height:32px; padding:5px 7px; font-size:11.5px; }
   .audit-row .badge { flex:0 0 auto; }
   .audit-empty {
     display:grid; place-items:center; gap:10px; padding:48px 20px; text-align:center; color:var(--muted);
@@ -46,6 +56,8 @@
   .badge.st-interview { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
   .badge.st-offer { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
   .badge.st-rejected { background:var(--err-bg); color:var(--err-txt); border-color:var(--err-line); }
+  .badge.st-no_response { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); }
+  @media(max-width:760px){ .audit-row{align-items:flex-start;flex-wrap:wrap}.audit-open{flex-wrap:wrap}.audit-track{margin-left:auto}.audit-row>.badge{display:none} }
   /* способ подтверждения подачи (журнал доверия) */
   .badge.cf-receipt { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
   .badge.cf-indirect { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); }
@@ -81,12 +93,12 @@
 </header>
 <section class="wex-workbench wex-narrow">
   <p class="audit-intro">{{ ic.i('clock', 16) }}
-    <span>Здесь видна история работы с анкетами. <b>Анкета открыта</b> и <b>Не завершено</b> означают, что заявка ещё не отправлена.
+    <span>Здесь видна история и текущий этап каждой заявки. <b>Анкета открыта</b> и <b>Не завершено</b> означают, что заявка ещё не отправлена.
     Для поданных заявок видно подтверждение:
     <b>квитанция</b> — сайт Salling подтвердил приём; <b>вероятно</b> — форма закрылась без квитанции,
-    стоит проверить письмо от Salling; <b>вручную</b> — ты отметил подачу сам, WexFlow ничего не отправлял.</span></p>
+    стоит проверить письмо от Salling; <b>вручную</b> — ты отметил подачу сам. Если спустя <b>60 дней</b> этап всё ещё «Подано», WexFlow поставит «Нет ответа». Поздний ответ работодателя всё равно заменит этот статус.</span></p>
 
-  {% set st_ru = {'applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','seen':'просмотрено','closed':'закрыта','hidden':'скрыто','new':'новая'} %}
+  {% set st_ru = {'applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','no_response':'нет ответа','seen':'просмотрено','closed':'закрыта','hidden':'скрыто','new':'новая'} %}
 
   {% if total == 0 %}
     <div class="audit-empty">
@@ -99,12 +111,14 @@
     {% for label, rows in groups %}
       <div class="audit-day">{{ label }}</div>
       {% for r in rows %}
-      <a class="audit-row" href="/job/{{ r.id }}">
-        <span class="audit-time">{{ r.applied_at.strftime('%H:%M') if r.applied_at else '—' }}</span>
-        <span class="audit-main">
-          <span class="audit-title">{{ r.title }}</span>
-          <span class="audit-sub">{% if r.brand %}{{ brand_label(r.brand) }}{% endif %}{% if r.brand and r.city %} · {% endif %}{% if r.city %}{{ r.city }}{% endif %}</span>
-        </span>
+      <div class="audit-row">
+        <a class="audit-open" href="/job/{{ r.id }}">
+          <span class="audit-time">{{ r.applied_at.strftime('%H:%M') if r.applied_at else '—' }}</span>
+          <span class="audit-main">
+            <span class="audit-title">{{ r.title }}</span>
+            <span class="audit-sub">{% if r.brand %}{{ brand_label(r.brand) }}{% endif %}{% if r.brand and r.city %} · {% endif %}{% if r.city %}{{ r.city }}{% endif %}{% if r.tracker %} · подано {{ r.tracker.age_days }} дн. назад{% if r.tracker.no_response_due_at %} · «нет ответа» после {{ r.tracker.no_response_due_at.strftime('%d.%m.%Y') }}{% endif %}{% endif %}</span>
+          </span>
+        </a>
         <span class="badge">{{ source_labels.get(r.source, r.source) }}</span>
         {% if r.activity == 'preparing' %}
           <span class="badge act-preparing">анкета открыта</span>
@@ -124,9 +138,24 @@
         {% endif %}
         {% if r.activity == 'submitted' %}<span class="badge st-{{ r.status }}">{{ st_ru.get(r.status, r.status) }}</span>{% endif %}
         {% if r.activity == 'submitted' and r.source == 'lidl' %}
-          <span class="badge" title="Открыть чек‑лист писем, кабинета и следующих этапов Lidl">следующие шаги →</span>
+          <a class="badge" href="/settings/lidl" title="Открыть вход и мониторинг кабинета Lidl">кабинет Lidl →</a>
         {% endif %}
-      </a>
+        {% if r.activity == 'submitted' %}
+        <details class="audit-track">
+          <summary>Изменить этап</summary>
+          <div class="audit-track-menu">
+            <p>Выбери фактический результат. Это не отправляет данные работодателю.</p>
+            <form method="post" action="/job/{{ r.id }}/status">
+              <button type="submit" name="status" value="applied">Подано</button>
+              <button type="submit" name="status" value="interview">Собеседование</button>
+              <button type="submit" name="status" value="offer">Оффер</button>
+              <button type="submit" name="status" value="rejected">Отказ</button>
+              <button type="submit" name="status" value="no_response">Нет ответа</button>
+            </form>
+          </div>
+        </details>
+        {% endif %}
+      </div>
       {% endfor %}
     {% endfor %}
   {% endif %}

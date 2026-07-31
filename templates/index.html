@@ -889,7 +889,7 @@
 <form id="filterform" class="search-filter-form" method="get" action="/">
   <input type="hidden" name="period" value="{{ f.period }}">
   {% if active_preset %}<input type="hidden" name="profile" value="{{ active_preset.id }}">{% endif %}
-  {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','hidden':'Скрытые','closed':'Закрытые'} %}
+  {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Все поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа','hidden':'Скрытые','closed':'Закрытые'} %}
   {% set sorts = {'published':'↓ по дате','distance':'по расстоянию','title':'по названию','city':'по городу'} %}
   <div class="filter-quick-grid">
     <div class="field">
@@ -1072,13 +1072,13 @@
   <div class="card job-status-{{ j.status }}" data-jobcard
        onclick="if(!event.target.closest('.row') && !event.target.closest('.selwrap')){ const cb=this.querySelector('[data-selbox]'); if(cb){ cb.checked=!cb.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); }else{ location.href='/job/{{ j.id }}'; } }"
        aria-label="Открыть вакансию {{ j.title }}" style="cursor:pointer;">
-    {% if j.status != 'applied' and j.source == 'salling' %}
+    {% if not j.applied_at and j.source == 'salling' %}
     <label class="selwrap" aria-label="Выбрать для пакетной подачи">
       <input type="checkbox" name="job_ids" value="{{ j.id }}" form="batchform" data-selbox>
       <span class="selbox-ui"></span>
     </label>
     {% endif %}
-    {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','hidden':'скрыто','closed':'закрыта'} %}
+    {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','no_response':'нет ответа','hidden':'скрыто','closed':'закрыта'} %}
     <div class="badges">
       {% set short_sources = {'lidl':'Lidl','teamtailor':'Teamtailor','greenhouse':'Greenhouse','ashby':'Ashby','manual_link':'По ссылке'} %}
       {% if j.source != 'salling' %}<span class="badge source-badge source-{{ j.source }}">{{ short_sources.get(j.source, j.source) }}</span>{% endif %}
@@ -1104,8 +1104,8 @@
       {% if j.pay_rate or j.published %}<div class="meta-line"{% if j.published %} data-tip-title="Дата публикации" data-tip-body="Когда вакансия появилась на сайте работодателя. Это не дата подачи заявки и не крайний срок."{% endif %}>{{ ic.i('money' if j.pay_rate else 'clock', 13) }}<span>{% if j.pay_rate %}{{ j.pay_rate }}{% endif %}{% if j.published %}{{ ' · ' if j.pay_rate }}Опубликовано {{ L.date_short(j.published) }}{% endif %}</span></div>{% endif %}
     </div>
     <div class="row{% if j.source != 'salling' %} external-actions{% endif %}">
-      {% if j.status == 'applied' %}
-      <button type="button" class="ghost" disabled>{{ check(13) }} Уже подано</button>
+      {% if j.applied_at %}
+      <a href="/job/{{ j.id }}"><button type="button" class="ghost">{{ check(13) }} {{ st_ru.get(j.status, 'Уже подано') }} · открыть</button></a>
       {% else %}
       {% if j.source == 'salling' %}
       <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>

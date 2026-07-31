@@ -17,6 +17,7 @@ import datetime as _dt
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from db import Application, Job, get_session, init_db, select, utcnow
+import application_tracker
 
 # Таблица application создаётся в init_db (create_all). Модуль вызывают из
 # разных точек входа (приложение, воркер, скрипты) — гарантируем таблицу сами,
@@ -380,7 +381,7 @@ def reconcile_applied_state() -> dict[str, int]:
                 job.applied_confidence = row.confidence
                 changed = True
             if job.status in {"new", "seen", "closed"}:
-                job.status = "applied"
+                application_tracker.set_status(job, "applied", source="recovered")
                 changed = True
             if changed:
                 jobs_fixed += 1

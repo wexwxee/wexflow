@@ -457,27 +457,38 @@ def _application_map(items: list[dict]) -> dict:
     return output
 
 
-def _apply_changes(changes: list[dict]) -> None:
-    if not changes:
-        return
+def _persist_statuses(items: list[dict]) -> None:
+    """Persist recognised portal stages, including the very first snapshot."""
     from db import Job, get_session
-    import cloud_auth
+    import application_tracker
 
     status_updates = {
         "interview": "interview",
         "offer": "offer",
         "rejected": "rejected",
     }
-    for change in changes:
-        new_status = str(change.get("status") or "")
-        job_id = str(change.get("job_id") or "")
+    for item in items:
+        new_status = str(item.get("status") or "")
+        job_id = str(item.get("job_id") or "")
         if job_id and new_status in status_updates:
             with get_session() as session:
                 job = session.get(Job, job_id)
                 if job and job.status not in ("offer", "closed"):
-                    job.status = status_updates[new_status]
+                    application_tracker.set_status(
+                        job, status_updates[new_status], source="lidl_portal"
+                    )
                     session.add(job)
                     session.commit()
+
+
+def _apply_changes(changes: list[dict]) -> None:
+    if not changes:
+        return
+    import cloud_auth
+
+    _persist_statuses(changes)
+    for change in changes:
+        new_status = str(change.get("status") or "")
         title = str(change.get("title") or "Заявка Lidl")
         cloud_auth.send_digest(
             "🔔 <b>Lidl обновил статус заявки</b>\n"
@@ -528,6 +539,9 @@ def run_check() -> bool:
             previous = state.get("applications") or {}
             current = _application_map(snapshots)
             changes = diff_snapshots(previous, snapshots)
+            # Первая проверка — тоже источник истины: не ждём следующего
+            # изменения, чтобы показать уже существующий отказ/интервью/оффер.
+            _persist_statuses(snapshots)
             # Preserve applications not visible on this page instead of
             # interpreting a temporary layout/load failure as deletion.
             merged = dict(previous)

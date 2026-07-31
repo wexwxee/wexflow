@@ -182,14 +182,14 @@ def _record_confirmed_submission(job_id: str) -> bool:
         return False
     try:
         import applications
+        import application_tracker
         from db import Job, get_session, utcnow
 
         with get_session() as session:
             job = session.get(Job, wanted)
             if job is None:
                 return False
-            job.status = "applied"
-            job.applied_at = job.applied_at or utcnow()
+            application_tracker.set_status(job, "applied", source="submission")
             job.applied_confidence = "receipt"
             session.add(job)
             session.commit()

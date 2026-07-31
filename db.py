@@ -53,6 +53,10 @@ class Job(SQLModel, table=True):
     #   manual   — пользователь отметил «подано» вручную (WexFlow не отправлял).
     # None — старые записи до появления поля.
     applied_confidence: Optional[str] = None
+    # Текущий этап после подачи и источник последнего изменения. Сам факт
+    # подачи определяется applied_at и не исчезает при interview/offer/rejected.
+    application_status_updated_at: Optional[datetime] = None
+    application_status_source: Optional[str] = None
 
 
 class Application(SQLModel, table=True):
@@ -138,6 +142,8 @@ def _migrate():
             ("lon", "lon FLOAT"),
             ("description_ru", "description_ru TEXT"),
             ("applied_confidence", "applied_confidence TEXT"),
+            ("application_status_updated_at", "application_status_updated_at DATETIME"),
+            ("application_status_source", "application_status_source VARCHAR"),
         ]:
             if name not in cols:
                 conn.execute(text(f"ALTER TABLE job ADD COLUMN {ddl}"))

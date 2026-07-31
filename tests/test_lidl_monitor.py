@@ -128,6 +128,31 @@ def test_confident_portal_change_updates_local_job_and_sends_one_message():
     assert "Butiksassistent" in send.call_args.args[0]
 
 
+def test_first_portal_snapshot_also_persists_a_known_stage():
+    _engine, sessions = _database()
+    with sessions() as session:
+        session.add(Job(
+            id="lidl:baseline",
+            source="lidl",
+            title="Butiksassistent",
+            status="no_response",
+            applied_at=dt.datetime(2026, 5, 1, 9, 35),
+        ))
+        session.commit()
+    snapshot = {
+        "job_id": "lidl:baseline",
+        "title": "Butiksassistent",
+        "status": "rejected",
+        "status_label": "Afslag",
+    }
+    with mock.patch("db.get_session", sessions):
+        lidl_monitor._persist_statuses([snapshot])
+    with sessions() as session:
+        job = session.get(Job, "lidl:baseline")
+        assert job.status == "rejected"
+        assert job.application_status_source == "lidl_portal"
+
+
 def test_disabling_monitor_keeps_browser_session_but_stops_checks():
     with tempfile.TemporaryDirectory() as tmp, \
             mock.patch.object(lidl_monitor, "STATE_PATH", Path(tmp) / "monitor.json"):

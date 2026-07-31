@@ -93,6 +93,23 @@
       </div>
     </a>
 
+    <a class="settings-card" href="/settings/lidl">
+      <div class="settings-card-top">
+        <h2>{{ ic.i('store', 18) }} Lidl</h2>
+        <span class="arrow">→</span>
+      </div>
+      <p>Постоянное место для email и пароля Lidl, входа в кабинет и проверки этапов заявок.</p>
+      <div class="settings-meta">
+        {% if lidl_credentials.has_password %}
+          <span class="settings-pill ok">{{ ic.i('unlock', 12) }} Вход сохранён</span>
+        {% else %}
+          <span class="settings-pill warn">Добавь пароль</span>
+        {% endif %}
+        <span class="settings-pill {{ 'ok' if lidl_monitor.connected and lidl_monitor.enabled else '' }}">{{ lidl_monitor.phase_label }}</span>
+        <span class="settings-pill">Подано: {{ lidl_applied_count }}</span>
+      </div>
+    </a>
+
     <a class="settings-card" href="/settings/documents">
       <div class="settings-card-top">
         <h2>{{ ic.i('file', 18) }} Документы</h2>
