@@ -2,6 +2,7 @@
 import os
 import sys
 import datetime as dt
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -180,6 +181,56 @@ def test_partial_company_failures_are_reported():
     )
     assert len(items) == 1
     assert len(errors) == 1 and "broken" in errors[0] and "503" in errors[0]
+
+
+class _FakeConnector:
+    """Каталог из N компаний, из которых `failures` не ответили."""
+
+    def __init__(self, total, failures):
+        self._companies = [{"slug": f"c{i}"} for i in range(total)]
+        self.last_errors = [f"c{i}: HTTP 404" for i in range(failures)]
+
+    def companies(self):
+        return self._companies
+
+    def search(self):
+        return []
+
+
+def _sync_with_fake(total, failures):
+    conn = _FakeConnector(total, failures)
+    empty = {"source": "teamtailor", "hits": 0, "created": 0, "updated": 0, "closed": 0}
+    with mock.patch.object(connector_sync, "init_db"), \
+            mock.patch.object(connector_sync, "sync_items", return_value=dict(empty)), \
+            mock.patch.object(connector_sync, "geocode_missing", return_value=0), \
+            mock.patch.object(connector_sync.connectors, "get", return_value=conn):
+        return connector_sync.sync(["teamtailor"])
+
+
+def test_single_moved_company_is_a_note_not_a_source_failure():
+    report = _sync_with_fake(total=50, failures=1)
+    assert report["errors"] == []
+    assert len(report["warnings"]) == 1 and "(1 из 50)" in report["warnings"][0]
+
+
+def test_most_of_the_catalog_silent_is_a_real_source_failure():
+    report = _sync_with_fake(total=5, failures=3)
+    assert report["warnings"] == []
+    assert len(report["errors"]) == 1 and "(3 из 5)" in report["errors"][0]
+
+
+def test_unknown_catalog_size_is_treated_as_failure():
+    report = _sync_with_fake(total=0, failures=0)
+    assert report["errors"] == [] and report["warnings"] == []
+    conn = _FakeConnector(0, 0)
+    conn.last_errors = ["mystery: HTTP 500"]
+    empty = {"source": "teamtailor", "hits": 0, "created": 0, "updated": 0, "closed": 0}
+    with mock.patch.object(connector_sync, "init_db"), \
+            mock.patch.object(connector_sync, "sync_items", return_value=dict(empty)), \
+            mock.patch.object(connector_sync, "geocode_missing", return_value=0), \
+            mock.patch.object(connector_sync.connectors, "get", return_value=conn):
+        report = connector_sync.sync(["teamtailor"])
+    assert report["warnings"] == [] and len(report["errors"]) == 1
 
 
 if __name__ == "__main__":

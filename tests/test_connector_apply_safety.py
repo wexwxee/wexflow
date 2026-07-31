@@ -182,6 +182,32 @@ def test_connector_crash_does_not_turn_successful_salling_sync_into_failure():
         app._sync_state.update(old_state)
 
 
+def test_moved_company_does_not_force_a_ten_minute_connector_retry():
+    old_last = app._connector_sync_last
+    old_attempt = app._connector_sync_attempt_last
+    old_state = dict(app._sync_state)
+    soft = {"errors": [], "warnings": ["teamtailor: не отвечают компании (1 из 50)"]}
+    try:
+        app._connector_sync_last = 0.0
+        with mock.patch.object(app.scraper, "sync", return_value={"hits": 321}), \
+                mock.patch.object(app.connector_sync, "sync", return_value=soft), \
+                mock.patch.object(app.autopilot, "scan_and_notify"), \
+                mock.patch.object(app.autopilot, "auto_submit_tick"), \
+                mock.patch.object(app, "_tg_offer_tick"):
+            app._sync_jobs(force_connectors=True)
+        # обход засчитан → следующий не раньше чем через 30 минут, и без баннера
+        assert app._connector_sync_last > 0.0
+        assert app._sync_state["connector_errors"] == []
+        assert app._sync_state["connector_warnings"] == soft["warnings"]
+        assert app._health_warnings(321, False, 0, 0,
+                                    app._sync_state["connector_errors"]) == []
+    finally:
+        app._connector_sync_last = old_last
+        app._connector_sync_attempt_last = old_attempt
+        app._sync_state.clear()
+        app._sync_state.update(old_state)
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items())
              if name.startswith("test_") and callable(value)]

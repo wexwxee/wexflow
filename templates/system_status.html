@@ -145,6 +145,10 @@
       {% if connector_errors %}
         {% for e in connector_errors[:3] %}<div class="st-err">{{ e }}</div>{% endfor %}
         <p>Сбой одного источника не трогает остальные и не задевает Salling.</p>
+      {% elif connector_warnings %}
+        {% for w in connector_warnings[:3] %}<div class="st-err">{{ w }}</div>{% endfor %}
+        <p>Отдельные фирмы каталога молчат (закрыли или сменили карьерный сайт).
+           Источник в целом работает, остальные вакансии приходят как обычно.</p>
       {% else %}
         <p>Вакансии других компаний приходят в общую ленту вместе с Salling.</p>
       {% endif %}

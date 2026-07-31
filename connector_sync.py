@@ -16,6 +16,11 @@ from db import Job, get_session, init_db, select, utcnow
 DEFAULT_SOURCES = ("teamtailor", "greenhouse", "ashby", "lidl")
 STALE_AFTER = dt.timedelta(hours=48)
 GEOCODE_BATCH = 40
+# Каталоги ATS живут своей жизнью: фирма может переехать на свой домен или
+# закрыть карьерный сайт. Пока молчит лишь малая часть каталога, источник в
+# целом здоров — это заметка на странице «Состояние», а не тревога на весь
+# экран. Тревога остаётся для настоящей поломки (лёг весь Teamtailor и т.п.).
+COMPANY_FAIL_SHARE = 0.2
 
 
 def _text(value) -> str:
@@ -162,9 +167,17 @@ def geocode_missing(source: str, limit: int = GEOCODE_BATCH,
         return updated
 
 
+def _enabled_companies(conn) -> int:
+    """Сколько компаний каталога вообще опрашивается (0 — каталога нет)."""
+    try:
+        return sum(1 for c in conn.companies() if c.get("enabled", True))
+    except Exception:  # каталог не обязателен (например, у Lidl)
+        return 0
+
+
 def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
     init_db()
-    reports, errors = [], []
+    reports, errors, warnings = [], [], []
     for source in sources:
         conn = connectors.get(source)
         if conn is None:
@@ -176,10 +189,18 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
             report = sync_items(source, items)
             if company_errors:
                 report["company_errors"] = company_errors[:20]
-                errors.append(
-                    f"{source}: не ответили {len(company_errors)} компаний; "
+                total = _enabled_companies(conn)
+                scope = f"{len(company_errors)} из {total}" if total else str(len(company_errors))
+                message = (
+                    f"{source}: не отвечают компании ({scope}); "
                     f"первая ошибка: {company_errors[0]}"
                 )
+                # Неизвестный размер каталога считаем поломкой: молчать о том,
+                # чего не измерили, опаснее лишнего баннера.
+                if total and len(company_errors) <= int(total * COMPANY_FAIL_SHARE):
+                    warnings.append(message)
+                else:
+                    errors.append(message)
             try:
                 report["geocoded"] = geocode_missing(source)
             except Exception as exc:  # coordinates are useful, never critical
@@ -197,4 +218,5 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
         "geocoded": sum(row.get("geocoded", 0) for row in reports),
         "sources": reports,
         "errors": errors,
+        "warnings": warnings,
     }

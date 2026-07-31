@@ -208,6 +208,7 @@
     },
     {
       "slug": "panduro",
+      "domain": "career.panduro.com",
       "name": "panduro",
       "enabled": true
     },

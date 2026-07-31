@@ -162,7 +162,10 @@ _sync_lock = threading.Lock()
 _sync_state = {"running": False, "last_error": "", "last_scan": 0.0,
                # сторожа деградации (шаг 7): сколько вакансий отдал источник в
                # последний раз (None — ещё не проверяли) и упал ли сам синк
-               "last_hits": None, "sync_failed": False, "connector_errors": []}
+               # connector_errors — поломка источника (баннер), connector_warnings —
+               # молчащие отдельные компании каталога (только страница «Состояние»)
+               "last_hits": None, "sync_failed": False,
+               "connector_errors": [], "connector_warnings": []}
 _connector_sync_last = 0.0
 _connector_sync_attempt_last = 0.0
 _scheduler = None  # BackgroundScheduler; нужен, чтобы знать время следующей проверки
@@ -216,10 +219,14 @@ def _sync_jobs(force_connectors: bool = False):
             try:
                 report = connector_sync.sync()
                 _sync_state["connector_errors"] = report.get("errors") or []
+                _sync_state["connector_warnings"] = report.get("warnings") or []
                 if not report.get("errors"):
+                    # Обход засчитан: одна переехавшая фирма из каталога не должна
+                    # заставлять WexFlow дёргать все сайты каждые 10 минут.
                     _connector_sync_last = time.time()
             except Exception as exc:  # connector infrastructure stays isolated
                 _sync_state["connector_errors"] = [f"connector sync: {str(exc)[:180]}"]
+                _sync_state["connector_warnings"] = []
                 print(f"дополнительные источники: ошибка — {exc}")
         _sync_state["last_error"] = ""
         autopilot.scan_and_notify()  # автопилот: уведомить о новых совпадениях
@@ -2985,6 +2992,7 @@ def system_status(request: Request):
         "sync_error": str(_sync_state.get("last_error") or ""),
         "last_hits": _sync_state.get("last_hits"),
         "connector_errors": _sync_state.get("connector_errors") or [],
+        "connector_warnings": _sync_state.get("connector_warnings") or [],
         "streak": streak,
         "setup": setup,
         "cloud": cloud,
