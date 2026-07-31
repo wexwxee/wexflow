@@ -151,6 +151,21 @@ def test_sync_sends_both_kinds_and_marks_listed():
     assert sorted(listed) == ["m1", "o1"]
 
 
+def test_application_change_refreshes_both_cloud_feeds(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        app, "_sync_applied_to_cloud",
+        lambda force=False: (calls.append(("applied", force)) or True),
+    )
+    monkeypatch.setattr(
+        app, "_sync_jobs_to_cloud",
+        lambda force=False: (calls.append(("jobs", force)) or True),
+    )
+
+    assert app._sync_application_views_to_cloud(force=True) is True
+    assert calls == [("applied", True), ("jobs", True)]
+
+
 if __name__ == "__main__":
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

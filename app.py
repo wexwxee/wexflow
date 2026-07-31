@@ -535,7 +535,7 @@ def _apply_runner_loop() -> None:
                 proc.wait(timeout=10)
             except Exception:  # noqa: BLE001
                 pass
-        _sync_applied_to_cloud(force=True)  # сразу обновим «Поданные» в Mini App
+        _sync_application_views_to_cloud(force=True)
 
 
 def _worker_progress_for(spawn_ts: float) -> dict | None:
@@ -1079,7 +1079,7 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
     try:
         with get_session() as s:
             jobs = s.exec(
-                select(Job).where(Job.status == "applied")
+                select(Job).where(Job.applied_at.is_not(None))
                 .order_by(Job.applied_at.desc()).limit(60)
             ).all()
         items = []
@@ -1109,6 +1109,7 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
                 "url": job.application_link or "",
                 "ts": ts,
                 "confidence": str(job.applied_confidence or "").strip().lower(),
+                "status": str(job.status or "applied"),
             })
         digest = _sync_digest(items)
         if not force and digest and _cloud_sync_sent_hash.get("applied") == digest:
@@ -1230,6 +1231,17 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
         print(f"jobs-sync: ошибка — {e}")
     _finish_cloud_sync("jobs", False)
     return False
+
+
+def _sync_application_views_to_cloud(force: bool = False) -> bool:
+    """Refresh both Mini App feeds after an application changes.
+
+    Applied applications and active vacancies use separate cloud keys. Both
+    must change together so a submitted job cannot remain in the active feed.
+    """
+    applied_changed = _sync_applied_to_cloud(force=force)
+    jobs_changed = _sync_jobs_to_cloud(force=force)
+    return applied_changed or jobs_changed
 
 
 def _translate_job_now(job_id: str) -> bool:
@@ -2391,6 +2403,12 @@ async def _lifespan(app):
         threading.Thread(target=_tg_offer_tick, daemon=True).start()
     threading.Thread(target=_lidl_followup_tick, daemon=True).start()
     threading.Thread(target=_lidl_monitor_tick, daemon=True).start()
+    # Repair any stale phone cache left by an older build immediately on start.
+    threading.Thread(
+        target=_sync_application_views_to_cloud,
+        kwargs={"force": True},
+        daemon=True,
+    ).start()
     yield
     _tg_stop.set()
     try:
@@ -3121,7 +3139,7 @@ def _watch_connector_result_for_phone(job_id: str, source: str) -> None:
                 message or "Сайт подтвердил получение заявки.",
             )
             _release_connector_launch(wanted)
-            _sync_applied_to_cloud(force=True)
+            _sync_application_views_to_cloud(force=True)
             return
         if str(payload.get("job_id") or "") == wanted and state == "error":
             applications.mark_failed([wanted], source=source)
@@ -3290,6 +3308,11 @@ def connector_apply_result(
     _release_connector_launch(job_id)
     if outcome == "submitted":
         applications.record_submitted([job])
+        threading.Thread(
+            target=_sync_application_views_to_cloud,
+            kwargs={"force": True},
+            daemon=True,
+        ).start()
         return RedirectResponse(_url_with_system_response(
             target,
             notice="Отмечено как поданное вручную. Запись добавлена в журнал.",
@@ -3806,6 +3829,11 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
             return _redirect_back(request, "/", error="Вакансия не найдена. Возможно, список обновился.")
     if status == "applied":
         applications.record_submitted([job])
+        threading.Thread(
+            target=_sync_application_views_to_cloud,
+            kwargs={"force": True},
+            daemon=True,
+        ).start()
     return _redirect_back(request, "/", notice=status_labels.get(status, "Статус вакансии обновлён."))
 
 
