@@ -139,6 +139,27 @@ def test_company_override_can_replace_or_disable_common_answers():
     assert ikea["work_weekends"] == ""
 
 
+def test_lidl_discovery_is_company_local_and_uses_exact_site_values():
+    profile = {
+        "answer_reuse_consent": "yes",
+        "lidl_discovery": "Facebook",
+        "company_answer_overrides": {
+            "lidl": {
+                "label": "Lidl",
+                "inherit_defaults": "yes",
+                "answers": {"lidl_discovery": "Lidls karriereside"},
+            },
+        },
+    }
+    assert profile_store.resolve_company_answers(profile, "Netto")["lidl_discovery"] == ""
+    assert (
+        profile_store.resolve_company_answers(profile, "Lidl")["lidl_discovery"]
+        == "Lidls karriereside"
+    )
+    values = {value for value, _label in profile_store.LIDL_DISCOVERY_OPTIONS}
+    assert {"Jobindex", "LinkedIn", "Messe", "Ungarbejder.dk"} <= values
+
+
 if __name__ == "__main__":
     tests = [
         test_round_trip,

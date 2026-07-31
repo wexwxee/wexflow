@@ -4445,6 +4445,7 @@ def account_page(request: Request, saved: str = "", missing: str = "",
         "answer_brand_options": answer_brand_options,
         "company_answer_overrides": profile_store.company_overrides(profile),
         "citizenship_options": profile_store.CITIZENSHIP_OPTIONS,
+        "lidl_discovery_options": profile_store.LIDL_DISCOVERY_OPTIONS,
     })
 
 

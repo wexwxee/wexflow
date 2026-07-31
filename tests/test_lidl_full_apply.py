@@ -138,6 +138,46 @@ def test_lidl_date_two_year_goal_and_profile_scope_are_filled():
         playwright.stop()
 
 
+def test_translated_lidl_consent_controls_use_the_saved_choices():
+    """Chrome may translate labels while leaving the actual UI5 controls intact."""
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <div id="news-row">
+            <span>Я хочу узнать больше о соответствующих вакансиях и предстоящих
+              карьерных возможностях, а также быть в курсе событий в Lidl.</span>
+            <div id="news-switch" role="switch" aria-checked="false"
+                 onclick="this.setAttribute('aria-checked','true')"></div>
+          </div>
+          <label id="scope-label">Пожалуйста, ознакомьтесь с моим профилем.</label>
+          <div class="sapMRbG" role="radiogroup" aria-labelledby="scope-label">
+            <div class="sapMRb" id="scope-int" role="radio" aria-checked="false">
+              Мой профиль может быть рассмотрен для вакансий Lidl International.
+            </div>
+            <div class="sapMRb" id="scope-country" role="radio" aria-checked="false"
+                 onclick="this.setAttribute('aria-checked','true')">
+              Мой профиль может быть рассмотрен для вакансий в стране моего проживания.
+            </div>
+            <div class="sapMRb" id="scope-own" role="radio" aria-checked="false">
+              Моя кандидатура рассматривается только на должности, на которые я подал заявку.
+            </div>
+          </div>
+        """ + SUBMIT_BUTTON)
+        profile = dict(
+            PROFILE,
+            lidl_newsletter="yes",
+            lidl_profile_scope="country",
+        )
+        report = lidl_apply.fill_answers(page, profile)
+        assert page.get_attribute("#news-switch", "aria-checked") == "true"
+        assert page.get_attribute("#scope-country", "aria-checked") == "true"
+        assert "новости Lidl" in report["filled"]
+        assert "область учёта профиля Lidl" in report["filled"]
+    finally:
+        browser.close()
+        playwright.stop()
+
+
 def test_submit_refuses_while_a_question_has_no_answer():
     """Ключевая защита: без ответа кнопка Lidl не нажимается вообще."""
     playwright, browser, page = _page()

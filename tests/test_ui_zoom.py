@@ -40,3 +40,12 @@ def test_large_screens_use_more_of_the_window_without_widening_every_page_equall
     assert "width: min(1360px, 100%)" in css
     assert "account-workbench" in account
     assert "zoom: var(--wex-ui-zoom, 1)" in css
+
+
+def test_fixed_job_tooltips_compensate_for_css_zoom():
+    index = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+
+    assert "const uiScale" in index
+    assert "left / uiScale" in index
+    assert "top / uiScale" in index
+    assert "arrow / uiScale" in index

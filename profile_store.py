@@ -138,6 +138,26 @@ ANSWER_KEYS = tuple(key for key, _human, _kind in ANSWER_FIELDS)
 
 _YESNO = {"yes", "no"}
 
+# Exact values currently offered by Lidl EasyApply.  The Russian label belongs
+# only to WexFlow; the Danish value is what the employer's form receives.
+LIDL_DISCOVERY_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Anbefalet stillingen af en nuværende Lidl-medarbejder", "Порекомендовал действующий сотрудник Lidl"),
+    ("Anbefalet stillingen gennem ven/familie/etc.", "Посоветовали друзья или родственники"),
+    ("Andet", "Другое"),
+    ("Elevplads.dk", "Elevplads.dk"),
+    ("Elevportalen", "Elevportalen"),
+    ("Facebook", "Facebook"),
+    ("Graduateland", "Graduateland"),
+    ("Instagram", "Instagram"),
+    ("Jobindex", "Jobindex"),
+    ("Jobopslag i butikken", "Объявление в магазине"),
+    ("Lidls karriereside", "Карьерный сайт Lidl"),
+    ("LinkedIn", "LinkedIn"),
+    ("Messe", "Ярмарка вакансий"),
+    ("TikTok", "TikTok"),
+    ("Ungarbejder.dk", "Ungarbejder.dk"),
+)
+
 # Факты, которые человек может один раз разрешить использовать во всех анкетах.
 # Контактные данные живут отдельно в основном профиле, документы — в правилах
 # документов. Здесь только ответы на вопросы работодателя.
@@ -154,7 +174,6 @@ REUSABLE_ANSWER_KEYS: tuple[str, ...] = (
     "lidl_referral_name",
     "lidl_current_employee",
     "lidl_previous_employment",
-    "lidl_discovery",
     "citizenship",
     "work_permit",
     "clean_criminal_record",
@@ -169,7 +188,13 @@ COMPANY_CONSENT_KEYS: tuple[str, ...] = (
     "lidl_profile_scope",
 )
 
-COMPANY_OVERRIDE_KEYS = REUSABLE_ANSWER_KEYS + COMPANY_CONSENT_KEYS
+# Значение является вариантом конкретной формы Lidl, а не свободным общим
+# ответом для других работодателей.
+COMPANY_LOCAL_KEYS: tuple[str, ...] = (
+    "lidl_discovery",
+) + COMPANY_CONSENT_KEYS
+
+COMPANY_OVERRIDE_KEYS = REUSABLE_ANSWER_KEYS + COMPANY_LOCAL_KEYS
 
 # Значения сохраняются в том виде, в котором их обычно ожидают датские формы.
 # Русская подпись живёт только в интерфейсе и не попадает работодателю.
@@ -332,7 +357,7 @@ def resolve_company_answers(profile: dict, company: str) -> dict:
 
     for key in REUSABLE_ANSWER_KEYS:
         resolved[key] = common.get(key, "") if reuse_allowed else ""
-    for key in COMPANY_CONSENT_KEYS:
+    for key in COMPANY_LOCAL_KEYS:
         resolved[key] = ""
 
     rule = company_overrides(data).get(company_key)

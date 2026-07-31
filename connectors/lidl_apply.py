@@ -180,16 +180,23 @@ def _select_ui5(page, label: str, value: str) -> bool:
     return False
 
 
-def _set_switch_by_text(page, label_text: str, enabled: bool) -> bool:
+def _set_switch_by_text(page, label_text: str | tuple[str, ...], enabled: bool) -> bool:
     """Set a UI5 switch next to visible text without toggling it blindly."""
+    label_variants = (
+        tuple(label_text) if isinstance(label_text, (tuple, list)) else (label_text,)
+    )
     try:
         return bool(page.evaluate(
-            """([labelText, enabled]) => {
-                const wanted = labelText.toLocaleLowerCase('da-DK');
+            """([labelTexts, enabled]) => {
+                const wanted = labelTexts.map(text =>
+                    String(text || '').toLocaleLowerCase('da-DK')
+                ).filter(Boolean);
                 const labels = [...document.querySelectorAll(
                     'label, .sapMText, .sapMLabel, span, p'
                 )].filter(node =>
-                    (node.innerText || '').trim().toLocaleLowerCase('da-DK').includes(wanted)
+                    wanted.some(text =>
+                        (node.innerText || '').trim().toLocaleLowerCase('da-DK').includes(text)
+                    )
                 );
                 for (const label of labels) {
                     let row = label;
@@ -207,7 +214,7 @@ def _set_switch_by_text(page, label_text: str, enabled: bool) -> bool:
                 }
                 return false;
             }""",
-            [label_text, bool(enabled)],
+            [label_variants, bool(enabled)],
         ))
     except Exception:
         return False
@@ -338,14 +345,22 @@ def _click_option(page, option_id: str) -> bool:
 
 def _choose_radio_text(
     page,
-    question_fragment: str,
+    question_fragment: str | tuple[str, ...],
     option_fragments: tuple[str, ...],
 ) -> bool:
     """Choose a saved non-binary radio answer by its visible Danish wording."""
-    question_wanted = question_fragment.casefold()
+    question_wanted = tuple(
+        part.casefold()
+        for part in (
+            question_fragment
+            if isinstance(question_fragment, (tuple, list))
+            else (question_fragment,)
+        )
+    )
     option_wanted = tuple(part.casefold() for part in option_fragments)
     for group in _radio_groups(page):
-        if question_wanted not in str(group.get("question") or "").casefold():
+        question = str(group.get("question") or "").casefold()
+        if not any(fragment in question for fragment in question_wanted):
             continue
         options = list(group.get("options") or [])
         if any(option.get("checked") for option in options):
@@ -467,7 +482,11 @@ def fill_answers(page, profile: dict) -> dict:
     newsletter = str(answers.get("lidl_newsletter") or "")
     if newsletter and _set_switch_by_text(
         page,
-        "Jeg vil vide mere om relevante stillinger",
+        (
+            "Jeg vil vide mere om relevante stillinger",
+            "Я хочу узнать больше о соответствующих вакансиях",
+            "I would like to know more about relevant vacancies",
+        ),
         newsletter == "yes",
     ):
         filled.append("новости Lidl")
@@ -475,12 +494,21 @@ def fill_answers(page, profile: dict) -> dict:
     profile_scope = str(answers.get("lidl_profile_scope") or "")
     scope_options = {
         "international": ("Lidl International",),
-        "country": ("mit bopælsland",),
-        "applied_only": ("stillinger, jeg selv har søgt",),
+        "country": ("mit bopælsland", "стране моего проживания", "country of residence"),
+        "applied_only": (
+            "stillinger, jeg selv har søgt",
+            "должности, на которые я подал",
+            "должности, на которые я подала",
+            "positions i have applied",
+        ),
     }
     if profile_scope and _choose_radio_text(
         page,
-        "Min profil må gerne tages i betragtning",
+        (
+            "Min profil må gerne tages i betragtning",
+            "Пожалуйста, ознакомьтесь с моим профилем",
+            "Please consider my profile",
+        ),
         scope_options.get(profile_scope, ()),
     ):
         filled.append("область учёта профиля Lidl")

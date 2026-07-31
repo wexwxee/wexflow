@@ -884,8 +884,6 @@
           </select></div>
         <div class="field"><label class="lbl">Если раньше работал(а) в этой компании — где и когда <span class="hint">(необязательно)</span></label>
           <input type="text" name="lidl_previous_employment" value="{{ profile.lidl_previous_employment or '' }}" placeholder="Оставь пустым, если не работал(а)" data-ai-writing data-recommended-language="da"></div>
-        <div class="field"><label class="lbl">Как узнал(а) об этой вакансии?</label>
-          <input type="text" name="lidl_discovery" value="{{ profile.lidl_discovery or '' }}" placeholder="Точный вариант Lidl, например Jobindex" data-ai-writing data-recommended-language="da"></div>
         <div class="field"><label class="lbl">Гражданство <span class="hint">(statsborgerskab)</span></label>
           <select name="citizenship" data-searchable="true" data-search-placeholder="Страна по-русски или как в датской форме">
             <option value=""{{ ' selected' if not profile.citizenship else '' }}>Не отвечать</option>
@@ -1079,11 +1077,21 @@
           {% endfor %}
           {% for key, human, placeholder in [
               ('lidl_referral_name', 'Имя сотрудника, который порекомендовал', 'Пусто, если никто не рекомендовал'),
-              ('lidl_previous_employment', 'Где и когда раньше работал в этой компании', 'Пусто, если не работал'),
-              ('lidl_discovery', 'Как узнал об этой вакансии', 'Например: Jobindex')] %}
+              ('lidl_previous_employment', 'Где и когда раньше работал в этой компании', 'Пусто, если не работал')] %}
           <div class="field"><label class="lbl">{{ human }}</label>
             <input type="text" name="{{ key }}" data-company-answer placeholder="{{ placeholder }}"{% if key != 'lidl_referral_name' %} data-ai-writing data-recommended-language="da"{% endif %}></div>
           {% endfor %}
+          <div class="field" data-company-only="lidl" hidden>
+            <label class="lbl">Как узнал(а) о вакансии Lidl?</label>
+            <select name="lidl_discovery" data-company-answer data-searchable="true"
+                    data-search-placeholder="Например: Jobindex, LinkedIn или карьерный сайт Lidl">
+              <option value="">Не отвечать автоматически</option>
+              {% for value, russian in lidl_discovery_options %}
+              <option value="{{ value }}" data-description="В форму Lidl: {{ value }}">{{ russian }} — {{ value }}</option>
+              {% endfor %}
+            </select>
+            <p class="wf-field-note">Это не свободный текст: здесь перечислены точные варианты формы Lidl. Поле показывается только для настроек Lidl.</p>
+          </div>
           <div class="field"><label class="lbl">Гражданство</label>
             <select name="citizenship" data-company-answer data-searchable="true">
               <option value="">Без замены</option>
@@ -1145,12 +1153,18 @@
     const removeKey = document.getElementById('companyAnswerDeleteKey');
     if (!form || !company) return;
     const fields = [...form.querySelectorAll('[data-company-answer]')];
+    const companyOnly = [...form.querySelectorAll('[data-company-only]')];
 
     function syncInput(input, value) {
       input.value = value || '';
       input.dispatchEvent(new Event('wf:refresh'));
     }
     function clearAnswers() { fields.forEach(input => syncInput(input, '')); }
+    function syncCompanyOnly(key) {
+      companyOnly.forEach(section => {
+        section.hidden = section.dataset.companyOnly !== key;
+      });
+    }
     function loadRule(key) {
       clearAnswers();
       const rule = rules[key] || null;
@@ -1165,6 +1179,7 @@
       });
       remove.hidden = !rule;
       removeKey.value = rule ? key : '';
+      syncCompanyOnly(key);
       document.querySelectorAll('[data-load-company]').forEach(button => {
         button.classList.toggle('active', button.dataset.loadCompany === key);
       });
@@ -1180,6 +1195,7 @@
       clearAnswers();
       syncInput(inherit, 'yes');
       remove.hidden = true;
+      syncCompanyOnly('');
     });
     document.querySelectorAll('[data-load-company]').forEach(button => {
       button.addEventListener('click', () => loadRule(button.dataset.loadCompany));
@@ -1198,6 +1214,7 @@
         label.value = custom.value.trim();
       }
     });
+    syncCompanyOnly('');
   })();
   </script>
 
