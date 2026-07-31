@@ -286,7 +286,11 @@ def clean_answer(key: str, value) -> str:
         return raw if raw in allowed else ""
     if kind == "date":
         return str(value).strip()[:10]
-    return str(value).strip()[:120]
+    # Free-text application answers can legitimately be several sentences.
+    # The old 120-character cap silently cut the candidate's two-year goal
+    # after saving it, even though the account UI still showed the full draft
+    # until the next reload.
+    return str(value).strip()[:2000]
 
 
 def answers(profile: dict | None = None) -> dict:
@@ -301,11 +305,15 @@ def normalize_company_key(value: str) -> str:
     aliases = {
         "lidl easyapply": "lidl",
         "lidl_easy_apply": "lidl",
+        "lidl danmark": "lidl",
+        "lidl dk": "lidl",
         "salling group": "sallinggroup",
         "føtex": "foetex",
         "f\u00f8tex": "foetex",
     }
     raw = aliases.get(raw, raw)
+    if raw.startswith("lidl "):
+        raw = "lidl"
     clean = re.sub(r"[^a-z0-9æøå]+", "-", raw, flags=re.I).strip("-")
     return clean[:64]
 

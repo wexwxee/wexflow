@@ -268,6 +268,8 @@ def add_banner(page, questions: int, filled: list[str], platform: str = "",
                   .head{display:flex;align-items:center;gap:9px;margin-bottom:10px}.mark{color:#1ed760;font-size:17px}
                   .title{flex:1;font-weight:800;font-size:14px}.platform{color:#96a39c;font-size:11px;font-weight:600}
                   button{border:0;background:#222a26;color:#b9c3bd;border-radius:7px;width:27px;height:27px;cursor:pointer;font-size:17px}
+                  .window-actions{display:flex;gap:6px;flex:none}.card.collapsed{max-height:none}
+                  .card.collapsed .head{margin-bottom:0}.card.collapsed .body,.card.collapsed .actions{display:none}
                   .body{min-height:0;overflow:auto;padding-right:3px;scrollbar-color:#425048 transparent}
                   .actions{flex:none;background:#111513;padding-top:10px}
                   .row{margin-top:7px;padding:8px 10px;border-radius:9px;background:#19201c;color:#bdc7c1}
@@ -280,7 +282,8 @@ def add_banner(page, questions: int, filled: list[str], platform: str = "",
                   .ai .draft{color:#f5d778}.ai .draft-tag{font-weight:800}
                 </style><section class="card" role="status"><div class="head"><span class="mark">◆</span>
                   <div class="title">WexFlow · форма подготовлена<div class="platform"></div></div>
-                  <button type="button" aria-label="Закрыть">×</button></div>
+                  <div class="window-actions"><button type="button" class="collapse" aria-label="Свернуть">−</button>
+                  <button type="button" class="close" aria-label="Закрыть">×</button></div></div>
                   <div class="body"><div class="row ok"><span class="label">Заполнено:</span> <span class="filled"></span></div>
                   <div class="row ai-run" hidden></div>
                   <div class="row ai" hidden></div>
@@ -313,7 +316,15 @@ def add_banner(page, questions: int, filled: list[str], platform: str = "",
                 }
                 const q=root.querySelector('.questions'); if(data.questions){q.hidden=false;q.textContent=`Дополнительных вопросов: ${data.questions}`;}
                 const m=root.querySelector('.missing'); if(data.missing.length){m.hidden=false;m.textContent=`Осталось заполнить: ${data.missing.join(', ')}`;}
-                root.querySelector('button').addEventListener('click',()=>host.remove());
+                const card=root.querySelector('.card');
+                const collapse=root.querySelector('.collapse');
+                collapse.addEventListener('click',()=>{
+                  const collapsed=card.classList.toggle('collapsed');
+                  collapse.textContent=collapsed?'□':'−';
+                  collapse.setAttribute('aria-label',collapsed?'Развернуть':'Свернуть');
+                  host.style.width=collapsed?'min(310px,calc(100vw - 32px))':'min(420px,calc(100vw - 32px))';
+                });
+                root.querySelector('.close').addEventListener('click',()=>host.remove());
                 document.documentElement.appendChild(host);
             }""",
             payload,

@@ -115,7 +115,7 @@ def test_required_consent_and_radio_group_are_reported_when_unchecked():
         playwright.stop()
 
 
-def test_summary_card_is_isolated_closable_and_does_not_shift_site():
+def test_summary_card_is_isolated_collapsible_closable_and_does_not_shift_site():
     playwright, browser, page = _page()
     try:
         page.set_content('<body style="padding-top:7px"><main>Employer form</main></body>')
@@ -130,7 +130,13 @@ def test_summary_card_is_isolated_closable_and_does_not_shift_site():
         assert "Дополнительных вопросов: 2" in text
         assert "Work permit" in text
         assert page.locator("body").evaluate("e => e.style.paddingTop") == "7px"
-        host.locator("button").click()
+        host.locator('button[aria-label="Свернуть"]').click()
+        assert host.locator(".card").evaluate("e => e.classList.contains('collapsed')")
+        assert host.locator(".body").is_hidden()
+        assert host.locator('button[aria-label="Развернуть"]').count() == 1
+        host.locator('button[aria-label="Развернуть"]').click()
+        assert host.locator(".body").is_visible()
+        host.locator('button[aria-label="Закрыть"]').click()
         assert page.locator("#wexflow-banner").count() == 0
     finally:
         browser.close()

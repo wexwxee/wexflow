@@ -160,6 +160,33 @@ def test_lidl_discovery_is_company_local_and_uses_exact_site_values():
     assert {"Jobindex", "LinkedIn", "Messe", "Ungarbejder.dk"} <= values
 
 
+def test_long_lidl_goal_and_danmark_brand_keep_the_saved_company_answers():
+    goal = (
+        "Om to år ser jeg mig selv i gang med en businessuddannelse og med "
+        "værdifuld praktisk erfaring fra Lidl. Jeg håber at have udviklet "
+        "mit dansk og engelsk og lært mere om daglige forretningsprocesser."
+    )
+    profile = {
+        "answer_reuse_consent": "yes",
+        "company_answer_overrides": {
+            "lidl": {
+                "label": "Lidl",
+                "inherit_defaults": "yes",
+                "answers": {
+                    "two_year_goal": goal,
+                    "lidl_newsletter": "yes",
+                    "lidl_profile_scope": "country",
+                },
+            },
+        },
+    }
+    resolved = profile_store.resolve_company_answers(profile, "Lidl Danmark")
+    assert resolved["two_year_goal"] == goal
+    assert len(resolved["two_year_goal"]) > 120
+    assert resolved["lidl_newsletter"] == "yes"
+    assert resolved["lidl_profile_scope"] == "country"
+
+
 if __name__ == "__main__":
     tests = [
         test_round_trip,

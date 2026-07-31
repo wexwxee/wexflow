@@ -104,18 +104,20 @@ def _fill_caption(page, caption: str, value: str) -> bool:
     return False
 
 
-def _fill_labeled(page, label: str, value: str) -> bool:
+def _fill_labeled(page, label: str | tuple[str, ...], value: str) -> bool:
     value = str(value or "").strip()
     if not value:
         return False
-    try:
-        control = page.get_by_label(re.compile(re.escape(label), re.I)).first
-        if (control.count() and control.is_visible() and control.is_editable()
-                and not (control.input_value() or "").strip()):
-            control.fill(value)
-            return True
-    except Exception:
-        pass
+    variants = tuple(label) if isinstance(label, (tuple, list)) else (label,)
+    for variant in variants:
+        try:
+            control = page.get_by_label(re.compile(re.escape(variant), re.I)).first
+            if (control.count() and control.is_visible() and control.is_editable()
+                    and not (control.input_value() or "").strip()):
+                control.fill(value)
+                return True
+        except Exception:
+            pass
     return False
 
 
@@ -181,22 +183,28 @@ def _select_ui5(page, label: str, value: str) -> bool:
 
 
 def _set_switch_by_text(page, label_text: str | tuple[str, ...], enabled: bool) -> bool:
-    """Set a UI5 switch next to visible text without toggling it blindly."""
+    """Set a UI5 switch next to visible text with a trusted browser click.
+
+    SAP UI5 ignores a plain DOM ``element.click()`` for this switch in the real
+    EasyApply form.  Locate it in the DOM, then let Playwright perform the same
+    trusted pointer action as the person would.
+    """
     label_variants = (
         tuple(label_text) if isinstance(label_text, (tuple, list)) else (label_text,)
     )
     try:
-        return bool(page.evaluate(
-            """([labelTexts, enabled]) => {
+        target_id = page.evaluate(
+            """(labelTexts) => {
                 const wanted = labelTexts.map(text =>
                     String(text || '').toLocaleLowerCase('da-DK')
                 ).filter(Boolean);
                 const labels = [...document.querySelectorAll(
-                    'label, .sapMText, .sapMLabel, span, p'
-                )].filter(node =>
-                    wanted.some(text =>
-                        (node.innerText || '').trim().toLocaleLowerCase('da-DK').includes(text)
-                    )
+                    '.talentPoolText, .sapMText, label, .sapMLabel, span, p'
+                )].filter(node => {
+                    const own = (node.innerText || '').trim().toLocaleLowerCase('da-DK');
+                    return wanted.some(text => own.includes(text));
+                }).sort((a, b) =>
+                    (a.innerText || '').length - (b.innerText || '').length
                 );
                 for (const label of labels) {
                     let row = label;
@@ -205,17 +213,35 @@ def _set_switch_by_text(page, label_text: str | tuple[str, ...], enabled: bool) 
                             '[role="switch"], .sapMSwt, input[type="checkbox"]'
                         );
                         if (!control) continue;
-                        const checked = control.matches(':checked')
-                            || control.getAttribute('aria-checked') === 'true'
-                            || control.classList.contains('sapMSwtOn');
-                        if (checked !== enabled) control.click();
-                        return true;
+                        if (!control.id) {
+                            control.setAttribute('data-wexflow-switch-target', 'true');
+                            return '[data-wexflow-switch-target="true"]';
+                        }
+                        return '#' + CSS.escape(control.id);
                     }
                 }
-                return false;
+                return '';
             }""",
-            [label_variants, bool(enabled)],
-        ))
+            label_variants,
+        )
+        if not target_id:
+            return False
+        control = page.locator(target_id).first
+        if not control.count() or not control.is_visible():
+            return False
+
+        def checked() -> bool:
+            return bool(control.evaluate(
+                """node => node.matches(':checked')
+                    || node.getAttribute('aria-checked') === 'true'
+                    || node.classList.contains('sapMSwtOn')
+                    || Boolean(node.querySelector('.sapMSwtOn, input:checked'))"""
+            ))
+
+        if checked() != bool(enabled):
+            control.click()
+            page.wait_for_timeout(150)
+        return checked() == bool(enabled)
     except Exception:
         return False
 
@@ -369,7 +395,64 @@ def _choose_radio_text(
             text = str(option.get("text") or "").casefold()
             if any(fragment in text for fragment in option_wanted):
                 return _click_option(page, str(option.get("id") or ""))
-    return False
+
+    # Lidl's profile-visibility choices are a single-selection table, not a
+    # radiogroup.  Each visible option text is in one row and its radio lives in
+    # the selection cell of that same row.
+    try:
+        target_id = page.evaluate(
+            """(wanted) => {
+                const nodes = [...document.querySelectorAll(
+                    '.visibility-option, .sapMText, td, label, span, p'
+                )].filter(node => {
+                    const text = (node.innerText || '').trim().toLocaleLowerCase('da-DK');
+                    return wanted.some(fragment => text.includes(fragment));
+                }).sort((a, b) =>
+                    (a.innerText || '').length - (b.innerText || '').length
+                );
+                for (const node of nodes) {
+                    let row = node.closest('tr, [role="row"], .sapMLIB');
+                    if (!row) {
+                        row = node;
+                        for (let depth = 0; row && depth < 7; depth++, row = row.parentElement) {
+                            if (row.querySelector('[role="radio"], .sapMRb, input[type="radio"]')) {
+                                break;
+                            }
+                        }
+                    }
+                    if (!row) continue;
+                    const control = row.querySelector(
+                        '[role="radio"], .sapMRb, input[type="radio"]'
+                    );
+                    if (!control) continue;
+                    if (!control.id) {
+                        control.setAttribute('data-wexflow-radio-target', 'true');
+                        return '[data-wexflow-radio-target="true"]';
+                    }
+                    return '#' + CSS.escape(control.id);
+                }
+                return '';
+            }""",
+            option_wanted,
+        )
+        if not target_id:
+            return False
+        control = page.locator(target_id).first
+        if not control.count() or not control.is_visible():
+            return False
+        checked = (
+            control.get_attribute("aria-checked") == "true"
+            or bool(control.locator("input:checked").count())
+        )
+        if not checked:
+            control.click()
+            page.wait_for_timeout(150)
+        return (
+            control.get_attribute("aria-checked") == "true"
+            or bool(control.locator("input:checked").count())
+        )
+    except Exception:
+        return False
 
 
 def fill_answers(page, profile: dict) -> dict:
@@ -438,7 +521,12 @@ def fill_answers(page, profile: dict) -> dict:
             "сведения о здоровье",
         ),
         (
-            "Hvor ser du dig selv om to år",
+            (
+                "Hvor ser du dig selv om to år",
+                "Кем вы видите себя через два года",
+                "Где вы видите себя через два года",
+                "Where do you see yourself in two years",
+            ),
             answers.get("two_year_goal"),
             "цель на два года",
         ),

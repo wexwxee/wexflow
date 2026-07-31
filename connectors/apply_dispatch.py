@@ -92,11 +92,14 @@ def platform_name(key: str) -> str:
 
 def company_key(url: str, platform: str, profile: dict) -> str:
     """Best available company identity for answer consent/overrides."""
+    # Lidl EasyApply is one employer-specific form regardless of whether the
+    # vacancy feed calls the brand “Lidl”, “Lidl Danmark” or something similar.
+    # Prefer the connector identity so the saved Lidl consents are not lost.
+    if platform == "lidl_easy_apply":
+        return "lidl"
     contextual = str(profile.get("_job_brand") or "").strip()
     if contextual:
         return contextual
-    if platform == "lidl_easy_apply":
-        return "lidl"
     try:
         parsed = urlparse(url)
         host = (parsed.hostname or "").casefold()

@@ -139,38 +139,62 @@ def test_lidl_date_two_year_goal_and_profile_scope_are_filled():
 
 
 def test_translated_lidl_consent_controls_use_the_saved_choices():
-    """Chrome may translate labels while leaving the actual UI5 controls intact."""
+    """Chrome translation keeps Lidl's real UI5 table/switch structure intact."""
     playwright, browser, page = _page()
     try:
         page.set_content("""
+          <label for="goal">Кем вы видите себя через два года?</label>
+          <input id="goal">
           <div id="news-row">
-            <span>Я хочу узнать больше о соответствующих вакансиях и предстоящих
+            <span class="sapMText talentPoolText">
+              Я хочу узнать больше о соответствующих вакансиях и предстоящих
               карьерных возможностях, а также быть в курсе событий в Lidl.</span>
-            <div id="news-switch" role="switch" aria-checked="false"
-                 onclick="this.setAttribute('aria-checked','true')"></div>
-          </div>
-          <label id="scope-label">Пожалуйста, ознакомьтесь с моим профилем.</label>
-          <div class="sapMRbG" role="radiogroup" aria-labelledby="scope-label">
-            <div class="sapMRb" id="scope-int" role="radio" aria-checked="false">
-              Мой профиль может быть рассмотрен для вакансий Lidl International.
-            </div>
-            <div class="sapMRb" id="scope-country" role="radio" aria-checked="false"
+            <div><div id="news-switch" role="switch" class="sapMSwtCont"
+                 style="width:48px;height:28px"
+                 aria-checked="false"
                  onclick="this.setAttribute('aria-checked','true')">
-              Мой профиль может быть рассмотрен для вакансий в стране моего проживания.
-            </div>
-            <div class="sapMRb" id="scope-own" role="radio" aria-checked="false">
-              Моя кандидатура рассматривается только на должности, на которые я подал заявку.
-            </div>
+              <div class="sapMSwt sapMSwtOff"></div>
+            </div></div>
           </div>
+          <label>Пожалуйста, ознакомьтесь с моим профилем.</label>
+          <table><tbody>
+            <tr role="row">
+              <td><div class="sapMRb" id="scope-int" role="radio" aria-checked="false"
+                   style="width:24px;height:24px"></div></td>
+              <td><span class="sapMText visibility-option">
+                Мой профиль может быть рассмотрен для вакансий Lidl International.
+              </span></td>
+            </tr>
+            <tr role="row">
+              <td><div class="sapMRb" id="scope-country" role="radio" aria-checked="false"
+                   style="width:24px;height:24px"
+                   onclick="this.setAttribute('aria-checked','true')">
+                <input type="radio" name="zprofile_visibility_container_selectGroup">
+              </div></td>
+              <td><span class="sapMText visibility-option">
+                Мой профиль может быть рассмотрен для вакансий в стране моего проживания.
+              </span></td>
+            </tr>
+            <tr role="row">
+              <td><div class="sapMRb" id="scope-own" role="radio" aria-checked="false"
+                   style="width:24px;height:24px"></div></td>
+              <td><span class="sapMText visibility-option">
+                Моя кандидатура рассматривается только на должности, на которые я подал заявку.
+              </span></td>
+            </tr>
+          </tbody></table>
         """ + SUBMIT_BUTTON)
         profile = dict(
             PROFILE,
+            two_year_goal="Businessuddannelse med praktisk erfaring fra Lidl",
             lidl_newsletter="yes",
             lidl_profile_scope="country",
         )
         report = lidl_apply.fill_answers(page, profile)
+        assert page.input_value("#goal") == profile["two_year_goal"]
         assert page.get_attribute("#news-switch", "aria-checked") == "true"
         assert page.get_attribute("#scope-country", "aria-checked") == "true"
+        assert "цель на два года" in report["filled"]
         assert "новости Lidl" in report["filled"]
         assert "область учёта профиля Lidl" in report["filled"]
     finally:

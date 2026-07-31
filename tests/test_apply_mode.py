@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 import app as app_module
 import form_questions
 import settings_store
+from connectors import apply_dispatch
 
 
 @pytest.fixture()
@@ -117,3 +118,12 @@ def test_company_answer_override_endpoint_saves_sparse_rule(client):
         "work_weekends": "no",
         "lidl_newsletter": "no",
     }
+
+
+def test_lidl_connector_uses_lidl_settings_even_when_feed_brand_is_danmark():
+    profile = {"_job_brand": "Lidl Danmark"}
+    assert apply_dispatch.company_key(
+        "https://ea-lidl.example/easyapply/index.html",
+        "lidl_easy_apply",
+        profile,
+    ) == "lidl"
