@@ -1442,7 +1442,8 @@ def _sync_questions_to_cloud(force: bool = False) -> bool:
     if not _cloud_profile_enabled():
         return False
     try:
-        items = form_questions.cloud_payload()
+        items = form_questions.cloud_payload(
+            profile_answers=profile_store.answers(profile_store.load_profile()))
         digest = _sync_digest(items)
         if not force and digest == _questions_sync_hash:
             return False
@@ -2235,7 +2236,8 @@ def _handle_tg_remote_command(command: dict) -> str:
             if not form_questions.set_answer(key, value):
                 return "Такого вопроса у меня нет — обнови список в панели."
             _sync_questions_to_cloud(force=True)
-            left = form_questions.pending_count()
+            left = form_questions.pending_count(
+                profile_store.answers(profile_store.load_profile()))
             return ("✅ Ответ сохранён. "
                     + (f"Осталось вопросов без ответа: {left}." if left
                        else "Все вопросы закрыты — подача пойдёт до конца сама."))
@@ -2444,7 +2446,8 @@ def _questions_pending_badge() -> int:
     Банк вопросов — обычный файл; его недоступность не должна ронять страницы.
     """
     try:
-        return form_questions.pending_count()
+        return form_questions.pending_count(
+            profile_store.answers(profile_store.load_profile()))
     except Exception:  # noqa: BLE001
         return 0
 
@@ -4224,9 +4227,10 @@ def questions_page(request: Request):
     неотвеченный вопрос останавливает автоматическую подачу. Ответил здесь
     один раз — дальше подставляется само.
     """
+    answers = profile_store.answers(profile_store.load_profile())
     return templates.TemplateResponse("questions.html", {
         "request": request,
-        "stores": form_questions.by_store(),
+        "stores": form_questions.by_store(answers),
     })
 
 
@@ -4241,7 +4245,8 @@ async def questions_answer(request: Request):
     if ok:
         threading.Thread(target=_sync_questions_to_cloud, kwargs={"force": True},
                          daemon=True, name="questions-sync").start()
-    return JSONResponse({"ok": ok, "pending": form_questions.pending_count()})
+    answers = profile_store.answers(profile_store.load_profile())
+    return JSONResponse({"ok": ok, "pending": form_questions.pending_count(answers)})
 
 
 @app.get("/api/transit/{job_id}")

@@ -33,6 +33,14 @@
   .q-ru { color:var(--txt-strong); font-weight:650; font-size:14px; line-height:1.3; }
   .q-orig { color:var(--muted); font-size:12.5px; line-height:1.35; }
   .q-meta { color:var(--muted); font-size:11.5px; }
+  .q-from { color:var(--accent); font-weight:700; }
+  .q-lead { color:#c4b5fd; font-weight:700; }
+  .q-done { margin-top:10px; }
+  .q-done > summary { cursor:pointer; list-style:none; color:var(--muted); font-size:12px;
+    font-weight:700; padding:8px 4px; }
+  .q-done > summary::-webkit-details-marker { display:none; }
+  .q-done > summary:hover { color:var(--txt); }
+  .q-actions button.clear { padding:7px 11px; color:var(--muted); }
   .q-actions { display:flex; gap:7px; flex:0 0 auto; }
   .q-actions button { border:1px solid var(--glass-line); background:var(--glass); color:var(--muted);
     border-radius:9px; padding:7px 15px; font-size:13px; font-weight:700; cursor:pointer; }
@@ -59,7 +67,9 @@
     под ним перевод. WexFlow <b>никогда не отвечает за тебя</b>, поэтому вопрос без ответа
     останавливает автоматическую подачу. Ответил — и дальше он подставит ответ сам, во всех
     анкетах с таким же вопросом. У руководящих ролей вопросы свои — они идут отдельной группой.
-    Передумал — меняй в любой момент, ответить можно и с телефона.</span></p>
+    Вопросы, уже закрытые ответами из «Аккаунт → Ответы для анкет», сюда не просятся:
+    они лежат в «Уже отвечено» с пометкой, откуда взят ответ, и их можно переопределить
+    или снять. Ответить можно и с телефона.</span></p>
 
   {% if not stores %}
   <div class="q-empty">{{ ic.i('check', 26) }}
@@ -77,11 +87,10 @@
       <span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
     </summary>
     <div class="q-store-body">
-      {% for group, rows in [('Обычные вакансии', store['items']), ('Руководящие роли', store.lead_items)] %}
-        {% if rows %}
-        <div class="q-group">{{ group }}</div>
-        {% for q in rows %}
-        <div class="q-row {{ 'answered' if q.answer else '' }}" data-key="{{ q.key }}">
+      {% set pending_rows = (store['items'] + store.lead_items) | selectattr('effective', 'equalto', '') | list %}
+      {% set done_rows = (store['items'] + store.lead_items) | rejectattr('effective', 'equalto', '') | list %}
+      {% macro qrow(q) %}
+        <div class="q-row {{ 'answered' if q.effective else '' }}" data-key="{{ q.key }}">
           <div class="q-main">
             {% if q.text_ru %}
             <div class="q-ru">{{ q.text_ru }}</div>
@@ -90,16 +99,30 @@
             <div class="q-ru">{{ q.text }}</div>
             <div class="q-orig">Перевод не подобрался — отвечай по оригиналу</div>
             {% endif %}
-            <div class="q-meta">{% if q.seen_count and q.seen_count > 1 %}встречался {{ q.seen_count }} раз{% else %}встретился впервые{% endif %}{% if q.job_title %} · {{ q.job_title }}{% endif %}</div>
+            <div class="q-meta">
+              {%- if 'lead' in (q.roles or []) and 'regular' not in (q.roles or []) %}<b class="q-lead">руководящая роль</b> · {% endif -%}
+              {%- if q.answer_from == 'profile' %}<b class="q-from">ответ из профиля</b> · {% endif -%}
+              {% if q.seen_count and q.seen_count > 1 %}встречался {{ q.seen_count }} раз{% else %}встретился впервые{% endif %}</div>
           </div>
           <div class="q-actions">
-            <button type="button" data-value="yes" class="{{ 'on' if q.answer == 'yes' else '' }}">Да</button>
-            <button type="button" data-value="no" class="{{ 'on' if q.answer == 'no' else '' }}">Нет</button>
+            <button type="button" data-value="yes" class="{{ 'on' if q.effective == 'yes' else '' }}">Да</button>
+            <button type="button" data-value="no" class="{{ 'on' if q.effective == 'no' else '' }}">Нет</button>
+            {% if q.answer %}<button type="button" data-value="" class="clear" title="Не отвечать">Не отвечать</button>{% endif %}
           </div>
         </div>
-        {% endfor %}
-        {% endif %}
-      {% endfor %}
+      {% endmacro %}
+
+      {% if pending_rows %}
+      <div class="q-group">Ждут ответа</div>
+      {% for q in pending_rows %}{{ qrow(q) }}{% endfor %}
+      {% endif %}
+
+      {% if done_rows %}
+      <details class="q-done">
+        <summary>Уже отвечено · {{ done_rows|length }}</summary>
+        {% for q in done_rows %}{{ qrow(q) }}{% endfor %}
+      </details>
+      {% endif %}
     </div>
   </details>
   {% endfor %}
@@ -120,7 +143,8 @@
           if (!res.ok) throw new Error('save failed');
           location.reload();
         } catch (e) {
-          btn.textContent = 'не вышло';
+          btn.textContent = 'не сохранилось';
+          btn.title = String(e && e.message || e);
         }
       });
     });

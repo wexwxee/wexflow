@@ -105,3 +105,42 @@ def test_cloud_payload_carries_translation_and_store(bank):
     assert row["lead"] is True
     assert row["textRu"] == "Можешь выходить к 06:00 утра?"
     assert row["answer"] == ""
+
+
+def test_profile_answer_closes_the_question(bank):
+    """Ответил в профиле — раздел «Анкеты» не спрашивает то же самое второй раз."""
+    form_questions.record(
+        [{"text": "Er du villig til at arbejde hver 2. weekend?"},
+         {"text": "Er du medlem af en fagforening?"}],
+        source="lidl", store_label="Lidl", role_kind="regular",
+    )
+    assert form_questions.pending_count() == 2
+    profile = {"work_weekends": "yes"}
+    assert form_questions.pending_count(profile) == 1
+    rows = {r["text"]: r for r in form_questions.by_store(profile)[0]["items"]}
+    weekend = rows["Er du villig til at arbejde hver 2. weekend?"]
+    assert (weekend["effective"], weekend["answer_from"]) == ("yes", "profile")
+    union = rows["Er du medlem af en fagforening?"]
+    assert (union["effective"], union["answer_from"]) == ("", "")
+
+
+def test_own_answer_overrides_the_profile(bank):
+    form_questions.record([{"text": "Kan du møde kl 06.00 om morgenen?"}],
+                          source="lidl", store_label="Lidl")
+    key = form_questions.all_items()[0]["key"]
+    form_questions.set_answer(key, "no")
+    profile = {"work_early": "yes"}
+    row = form_questions.all_items()[0]
+    assert form_questions.effective_answer(row, profile) == ("no", "bank")
+    # снял свой ответ — снова действует профильный
+    form_questions.set_answer(key, "")
+    row = form_questions.all_items()[0]
+    assert form_questions.effective_answer(row, profile) == ("yes", "profile")
+
+
+def test_cloud_payload_says_where_the_answer_came_from(bank):
+    form_questions.record([{"text": "Er du villig til at arbejde hver 2. weekend?"}],
+                          source="lidl", store_label="Lidl")
+    row = form_questions.cloud_payload(profile_answers={"work_weekends": "no"})[0]
+    assert row["answer"] == "no"
+    assert row["answerFrom"] == "profile"

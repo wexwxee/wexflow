@@ -801,12 +801,41 @@
       <div class="field"><label class="lbl">LinkedIn (необязательно)</label><input type="text" name="linkedin" value="{{ profile.linkedin or '' }}"></div>
     </div>
 
-    <details class="ai-extra" open>
+    <style>
+      /* Свой вид полей ответов: системные select и date выглядели как из другой
+         программы — серые, с чужими стрелками и календарём. */
+      .wex-answers .field select,
+      .wex-answers .field input[type="date"] {
+        width:100%; min-height:40px; padding:9px 34px 9px 12px;
+        border:1px solid var(--glass-line); border-radius:10px;
+        background:var(--input, var(--glass)); color:var(--txt);
+        font-size:13.5px; font-family:inherit; font-weight:600;
+        appearance:none; -webkit-appearance:none; cursor:pointer;
+        transition:border-color .14s ease, background .14s ease;
+      }
+      .wex-answers .field select {
+        background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b9296' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat:no-repeat; background-position:right 11px center; background-size:14px;
+      }
+      .wex-answers .field select:hover,
+      .wex-answers .field input[type="date"]:hover { border-color:var(--hover-line); }
+      .wex-answers .field select:focus,
+      .wex-answers .field input[type="date"]:focus { outline:none; border-color:var(--accent); }
+      .wex-answers .field select option { background:var(--card); color:var(--txt); }
+      /* отвеченное поле подсвечиваем — сразу видно, что закрыто */
+      .wex-answers .field select.answered { border-color:rgba(30,215,96,.45); color:var(--txt-strong); }
+      .wex-answers .field input[type="date"]::-webkit-calendar-picker-indicator {
+        filter:invert(58%) sepia(9%) saturate(300%) hue-rotate(150deg); cursor:pointer;
+      }
+      html[data-theme="light"] .wex-answers .field input[type="date"]::-webkit-calendar-picker-indicator { filter:none; }
+      .wex-answers .lbl { font-size:11px; letter-spacing:.03em; }
+    </style>
+    <details class="ai-extra wex-answers" open>
       <summary>{{ ic.i('check', 14) if ic else '' }} Ответы для анкет магазинов <span class="ai-extra-tag">нужно для полной подачи</span></summary>
       <p class="hint" style="margin:10px 0 14px;">Магазины спрашивают одно и то же: пол, дата выхода, готов ли работать по выходным, вечерам и с раннего утра. Ответь один раз — и WexFlow сможет доводить анкету до конца сам. Что не отвечено — <b>не выдумывается</b>: такой вопрос останется пустым, а подача остановится и подождёт тебя.</p>
       <div class="grid2">
         <div class="field"><label class="lbl">Пол</label>
-          <select name="gender">
+          <select name="gender" class="{{ 'answered' if profile.gender else '' }}">
             <option value=""{{ ' selected' if not profile.gender else '' }}>Не указывать</option>
             <option value="male"{{ ' selected' if profile.gender == 'male' else '' }}>Мужской</option>
             <option value="female"{{ ' selected' if profile.gender == 'female' else '' }}>Женский</option>
@@ -823,7 +852,7 @@
             ('has_drivers_license', 'Есть водительские права'),
             ('profile_visible', 'Показывать анкету другим магазинам сети')] %}
         <div class="field"><label class="lbl">{{ human }}</label>
-          <select name="{{ key }}">
+          <select name="{{ key }}" class="{{ 'answered' if profile[key] else '' }}">
             <option value=""{{ ' selected' if not profile[key] else '' }}>Не отвечать</option>
             <option value="yes"{{ ' selected' if profile[key] == 'yes' else '' }}>Да</option>
             <option value="no"{{ ' selected' if profile[key] == 'no' else '' }}>Нет</option>

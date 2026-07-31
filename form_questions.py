@@ -82,6 +82,45 @@ _RU_HINTS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Какие вопросы уже закрыты ответами из профиля («Ответы для анкет»).
+# Правила лежат здесь, а не в коннекторе, потому что ими пользуются оба:
+# заполнитель — чтобы поставить ответ, интерфейс — чтобы не спрашивать второй раз.
+PROFILE_RULES: tuple[tuple[str, str], ...] = (
+    ("work_night", r"\bnat(?:tevagt|arbejde|hold)?\b"),
+    ("work_early", r"\b0[3-7][.:]\d{2}\b|tidlig|morgen"),
+    ("work_evenings", r"\baften\b|\b(?:19|20|21|22)[.:]\d{2}\b"),
+    ("work_weekends", r"weekend|lørdag|søndag"),
+    ("has_drivers_license", r"kørekort|driving licen[cs]e"),
+    ("retail_experience", r"erfaring.*(?:detail|butik|retail)|(?:detail|butik|retail).*erfaring"),
+    ("profile_visible", r"synlig.*profil|profil.*synlig|vise din profil"),
+)
+
+
+def profile_key_for(text: str) -> str:
+    """Ключ ответа из профиля, которым закрывается этот вопрос («» если нет)."""
+    clean = str(text or "")
+    for key, pattern in PROFILE_RULES:
+        if re.search(pattern, clean, re.I):
+            return key
+    return ""
+
+
+def effective_answer(row: dict, profile_answers: dict | None = None) -> tuple[str, str]:
+    """Итоговый ответ на вопрос и его источник.
+
+    Возвращает («yes»/«no»/'', «bank»/«profile»/''). Свой ответ в разделе
+    «Анкеты» важнее профиля: человек мог уточнить именно для этого вопроса.
+    """
+    own = str((row or {}).get("answer") or "")
+    if own in {"yes", "no"}:
+        return own, "bank"
+    key = profile_key_for((row or {}).get("text") or "")
+    value = str((profile_answers or {}).get(key) or "") if key else ""
+    if value in {"yes", "no"}:
+        return value, "profile"
+    return "", ""
+
+
 def path():
     return config.DATA_DIR / "form_questions.json"
 
@@ -227,7 +266,7 @@ def all_items() -> list[dict]:
     return rows
 
 
-def by_store() -> list[dict]:
+def by_store(profile_answers: dict | None = None) -> list[dict]:
     """Вопросы, сгруппированные по магазинам — как их показывает интерфейс.
 
     Один и тот же вопрос может встречаться в нескольких сетях: он попадёт в
@@ -236,6 +275,7 @@ def by_store() -> list[dict]:
     """
     stores: dict[str, dict] = {}
     for row in all_items():
+        row["effective"], row["answer_from"] = effective_answer(row, profile_answers)
         keys = [k for k in (row.get("stores") or []) if k] or ["другое"]
         labels = [x for x in (row.get("store_labels") or []) if x]
         for index, store_key in enumerate(keys):
@@ -250,31 +290,38 @@ def by_store() -> list[dict]:
     out = []
     for group in stores.values():
         rows = group["items"] + group["lead_items"]
-        group["pending"] = len([r for r in rows if not r.get("answer")])
+        group["pending"] = len([r for r in rows if not r.get("effective")])
         group["total"] = len(rows)
         out.append(group)
     out.sort(key=lambda g: (-g["pending"], g["label"].lower()))
     return out
 
 
-def pending() -> list[dict]:
-    """Вопросы без ответа — именно их приложение просит закрыть."""
-    return [row for row in all_items() if not row.get("answer")]
+def pending(profile_answers: dict | None = None) -> list[dict]:
+    """Вопросы без ответа — именно их приложение просит закрыть.
+
+    Ответ из профиля («Ответы для анкет») тоже считается ответом: спрашивать
+    второй раз одно и то же — раздражать человека без пользы.
+    """
+    return [row for row in all_items()
+            if not effective_answer(row, profile_answers)[0]]
 
 
-def pending_count() -> int:
-    return len(pending())
+def pending_count(profile_answers: dict | None = None) -> int:
+    return len(pending(profile_answers))
 
 
-def cloud_payload(limit: int = 60) -> list[dict]:
+def cloud_payload(limit: int = 60, profile_answers: dict | None = None) -> list[dict]:
     """Компактный список для телефона: там на эти же вопросы можно ответить."""
     rows = []
     for row in all_items()[:limit]:
+        answer, source = effective_answer(row, profile_answers)
         rows.append({
             "key": row.get("key", ""),
             "text": row.get("text", ""),
             "textRu": row.get("text_ru", ""),
-            "answer": row.get("answer", ""),
+            "answer": answer,
+            "answerFrom": source,
             "store": (row.get("store_labels") or [""])[0],
             "lead": "lead" in (row.get("roles") or []) and "regular" not in (row.get("roles") or []),
         })

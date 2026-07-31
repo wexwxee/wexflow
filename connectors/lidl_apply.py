@@ -214,15 +214,8 @@ def _screening_question_count(page) -> int:
 # Вопрос анкеты узнаём по ключевым словам и отвечаем СОХРАНЁННЫМ ответом.
 # Не узнали вопрос или ответа нет — оставляем пустым: выдумывать за человека
 # нельзя, а незаполненный вопрос честно останавливает автоподачу.
-_QUESTION_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("work_night", re.compile(r"\bnat(?:tevagt|arbejde|hold)?\b", re.I)),
-    ("work_early", re.compile(r"\b0[3-7][.:]\d{2}\b|tidlig|morgen", re.I)),
-    ("work_evenings", re.compile(r"\baften\b|\b(?:19|20|21|22)[.:]\d{2}\b", re.I)),
-    ("work_weekends", re.compile(r"weekend|lørdag|søndag", re.I)),
-    ("has_drivers_license", re.compile(r"kørekort|driving licen[cs]e", re.I)),
-    ("retail_experience", re.compile(r"erfaring.*(?:detail|butik|retail)|"
-                                     r"(?:detail|butik|retail).*erfaring", re.I)),
-)
+# Правила «какой вопрос закрывается каким ответом профиля» живут в
+# form_questions: ими пользуется и интерфейс, чтобы не спрашивать дважды.
 
 _GENDER_LABELS = {
     "male": ("Mand", "Male", "Mænd"),
@@ -246,9 +239,9 @@ def question_answer(text: str, answers: dict) -> tuple[str, str]:
     saved = form_questions.answer_for(clean)
     if saved in {"yes", "no"}:
         return "saved", saved
-    for key, rx in _QUESTION_RULES:
-        if rx.search(clean):
-            return key, str(answers.get(key) or "")
+    key = form_questions.profile_key_for(clean)
+    if key:
+        return key, str(answers.get(key) or "")
     return "", ""
 
 
