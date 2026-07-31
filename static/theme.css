@@ -297,6 +297,18 @@ a { color: var(--accent); text-decoration: none; }
   overflow-y: auto;
   scrollbar-width: none;
 }
+
+/* Portals are siblings of the zoomed body, so viewport coordinates remain
+   correct at 80–150%. Children opt back into pointer events individually. */
+#wf-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482000;
+  pointer-events: none;
+  font-family: "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  color: var(--txt);
+}
+#wf-overlay-root > * { pointer-events: auto; }
 .wex-sidebar::-webkit-scrollbar { display: none; }
 .wex-side-logo {
   width: 60px;

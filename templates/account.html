@@ -977,51 +977,38 @@
       .company-answer-editor {
         border-top:1px solid var(--glass-line); margin-top:12px; padding-top:16px;
       }
-      .company-answer-guide {
-        display:grid; grid-template-columns:1fr auto 1fr; gap:10px; align-items:stretch;
-        margin:14px 0 4px;
+      .company-settings-body {
+        margin-top:16px; padding:16px; border:1px solid var(--glass-line);
+        border-radius:14px; background:color-mix(in srgb, var(--glass) 75%, transparent);
       }
-      .company-answer-guide-card {
-        border:1px solid var(--glass-line); border-radius:12px; padding:12px 14px;
-        background:var(--glass); color:var(--txt);
+      .company-settings-body[hidden], [data-company-only][hidden] { display:none !important; }
+      .company-settings-title { margin:0 0 5px; color:var(--txt-strong); font-size:18px; }
+      .company-settings-block {
+        margin-top:16px; padding-top:16px; border-top:1px solid var(--glass-line);
       }
-      .company-answer-guide-card b { display:block; color:var(--txt-strong); margin-bottom:4px; }
-      .company-answer-guide-arrow { align-self:center; color:var(--accent); font-weight:900; }
-      .company-answer-example {
+      .company-settings-block h3 { margin:0 0 5px; color:var(--txt-strong); font-size:15px; }
+      .company-settings-block > .hint { margin:0 0 14px; }
+      .company-picker-note {
         margin:12px 0 0; padding:10px 12px; border-left:3px solid var(--accent);
         border-radius:0 10px 10px 0; background:color-mix(in srgb, var(--accent) 8%, transparent);
-        color:var(--txt); font-size:12px; line-height:1.45;
       }
       .company-answer-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:16px; }
       .company-answer-actions .danger { margin-left:auto; }
       .company-answer-actions [hidden] { display:none !important; }
       @media (max-width:720px) {
         .company-answer-head { display:block; }
-        .company-answer-guide { grid-template-columns:1fr; }
-        .company-answer-guide-arrow { transform:rotate(90deg); justify-self:center; }
+        .company-settings-body { padding:12px; }
         .company-answer-actions .danger { margin-left:0; }
       }
     </style>
     <div class="company-answer-head">
       <div>
-        <h2 style="margin-bottom:6px;">Особые настройки для конкретной компании <span class="ai-extra-tag">необязательно</span></h2>
-        <p class="hint" style="margin:0;">Этот блок не повторяет анкету выше. Он нужен только тогда, когда одному работодателю ты хочешь дать другой ответ.</p>
+        <h2 style="margin-bottom:6px;">Настройки компаний</h2>
+        <p class="hint" style="margin:0;">Выбери компанию — WexFlow сразу покажет её собственные вопросы и согласия. Здесь нет отдельного режима «исключений».</p>
       </div>
     </div>
-    <div class="company-answer-guide" aria-label="Как работают общие ответы и настройки компании">
-      <div class="company-answer-guide-card">
-        <b>Ответы выше — основа</b>
-        WexFlow использует их во всех разрешённых тобой анкетах.
-      </div>
-      <span class="company-answer-guide-arrow" aria-hidden="true">→</span>
-      <div class="company-answer-guide-card">
-        <b>Настройки ниже — только поправки</b>
-        Заполни лишь то, что должно отличаться у выбранной компании.
-      </div>
-    </div>
-    <p class="company-answer-example"><b>Пример:</b> выше указано «готов работать по выходным — Да», но для Lidl ты хочешь ответить «Нет». Выбери Lidl и поменяй ниже только этот один ответ. Все остальные WexFlow возьмёт сверху.</p>
     {% if company_answer_overrides %}
-    <div class="company-answer-rules" aria-label="Сохранённые исключения">
+    <div class="company-answer-rules" aria-label="Настроенные компании">
       {% for company_key, rule in company_answer_overrides.items() %}
       <button type="button" class="company-answer-rule" data-load-company="{{ company_key }}">{{ rule.label }}</button>
       {% endfor %}
@@ -1030,7 +1017,7 @@
 
     <form class="company-answer-editor wex-answers" id="companyAnswerForm" method="post" action="/account/company-answers/save">
       <div class="grid2">
-        <div class="field"><label class="lbl">Компания</label>
+        <div class="field"><label class="lbl">Выбери компанию</label>
           <select name="company_key" id="companyAnswerCompany">
             <option value="">Выбери из вакансий</option>
             {% for item in answer_brand_options %}
@@ -1038,22 +1025,28 @@
             {% endfor %}
           </select>
           <input type="hidden" name="company_label" id="companyAnswerLabel"></div>
-        <div class="field"><label class="lbl">Или введи другую компанию</label>
+        <div class="field"><label class="lbl">Новой компании нет в списке?</label>
           <input type="text" name="company_custom" id="companyAnswerCustom" placeholder="Например: IKEA"></div>
-        <div class="field" style="grid-column:1/-1;"><label class="lbl">Использовать для этой компании остальные ответы сверху?</label>
-          <select name="inherit_defaults" id="companyAnswerInherit">
-            <option value="yes">Да — взять ответы сверху и заменить только выбранные ниже (рекомендуется)</option>
-            <option value="no">Нет — ничего сверху не брать, использовать только заполненное ниже</option>
-          </select></div>
       </div>
+      <p class="hint company-picker-note">Настройки сохраняются отдельно для каждой компании. Переключение компании не стирает уже сохранённые данные.</p>
 
-      <details class="ai-extra">
-        <summary>{{ ic.i('sliders', 14) if ic else '' }} 1. Что изменить только для выбранной компании <span class="ai-extra-tag">не заполнил = взять сверху</span></summary>
-        <p class="hint" style="margin:10px 0 14px;"><b>Это те же факты, что выше, но с приоритетом только для выбранного работодателя.</b> «Без замены» означает: оставить общий ответ. Если использование ответов сверху выключено, незаполненные поля останутся пустыми. WexFlow ничего не придумывает.</p>
+      <div class="company-settings-body" id="companySettingsBody" hidden>
+        <h3 class="company-settings-title">Настройки: <span id="companySettingsName">компания</span></h3>
+        <p class="hint">Ниже находятся ответы именно выбранной компании. Общий профиль и настройки других работодателей не изменятся.</p>
+        <div class="field" style="margin-top:14px;"><label class="lbl">Если поле здесь не заполнено</label>
+          <select name="inherit_defaults" id="companyAnswerInherit">
+            <option value="yes">Использовать мой общий ответ сверху (рекомендуется)</option>
+            <option value="no">Оставлять поле пустым для этой компании</option>
+          </select>
+        </div>
+
+      <section class="company-settings-block">
+        <h3>{{ ic.i('sliders', 14) if ic else '' }} Основные ответы для этой компании</h3>
+        <p class="hint">Выбранное здесь имеет приоритет только в анкетах этой компании. «Использовать общий ответ» берёт значение из профиля выше.</p>
         <div class="grid2">
           <div class="field"><label class="lbl">Пол</label>
             <select name="gender" data-company-answer>
-              <option value="">Без замены</option><option value="male">Мужской</option>
+              <option value="">Использовать общий ответ</option><option value="male">Мужской</option>
               <option value="female">Женский</option><option value="other">Другое</option>
               <option value="prefer_not_say">Не хочу указывать</option>
             </select></div>
@@ -1066,59 +1059,77 @@
               ('work_evenings', 'Готов на вечерние смены'),
               ('work_early', 'Готов выходить рано утром'),
               ('work_night', 'Готов на ночные смены'),
-              ('has_drivers_license', 'Есть водительские права'),
-              ('lidl_current_employee', 'Уже работаешь в этой компании'),
-              ('work_permit', 'Есть действующее разрешение на проживание/работу'),
-              ('clean_criminal_record', 'Можешь предоставить чистую справку о несудимости')] %}
+              ('has_drivers_license', 'Есть водительские права')] %}
           <div class="field"><label class="lbl">{{ human }}</label>
             <select name="{{ key }}" data-company-answer>
-              <option value="">Без замены</option><option value="yes">Да</option><option value="no">Нет</option>
+              <option value="">Использовать общий ответ</option><option value="yes">Да</option><option value="no">Нет</option>
             </select></div>
           {% endfor %}
-          {% for key, human, placeholder in [
-              ('lidl_referral_name', 'Имя сотрудника, который порекомендовал', 'Пусто, если никто не рекомендовал'),
-              ('lidl_previous_employment', 'Где и когда раньше работал в этой компании', 'Пусто, если не работал')] %}
-          <div class="field"><label class="lbl">{{ human }}</label>
-            <input type="text" name="{{ key }}" data-company-answer placeholder="{{ placeholder }}"{% if key != 'lidl_referral_name' %} data-ai-writing data-recommended-language="da"{% endif %}></div>
-          {% endfor %}
-          <div class="field" data-company-only="lidl" hidden>
+        </div>
+      </section>
+
+      <section class="company-settings-block" data-company-only="lidl" hidden>
+        <h3>{{ ic.i('store', 14) if ic else '' }} Вопросы анкеты Lidl</h3>
+        <p class="hint">Это точные поля Lidl EasyApply. Они не показываются в настройках других компаний.</p>
+        <div class="grid2">
+          <div class="field"><label class="lbl">Уже работаешь в Lidl?</label>
+            <select name="lidl_current_employee" data-company-answer>
+              <option value="">Не отвечать автоматически</option>
+              <option value="yes">Да</option><option value="no">Нет</option>
+            </select></div>
+          <div class="field"><label class="lbl">Имя сотрудника Lidl, который порекомендовал</label>
+            <input type="text" name="lidl_referral_name" data-company-answer placeholder="Пусто, если никто не рекомендовал"></div>
+          <div class="field"><label class="lbl">Где и когда раньше работал(а) в Lidl</label>
+            <input type="text" name="lidl_previous_employment" data-company-answer placeholder="Пусто, если не работал(а)" data-ai-writing data-recommended-language="da"></div>
+          <div class="field">
             <label class="lbl">Как узнал(а) о вакансии Lidl?</label>
             <select name="lidl_discovery" data-company-answer data-searchable="true"
                     data-search-placeholder="Например: Jobindex, LinkedIn или карьерный сайт Lidl">
               <option value="">Не отвечать автоматически</option>
               {% for value, russian in lidl_discovery_options %}
-              <option value="{{ value }}" data-description="В форму Lidl: {{ value }}">{{ russian }} — {{ value }}</option>
+              <option value="{{ value }}" data-description="На сайте Lidl: {{ value }}">{{ russian }}</option>
               {% endfor %}
             </select>
-            <p class="wf-field-note">Это не свободный текст: здесь перечислены точные варианты формы Lidl. Поле показывается только для настроек Lidl.</p>
+            <p class="wf-field-note">Точные варианты формы Lidl — свободный текст сюда не отправляется.</p>
           </div>
           <div class="field"><label class="lbl">Гражданство</label>
             <select name="citizenship" data-company-answer data-searchable="true">
-              <option value="">Без замены</option>
+              <option value="">Не отвечать автоматически</option>
               {% for value, russian in citizenship_options %}
               <option value="{{ value }}" data-description="В форму: {{ value }}">{{ russian }} — {{ value }}</option>
               {% endfor %}
             </select></div>
+          <div class="field"><label class="lbl">Есть действующее разрешение на проживание/работу?</label>
+            <select name="work_permit" data-company-answer>
+              <option value="">Не отвечать автоматически</option>
+              <option value="yes">Да — есть право работать в Дании</option>
+              <option value="no">Нет / ещё не получено</option>
+            </select></div>
+          <div class="field"><label class="lbl">Можешь предоставить чистую справку о несудимости?</label>
+            <select name="clean_criminal_record" data-company-answer>
+              <option value="">Не отвечать автоматически</option>
+              <option value="yes">Да</option><option value="no">Нет</option>
+            </select></div>
           <div class="field"><label class="lbl">Сведения о здоровье, влияющие на работу</label>
             <input type="text" name="relevant_health_condition" data-company-answer placeholder="Пусто, если сообщать нечего" data-ai-writing data-recommended-language="da">
             <div class="wf-quick-options">
-              <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="">Без замены</button>
+              <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="">Оставить пустым</button>
               <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="Ingen relevante helbredsforhold, som påvirker min arbejdsevne.">Нет влияющих состояний</button>
               <button type="button" class="wf-quick-option" data-fill-target="relevant_health_condition" data-fill-value="Jeg vil gerne drøfte eventuelle nødvendige hensyn ved en samtale.">Обсудить условия</button>
             </div></div>
         </div>
-      </details>
+      </section>
 
-      <details class="ai-extra">
-        <summary>{{ ic.i('shield', 14) if ic else '' }} 2. Разрешения этой компании: новости и кадровый резерв <span class="ai-extra-tag">выбираются отдельно</span></summary>
-        <p class="hint" style="margin:10px 0 14px;"><b>Это не факты о тебе и не замена ответов сверху.</b> Компания отдельно спрашивает, можно ли присылать новости и рассматривать профиль для других вакансий. Такое разрешение относится только к выбранной компании и никогда не копируется другой.</p>
+      <section class="company-settings-block" data-company-only="lidl" hidden>
+        <h3>{{ ic.i('shield', 14) if ic else '' }} Согласия Lidl</h3>
+        <p class="hint">Эти разрешения принадлежат только Lidl и никогда не копируются другим работодателям.</p>
         <div class="grid2">
-          <div class="field"><label class="lbl">Получать новости этой компании о вакансиях?</label>
+          <div class="field"><label class="lbl">Получать новости Lidl о вакансиях?</label>
             <select name="lidl_newsletter" data-company-answer>
               <option value="">Не отвечать автоматически</option>
               <option value="yes">Да</option><option value="no">Нет</option>
             </select></div>
-          <div class="field"><label class="lbl">Для каких вакансий компания может учитывать профиль?</label>
+          <div class="field"><label class="lbl">Для каких вакансий Lidl может учитывать профиль?</label>
             <select name="lidl_profile_scope" data-company-answer>
               <option value="">Не отвечать автоматически</option>
               <option value="international">Все подходящие международные вакансии и кадровые резервы</option>
@@ -1126,13 +1137,14 @@
               <option value="applied_only">Только вакансии, на которые я подал сам</option>
             </select></div>
         </div>
-        <p class="hint" style="margin:12px 0 0;"><b>Для Lidl:</b> финальное «Ansøg» также означает принятие пользовательских условий и подтверждение ознакомления с информацией о защите данных. Перед отправкой WexFlow показывает отдельное предупреждение.</p>
-      </details>
+        <p class="hint" style="margin:12px 0 0;">Финальное «Ansøg» также означает принятие условий Lidl и подтверждение ознакомления с информацией о защите данных. WexFlow предупреждает об этом перед отправкой.</p>
+      </section>
 
       <div class="company-answer-actions">
-        <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить настройки компании</button>
-        <span class="hint">Можно изменить позже — общие ответы не затрагиваются.</span>
+        <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить настройки выбранной компании</button>
+        <span class="hint">Настройки других компаний не изменятся.</span>
         <button class="ghost danger" type="button" id="companyAnswerDelete" hidden>Удалить настройки компании</button>
+      </div>
       </div>
     </form>
     <form method="post" action="/account/company-answers/delete" id="companyAnswerDeleteForm" hidden>
@@ -1151,6 +1163,8 @@
     const remove = document.getElementById('companyAnswerDelete');
     const removeForm = document.getElementById('companyAnswerDeleteForm');
     const removeKey = document.getElementById('companyAnswerDeleteKey');
+    const settingsBody = document.getElementById('companySettingsBody');
+    const settingsName = document.getElementById('companySettingsName');
     if (!form || !company) return;
     const fields = [...form.querySelectorAll('[data-company-answer]')];
     const companyOnly = [...form.querySelectorAll('[data-company-only]')];
@@ -1164,6 +1178,11 @@
       companyOnly.forEach(section => {
         section.hidden = section.dataset.companyOnly !== key;
       });
+    }
+    function cleanCompanyKey(value) {
+      const raw = String(value || '').trim().toLowerCase();
+      if (raw === 'lidl' || raw === 'lidl easyapply' || raw === 'lidl danmark') return 'lidl';
+      return raw.replace(/[^a-z0-9æøå]+/gi, '-').replace(/^-|-$/g, '');
     }
     function loadRule(key) {
       clearAnswers();
@@ -1180,6 +1199,8 @@
       remove.hidden = !rule;
       removeKey.value = rule ? key : '';
       syncCompanyOnly(key);
+      settingsBody.hidden = !key;
+      settingsName.textContent = label.value || option?.textContent || 'компания';
       document.querySelectorAll('[data-load-company]').forEach(button => {
         button.classList.toggle('active', button.dataset.loadCompany === key);
       });
@@ -1189,20 +1210,27 @@
       loadRule(company.value);
     });
     custom.addEventListener('input', () => {
-      if (!custom.value.trim()) return;
+      if (!custom.value.trim()) {
+        settingsBody.hidden = true;
+        syncCompanyOnly('');
+        return;
+      }
       syncInput(company, '');
       label.value = custom.value.trim();
       clearAnswers();
       syncInput(inherit, 'yes');
       remove.hidden = true;
-      syncCompanyOnly('');
+      const key = cleanCompanyKey(custom.value);
+      syncCompanyOnly(key);
+      settingsBody.hidden = false;
+      settingsName.textContent = custom.value.trim();
     });
     document.querySelectorAll('[data-load-company]').forEach(button => {
       button.addEventListener('click', () => loadRule(button.dataset.loadCompany));
     });
     remove.addEventListener('click', () => {
       if (!removeKey.value) return;
-      if (confirm('Удалить особые настройки этой компании? После этого снова будут действовать общие ответы.')) {
+      if (confirm('Удалить настройки этой компании? Общий профиль и другие компании не изменятся.')) {
         removeForm.submit();
       }
     });
@@ -1214,7 +1242,12 @@
         label.value = custom.value.trim();
       }
     });
-    syncCompanyOnly('');
+    const firstSavedCompany = Object.keys(rules)[0] || '';
+    if (firstSavedCompany) loadRule(firstSavedCompany);
+    else {
+      syncCompanyOnly('');
+      settingsBody.hidden = true;
+    }
   })();
   </script>
 

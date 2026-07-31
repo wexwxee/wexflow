@@ -1503,7 +1503,9 @@
   const smartTip = document.createElement('div');
   smartTip.className = 'smart-tip';
   smartTip.innerHTML = '<div class="smart-tip-title"></div><div class="smart-tip-body"></div>';
-  document.body.appendChild(smartTip);
+  (window.WexFlowMountOverlay || function (el) {
+    document.documentElement.appendChild(el); return el;
+  })(smartTip);
   const smartTipTitle = smartTip.querySelector('.smart-tip-title');
   const smartTipBody = smartTip.querySelector('.smart-tip-body');
   let smartTipTarget = null, tipShowTimer = null;
@@ -1512,14 +1514,6 @@
   function placeSmartTip(target) {
     const r = target.getBoundingClientRect();
     const margin = 10, gap = 9;
-    // body is CSS-zoomed. getBoundingClientRect() returns visual coordinates,
-    // while fixed left/top below are interpreted inside that zoomed body.
-    // Convert visual pixels back to CSS pixels or the tooltip drifts farther
-    // from its target at every scale other than 100%.
-    const uiScale = Math.max(
-      .8,
-      Math.min(1.5, Number(document.documentElement.dataset.uiZoom || 100) / 100)
-    );
     smartTip.style.left = '0px';
     smartTip.style.top = '0px';
     smartTip.classList.add('show');
@@ -1532,9 +1526,9 @@
     smartTip.dataset.pos = pos;
     // стрелка указывает на центр элемента
     const arrow = Math.max(14, Math.min(r.left + r.width / 2 - left, tr.width - 14));
-    smartTip.style.setProperty('--tip-arrow', `${Math.round(arrow / uiScale)}px`);
-    smartTip.style.left = `${Math.round(left / uiScale)}px`;
-    smartTip.style.top = `${Math.round(top / uiScale)}px`;
+    smartTip.style.setProperty('--tip-arrow', `${Math.round(arrow)}px`);
+    smartTip.style.left = `${Math.round(left)}px`;
+    smartTip.style.top = `${Math.round(top)}px`;
   }
 
   function renderSmartTip(target) {

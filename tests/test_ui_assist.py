@@ -72,7 +72,8 @@ def test_shared_ui_replaces_native_selects_and_requires_preview():
     js = (ROOT / "static" / "ui_assist.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "ui_assist.css").read_text(encoding="utf-8")
     assert "ui_assist.js" in base and "ui_assist.css" in base
-    assert 'document.body.appendChild(portal)' in js
+    assert 'overlayRoot().appendChild(portal)' in js
+    assert 'overlayRoot().appendChild(modal)' in js
     assert "/api/ai/text-assist" in js
     assert "data-ai-accept" in js and "Оставить исходный" in js
     assert ".wf-native-select" in css and ".wf-select-portal" in css

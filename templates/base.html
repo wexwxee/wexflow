@@ -25,11 +25,29 @@
     }
   })();
 </script>
-<link rel="stylesheet" href="/static/theme.css?v=20260725-fullscreen">
-<link rel="stylesheet" href="/static/ui_assist.css?v=20260731-1">
+<link rel="stylesheet" href="/static/theme.css?v=20260731-overlay-root">
+<link rel="stylesheet" href="/static/ui_assist.css?v=20260731-2">
 {% block style %}{% endblock %}
 </head>
 <body>
+<script>
+  // НЕМASШТАБИРУЕМЫЙ слой для всплывающих элементов. Основной интерфейс
+  // увеличивается через CSS zoom на body, но меню/подсказки должны получать
+  // координаты окна один к одному, иначе при 125–150% они уезжают в центр.
+  window.WexFlowOverlayRoot = function () {
+    var root = document.getElementById("wf-overlay-root");
+    if (!root) {
+      root = document.createElement("div");
+      root.id = "wf-overlay-root";
+      document.documentElement.appendChild(root);
+    }
+    return root;
+  };
+  window.WexFlowMountOverlay = function (element) {
+    if (element) window.WexFlowOverlayRoot().appendChild(element);
+    return element;
+  };
+</script>
 {% set _qp = request.query_params if request is defined else none %}
 {% set _notice = _qp.get('notice') if _qp else '' %}
 {% set _error = _qp.get('error') if _qp else '' %}
@@ -49,6 +67,13 @@
   </div>
 </div>
 {% block body %}{% endblock %}
+<script>
+  // Server notices are rendered before JavaScript; move them out of the
+  // zoomed body once the page body is complete.
+  document.querySelectorAll("body > .system-response-stack").forEach(function (stack) {
+    window.WexFlowMountOverlay(stack);
+  });
+</script>
 <script>
   // переключатель темы — иконки sun/moon переключаются через CSS (html[data-theme])
   document.querySelectorAll("[data-theme-toggle]").forEach(function (btn) {
@@ -228,7 +253,7 @@
         stack.className = "system-response-stack health-stack";
         stack.setAttribute("role", "status");
         stack.setAttribute("aria-live", "polite");
-        document.body.appendChild(stack);
+        window.WexFlowMountOverlay(stack);
       }
       return stack;
     }
@@ -412,7 +437,7 @@
 </script>
 <script src="/static/window_chrome.js?v=20260725-fullscreen-race"></script>
 <script src="/static/ai_indicator.js?v=20260725-ai-multiprovider"></script>
-<script src="/static/ui_assist.js?v=20260731-1"></script>
+<script src="/static/ui_assist.js?v=20260731-2"></script>
 <script>
   // Открыть мини-окно автопилота: в приложении — отдельным окном (pywebview),
   // в браузере (dev) — обычным всплывающим окном.

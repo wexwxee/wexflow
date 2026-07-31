@@ -5,6 +5,12 @@
   var portal = null;
   var selectUid = 0;
 
+  function overlayRoot() {
+    return window.WexFlowOverlayRoot
+      ? window.WexFlowOverlayRoot()
+      : document.documentElement;
+  }
+
   function optionRows(select) {
     return Array.from(select.options).map(function (option, index) {
       return {
@@ -31,16 +37,37 @@
   function positionPortal(button) {
     if (!portal) return;
     var rect = button.getBoundingClientRect();
-    var width = Math.min(Math.max(rect.width, 240), window.innerWidth - 16);
+    var margin = 8;
+    var gap = 5;
+    var scale = Math.max(
+      0.8,
+      Math.min(1.5, Number(document.documentElement.dataset.uiZoom || 100) / 100)
+    );
+    portal.style.setProperty("--wf-overlay-scale", String(scale));
+    var width = Math.min(Math.max(rect.width, 240), window.innerWidth - margin * 2);
     portal.style.width = width + "px";
-    portal.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)) + "px";
-    var roomBelow = window.innerHeight - rect.bottom - 8;
-    var wanted = Math.min(370, portal.scrollHeight);
-    if (roomBelow >= Math.min(wanted, 180) || rect.top < roomBelow) {
-      portal.style.top = Math.min(window.innerHeight - wanted - 8, rect.bottom + 5) + "px";
-    } else {
-      portal.style.top = Math.max(8, rect.top - wanted - 5) + "px";
+    portal.style.left = Math.max(
+      margin,
+      Math.min(rect.left, window.innerWidth - width - margin)
+    ) + "px";
+
+    var list = portal.querySelector(".wf-select-list");
+    if (list) list.style.maxHeight = "";
+    var roomBelow = Math.max(0, window.innerHeight - rect.bottom - gap - margin);
+    var roomAbove = Math.max(0, rect.top - gap - margin);
+    var height = portal.getBoundingClientRect().height;
+    var below = height <= roomBelow || (height > roomAbove && roomBelow >= roomAbove);
+    var available = below ? roomBelow : roomAbove;
+    if (list && height > available) {
+      var listHeight = list.getBoundingClientRect().height;
+      list.style.maxHeight = Math.max(96, listHeight - (height - available)) + "px";
+      height = portal.getBoundingClientRect().height;
     }
+    portal.style.top = (
+      below
+        ? Math.min(window.innerHeight - height - margin, rect.bottom + gap)
+        : Math.max(margin, rect.top - height - gap)
+    ) + "px";
   }
 
   function updateSelect(api) {
@@ -85,7 +112,7 @@
     list.className = "wf-select-list";
     list.setAttribute("role", "listbox");
     portal.appendChild(list);
-    document.body.appendChild(portal);
+    overlayRoot().appendChild(portal);
 
     function render(query) {
       var folded = String(query || "").trim().toLocaleLowerCase();
@@ -235,7 +262,7 @@
           '<span class="wf-ai-privacy">Текст уйдёт подключённому тобой ИИ и расходует его обычный лимит.</span>' +
         '</div>' +
       '</section>';
-    document.body.appendChild(modal);
+    overlayRoot().appendChild(modal);
     enhanceAll(modal);
     modal.querySelectorAll("[data-ai-close]").forEach(function (button) {
       button.addEventListener("click", closeModal);

@@ -44,8 +44,10 @@ def test_large_screens_use_more_of_the_window_without_widening_every_page_equall
 
 def test_fixed_job_tooltips_compensate_for_css_zoom():
     index = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+    base = (ROOT / "templates" / "base.html").read_text(encoding="utf-8")
+    assist = (ROOT / "static" / "ui_assist.js").read_text(encoding="utf-8")
 
-    assert "const uiScale" in index
-    assert "left / uiScale" in index
-    assert "top / uiScale" in index
-    assert "arrow / uiScale" in index
+    assert "WexFlowMountOverlay" in base
+    assert "WexFlowMountOverlay" in index
+    assert "overlayRoot().appendChild(portal)" in assist
+    assert "overlayRoot().appendChild(modal)" in assist
