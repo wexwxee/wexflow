@@ -71,3 +71,68 @@ def test_prepared_window_closes_after_five_minutes_without_activity():
         "Окно закрыто после 5 мин бездействия.",
     )
 
+
+def test_telegram_cancel_closes_prepared_lidl_without_submit():
+    import apply
+
+    page = _Page(activity_ms=1_000_000)
+    ctx = _PersistentContext(page)
+    with mock.patch.object(apply, "read_phone_decision", return_value="cancel"), \
+            mock.patch.object(apply_dispatch.time, "time", return_value=1001.0), \
+            mock.patch.object(apply_dispatch, "_report_phone_status") as report, \
+            mock.patch.object(apply_dispatch, "_write_status") as status:
+        apply_dispatch._wait_until_closed(
+            ctx,
+            page=page,
+            platform="lidl_easy_apply",
+            job_id="lidl:telegram-cancel",
+            profile={},
+        )
+
+    status.assert_called_once_with(
+        "lidl:telegram-cancel",
+        "prepare_cancelled",
+        "Отменено из Telegram — заявка не отправлена.",
+    )
+    report.assert_called_once_with(
+        "lidl:telegram-cancel",
+        "prepare_cancelled",
+        "Отменено из Telegram — заявка не отправлена.",
+    )
+
+
+def test_telegram_submit_finishes_the_open_lidl_form():
+    import apply
+    from connectors import lidl_apply
+
+    page = _Page(activity_ms=1_000_000)
+    ctx = _PersistentContext(page)
+    profile = {"first_name": "Ivan"}
+    result = {"state": "submitted", "message": "Lidl принял заявку."}
+    with mock.patch.object(apply, "read_phone_decision", return_value="submit"), \
+            mock.patch.object(lidl_apply, "submit", return_value=result) as submit, \
+            mock.patch.object(apply_dispatch, "_record_confirmed_submission") as record, \
+            mock.patch.object(apply_dispatch, "_send_proof_to_chat") as proof, \
+            mock.patch.object(apply_dispatch, "_report_phone_status") as report, \
+            mock.patch.object(apply_dispatch, "_write_status") as status, \
+            mock.patch.object(apply_dispatch.time, "time", return_value=1001.0):
+        apply_dispatch._wait_until_closed(
+            ctx,
+            page=page,
+            platform="lidl_easy_apply",
+            job_id="lidl:telegram-submit",
+            profile=profile,
+        )
+
+    submit.assert_called_once_with(page, profile)
+    record.assert_called_once_with("lidl:telegram-submit")
+    status.assert_called_once_with("lidl:telegram-submit", "submitted", "Lidl принял заявку.")
+    report.assert_called_once_with("lidl:telegram-submit", "submitted", "Lidl принял заявку.")
+    proof.assert_called_once_with(page, "lidl:telegram-submit")
+
+
+def test_prepared_connector_proof_requests_telegram_buttons():
+    page = mock.Mock()
+    with mock.patch.object(apply_dispatch, "_proof_to_chat") as proof:
+        apply_dispatch._send_prepared_proof_to_chat(page, "lidl:buttons")
+    proof.assert_called_once_with(page, "lidl:buttons", prepared=True, ask_send=True)

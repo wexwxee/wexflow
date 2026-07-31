@@ -66,6 +66,15 @@ def _write_status(job_id: str, state: str, message: str = "") -> None:
         pass
 
 
+def _report_phone_status(job_id: str, state: str, message: str) -> None:
+    """Show the result of a Telegram decision back in the same phone flow."""
+    try:
+        import cloud_auth
+        cloud_auth.report_apply_result(job_id, state, message)
+    except Exception:
+        pass
+
+
 def detect(url: str) -> str | None:
     """Вернуть ключ платформы или None, если ссылка не поддерживается."""
     for key, _name, rx in _PLATFORMS:
@@ -190,8 +199,8 @@ def _record_confirmed_submission(job_id: str) -> bool:
 
 
 def _send_prepared_proof_to_chat(page, job_id: str) -> None:
-    """Скрин подготовленной анкеты — в чат: «вот что открыто на ПК, не отправлено»."""
-    _proof_to_chat(page, job_id, prepared=True)
+    """Скрин подготовленной анкеты + явное решение «Отправить / Отмена»."""
+    _proof_to_chat(page, job_id, prepared=True, ask_send=True)
 
 
 def _send_proof_to_chat(page, job_id: str) -> None:
@@ -199,7 +208,13 @@ def _send_proof_to_chat(page, job_id: str) -> None:
     _proof_to_chat(page, job_id, prepared=False)
 
 
-def _proof_to_chat(page, job_id: str, prepared: bool, note: str = "") -> None:
+def _proof_to_chat(
+    page,
+    job_id: str,
+    prepared: bool,
+    note: str = "",
+    ask_send: bool = False,
+) -> None:
     """Снять страницу и отправить её в чат. Скрины прогона лежат отдельно от
     доказательств подачи — иначе журнал прицепит их как «отправлено»."""
     try:
@@ -230,11 +245,12 @@ def _proof_to_chat(page, job_id: str, prepared: bool, note: str = "") -> None:
             caption = ("⚠️ <b>Подача остановлена</b>\n" + str(title) + "\n" + str(note)[:600])
         elif prepared:
             caption = ("🧪 <b>Анкета подготовлена</b>\n" + str(title)
-                       + "\nЗаполнена на компьютере, отправка НЕ нажата — проверь и реши сам.")
+                       + "\nЗаполнена на компьютере, отправка НЕ нажата. "
+                         "Проверь и выбери действие кнопкой ниже.")
         else:
             caption = ("✅ <b>Заявка отправлена</b>\n" + str(title)
                        + "\nСайт показал квитанцию — скрин страницы приложен.")
-        cloud_auth.report_apply_proof(job_id, b64, caption)
+        cloud_auth.report_apply_proof(job_id, b64, caption, ask_send=ask_send)
     except Exception as exc:  # noqa: BLE001
         print("  скрин не ушёл в чат:", str(exc)[:120])
 
@@ -313,6 +329,7 @@ def _wait_until_closed(
     page=None,
     platform: str = "",
     job_id: str = "",
+    profile: dict | None = None,
     idle_seconds: float = IDLE_CLOSE_SECONDS,
 ) -> None:
     """Keep the prepared form usable until closed or idle for five minutes.
@@ -351,6 +368,56 @@ def _wait_until_closed(
                 f"Окно закрыто после {int(idle_seconds // 60)} мин бездействия.",
             )
             return
+        if platform == "lidl_easy_apply" and page is not None and job_id:
+            try:
+                import apply as _apply
+                action = _apply.read_phone_decision(job_id)
+            except Exception:
+                action = ""
+            if action == "cancel":
+                message = "Отменено из Telegram — заявка не отправлена."
+                _write_status(
+                    job_id,
+                    "prepare_cancelled",
+                    message,
+                )
+                _report_phone_status(job_id, "prepare_cancelled", message)
+                print("  отмена из Telegram — заявка НЕ отправлена, закрываю анкету")
+                return
+            if action == "submit":
+                from connectors import lidl_apply
+
+                print("  подтверждение из Telegram — отправляю заявку Lidl")
+                result = lidl_apply.submit(page, profile or {})
+                if result["state"] == "submitted":
+                    _record_confirmed_submission(job_id)
+                    _write_status(job_id, "submitted", result["message"])
+                    _report_phone_status(job_id, "submitted", result["message"])
+                    _send_proof_to_chat(page, job_id)
+                    print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
+                    return
+                if result["state"] == "blocked":
+                    _write_status(job_id, "needs_answers", result["message"])
+                    _report_phone_status(
+                        job_id,
+                        "prepared",
+                        "Lidl не принял отправку: " + result["message"]
+                        + ". Анкета остаётся открытой на компьютере.",
+                    )
+                    _proof_to_chat(
+                        page,
+                        job_id,
+                        prepared=True,
+                        note=(
+                            "Не удалось отправить: " + result["message"]
+                            + ". Анкета остаётся открытой — дополни ответ и нажми "
+                              "«Отправить до конца» в окне."
+                        ),
+                    )
+                else:
+                    _write_status(job_id, "no_receipt", result["message"])
+                    _report_phone_status(job_id, "unconfirmed", result["message"])
+                    _proof_to_chat(page, job_id, prepared=True, note=result["message"])
         if not recorded and platform == "lidl_easy_apply" and page is not None:
             try:
                 from connectors import lidl_apply
@@ -381,6 +448,12 @@ def run(
     try:
         profile = load_profile_for_job(job_id)
         key = detect(url)
+        if key:
+            import profile_store
+            profile = profile_store.resolve_company_answers(
+                profile,
+                company_key(url, key, profile),
+            )
         print(f"платформа: {platform_name(key) if key else 'не распознана (пробую универсально)'}")
         _write_status(job_id, "opening_browser")
         with sync_playwright() as p:
@@ -426,6 +499,13 @@ def run(
                         ),
                     )
                     if not submit:
+                        # Старое нажатие из предыдущего окна не должно отправить
+                        # новую анкету. Очищаем его до показа свежих кнопок.
+                        try:
+                            import apply as _apply
+                            _apply.read_phone_decision(job_id)
+                        except Exception:
+                            pass
                         _send_prepared_proof_to_chat(page, job_id)
             except site_contract.SiteChanged as changed:
                 # Работодатель переделал анкету: не заполняем, не жмём, честно
@@ -445,7 +525,13 @@ def run(
                 print("  warning:", exc)
                 _write_status(job_id, "ready", f"Часть полей оставлена вручную: {exc}")
             if keep_open:
-                _wait_until_closed(ctx, page=page, platform=key or "", job_id=job_id)
+                _wait_until_closed(
+                    ctx,
+                    page=page,
+                    platform=key or "",
+                    job_id=job_id,
+                    profile=profile,
+                )
             else:
                 input("\nНажми Enter здесь, когда закончишь, чтобы закрыть браузер...")
             try:

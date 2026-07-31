@@ -979,20 +979,49 @@
       .company-answer-editor {
         border-top:1px solid var(--glass-line); margin-top:12px; padding-top:16px;
       }
+      .company-answer-guide {
+        display:grid; grid-template-columns:1fr auto 1fr; gap:10px; align-items:stretch;
+        margin:14px 0 4px;
+      }
+      .company-answer-guide-card {
+        border:1px solid var(--glass-line); border-radius:12px; padding:12px 14px;
+        background:var(--glass); color:var(--txt);
+      }
+      .company-answer-guide-card b { display:block; color:var(--txt-strong); margin-bottom:4px; }
+      .company-answer-guide-arrow { align-self:center; color:var(--accent); font-weight:900; }
+      .company-answer-example {
+        margin:12px 0 0; padding:10px 12px; border-left:3px solid var(--accent);
+        border-radius:0 10px 10px 0; background:color-mix(in srgb, var(--accent) 8%, transparent);
+        color:var(--txt); font-size:12px; line-height:1.45;
+      }
       .company-answer-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:16px; }
       .company-answer-actions .danger { margin-left:auto; }
       .company-answer-actions [hidden] { display:none !important; }
       @media (max-width:720px) {
         .company-answer-head { display:block; }
+        .company-answer-guide { grid-template-columns:1fr; }
+        .company-answer-guide-arrow { transform:rotate(90deg); justify-self:center; }
         .company-answer-actions .danger { margin-left:0; }
       }
     </style>
     <div class="company-answer-head">
       <div>
-        <h2 style="margin-bottom:6px;">Исключения по компаниям</h2>
-        <p class="hint" style="margin:0;">Выбери работодателя и укажи только то, что должно отличаться. Остальное наследуется из общих ответов. Можно также полностью отключить наследование для этой компании.</p>
+        <h2 style="margin-bottom:6px;">Особые настройки для конкретной компании <span class="ai-extra-tag">необязательно</span></h2>
+        <p class="hint" style="margin:0;">Этот блок не повторяет анкету выше. Он нужен только тогда, когда одному работодателю ты хочешь дать другой ответ.</p>
       </div>
     </div>
+    <div class="company-answer-guide" aria-label="Как работают общие ответы и настройки компании">
+      <div class="company-answer-guide-card">
+        <b>Ответы выше — основа</b>
+        WexFlow использует их во всех разрешённых тобой анкетах.
+      </div>
+      <span class="company-answer-guide-arrow" aria-hidden="true">→</span>
+      <div class="company-answer-guide-card">
+        <b>Настройки ниже — только поправки</b>
+        Заполни лишь то, что должно отличаться у выбранной компании.
+      </div>
+    </div>
+    <p class="company-answer-example"><b>Пример:</b> выше указано «готов работать по выходным — Да», но для Lidl ты хочешь ответить «Нет». Выбери Lidl и поменяй ниже только этот один ответ. Все остальные WexFlow возьмёт сверху.</p>
     {% if company_answer_overrides %}
     <div class="company-answer-rules" aria-label="Сохранённые исключения">
       {% for company_key, rule in company_answer_overrides.items() %}
@@ -1013,16 +1042,16 @@
           <input type="hidden" name="company_label" id="companyAnswerLabel"></div>
         <div class="field"><label class="lbl">Или введи другую компанию</label>
           <input type="text" name="company_custom" id="companyAnswerCustom" placeholder="Например: IKEA"></div>
-        <div class="field" style="grid-column:1/-1;"><label class="lbl">Наследовать общие ответы?</label>
+        <div class="field" style="grid-column:1/-1;"><label class="lbl">Использовать для этой компании остальные ответы сверху?</label>
           <select name="inherit_defaults" id="companyAnswerInherit">
-            <option value="yes">Да — заменить только заполненные ниже поля</option>
-            <option value="no">Нет — для этой компании начать с пустых ответов</option>
+            <option value="yes">Да — взять ответы сверху и заменить только выбранные ниже (рекомендуется)</option>
+            <option value="no">Нет — ничего сверху не брать, использовать только заполненное ниже</option>
           </select></div>
       </div>
 
       <details class="ai-extra">
-        <summary>{{ ic.i('sliders', 14) if ic else '' }} Ответы, отличающиеся для этой компании <span class="ai-extra-tag">пусто = наследовать</span></summary>
-        <p class="hint" style="margin:10px 0 14px;">При включённом наследовании пустое поле берётся из общего набора. При выключенном — остаётся пустым. WexFlow никогда не придумывает замену.</p>
+        <summary>{{ ic.i('sliders', 14) if ic else '' }} 1. Что изменить только для выбранной компании <span class="ai-extra-tag">не заполнил = взять сверху</span></summary>
+        <p class="hint" style="margin:10px 0 14px;"><b>Это те же факты, что выше, но с приоритетом только для выбранного работодателя.</b> «Без замены» означает: оставить общий ответ. Если использование ответов сверху выключено, незаполненные поля останутся пустыми. WexFlow ничего не придумывает.</p>
         <div class="grid2">
           <div class="field"><label class="lbl">Пол</label>
             <select name="gender" data-company-answer>
@@ -1073,8 +1102,8 @@
       </details>
 
       <details class="ai-extra">
-        <summary>{{ ic.i('shield', 14) if ic else '' }} Согласия только этой компании <span class="ai-extra-tag">никогда не наследуются</span></summary>
-        <p class="hint" style="margin:10px 0 14px;">Рассылка и кадровый резерв — отдельные разрешения конкретному работодателю. WexFlow не переносит их в другие компании, даже когда общие ответы разрешены.</p>
+        <summary>{{ ic.i('shield', 14) if ic else '' }} 2. Разрешения этой компании: новости и кадровый резерв <span class="ai-extra-tag">выбираются отдельно</span></summary>
+        <p class="hint" style="margin:10px 0 14px;"><b>Это не факты о тебе и не замена ответов сверху.</b> Компания отдельно спрашивает, можно ли присылать новости и рассматривать профиль для других вакансий. Такое разрешение относится только к выбранной компании и никогда не копируется другой.</p>
         <div class="grid2">
           <div class="field"><label class="lbl">Получать новости этой компании о вакансиях?</label>
             <select name="lidl_newsletter" data-company-answer>
@@ -1093,9 +1122,9 @@
       </details>
 
       <div class="company-answer-actions">
-        <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить исключение</button>
+        <button class="primary" type="submit">{{ ic.i('check', 13) }} Сохранить настройки компании</button>
         <span class="hint">Можно изменить позже — общие ответы не затрагиваются.</span>
-        <button class="ghost danger" type="button" id="companyAnswerDelete" hidden>Удалить исключение</button>
+        <button class="ghost danger" type="button" id="companyAnswerDelete" hidden>Удалить настройки компании</button>
       </div>
     </form>
     <form method="post" action="/account/company-answers/delete" id="companyAnswerDeleteForm" hidden>
@@ -1157,7 +1186,7 @@
     });
     remove.addEventListener('click', () => {
       if (!removeKey.value) return;
-      if (confirm('Удалить исключение этой компании? После этого снова будут действовать общие ответы.')) {
+      if (confirm('Удалить особые настройки этой компании? После этого снова будут действовать общие ответы.')) {
         removeForm.submit();
       }
     });
