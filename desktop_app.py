@@ -212,7 +212,10 @@ def run_worker(mode: str, rest: list) -> None:
 
     elif mode == "--worker-lidl-monitor-login":
         import lidl_monitor
-        lidl_monitor.run_login()
+        if lidl_monitor.run_login():
+            # The login worker releases the persistent-profile lock before
+            # making the first read, so connection immediately has a baseline.
+            lidl_monitor.run_check()
 
     elif mode == "--worker-lidl-monitor-check":
         import lidl_monitor
