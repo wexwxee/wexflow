@@ -210,6 +210,14 @@ def run_worker(mode: str, rest: list) -> None:
             submit="--submit" in rest,
         )
 
+    elif mode == "--worker-lidl-monitor-login":
+        import lidl_monitor
+        lidl_monitor.run_login()
+
+    elif mode == "--worker-lidl-monitor-check":
+        import lidl_monitor
+        lidl_monitor.run_check()
+
     elif mode == "--worker-salling-apply":
         import apply as salling_apply
         salling_apply.main(rest)

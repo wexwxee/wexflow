@@ -61,6 +61,13 @@
   .lidl-monitor-copy { min-width:0; }
   .lidl-monitor-copy b { display:block; margin-bottom:3px; }
   .lidl-monitor-copy small { display:block; color:var(--muted); line-height:1.4; }
+  .lidl-monitor + .lidl-monitor { margin-top:9px; }
+  .lidl-monitor-state { display:inline-flex; align-items:center; gap:7px; margin-bottom:5px; }
+  .lidl-monitor-dot { width:9px; height:9px; border-radius:50%; background:var(--muted); }
+  .lidl-monitor-dot.ok { background:var(--ok-txt); box-shadow:0 0 0 4px var(--ok-bg); }
+  .lidl-monitor-dot.busy { background:var(--warn-txt); box-shadow:0 0 0 4px var(--warn-bg); }
+  .lidl-monitor-dot.err { background:var(--err-txt); box-shadow:0 0 0 4px var(--err-bg); }
+  .lidl-monitor-actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
   .lidl-flow { margin-top:14px; padding-top:13px; border-top:1px solid var(--glass-line); }
   .lidl-flow summary { cursor:pointer; font-weight:750; color:var(--txt-strong); }
   .lidl-flow ol { margin:10px 0 2px 20px; padding:0; color:var(--muted); line-height:1.55; }
@@ -156,6 +163,39 @@
         <a href="{{ lidl_post_apply.recruitment_url }}" target="_blank" rel="noopener"><button class="secondary" type="button">Как проходит найм</button></a>
       </div>
 
+      {% set mon = lidl_post_apply.monitor %}
+      <div class="lidl-monitor">
+        <div class="lidl-monitor-copy">
+          <span class="lidl-monitor-state">
+            <span class="lidl-monitor-dot {{ 'ok' if mon.connected and mon.phase == 'connected' else ('busy' if mon.phase in ['connecting','checking'] else ('err' if mon.phase in ['needs_login','error'] else '')) }}"></span>
+            <b>Автомониторинг кабинета · {{ mon.phase_label }}</b>
+          </span>
+          <small>
+            WexFlow раз в 3 часа проверяет только раздел «Søgte jobs» и пишет в Telegram,
+            если Lidl изменил статус. Пароль не сохраняется: вход остаётся в отдельном
+            локальном профиле браузера.
+            {% if mon.last_success_at %}<br>Последняя успешная проверка: {{ mon.last_success_at }}.{% endif %}
+            {% if mon.last_error %}<br><span style="color:var(--warn-txt);">{{ mon.last_error }}</span>{% endif %}
+          </small>
+        </div>
+        <div class="lidl-monitor-actions">
+          {% if not mon.enabled or not mon.connected or mon.phase == 'needs_login' %}
+          <form method="post" action="/job/{{ job.id }}/lidl-monitor/connect">
+            <button class="primary" type="submit">
+              {{ 'Включить мониторинг' if mon.connected and not mon.enabled else ('Войти снова' if mon.enabled else 'Подключить кабинет') }}
+            </button>
+          </form>
+          {% else %}
+          <form method="post" action="/job/{{ job.id }}/lidl-monitor/check">
+            <button class="primary" type="submit" {{ 'disabled' if mon.busy }}>Проверить сейчас</button>
+          </form>
+          <form method="post" action="/job/{{ job.id }}/lidl-monitor/disable">
+            <button class="secondary" type="submit">Выключить</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+
       <div class="lidl-monitor">
         <div class="lidl-monitor-copy">
           <b>Telegram‑сопровождение {{ 'включено' if lidl_post_apply.reminders else 'выключено' }}</b>
@@ -192,6 +232,11 @@
         </ol>
         <p style="margin-top:8px;color:var(--warn-txt);font-size:12.5px;"><b>Важно:</b> не удаляй весь профиль, пока есть активные заявки Lidl. Данные и документы из последней заявки могут использоваться как основа для следующей — перед каждой новой подачей их стоит перепроверять.</p>
       </details>
+      {% if mon.phase in ['connecting','checking'] %}
+      <script>
+        setTimeout(function () { location.reload(); }, 3000);
+      </script>
+      {% endif %}
     </section>
     {% endif %}
     {% if job.source == 'lidl' and selected_documents %}

@@ -39,6 +39,9 @@ dist_installer/
 WexFlow.exe
 # рантайм/временное коннекторов
 connector_browser/
+lidl_monitor_browser/
+lidl_monitor.json
+lidl_monitor.lock
 tools/_tt_candidates.txt
 # мусор и бэкапы (не удаляем файлы, просто не коммитим)
 _backups/

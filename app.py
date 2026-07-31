@@ -37,6 +37,7 @@ import document_rules
 import document_import
 import credentials_store
 import lidl_followup
+import lidl_monitor
 import subscription
 import account as account_mod
 import cloud_auth
@@ -2271,6 +2272,7 @@ def _handle_tg_remote_command(command: dict) -> str:
 
 
 _lidl_followup_tick_lock = threading.Lock()
+_lidl_monitor_spawn_lock = threading.Lock()
 
 
 def _lidl_followup_tick() -> None:
@@ -2300,6 +2302,50 @@ def _lidl_followup_tick_unlocked() -> None:
         print("lidl-followup: напоминание не отправилось —", str(exc)[:140])
 
 
+def _launch_lidl_monitor_worker(mode: str) -> bool:
+    """Launch portal login/check in a separate process.
+
+    Playwright persistent profiles must never be shared between the FastAPI
+    process and a visible application form, hence the dedicated worker.
+    """
+    mode = "login" if mode == "login" else "check"
+    if mode == "check":
+        state = lidl_monitor.load_state()
+        if not state.get("enabled") or not state.get("connected") or lidl_monitor.is_busy():
+            return False
+    if not _lidl_monitor_spawn_lock.acquire(blocking=False):
+        return False
+    try:
+        flag = f"--worker-lidl-monitor-{mode}"
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, flag]
+        else:
+            cmd = [sys.executable, str(config.BASE_DIR / "desktop_app.py"), flag]
+        kwargs = {
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if sys.platform == "win32":
+            kwargs["creationflags"] = (
+                (0x00000008 | 0x00000200) if mode == "login" else 0x08000000
+            )
+        subprocess.Popen(cmd, **kwargs)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        lidl_monitor.save_state(
+            phase="error",
+            last_error=f"Не удалось запустить монитор: {str(exc)[:180]}",
+        )
+        return False
+    finally:
+        _lidl_monitor_spawn_lock.release()
+
+
+def _lidl_monitor_tick() -> None:
+    _launch_lidl_monitor_worker("check")
+
+
 @asynccontextmanager
 async def _lifespan(app):
     global _scheduler
@@ -2310,6 +2356,14 @@ async def _lifespan(app):
         "interval",
         minutes=30,
         id="lidl_followup",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        _lidl_monitor_tick,
+        "interval",
+        hours=3,
+        id="lidl_monitor",
         max_instances=1,
         coalesce=True,
     )
@@ -2335,6 +2389,7 @@ async def _lifespan(app):
         # пользователь запустил приложение и ожидает уведомления без ожидания интервала.
         threading.Thread(target=_tg_offer_tick, daemon=True).start()
     threading.Thread(target=_lidl_followup_tick, daemon=True).start()
+    threading.Thread(target=_lidl_monitor_tick, daemon=True).start()
     yield
     _tg_stop.set()
     try:
@@ -3792,6 +3847,82 @@ def set_lidl_followup_reminders(
         if value else "Telegram‑напоминания Lidl выключены."
     )
     return _redirect_back(request, f"/job/{job_id}", notice=message)
+
+
+@app.post("/job/{job_id}/lidl-monitor/connect")
+def connect_lidl_monitor(job_id: str, request: Request):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+    if not job or job.source != "lidl" or not job.applied_at:
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error="Мониторинг кабинета доступен после подачи заявки Lidl.",
+        )
+    previous = lidl_monitor.load_state()
+    if previous.get("connected") and previous.get("phase") not in ("needs_login", "error"):
+        lidl_monitor.save_state(enabled=True, phase="connected", last_error="")
+        _launch_lidl_monitor_worker("check")
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            notice="Автоматическая проверка кабинета Lidl включена снова.",
+        )
+    if lidl_monitor.is_busy():
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            notice="Окно Lidl уже открыто. Заверши вход в нём.",
+        )
+    lidl_monitor.set_enabled(True)
+    if not _launch_lidl_monitor_worker("login"):
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error="Не удалось открыть отдельное окно входа Lidl.",
+        )
+    return _redirect_back(
+        request, f"/job/{job_id}",
+        notice=(
+            "Открываю безопасное окно Lidl. Войди там один раз — пароль останется "
+            "только в отдельной сессии браузера WexFlow."
+        ),
+    )
+
+
+@app.post("/job/{job_id}/lidl-monitor/check")
+def check_lidl_monitor(job_id: str, request: Request):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+    if not job or job.source != "lidl" or not job.applied_at:
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error="Мониторинг кабинета доступен после подачи заявки Lidl.",
+        )
+    state = lidl_monitor.load_state()
+    if not state.get("connected"):
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error="Сначала подключи кабинет Lidl и войди в отдельном окне.",
+        )
+    if not _launch_lidl_monitor_worker("check"):
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            notice="Проверка уже идёт или окно Lidl сейчас занято.",
+        )
+    return _redirect_back(
+        request, f"/job/{job_id}",
+        notice="Проверяю «Søgte jobs» в фоне. Страница обновится автоматически.",
+    )
+
+
+@app.post("/job/{job_id}/lidl-monitor/disable")
+def disable_lidl_monitor(job_id: str, request: Request):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+    if not job or job.source != "lidl":
+        return _redirect_back(request, f"/job/{job_id}", error="Вакансия Lidl не найдена.")
+    lidl_monitor.set_enabled(False)
+    return _redirect_back(
+        request, f"/job/{job_id}",
+        notice="Автоматическая проверка кабинета Lidl выключена.",
+    )
 
 
 @app.post("/refresh")
@@ -6010,6 +6141,7 @@ def detail(request: Request, job_id: str, trerror: str = ""):
                 job,
                 str(resolved_profile.get("email") or ""),
             )
+            lidl_post_apply["monitor"] = lidl_monitor.view()
     return templates.TemplateResponse(
         "detail.html", {
             "request": request,
