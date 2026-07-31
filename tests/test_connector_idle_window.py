@@ -162,6 +162,52 @@ def test_review_card_submit_signal_uses_worker_and_records_receipt():
     proof.assert_called_once_with(page, "lidl:review-submit")
 
 
+def test_detected_lidl_receipt_is_cleaned_before_telegram_proof():
+    from connectors import lidl_apply
+
+    page = _Page(activity_ms=1_000_000)
+    ctx = _PersistentContext(page)
+    events = []
+    with mock.patch.object(
+            lidl_apply, "submission_receipt_visible", return_value=True), \
+            mock.patch.object(
+                lidl_apply,
+                "prepare_submission_proof",
+                side_effect=lambda _page: events.append("accepted") or True,
+            ), \
+            mock.patch.object(
+                apply_dispatch,
+                "_record_confirmed_submission",
+                side_effect=lambda _job_id: events.append("recorded") or True,
+            ), \
+            mock.patch.object(
+                apply_dispatch,
+                "_send_proof_to_chat",
+                side_effect=lambda _page, _job_id: events.append("proof"),
+            ), \
+            mock.patch.object(apply_dispatch, "_write_status"), \
+            mock.patch.object(apply_dispatch.time, "time", return_value=1001.0), \
+            mock.patch.object(
+                apply_dispatch.time,
+                "sleep",
+                side_effect=RuntimeError("proof sent"),
+            ):
+        try:
+            apply_dispatch._wait_until_closed(
+                ctx,
+                page=page,
+                platform="lidl_easy_apply",
+                job_id="lidl:receipt-proof",
+                profile={},
+            )
+        except RuntimeError as exc:
+            assert str(exc) == "proof sent"
+        else:
+            raise AssertionError("receipt loop did not finish the proof check")
+
+    assert events == ["accepted", "recorded", "proof"]
+
+
 def test_prepared_connector_proof_requests_telegram_buttons():
     page = mock.Mock()
     with mock.patch.object(apply_dispatch, "_proof_to_chat") as proof:

@@ -666,6 +666,12 @@ _RECEIPT_RE = re.compile(
     r"спасибо\s+за\s+(?:вашу|твою)\s+заявку|заявк[ау]\s+(?:была\s+)?получен[ао])",
     re.I,
 )
+_CONFIRMATION_CONSENT_RE = re.compile(
+    r"^\s*(Accepter|Accept|Accept all|"
+    r"Принять|Принимать|Принять все|"
+    r"Прийняти|Прийняти все)\s*$",
+    re.I,
+)
 
 
 def _submit_button(page):
@@ -707,6 +713,51 @@ def submission_receipt_visible(page) -> bool:
     except Exception:
         return False
     return bool(_RECEIPT_RE.search(text or ""))
+
+
+def _confirmation_consent_button(page):
+    """Return Lidl's post-submit data/cookie consent button when it is visible."""
+    try:
+        candidates = page.get_by_role("button", name=_CONFIRMATION_CONSENT_RE)
+        for index in range(candidates.count()):
+            candidate = candidates.nth(index)
+            if candidate.is_visible():
+                return candidate
+    except Exception:
+        pass
+    return None
+
+
+def prepare_submission_proof(page, wait_seconds: float = 8.0) -> bool:
+    """Clear Lidl's post-submit data dialog before taking the receipt proof.
+
+    The action is deliberately limited to a page where Lidl's positive
+    application receipt is already visible. It cannot accept a consent on an
+    unsubmitted application or on an unrelated page.
+    """
+    if not submission_receipt_visible(page):
+        return False
+    button = _confirmation_consent_button(page)
+    if button is None:
+        return True
+    print("  принимаю условия обработки данных на странице подтверждения Lidl")
+    try:
+        button.click(timeout=5000)
+    except Exception as exc:
+        print("  не удалось закрыть окно обработки данных Lidl:", str(exc)[:120])
+        return False
+
+    deadline = time.monotonic() + max(1.0, float(wait_seconds))
+    while time.monotonic() < deadline:
+        if not submission_receipt_visible(page):
+            page.wait_for_timeout(250)
+            continue
+        if _confirmation_consent_button(page) is None:
+            # Let the page finish its closing animation before the screenshot.
+            page.wait_for_timeout(350)
+            return True
+        page.wait_for_timeout(250)
+    return False
 
 
 def take_explicit_submit_request(page) -> bool:
@@ -950,9 +1001,11 @@ def submit(page, profile: dict, wait_seconds: float = 25.0) -> dict:
     deadline = time.monotonic() + max(5.0, float(wait_seconds))
     while time.monotonic() < deadline:
         if submission_receipt_visible(page):
+            proof_ready = prepare_submission_proof(page)
             return {"state": "submitted",
                     "message": "Lidl показал квитанцию о получении заявки.",
-                    "blockers": []}
+                    "blockers": [],
+                    "proof_ready": proof_ready}
         page.wait_for_timeout(500)
     return {
         "state": "no_receipt",

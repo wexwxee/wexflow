@@ -391,7 +391,13 @@ def _wait_until_closed(
                         _record_confirmed_submission(job_id)
                         _write_status(job_id, "submitted", result["message"])
                         _report_phone_status(job_id, "submitted", result["message"])
-                        _send_proof_to_chat(page, job_id)
+                        proof_ready = bool(result.get("proof_ready", True))
+                        if not proof_ready:
+                            proof_ready = lidl_apply.prepare_submission_proof(page)
+                        if proof_ready:
+                            _send_proof_to_chat(page, job_id)
+                        else:
+                            print("  пруф не отправлен: окно обработки данных Lidl не закрылось")
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
                     return
                 if result["state"] == "blocked":
@@ -429,7 +435,13 @@ def _wait_until_closed(
                     _record_confirmed_submission(job_id)
                     _write_status(job_id, "submitted", result["message"])
                     _report_phone_status(job_id, "submitted", result["message"])
-                    _send_proof_to_chat(page, job_id)
+                    proof_ready = bool(result.get("proof_ready", True))
+                    if not proof_ready:
+                        proof_ready = lidl_apply.prepare_submission_proof(page)
+                    if proof_ready:
+                        _send_proof_to_chat(page, job_id)
+                    else:
+                        print("  пруф не отправлен: окно обработки данных Lidl не закрылось")
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
                     return
                 if result["state"] == "blocked":
@@ -458,6 +470,7 @@ def _wait_until_closed(
             try:
                 from connectors import lidl_apply
                 if lidl_apply.submission_receipt_visible(page):
+                    proof_ready = lidl_apply.prepare_submission_proof(page)
                     recorded = _record_confirmed_submission(job_id)
                     _write_status(
                         job_id,
@@ -465,7 +478,10 @@ def _wait_until_closed(
                         "Lidl подтвердил получение заявки.",
                     )
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
-                    _send_proof_to_chat(page, job_id)
+                    if proof_ready:
+                        _send_proof_to_chat(page, job_id)
+                    else:
+                        print("  пруф отложен: окно обработки данных Lidl не закрылось")
             except Exception:
                 pass
         time.sleep(1.0)

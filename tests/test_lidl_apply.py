@@ -225,12 +225,23 @@ def test_review_button_is_consumed_then_worker_clicks_native_lidl_button_once():
     playwright, browser, page = _page()
     try:
         page.set_content("""
-          <button id="nativeSubmit" onclick="
-            window.nativeClicks=(window.nativeClicks||0)+1;
-            document.body.insertAdjacentHTML('beforeend', '<p>Tak for din ansøgning</p>');
-          ">
-            Ansøg
-          </button>
+          <button id="nativeSubmit">Ansøg</button>
+          <script>
+            nativeSubmit.addEventListener('click', () => {
+              window.nativeClicks=(window.nativeClicks||0)+1;
+              document.body.insertAdjacentHTML(
+                'beforeend',
+                '<p>Tak for din ansøgning</p>'
+                + '<section id="data-dialog">'
+                + '<h2>Før vi går videre: Behandling af dine data.</h2>'
+                + '<button id="accept-data">ACCEPTER</button></section>'
+              );
+              document.getElementById('accept-data').addEventListener('click', () => {
+                window.consentClicks=(window.consentClicks||0)+1;
+                document.getElementById('data-dialog').remove();
+              });
+            });
+          </script>
         """)
         add_banner(page, 0, ["CV", "cover letter"], platform="Lidl EasyApply")
         assert lidl_apply.arm_explicit_submit(page) is True
@@ -252,7 +263,10 @@ def test_review_button_is_consumed_then_worker_clicks_native_lidl_button_once():
             wait_seconds=5,
         )
         assert result["state"] == "submitted"
+        assert result["proof_ready"] is True
         assert page.evaluate("() => window.nativeClicks || 0") == 1
+        assert page.evaluate("() => window.consentClicks || 0") == 1
+        assert page.locator("#data-dialog").count() == 0
         assert lidl_apply.submission_checkpoint(page)["submit_requested"] is False
     finally:
         browser.close()
@@ -267,6 +281,44 @@ def test_submission_is_confirmed_only_by_positive_lidl_receipt():
         page.set_content("<main>Tak for din ansøgning. Vi har modtaget din ansøgning.</main>")
         assert lidl_apply.submission_receipt_visible(page) is True
         page.set_content("<main>Спасибо за вашу заявку. Заявка получена.</main>")
+        assert lidl_apply.submission_receipt_visible(page) is True
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_confirmation_data_dialog_is_never_accepted_without_a_receipt():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <main>Din ansøgning er endnu ikke sendt.</main>
+          <button onclick="window.consentClicks=(window.consentClicks||0)+1">
+            ACCEPTER
+          </button>
+        """)
+        assert lidl_apply.prepare_submission_proof(page) is False
+        assert page.evaluate("() => window.consentClicks || 0") == 0
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_translated_confirmation_data_button_is_accepted_after_receipt():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <main>Спасибо за вашу заявку. Заявка получена.</main>
+          <section id="data-dialog">
+            <h2>Прежде чем продолжить: обработка ваших данных</h2>
+            <button onclick="
+              window.consentClicks=(window.consentClicks||0)+1;
+              document.getElementById('data-dialog').remove();
+            ">ПРИНЯТЬ</button>
+          </section>
+        """)
+        assert lidl_apply.prepare_submission_proof(page) is True
+        assert page.evaluate("() => window.consentClicks || 0") == 1
+        assert page.locator("#data-dialog").count() == 0
         assert lidl_apply.submission_receipt_visible(page) is True
     finally:
         browser.close()
