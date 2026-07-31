@@ -36,6 +36,7 @@ import form_questions
 import document_rules
 import document_import
 import credentials_store
+import lidl_credentials_store
 import lidl_followup
 import lidl_monitor
 import subscription
@@ -3886,6 +3887,75 @@ def connect_lidl_monitor(job_id: str, request: Request):
     )
 
 
+@app.post("/job/{job_id}/lidl-monitor/credentials")
+def save_lidl_monitor_credentials(
+    job_id: str,
+    request: Request,
+    lidl_email: str = Form(""),
+    lidl_password: str = Form(""),
+):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+    if not job or job.source != "lidl" or not job.applied_at:
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error="Сохранение входа доступно после подачи заявки Lidl.",
+        )
+    email = str(lidl_email or "").strip()
+    existing = lidl_credentials_store.status()
+    if not email or "@" not in email:
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error="Укажи email, с которым создан кандидатский профиль Lidl.",
+        )
+    if not lidl_password and not existing.get("has_password"):
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error="Введи пароль Lidl. Он будет зашифрован Windows DPAPI.",
+        )
+    try:
+        lidl_credentials_store.save(email, lidl_password)
+    except Exception as exc:  # noqa: BLE001
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            error=f"Не удалось зашифровать вход Lidl: {str(exc)[:140]}",
+        )
+    if lidl_monitor.is_busy():
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            notice=(
+                "Логин Lidl сохранён и зашифрован. Закрой прежнее окно входа, "
+                "затем нажми «Подключить кабинет»."
+            ),
+        )
+    lidl_monitor.set_enabled(True)
+    if _launch_lidl_monitor_worker("login"):
+        return _redirect_back(
+            request, f"/job/{job_id}",
+            notice="Вход Lidl сохранён. WexFlow выполняет безопасный автовход и первую проверку.",
+        )
+    return _redirect_back(
+        request, f"/job/{job_id}",
+        notice="Вход Lidl сохранён. Нажми «Подключить кабинет», чтобы начать мониторинг.",
+    )
+
+
+@app.post("/job/{job_id}/lidl-monitor/credentials/clear")
+def clear_lidl_monitor_credentials(job_id: str, request: Request):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+    if not job or job.source != "lidl":
+        return _redirect_back(request, f"/job/{job_id}", error="Вакансия Lidl не найдена.")
+    lidl_credentials_store.clear()
+    return _redirect_back(
+        request, f"/job/{job_id}",
+        notice=(
+            "Сохранённые email и пароль Lidl удалены. Уже открытая браузерная "
+            "сессия остаётся активной до выхода из кабинета."
+        ),
+    )
+
+
 @app.post("/job/{job_id}/lidl-monitor/check")
 def check_lidl_monitor(job_id: str, request: Request):
     with get_session() as session:
@@ -6142,6 +6212,9 @@ def detail(request: Request, job_id: str, trerror: str = ""):
                 str(resolved_profile.get("email") or ""),
             )
             lidl_post_apply["monitor"] = lidl_monitor.view()
+            lidl_post_apply["credentials"] = lidl_credentials_store.status(
+                str(resolved_profile.get("email") or "")
+            )
     return templates.TemplateResponse(
         "detail.html", {
             "request": request,

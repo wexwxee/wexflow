@@ -68,10 +68,21 @@
   .lidl-monitor-dot.busy { background:var(--warn-txt); box-shadow:0 0 0 4px var(--warn-bg); }
   .lidl-monitor-dot.err { background:var(--err-txt); box-shadow:0 0 0 4px var(--err-bg); }
   .lidl-monitor-actions { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; }
+  .lidl-login { margin:12px 0 9px; padding:12px 13px; border:1px solid var(--glass-line);
+      border-radius:11px; background:var(--card-2); }
+  .lidl-login summary { cursor:pointer; font-weight:750; color:var(--txt-strong); }
+  .lidl-login-grid { display:grid; grid-template-columns:minmax(220px,1fr) minmax(220px,1fr);
+      gap:10px; margin-top:12px; }
+  .lidl-login label { display:grid; gap:5px; color:var(--muted); font-size:12px; font-weight:700; }
+  .lidl-login input { width:100%; }
+  .lidl-login-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
   .lidl-flow { margin-top:14px; padding-top:13px; border-top:1px solid var(--glass-line); }
   .lidl-flow summary { cursor:pointer; font-weight:750; color:var(--txt-strong); }
   .lidl-flow ol { margin:10px 0 2px 20px; padding:0; color:var(--muted); line-height:1.55; }
-  @media(max-width:640px) { .lidl-monitor { align-items:flex-start; flex-direction:column; } }
+  @media(max-width:640px) {
+    .lidl-monitor { align-items:flex-start; flex-direction:column; }
+    .lidl-login-grid { grid-template-columns:1fr; }
+  }
 </style>
 {% endblock %}
 
@@ -164,6 +175,46 @@
       </div>
 
       {% set mon = lidl_post_apply.monitor %}
+      {% set lidl_creds = lidl_post_apply.credentials %}
+      <details class="lidl-login" {{ 'open' if not lidl_creds.has_password }}>
+        <summary>
+          Вход в кабинет Lidl ·
+          <span style="color:{{ 'var(--ok-txt)' if lidl_creds.has_password else 'var(--warn-txt)' }};">
+            {{ 'email и пароль сохранены' if lidl_creds.has_password else 'нужно сохранить пароль' }}
+          </span>
+        </summary>
+        <form method="post" action="/job/{{ job.id }}/lidl-monitor/credentials">
+          <div class="lidl-login-grid">
+            <label>Email кандидатского профиля
+              <input type="email" name="lidl_email" value="{{ lidl_creds.email or '' }}"
+                     autocomplete="username" placeholder="email для входа в Lidl" required>
+            </label>
+            <label>Пароль Lidl
+              <div class="pwd-wrap">
+                <input id="lidlMonitorPassword" type="password" name="lidl_password" value=""
+                       autocomplete="current-password"
+                       placeholder="{{ '•••••••• сохранён — оставь пустым, чтобы не менять' if lidl_creds.has_password else 'пароль от кабинета Lidl' }}">
+                <button type="button" class="pwd-eye" id="lidlMonitorPasswordToggle"
+                        title="Показать пароль">{{ ic.i('eye', 16) }}</button>
+              </div>
+            </label>
+          </div>
+          <div class="lidl-login-actions">
+            <button class="primary" type="submit">Сохранить и подключить</button>
+            <small style="color:var(--muted);line-height:1.4;">
+              Пароль шифруется Windows DPAPI и работает только в твоём аккаунте Windows на этом компьютере.
+            </small>
+          </div>
+        </form>
+        {% if lidl_creds.email or lidl_creds.has_password %}
+        <form method="post" action="/job/{{ job.id }}/lidl-monitor/credentials/clear"
+              style="margin-top:8px;"
+              onsubmit="return confirm('Удалить сохранённые email и пароль Lidl?')">
+          <button class="secondary" type="submit">Удалить сохранённый вход</button>
+        </form>
+        {% endif %}
+      </details>
+
       <div class="lidl-monitor">
         <div class="lidl-monitor-copy">
           <span class="lidl-monitor-state">
@@ -172,8 +223,8 @@
           </span>
           <small>
             WexFlow раз в 3 часа проверяет только раздел «Søgte jobs» и пишет в Telegram,
-            если Lidl изменил статус. Пароль не сохраняется: вход остаётся в отдельном
-            локальном профиле браузера.
+            если Lidl изменил статус. Сохранённый пароль зашифрован Windows DPAPI,
+            а сессия входа находится в отдельном локальном профиле браузера.
             {% if mon.last_success_at %}<br>Последняя успешная проверка: {{ mon.last_success_at }}.{% endif %}
             {% if mon.last_error %}<br><span style="color:var(--warn-txt);">{{ mon.last_error }}</span>{% endif %}
           </small>
@@ -199,7 +250,7 @@
       <div class="lidl-monitor">
         <div class="lidl-monitor-copy">
           <b>Telegram‑сопровождение {{ 'включено' if lidl_post_apply.reminders else 'выключено' }}</b>
-          <small>Бот напомнит проверить профиль, «Søgte jobs», онлайн‑тест, почту и звонки через 3, 7 и 14 дней. Он не читает письма и не хранит пароль Lidl.</small>
+          <small>Бот напомнит проверить профиль, «Søgte jobs», онлайн‑тест, почту и звонки через 3, 7 и 14 дней. Он не читает письма и не получает сохранённый пароль Lidl.</small>
         </div>
         <form method="post" action="/job/{{ job.id }}/lidl-followup/reminders">
           <button class="{{ 'secondary' if lidl_post_apply.reminders else 'primary' }}" type="submit"
@@ -237,6 +288,18 @@
         setTimeout(function () { location.reload(); }, 3000);
       </script>
       {% endif %}
+      <script>
+        (function () {
+          var password = document.getElementById('lidlMonitorPassword');
+          var toggle = document.getElementById('lidlMonitorPasswordToggle');
+          if (!password || !toggle) return;
+          toggle.addEventListener('click', function () {
+            var show = password.type === 'password';
+            password.type = show ? 'text' : 'password';
+            toggle.title = show ? 'Скрыть пароль' : 'Показать пароль';
+          });
+        })();
+      </script>
     </section>
     {% endif %}
     {% if job.source == 'lidl' and selected_documents %}

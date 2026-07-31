@@ -321,6 +321,61 @@ def _body(page) -> tuple[str, bool]:
     return text, has_password
 
 
+def _first_visible(page, selectors: tuple[str, ...]):
+    for selector in selectors:
+        try:
+            locator = page.locator(selector).first
+            if locator.count() and locator.is_visible():
+                return locator
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _try_saved_login(page) -> bool:
+    """Fill and submit Lidl login using DPAPI-protected local credentials."""
+    import lidl_credentials_store
+
+    credentials = lidl_credentials_store.get()
+    email = str(credentials.get("email") or "").strip()
+    password = str(credentials.get("password") or "")
+    if not email or not password:
+        return False
+    username = _first_visible(page, (
+        "input[type=email]",
+        "input[name*=username i]",
+        "input[id*=username i]",
+        "input[name*=email i]",
+        "input[id*=email i]",
+        "input[type=text]",
+    ))
+    password_input = _first_visible(page, ("input[type=password]",))
+    if username is None or password_input is None:
+        return False
+    try:
+        username.fill(email)
+        password_input.fill(password)
+        submit = _first_visible(page, (
+            "button[type=submit]",
+            "input[type=submit]",
+            "button:has-text('Log på')",
+            "button:has-text('Login')",
+            "button:has-text('Sign in')",
+        ))
+        if submit is None:
+            password_input.press("Enter")
+        else:
+            submit.click()
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=15_000)
+        except Exception:  # noqa: BLE001
+            pass
+        page.wait_for_timeout(1800)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _open_applied_jobs(page) -> None:
     for selector in (
         "text=/Søgte jobs/i",
@@ -351,6 +406,7 @@ def run_login(max_seconds: int = 600) -> bool:
                 context = _launch_context(playwright, headless=False)
                 try:
                     page = _portal_page(context)
+                    _try_saved_login(page)
                     deadline = time.monotonic() + max(30, int(max_seconds))
                     while time.monotonic() < deadline:
                         if page.is_closed():
@@ -450,12 +506,19 @@ def run_check() -> bool:
                     page = _portal_page(context)
                     text, has_password = _body(page)
                     if not is_logged_in(text, has_password):
-                        save_state(
-                            connected=False,
-                            phase="needs_login",
-                            last_error="Сессия Lidl закончилась — нужно войти снова.",
-                        )
-                        return False
+                        attempted = _try_saved_login(page)
+                        text, has_password = _body(page)
+                        if not is_logged_in(text, has_password):
+                            save_state(
+                                connected=False,
+                                phase="needs_login",
+                                last_error=(
+                                    "Автовход Lidl не удался — проверь сохранённый email и пароль."
+                                    if attempted else
+                                    "Сессия Lidl закончилась — сохрани логин или войди снова."
+                                ),
+                            )
+                            return False
                     _open_applied_jobs(page)
                     text, _ = _body(page)
                 finally:
