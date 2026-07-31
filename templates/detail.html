@@ -32,6 +32,39 @@
   .st.cur { background:var(--ok-bg); border-color:var(--ok-line); color:var(--ok-txt); }
   .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--glass-line); }
   .detail-brand { margin:18px 0 12px; }
+  .lidl-after { margin:18px 0; padding:18px; border:1px solid rgba(0,92,169,.55);
+    border-radius:14px; background:linear-gradient(145deg,rgba(0,92,169,.12),var(--card) 45%); }
+  .lidl-after-head { display:flex; align-items:flex-start; justify-content:space-between;
+    gap:14px; flex-wrap:wrap; margin-bottom:12px; }
+  .lidl-after h2 { margin:0 0 4px; font-size:20px; }
+  .lidl-after p { margin:0; line-height:1.5; }
+  .lidl-kicker { color:var(--ok-txt); font-size:12px; font-weight:800; text-transform:uppercase;
+    letter-spacing:.055em; }
+  .lidl-steps { display:grid; gap:8px; margin:14px 0; }
+  .lidl-step-form { margin:0; }
+  .lidl-step { width:100%; display:grid; grid-template-columns:28px 1fr; gap:10px;
+    align-items:start; padding:11px 12px; text-align:left; color:var(--txt);
+    border:1px solid var(--glass-line); border-radius:11px; background:var(--glass);
+    cursor:pointer; }
+  .lidl-step:hover { border-color:rgba(0,92,169,.85); }
+  .lidl-step.auto { cursor:default; }
+  .lidl-check { display:grid; place-items:center; width:23px; height:23px; margin-top:1px;
+    border:2px solid var(--muted); border-radius:7px; color:transparent; font-weight:900; }
+  .lidl-step.done { border-color:var(--ok-line); background:var(--ok-bg); }
+  .lidl-step.done .lidl-check { border-color:var(--ok-txt); background:var(--ok-txt); color:#06150b; }
+  .lidl-step b { display:block; margin-bottom:2px; color:var(--txt-strong); font-size:14px; }
+  .lidl-step small { display:block; color:var(--muted); font-size:12.5px; line-height:1.45; }
+  .lidl-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 16px; }
+  .lidl-actions a { text-decoration:none; }
+  .lidl-monitor { display:flex; justify-content:space-between; gap:14px; align-items:center;
+    padding:13px; border:1px solid var(--glass-line); border-radius:11px; background:var(--card-2); }
+  .lidl-monitor-copy { min-width:0; }
+  .lidl-monitor-copy b { display:block; margin-bottom:3px; }
+  .lidl-monitor-copy small { display:block; color:var(--muted); line-height:1.4; }
+  .lidl-flow { margin-top:14px; padding-top:13px; border-top:1px solid var(--glass-line); }
+  .lidl-flow summary { cursor:pointer; font-weight:750; color:var(--txt-strong); }
+  .lidl-flow ol { margin:10px 0 2px 20px; padding:0; color:var(--muted); line-height:1.55; }
+  @media(max-width:640px) { .lidl-monitor { align-items:flex-start; flex-direction:column; } }
 </style>
 {% endblock %}
 
@@ -86,6 +119,80 @@
         {% endif %}
       </form>
     </div>
+    {% endif %}
+    {% if lidl_post_apply %}
+    <section class="lidl-after">
+      <div class="lidl-after-head">
+        <div>
+          <div class="lidl-kicker">После подачи · Lidl Danmark</div>
+          <h2>Что делать дальше</h2>
+          <p>Заявка уже отправлена. Теперь Lidl ведёт процесс через письма и кандидатский кабинет.</p>
+        </div>
+        <span class="badge" style="border-color:var(--ok-line);color:var(--ok-txt);">{{ ic.i('check', 12) }} заявка получена</span>
+      </div>
+
+      <div class="lidl-steps">
+        {% for step in lidl_post_apply.steps %}
+          {% if step.automatic %}
+          <div class="lidl-step done auto">
+            <span class="lidl-check">✓</span>
+            <span><b>{{ step.title }}</b><small>{{ step.text }}</small></span>
+          </div>
+          {% else %}
+          <form class="lidl-step-form" method="post" action="/job/{{ job.id }}/lidl-followup/check">
+            <input type="hidden" name="step" value="{{ step.key }}">
+            <button class="lidl-step {{ 'done' if step.done }}" type="submit" name="done" value="{{ '0' if step.done else '1' }}">
+              <span class="lidl-check">✓</span>
+              <span><b>{{ step.title }}</b><small>{{ step.text }}</small></span>
+            </button>
+          </form>
+          {% endif %}
+        {% endfor %}
+      </div>
+
+      <div class="lidl-actions">
+        <a href="{{ lidl_post_apply.portal_url }}" target="_blank" rel="noopener"><button class="primary" type="button">{{ ic.i('link', 13) }} Открыть кабинет Lidl</button></a>
+        <a href="{{ lidl_post_apply.gmail_url }}" target="_blank" rel="noopener"><button class="secondary" type="button">{{ ic.i('message', 13) }} Найти письма Lidl</button></a>
+        <a href="{{ lidl_post_apply.recruitment_url }}" target="_blank" rel="noopener"><button class="secondary" type="button">Как проходит найм</button></a>
+      </div>
+
+      <div class="lidl-monitor">
+        <div class="lidl-monitor-copy">
+          <b>Telegram‑сопровождение {{ 'включено' if lidl_post_apply.reminders else 'выключено' }}</b>
+          <small>Бот напомнит проверить профиль, «Søgte jobs», онлайн‑тест, почту и звонки через 3, 7 и 14 дней. Он не читает письма и не хранит пароль Lidl.</small>
+        </div>
+        <form method="post" action="/job/{{ job.id }}/lidl-followup/reminders">
+          <button class="{{ 'secondary' if lidl_post_apply.reminders else 'primary' }}" type="submit"
+                  name="enabled" value="{{ '0' if lidl_post_apply.reminders else '1' }}">
+            {{ 'Выключить' if lidl_post_apply.reminders else 'Включить напоминания' }}
+          </button>
+        </form>
+      </div>
+
+      <details class="lidl-flow">
+        <summary>Какие этапы могут быть дальше</summary>
+        <ol>
+          <li><b>Screening:</b> Lidl проверяет CV и ответы по критериям вакансии.</li>
+          <li><b>Онлайн‑тест:</b> бывает не для всех вакансий; ссылка приходит отдельным письмом.</li>
+          <li><b>Телефонный разговор:</b> рекрутер может уточнить мотивацию, график и опыт.</li>
+          <li><b>Личное собеседование:</b> приглашение обычно подтверждают также по email.</li>
+          <li><b>Оффер → контракт → onboarding:</b> после предложения дополнительные данные заполняются в том же кабинете.</li>
+        </ol>
+        <p style="margin-top:8px;color:var(--muted);font-size:12.5px;">Lidl пишет, что старается завершить весь процесс не более чем за 6 недель, но этапы зависят от вакансии.</p>
+      </details>
+      <details class="lidl-flow">
+        <summary>Что находится в кандидатском кабинете</summary>
+        <ol>
+          <li><b>Ansøgningsdokumenter:</b> CV и остальные документы заявки.</li>
+          <li><b>Profiloplysninger:</b> контактные и личные данные профиля.</li>
+          <li><b>Indstillinger:</b> видимость профиля, кадровые резервы и настройки поиска.</li>
+          <li><b>Søgte jobs:</b> поданные вакансии, их статус и дальнейшие действия.</li>
+          <li><b>Gemte ansøgninger:</b> сохранённые, но ещё не отправленные заявки.</li>
+          <li>Там же можно подтвердить встречу, отозвать отдельную заявку или удалить профиль.</li>
+        </ol>
+        <p style="margin-top:8px;color:var(--warn-txt);font-size:12.5px;"><b>Важно:</b> не удаляй весь профиль, пока есть активные заявки Lidl. Данные и документы из последней заявки могут использоваться как основа для следующей — перед каждой новой подачей их стоит перепроверять.</p>
+      </details>
+    </section>
     {% endif %}
     {% if job.source == 'lidl' and selected_documents %}
     <div class="notice" style="margin-top:14px;">

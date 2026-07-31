@@ -123,6 +123,9 @@
           <span class="badge cf-manual" title="Отмечено вручную — WexFlow эту заявку не отправлял">вручную</span>
         {% endif %}
         {% if r.activity == 'submitted' %}<span class="badge st-{{ r.status }}">{{ st_ru.get(r.status, r.status) }}</span>{% endif %}
+        {% if r.activity == 'submitted' and r.source == 'lidl' %}
+          <span class="badge" title="Открыть чек‑лист писем, кабинета и следующих этапов Lidl">следующие шаги →</span>
+        {% endif %}
       </a>
       {% endfor %}
     {% endfor %}

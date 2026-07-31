@@ -36,6 +36,7 @@ import form_questions
 import document_rules
 import document_import
 import credentials_store
+import lidl_followup
 import subscription
 import account as account_mod
 import cloud_auth
@@ -2269,11 +2270,49 @@ def _handle_tg_remote_command(command: dict) -> str:
         return f"Команда не выполнена: {str(e)[:180]}"
 
 
+_lidl_followup_tick_lock = threading.Lock()
+
+
+def _lidl_followup_tick() -> None:
+    """Send only reminders explicitly enabled for submitted Lidl jobs."""
+    if not _lidl_followup_tick_lock.acquire(blocking=False):
+        return
+    try:
+        _lidl_followup_tick_unlocked()
+    finally:
+        _lidl_followup_tick_lock.release()
+
+
+def _lidl_followup_tick_unlocked() -> None:
+    if not _cloud_profile_enabled():
+        return
+    try:
+        with get_session() as session:
+            jobs = session.exec(select(Job).where(
+                Job.source == "lidl",
+                Job.status == "applied",
+                Job.applied_at.is_not(None),
+            )).all()
+        for reminder in lidl_followup.due_reminders(jobs):
+            if cloud_auth.send_digest(reminder["text"]):
+                lidl_followup.mark_sent(reminder["job_id"], reminder["code"])
+    except Exception as exc:  # noqa: BLE001
+        print("lidl-followup: напоминание не отправилось —", str(exc)[:140])
+
+
 @asynccontextmanager
 async def _lifespan(app):
     global _scheduler
     sched = BackgroundScheduler(daemon=True)
     sched.add_job(_sync_jobs, "interval", minutes=IDLE_SCAN_MIN, id="auto_sync")
+    sched.add_job(
+        _lidl_followup_tick,
+        "interval",
+        minutes=30,
+        id="lidl_followup",
+        max_instances=1,
+        coalesce=True,
+    )
     sched.start()
     _scheduler = sched
     _reschedule_autopilot_scan()  # подстроить интервал под текущее состояние автопилота
@@ -2295,6 +2334,7 @@ async def _lifespan(app):
         # Если база свежая, всё равно сразу проверим Telegram-очередь:
         # пользователь запустил приложение и ожидает уведомления без ожидания интервала.
         threading.Thread(target=_tg_offer_tick, daemon=True).start()
+    threading.Thread(target=_lidl_followup_tick, daemon=True).start()
     yield
     _tg_stop.set()
     try:
@@ -3711,6 +3751,47 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
     if status == "applied":
         applications.record_submitted([job])
     return _redirect_back(request, "/", notice=status_labels.get(status, "Статус вакансии обновлён."))
+
+
+@app.post("/job/{job_id}/lidl-followup/check")
+def set_lidl_followup_check(
+    job_id: str,
+    request: Request,
+    step: str = Form(...),
+    done: str = Form("1"),
+):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+    if not job or job.source != "lidl" or not job.applied_at:
+        return _redirect_back(
+            request, f"/job/{job_id}", error="Чек‑лист доступен после подачи заявки Lidl."
+        )
+    if not lidl_followup.set_check(job_id, step, done not in ("0", "false", "")):
+        return _redirect_back(request, f"/job/{job_id}", error="Неизвестный шаг Lidl.")
+    return _redirect_back(request, f"/job/{job_id}", notice="Чек‑лист Lidl обновлён.")
+
+
+@app.post("/job/{job_id}/lidl-followup/reminders")
+def set_lidl_followup_reminders(
+    job_id: str,
+    request: Request,
+    enabled: str = Form("0"),
+):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+    if not job or job.source != "lidl" or not job.applied_at:
+        return _redirect_back(
+            request, f"/job/{job_id}", error="Напоминания доступны после подачи заявки Lidl."
+        )
+    value = enabled not in ("0", "false", "")
+    lidl_followup.set_reminders(job_id, value)
+    if value:
+        threading.Thread(target=_lidl_followup_tick, daemon=True).start()
+    message = (
+        "Telegram‑напоминания Lidl включены."
+        if value else "Telegram‑напоминания Lidl выключены."
+    )
+    return _redirect_back(request, f"/job/{job_id}", notice=message)
 
 
 @app.post("/refresh")
@@ -5881,6 +5962,7 @@ def detail(request: Request, job_id: str, trerror: str = ""):
     maps_url = _maps_url(job, home) if job else ""
     facts = _job_facts(job, distance) if job else []
     selected_documents = {}
+    lidl_post_apply = None
     if job:
         resolved_profile = document_rules.resolve_profile(
             profile_store.load_profile(),
@@ -5923,6 +6005,11 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             label for label, value in required_profile.items()
             if not str(value or "").strip()
         ]
+        if job.source == "lidl" and job.applied_at:
+            lidl_post_apply = lidl_followup.view(
+                job,
+                str(resolved_profile.get("email") or ""),
+            )
     return templates.TemplateResponse(
         "detail.html", {
             "request": request,
@@ -5933,6 +6020,7 @@ def detail(request: Request, job_id: str, trerror: str = ""):
                 if job and job.source != "salling" else ""
             ),
             "selected_documents": selected_documents,
+            "lidl_post_apply": lidl_post_apply,
             "distance": distance,
             "has_home": bool(home),
             "maps_url": maps_url,
