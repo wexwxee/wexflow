@@ -1430,6 +1430,30 @@ def _autopilot_reason() -> str:
         return ""
 
 
+_questions_sync_hash = ""
+
+
+def _sync_questions_to_cloud(force: bool = False) -> bool:
+    """Банк вопросов анкет — в облако, чтобы отвечать и с телефона.
+
+    Шлём только при изменении: вопросы появляются редко, а лимит Upstash общий.
+    """
+    global _questions_sync_hash
+    if not _cloud_profile_enabled():
+        return False
+    try:
+        items = form_questions.cloud_payload()
+        digest = _sync_digest(items)
+        if not force and digest == _questions_sync_hash:
+            return False
+        if cloud_auth.report_questions(items):
+            _questions_sync_hash = digest
+            return True
+    except Exception as e:  # noqa: BLE001 — синк не должен ронять опрос
+        print(f"questions-sync: ошибка — {e}")
+    return False
+
+
 def _sync_filters_to_cloud(force: bool = False) -> bool:
     """Панель Mini App показывает и меняет фильтры первого набора. Шлём текущие
     значения + варианты (категории/сети со счётчиками), чтобы панель ничего не
@@ -1609,6 +1633,7 @@ def _tg_poller_loop() -> None:
                 _sync_jobs_to_cloud()     # фаза 2b: список подходящих вакансий в Mini App
                 _sync_job_texts_to_cloud()  # полные тексты вакансий для экрана детали в панели
                 _sync_filters_to_cloud()  # текущие фильтры + варианты для настройки с телефона
+                _sync_questions_to_cloud()  # вопросы анкет: на них отвечают и с телефона
                 for cmd in current_commands:
                     if _tg_remote_command_expired(cmd):
                         continue
@@ -2199,6 +2224,21 @@ def _handle_tg_remote_command(command: dict) -> str:
                 except Exception as e:  # noqa: BLE001 — перевод не должен ронять опрос
                     print(f"translate-on-demand: ошибка — {e}")
             return ""
+
+        if action == "answer_question":
+            # Ответ на вопрос анкеты, данный с телефона. Ничего не подаёт —
+            # просто кладёт ответ в банк, как кнопка «Да/Нет» в приложении.
+            key = str(command.get("questionKey") or "").strip()
+            value = str(command.get("answer") or "").strip().lower()
+            if value not in {"yes", "no", ""}:
+                return "Ответ бывает только «да» или «нет»."
+            if not form_questions.set_answer(key, value):
+                return "Такого вопроса у меня нет — обнови список в панели."
+            _sync_questions_to_cloud(force=True)
+            left = form_questions.pending_count()
+            return ("✅ Ответ сохранён. "
+                    + (f"Осталось вопросов без ответа: {left}." if left
+                       else "Все вопросы закрыты — подача пойдёт до конца сама."))
 
         if action == "set_filters":
             # Настройка с телефона меняет только ЧТО ИЩЕМ (первый набор фильтров).
@@ -4184,11 +4224,9 @@ def questions_page(request: Request):
     неотвеченный вопрос останавливает автоматическую подачу. Ответил здесь
     один раз — дальше подставляется само.
     """
-    rows = form_questions.all_items()
     return templates.TemplateResponse("questions.html", {
         "request": request,
-        "pending": [r for r in rows if not r.get("answer")],
-        "answered": [r for r in rows if r.get("answer")],
+        "stores": form_questions.by_store(),
     })
 
 
@@ -4200,6 +4238,9 @@ async def questions_answer(request: Request):
     if value not in {"yes", "no", ""}:
         return JSONResponse({"ok": False, "error": "ответ бывает только да/нет"}, status_code=400)
     ok = form_questions.set_answer(key, value)
+    if ok:
+        threading.Thread(target=_sync_questions_to_cloud, kwargs={"force": True},
+                         daemon=True, name="questions-sync").start()
     return JSONResponse({"ok": ok, "pending": form_questions.pending_count()})
 
 

@@ -325,7 +325,9 @@ def fill_answers(page, profile: dict) -> dict:
                 }
                 for group in _radio_groups(page)
             ],
-            source="lidl",
+            source=str(profile.get("_job_source") or "lidl"),
+            store_label=str(profile.get("_job_brand") or "Lidl"),
+            role_kind=str(profile.get("_job_role_kind") or "regular"),
             job_title=str(profile.get("_job_title") or ""),
         )
     except Exception:

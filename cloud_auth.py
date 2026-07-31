@@ -558,6 +558,19 @@ def report_applied(items, timeout: int = 8) -> bool:
     return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
 
 
+def report_questions(items, timeout: int = 8) -> bool:
+    """Отправить в облако банк вопросов анкет — чтобы на них можно было
+    ответить и с телефона. Ответ возвращается командой answer_question;
+    сама подача от этого не запускается."""
+    payload = {
+        "kind": "questions_sync",
+        "deviceId": device_id(),
+        "profileId": active_profile_id(),
+        "questions": list(items or [])[:60],
+    }
+    return bool(_post_json("/api/decisions", payload, timeout).get("ok"))
+
+
 def report_jobs(items, timeout: int = 12) -> bool:
     """Отправить в облако текущий список вакансий для главной вкладки Mini App
     (подходящие + ближайшие активные, как на главном экране приложения). Это не

@@ -43,12 +43,16 @@ def test_apply_mode_defaults_to_auto_and_switches(client):
 def test_questions_page_shows_pending_and_saves_answer(client):
     form_questions.record(
         [{"text": "Er du villig til at arbejde hver 2. weekend?", "options": ["Ja", "Nej"]}],
-        source="lidl", job_title="Butiksassistent - Herlev",
+        source="lidl", store_label="Lidl", role_kind="regular",
+        job_title="Butiksassistent - Herlev",
     )
     page = client.get("/questions")
     assert page.status_code == 200
+    # вопрос виден в оригинале, с переводом и под своим магазином
     assert "Er du villig til at arbejde hver 2. weekend?" in page.text
-    assert "Ждут ответа" in page.text
+    assert "Готов(а) работать каждые вторые выходные?" in page.text
+    assert "Lidl" in page.text
+    assert "ждут ответа" in page.text
 
     key = form_questions.all_items()[0]["key"]
     saved = client.post("/questions/answer", data={"key": key, "value": "yes"})

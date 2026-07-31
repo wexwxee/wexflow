@@ -112,7 +112,21 @@ def load_profile_for_job(job_id: str = "") -> dict:
         with get_session() as session:
             job = session.get(Job, wanted)
         if job is not None:
-            return document_rules.resolve_profile(profile, job)
+            resolved = document_rules.resolve_profile(profile, job)
+            # Контекст вакансии для банка вопросов: у какого магазина спросили и
+            # рядовая это роль или руководящая (у руководящих вопросы свои).
+            try:
+                import labels
+
+                resolved["_job_title"] = job.title or ""
+                resolved["_job_source"] = job.source or "salling"
+                resolved["_job_brand"] = (labels.brand(job.brand) if job.brand
+                                          else (job.source or "").title())
+                resolved["_job_role_kind"] = ("lead" if labels.is_leadership(job.title or "")
+                                              else "regular")
+            except Exception:  # noqa: BLE001 — подпись магазина не критична
+                pass
+            return resolved
     except Exception as exc:
         print("  не удалось выбрать персональный комплект документов:", str(exc)[:120])
     return profile

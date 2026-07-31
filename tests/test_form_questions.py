@@ -62,3 +62,46 @@ def test_broken_file_does_not_crash_the_bank(bank):
     form_questions.path().write_text("{это не json", encoding="utf-8")
     assert form_questions.all_items() == []
     assert form_questions.record([{"text": "Kan du arbejde om aftenen?"}]) == 1
+
+
+def test_questions_are_grouped_by_store_and_role(bank):
+    """Магазинов много, а у руководящих ролей анкета своя — группы отдельные."""
+    form_questions.record(
+        [{"text": "Har du erfaring med (detail) branchen?", "options": ["Ja", "Nej"]}],
+        source="lidl", store_label="Lidl", role_kind="regular", job_title="Butiksassistent",
+    )
+    form_questions.record(
+        [{"text": "Har du erfaring med ledelse?", "options": ["Ja", "Nej"]}],
+        source="lidl", store_label="Lidl", role_kind="lead", job_title="Souschef",
+    )
+    form_questions.record(
+        [{"text": "Er du villig til at arbejde hver 2. weekend?"}],
+        source="salling", store_label="Netto", role_kind="regular",
+    )
+    stores = {group["label"]: group for group in form_questions.by_store()}
+    assert set(stores) == {"Lidl", "Netto"}
+    assert len(stores["Lidl"]["items"]) == 1
+    assert len(stores["Lidl"]["lead_items"]) == 1
+    assert stores["Lidl"]["pending"] == 2
+    assert stores["Netto"]["total"] == 1
+
+
+def test_danish_questions_get_a_russian_reading(bank):
+    assert form_questions.translate_ru("Kan du møde kl 06.00 om morgenen?") == \
+        "Можешь выходить к 06:00 утра?"
+    assert form_questions.translate_ru("Kan du begå dig ubesværet på dansk?") == \
+        "Свободно ли ты общаешься на датском?"
+    # незнакомую фразу с известным словом объясняем хотя бы в общем
+    assert "выходны" in form_questions.translate_ru("Vil du tage en ekstra weekendvagt?").lower()
+    # совсем незнакомое не выдумываем
+    assert form_questions.translate_ru("Hvilken farve er din bil?") == ""
+
+
+def test_cloud_payload_carries_translation_and_store(bank):
+    form_questions.record([{"text": "Kan du møde kl 06.00 om morgenen?"}],
+                          source="lidl", store_label="Lidl", role_kind="lead")
+    row = form_questions.cloud_payload()[0]
+    assert row["store"] == "Lidl"
+    assert row["lead"] is True
+    assert row["textRu"] == "Можешь выходить к 06:00 утра?"
+    assert row["answer"] == ""
