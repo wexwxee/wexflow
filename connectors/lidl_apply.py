@@ -654,10 +654,16 @@ def required_left(page) -> list[str]:
         return []
 
 
-_SUBMIT_TEXT_RE = re.compile(r"^\s*(Ansøg|Send ansøgning)\s*$", re.I)
+_SUBMIT_TEXT_RE = re.compile(
+    r"^\s*(Ansøg|Send ansøgning|Apply|Submit application|"
+    r"Применять|Подать заявку|Отправить заявку)\s*$",
+    re.I,
+)
 _RECEIPT_RE = re.compile(
     r"(tak\s+for\s+din\s+ansøgning|ansøgning(?:en)?\s+er\s+modtaget|"
-    r"vi\s+har\s+modtaget\s+din\s+ansøgning|tak\s+for\s+din\s+interesse)",
+    r"vi\s+har\s+modtaget\s+din\s+ansøgning|tak\s+for\s+din\s+interesse|"
+    r"thank\s+you\s+for\s+your\s+application|application\s+(?:has\s+been\s+)?received|"
+    r"спасибо\s+за\s+(?:вашу|твою)\s+заявку|заявк[ау]\s+(?:была\s+)?получен[ао])",
     re.I,
 )
 
@@ -703,8 +709,58 @@ def submission_receipt_visible(page) -> bool:
     return bool(_RECEIPT_RE.search(text or ""))
 
 
+def take_explicit_submit_request(page) -> bool:
+    """Atomically consume the review-card request for a trusted Playwright click."""
+    try:
+        return bool(page.evaluate(
+            """() => {
+                if (!window.__wexflowSubmitRequested) return false;
+                window.__wexflowSubmitRequested = 0;
+                return true;
+            }"""
+        ))
+    except Exception:
+        return False
+
+
+def show_explicit_submit_result(page, state: str, message: str) -> None:
+    """Show a browser-action result inside the review card, without hidden dialogs."""
+    try:
+        page.evaluate(
+            """([state, message]) => {
+                const host = document.getElementById('wexflow-banner');
+                const root = host && host.shadowRoot;
+                const action = root && root.getElementById('wexflow-real-submit');
+                const note = root && root.getElementById('wexflow-submit-note');
+                if (!action || !note) return;
+                note.textContent = message || '';
+                if (state === 'blocked') {
+                    action.disabled = false;
+                    action.textContent = 'Проверить и отправить снова';
+                    action.style.background = '#f5c542';
+                } else if (state === 'submitted') {
+                    action.disabled = true;
+                    action.textContent = 'Заявка отправлена';
+                    action.style.background = '#16d86b';
+                } else {
+                    action.disabled = true;
+                    action.textContent = 'Нужно проверить результат';
+                    action.style.background = '#f5c542';
+                }
+            }""",
+            [str(state or ""), str(message or "")],
+        )
+    except Exception:
+        pass
+
+
 def arm_explicit_submit(page) -> bool:
-    """Add a separate WexFlow final action that clicks Lidl only after confirmation."""
+    """Add a review-card action consumed by the Playwright worker.
+
+    A DOM ``button.click()`` is not trusted by SAP UI5 and can silently do
+    nothing.  The card therefore emits a local signal; the worker consumes it
+    and performs the native Lidl click through Playwright.
+    """
     if _submit_button(page) is None:
         return False
     try:
@@ -723,27 +779,15 @@ def arm_explicit_submit(page) -> bool:
                     + 'background:#16d86b;color:#07170d;font:800 14px/1.2 Inter,Segoe UI,sans-serif;'
                     + 'white-space:normal;cursor:pointer;';
                 const note = document.createElement('div');
+                note.id = 'wexflow-submit-note';
                 note.textContent =
-                    'Проверит готовность и завершит подачу в этом же окне.';
+                    'Проверит готовность и отправит заявку настоящей кнопкой Lidl.';
                 note.style.cssText = 'margin-bottom:8px;color:#ffcf70;font-size:12px;line-height:1.35;';
                 action.addEventListener('click', () => {
-                    const buttons = [...document.querySelectorAll('button')];
-                    const nativeButton = buttons.find(button =>
-                        /^(Ansøg|Send ansøgning)$/i.test((button.innerText || '').trim()));
-                    if (!nativeButton || nativeButton.disabled
-                            || nativeButton.getAttribute('aria-disabled') === 'true') {
-                        alert('Форма Lidl ещё не готова: заполни обязательные поля и вопросы.');
-                        return;
-                    }
-                    if (!confirm(
-                        'Отправить эту заявку в Lidl сейчас? Нажимая «Ansøg», ты принимаешь '
-                        + 'условия Lidl и подтверждаешь ознакомление с информацией о защите '
-                        + 'данных. После отправки отменить нельзя.'
-                    )) return;
                     window.__wexflowSubmitRequested = Date.now();
-                    nativeButton.click();
                     action.disabled = true;
-                    action.textContent = 'Отправляю…';
+                    action.textContent = 'Проверяю и отправляю…';
+                    note.textContent = 'Команда принята. WexFlow проверяет форму и нажимает кнопку Lidl…';
                 });
                 const actions = root.querySelector('.actions') || root.querySelector('.card');
                 actions?.append(note, action);
@@ -901,11 +945,7 @@ def submit(page, profile: dict, wait_seconds: float = 25.0) -> dict:
     if left:
         return {"state": "blocked", "message": "; ".join(left[:6]), "blockers": left}
     button = _submit_button(page)
-    try:
-        page.evaluate("() => { window.__wexflowSubmitRequested = Date.now(); }")
-    except Exception:
-        pass
-    print("  жму Ansøg — реальная отправка")
+    print("  жму финальную кнопку Lidl — реальная отправка")
     button.click()
     deadline = time.monotonic() + max(5.0, float(wait_seconds))
     while time.monotonic() < deadline:

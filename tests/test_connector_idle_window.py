@@ -131,6 +131,37 @@ def test_telegram_submit_finishes_the_open_lidl_form():
     proof.assert_called_once_with(page, "lidl:telegram-submit")
 
 
+def test_review_card_submit_signal_uses_worker_and_records_receipt():
+    from connectors import lidl_apply
+
+    page = _Page(activity_ms=1_000_000)
+    ctx = _PersistentContext(page)
+    profile = {"first_name": "Ivan"}
+    result = {"state": "submitted", "message": "Lidl принял заявку."}
+    with mock.patch.object(lidl_apply, "take_explicit_submit_request", return_value=True), \
+            mock.patch.object(lidl_apply, "submit", return_value=result) as submit, \
+            mock.patch.object(lidl_apply, "show_explicit_submit_result") as show, \
+            mock.patch.object(apply_dispatch, "_record_confirmed_submission") as record, \
+            mock.patch.object(apply_dispatch, "_send_proof_to_chat") as proof, \
+            mock.patch.object(apply_dispatch, "_report_phone_status") as report, \
+            mock.patch.object(apply_dispatch, "_write_status") as status, \
+            mock.patch.object(apply_dispatch.time, "time", return_value=1001.0):
+        apply_dispatch._wait_until_closed(
+            ctx,
+            page=page,
+            platform="lidl_easy_apply",
+            job_id="lidl:review-submit",
+            profile=profile,
+        )
+
+    submit.assert_called_once_with(page, profile)
+    show.assert_called_once_with(page, "submitted", "Lidl принял заявку.")
+    record.assert_called_once_with("lidl:review-submit")
+    status.assert_called_once_with("lidl:review-submit", "submitted", "Lidl принял заявку.")
+    report.assert_called_once_with("lidl:review-submit", "submitted", "Lidl принял заявку.")
+    proof.assert_called_once_with(page, "lidl:review-submit")
+
+
 def test_prepared_connector_proof_requests_telegram_buttons():
     page = mock.Mock()
     with mock.patch.object(apply_dispatch, "_proof_to_chat") as proof:

@@ -371,6 +371,39 @@ def _wait_until_closed(
                 f"Окно закрыто после {int(idle_seconds // 60)} мин бездействия.",
             )
             return
+        if platform == "lidl_easy_apply" and page is not None:
+            try:
+                from connectors import lidl_apply
+
+                browser_requested = lidl_apply.take_explicit_submit_request(page)
+            except Exception:
+                browser_requested = False
+            if browser_requested:
+                print("  подтверждение в окне — отправляю заявку Lidl доверенным кликом")
+                result = lidl_apply.submit(page, profile or {})
+                lidl_apply.show_explicit_submit_result(
+                    page,
+                    result["state"],
+                    result["message"],
+                )
+                if result["state"] == "submitted":
+                    if job_id:
+                        _record_confirmed_submission(job_id)
+                        _write_status(job_id, "submitted", result["message"])
+                        _report_phone_status(job_id, "submitted", result["message"])
+                        _send_proof_to_chat(page, job_id)
+                    print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
+                    return
+                if result["state"] == "blocked":
+                    if job_id:
+                        _write_status(job_id, "needs_answers", result["message"])
+                    print("  Lidl не принял отправку:", result["message"])
+                else:
+                    if job_id:
+                        _write_status(job_id, "no_receipt", result["message"])
+                        _report_phone_status(job_id, "unconfirmed", result["message"])
+                    print("  кнопка нажата, но квитанция Lidl не найдена")
+
         if platform == "lidl_easy_apply" and page is not None and job_id:
             try:
                 import apply as _apply
