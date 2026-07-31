@@ -16,6 +16,7 @@ import sys
 import time
 
 import paths
+from connectors import site_contract
 
 for _s in (sys.stdout, sys.stderr):
     try:
@@ -192,6 +193,31 @@ def _proof_to_chat(page, job_id: str, prepared: bool) -> None:
         print("  скрин не ушёл в чат:", str(exc)[:120])
 
 
+def site_changed_banner(page, report: dict) -> None:
+    """Плашка прямо в окне: сайт изменился, подача остановлена, что делать."""
+    text = site_contract.human_message(report)
+    page.evaluate(
+        """(text) => {
+            const box = document.createElement('div');
+            box.style.cssText =
+                'position:fixed;z-index:2147483647;left:16px;right:16px;top:16px;margin:auto;'
+                + 'max-width:520px;background:#1b1e1f;color:#f4f6f7;border:1px solid #f5a623;'
+                + 'border-radius:14px;padding:14px 16px;font:14px/1.45 system-ui;'
+                + 'box-shadow:0 18px 50px rgba(0,0,0,.55);white-space:pre-line;';
+            box.textContent = 'WexFlow: ' + text;
+            const close = document.createElement('button');
+            close.textContent = 'Понятно';
+            close.style.cssText =
+                'margin-top:12px;padding:8px 14px;border:0;border-radius:9px;'
+                + 'background:#f5a623;color:#1b1200;font-weight:800;cursor:pointer;';
+            close.addEventListener('click', () => box.remove());
+            box.append(close);
+            document.body.append(box);
+        }""",
+        text,
+    )
+
+
 def _wait_until_closed(ctx, page=None, platform: str = "", job_id: str = "") -> None:
     recorded = False
     while True:
@@ -239,18 +265,55 @@ def run(
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             try:
                 prepare(page, url, profile, allow_submit=submit)
-                _write_status(
-                    job_id,
-                    "submit_ready" if submit else "ready",
-                    (
-                        "Заполни оставшиеся вопросы и нажми зелёную кнопку WexFlow "
-                        "для реальной отправки."
-                        if submit else
-                        "Форма подготовлена до финальной кнопки без отправки."
-                    ),
-                )
-                if not submit:
-                    _send_prepared_proof_to_chat(page, job_id)
+                # Полная подача Lidl: жмём сами, но только когда отвечать
+                # больше нечего. Иначе остаётся зелёная кнопка для человека.
+                done = False
+                if submit and key == "lidl_easy_apply":
+                    from connectors import lidl_apply
+
+                    result = lidl_apply.submit(page, profile)
+                    if result["state"] == "submitted":
+                        _record_confirmed_submission(job_id)
+                        _write_status(job_id, "submitted", result["message"])
+                        print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
+                        _send_proof_to_chat(page, job_id)
+                        done = True
+                    elif result["state"] == "no_receipt":
+                        _write_status(job_id, "no_receipt", result["message"])
+                        _send_prepared_proof_to_chat(page, job_id)
+                        done = True
+                    else:
+                        _write_status(
+                            job_id, "needs_answers",
+                            "Не хватает ответов для автоматической подачи: "
+                            + result["message"]
+                            + ". Открой «Профиль → Ответы для анкет» или ответь в окне сам.",
+                        )
+                        _send_prepared_proof_to_chat(page, job_id)
+                        done = True
+                if not done:
+                    _write_status(
+                        job_id,
+                        "submit_ready" if submit else "ready",
+                        (
+                            "Заполни оставшиеся вопросы и нажми зелёную кнопку WexFlow "
+                            "для реальной отправки."
+                            if submit else
+                            "Форма подготовлена до финальной кнопки без отправки."
+                        ),
+                    )
+                    if not submit:
+                        _send_prepared_proof_to_chat(page, job_id)
+            except site_contract.SiteChanged as changed:
+                # Работодатель переделал анкету: не заполняем, не жмём, честно
+                # объясняем человеку и оставляем окно открытым для ручной подачи.
+                message = site_contract.human_message(changed.report)
+                print("  ЗАЩИТА:", message.replace("\n", " "))
+                try:
+                    site_changed_banner(page, changed.report)
+                except Exception:
+                    pass
+                _write_status(job_id, "site_changed", site_contract.short_message(changed.report))
             except Exception as exc:
                 # Частичное заполнение лучше закрытого окна: человек сможет
                 # закончить неизвестную или изменившуюся форму вручную.

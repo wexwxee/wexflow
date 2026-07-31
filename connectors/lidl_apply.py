@@ -1,15 +1,25 @@
-"""Conservative filler for Lidl Denmark's SAP UI5 EasyApply form.
+"""Filler for Lidl Denmark's SAP UI5 EasyApply form.
 
-Only profile facts and documents are inserted. Screening answers, declarations,
-consents and profile visibility stay manual. The final submit can be armed as a
-separate, explicit action and is never triggered by preparation alone.
+Only profile facts, stored answers and documents are inserted — nothing is ever
+invented. Screening questions are answered from the profile answer bank
+(«Ответы для анкет»); a question with no stored answer stays empty and blocks
+the automatic submit instead of being guessed.
+
+Two safety gates before anything is typed or clicked:
+  * the form contract (connectors.site_contract) must still match — a redesigned
+    Lidl form stops the run with a human message instead of blind filling;
+  * the automatic submit runs only when every required answer is present and
+    Lidl's own button is enabled. Otherwise the armed green WexFlow button stays
+    for the human.
 """
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 
 import profile_store
+from connectors import site_contract
 from connectors.fill_common import add_banner, dismiss_cookies
 
 
@@ -199,6 +209,162 @@ def _screening_question_count(page) -> int:
         return 0
 
 
+# ── Ответы из профиля ──────────────────────────────────────────────────────
+# Вопрос анкеты узнаём по ключевым словам и отвечаем СОХРАНЁННЫМ ответом.
+# Не узнали вопрос или ответа нет — оставляем пустым: выдумывать за человека
+# нельзя, а незаполненный вопрос честно останавливает автоподачу.
+_QUESTION_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("work_night", re.compile(r"\bnat(?:tevagt|arbejde|hold)?\b", re.I)),
+    ("work_early", re.compile(r"\b0[3-7][.:]\d{2}\b|tidlig|morgen", re.I)),
+    ("work_evenings", re.compile(r"\baften\b|\b(?:19|20|21|22)[.:]\d{2}\b", re.I)),
+    ("work_weekends", re.compile(r"weekend|lørdag|søndag", re.I)),
+    ("has_drivers_license", re.compile(r"kørekort|driving licen[cs]e", re.I)),
+    ("retail_experience", re.compile(r"erfaring.*(?:detail|butik|retail)|"
+                                     r"(?:detail|butik|retail).*erfaring", re.I)),
+)
+
+_GENDER_LABELS = {
+    "male": ("Mand", "Male", "Mænd"),
+    "female": ("Kvinde", "Female", "Kvinder"),
+    "other": ("Andet", "Other", "Ønsker ikke at oplyse"),
+}
+
+_YES_RE = re.compile(r"^\s*(ja|yes)\s*$", re.I)
+_NO_RE = re.compile(r"^\s*(nej|no)\s*$", re.I)
+
+
+def question_answer(text: str, answers: dict) -> tuple[str, str]:
+    """(ключ ответа, «yes»/«no»/'') для текста вопроса анкеты."""
+    clean = str(text or "")
+    for key, rx in _QUESTION_RULES:
+        if rx.search(clean):
+            return key, str(answers.get(key) or "")
+    return "", ""
+
+
+def _radio_groups(page) -> list[dict]:
+    """Вопросы с Ja/Nej: текст вопроса + идентификаторы обеих кнопок.
+
+    Читаем структуру страницы одним проходом — так и быстрее, и не зависим от
+    того, как именно UI5 расставил вложенность в конкретном релизе.
+    """
+    try:
+        return page.evaluate(
+            """() => {
+                const out = [];
+                document.querySelectorAll('.sapMRbG, [role="radiogroup"]').forEach((group, i) => {
+                    const items = [...group.querySelectorAll('.sapMRb, [role="radio"]')];
+                    if (!items.length) return;
+                    let question = '';
+                    const labelled = group.getAttribute('aria-labelledby');
+                    if (labelled) {
+                        question = labelled.split(/\\s+/)
+                            .map(id => (document.getElementById(id) || {}).innerText || '')
+                            .join(' ').trim();
+                    }
+                    if (!question) {
+                        const row = group.closest('.sapUiFormElement, .sapMFlexBox, tr, div');
+                        question = row ? (row.innerText || '').trim() : '';
+                    }
+                    const options = items.map(item => ({
+                        id: item.id || '',
+                        text: (item.innerText || '').trim(),
+                        checked: item.getAttribute('aria-checked') === 'true'
+                            || Boolean(item.querySelector('input:checked')),
+                    }));
+                    out.push({ index: i, id: group.id || '', question, options });
+                });
+                return out;
+            }"""
+        )
+    except Exception:
+        return []
+
+
+def _click_option(page, option_id: str) -> bool:
+    if not option_id:
+        return False
+    try:
+        control = page.locator(f"#{option_id}")
+        if control.count() and control.is_visible():
+            control.click()
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def fill_answers(page, profile: dict) -> dict:
+    """Ответить на вопросы Lidl сохранёнными ответами человека.
+
+    Возвращает отчёт: что заполнено и какие вопросы остались без ответа
+    (по ним автоподача не пойдёт).
+    """
+    answers = profile_store.answers(profile)
+    filled: list[str] = []
+    unanswered: list[str] = []
+
+    gender_value = answers.get("gender") or ""
+    if gender_value:
+        for variant in _GENDER_LABELS.get(gender_value, ()):
+            if _select_ui5(page, "Køn", variant):
+                filled.append("пол")
+                break
+
+    start = str(answers.get("start_date") or "").strip()
+    if start:
+        parts = start.split("-")
+        human_date = f"{parts[2]}.{parts[1]}.{parts[0]}" if len(parts) == 3 else start
+        for label in ("startdato", "Startdato", "start"):
+            if _fill_labeled(page, label, human_date):
+                filled.append("дата выхода")
+                break
+
+    for group in _radio_groups(page):
+        question = str(group.get("question") or "").strip()
+        options = list(group.get("options") or [])
+        if any(option.get("checked") for option in options):
+            continue
+        yes = next((o for o in options if _YES_RE.match(str(o.get("text") or ""))), None)
+        no = next((o for o in options if _NO_RE.match(str(o.get("text") or ""))), None)
+        if not yes or not no:
+            continue                      # не «да/нет» — не наш случай, не трогаем
+        key, answer = question_answer(question, answers)
+        if not answer:
+            unanswered.append(question[:120] or "вопрос без подписи")
+            continue
+        target = yes if answer == "yes" else no
+        if _click_option(page, str(target.get("id") or "")):
+            filled.append(key)
+        else:
+            unanswered.append(question[:120] or "вопрос без подписи")
+
+    return {"filled": filled, "unanswered": unanswered}
+
+
+def required_left(page) -> list[str]:
+    """Что на форме ещё не заполнено из обязательного (глазами самой страницы)."""
+    try:
+        return page.evaluate(
+            """() => {
+                const left = [];
+                document.querySelectorAll('input[aria-required="true"], .sapMInputBaseRequired input')
+                    .forEach(input => {
+                        if (input.type === 'file' || input.disabled) return;
+                        if ((input.value || '').trim()) return;
+                        const id = input.getAttribute('aria-labelledby') || '';
+                        const label = id.split(/\\s+/)
+                            .map(x => (document.getElementById(x) || {}).innerText || '')
+                            .join(' ').trim();
+                        left.push(label || input.name || 'поле без подписи');
+                    });
+                return left.slice(0, 12);
+            }"""
+        ) or []
+    except Exception:
+        return []
+
+
 _SUBMIT_TEXT_RE = re.compile(r"^\s*(Ansøg|Send ansøgning)\s*$", re.I)
 _RECEIPT_RE = re.compile(
     r"(tak\s+for\s+din\s+ansøgning|ansøgning(?:en)?\s+er\s+modtaget|"
@@ -303,6 +469,15 @@ def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
     )
     dismiss_cookies(page)
 
+    # Защита: сверяем форму с контрактом ДО первого ввода. Lidl переделал
+    # анкету — ничего не заполняем и не жмём, человеку уходит понятный текст.
+    contract = site_contract.check(page, "lidl_easy_apply")
+    if not contract["ok"]:
+        print("  форма Lidl изменилась:", contract.get("short") or "")
+        raise site_contract.SiteChanged(contract)
+    if contract["warnings"]:
+        print("  предупреждение контракта:", ", ".join(contract["warnings"]))
+
     filled: list[str] = []
     fields = (
         ("Fornavn", profile.get("first_name"), "first_name"),
@@ -335,14 +510,15 @@ def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
                profile.get("cover_letter_path") or "", "cover"):
         filled.append("cover letter")
 
+    # Ответы для анкеты — из сохранённых ответов человека, ничего не выдумывая
+    answers_report = fill_answers(page, profile)
+    filled.extend(answers_report["filled"])
+
     questions = _screening_question_count(page)
-    missing = [
-        "пол (Køn)",
-        "ответы Lidl и дата выхода",
-        "видимость профиля",
-    ]
-    if questions:
-        missing.append(f"{questions} вопросов вакансии")
+    missing = list(answers_report["unanswered"])
+    missing.extend(required_left(page))
+    if not missing:
+        missing = ["ничего — анкета заполнена полностью"]
     add_banner(
         page,
         questions,
@@ -351,6 +527,9 @@ def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
         missing=missing,
     )
     checkpoint = submission_checkpoint(page)
+    checkpoint["unanswered"] = answers_report["unanswered"]
+    checkpoint["required_left"] = required_left(page)
+    checkpoint["filled"] = filled
     if allow_submit and checkpoint["reached_submit"]:
         checkpoint["submit_armed"] = arm_explicit_submit(page)
     else:
@@ -365,3 +544,73 @@ def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
     else:
         print("  ПРОВЕРКА БЕЗ ОТПРАВКИ — ответы, согласия и Ansøg оставлены тебе.")
     return checkpoint
+
+
+def blockers(page, profile: dict) -> list[str]:
+    """Почему автоматическая отправка сейчас невозможна. Пусто = можно жать.
+
+    Список читает человек, поэтому пункты — человеческим языком.
+    """
+    reasons: list[str] = []
+    answers = profile_store.answers(profile)
+    for key in ("first_name", "last_name", "email", "phone"):
+        if not str(profile.get(key) or "").strip():
+            reasons.append(f"в профиле нет поля: {key}")
+    for group in _radio_groups(page):
+        options = list(group.get("options") or [])
+        if any(option.get("checked") for option in options):
+            continue
+        question = str(group.get("question") or "").strip()
+        yes = any(_YES_RE.match(str(o.get("text") or "")) for o in options)
+        no = any(_NO_RE.match(str(o.get("text") or "")) for o in options)
+        if not (yes and no):
+            reasons.append("вопрос анкеты не «да/нет»: " + (question[:80] or "без подписи"))
+            continue
+        key, answer = question_answer(question, answers)
+        if not answer:
+            reasons.append("нет сохранённого ответа: " + (question[:80] or "вопрос без подписи"))
+    reasons.extend("не заполнено обязательное поле: " + name for name in required_left(page))
+    button = _submit_button(page)
+    if button is None:
+        reasons.append("кнопка Ansøg не найдена")
+    else:
+        try:
+            if not button.is_enabled():
+                reasons.append("Lidl держит кнопку Ansøg неактивной")
+        except Exception:
+            reasons.append("не удалось проверить кнопку Ansøg")
+    # дубли не нужны: человеку важен список причин, а не их количество
+    seen: set[str] = set()
+    return [r for r in reasons if not (r in seen or seen.add(r))]
+
+
+def submit(page, profile: dict, wait_seconds: float = 25.0) -> dict:
+    """Реальная отправка заявки — только когда отвечать больше нечего.
+
+    Возвращает {"state": submitted|blocked|no_receipt, "message": ...}.
+    «Отправлено» пишем ТОЛЬКО по квитанции самого Lidl: исчезнувшая кнопка
+    доказательством не считается.
+    """
+    left = blockers(page, profile)
+    if left:
+        return {"state": "blocked", "message": "; ".join(left[:6]), "blockers": left}
+    button = _submit_button(page)
+    try:
+        page.evaluate("() => { window.__wexflowSubmitRequested = Date.now(); }")
+    except Exception:
+        pass
+    print("  жму Ansøg — реальная отправка")
+    button.click()
+    deadline = time.monotonic() + max(5.0, float(wait_seconds))
+    while time.monotonic() < deadline:
+        if submission_receipt_visible(page):
+            return {"state": "submitted",
+                    "message": "Lidl показал квитанцию о получении заявки.",
+                    "blockers": []}
+        page.wait_for_timeout(500)
+    return {
+        "state": "no_receipt",
+        "message": "Кнопка нажата, но Lidl не показал квитанцию — проверь почту "
+                   "и личный кабинет, прежде чем подавать снова.",
+        "blockers": [],
+    }

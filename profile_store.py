@@ -96,6 +96,62 @@ COUNTRY_FIXES = {
     "dk": "Danmark",
 }
 
+# ── Ответы для анкет ───────────────────────────────────────────────────────
+# Магазины спрашивают одно и то же: пол, дата выхода, готов ли работать по
+# выходным/вечерам/с раннего утра. Раньше WexFlow оставлял эти вопросы человеку —
+# и подача не могла завершиться сама. Теперь ответы хранятся ОДИН раз здесь и
+# подставляются как есть. Правило прежнее: чего человек не ответил, то WexFlow
+# не выдумывает — вопрос остаётся пустым, а автоподача просто не жмёт кнопку.
+ANSWER_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("gender", "Пол (магазины спрашивают в анкете)", "choice:male,female,other"),
+    ("start_date", "С какой даты можешь выйти", "date"),
+    ("retail_experience", "Есть опыт работы в рознице/магазине", "yesno"),
+    ("work_weekends", "Готов(а) работать каждые вторые выходные", "yesno"),
+    ("work_evenings", "Готов(а) на вечерние смены (примерно до 22:00)", "yesno"),
+    ("work_early", "Готов(а) выходить рано утром (с 06:00)", "yesno"),
+    ("work_night", "Готов(а) на ночные смены", "yesno"),
+    ("has_drivers_license", "Есть водительские права", "yesno"),
+    ("profile_visible", "Разрешаю показывать анкету другим магазинам этой сети", "yesno"),
+)
+
+ANSWER_KEYS = tuple(key for key, _human, _kind in ANSWER_FIELDS)
+
+_YESNO = {"yes", "no"}
+_GENDERS = {"male", "female", "other"}
+
+
+def clean_answer(key: str, value) -> str:
+    """Привести ответ к хранимому виду. Мусор и «не выбрано» → пустая строка."""
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    kind = dict((k, t) for k, _h, t in ANSWER_FIELDS).get(key, "")
+    if kind == "yesno":
+        if raw in {"yes", "да", "ja", "1", "true", "on"}:
+            return "yes"
+        if raw in {"no", "нет", "nej", "0", "false", "off"}:
+            return "no"
+        return ""
+    if kind.startswith("choice:"):
+        return raw if raw in _GENDERS else ""
+    if kind == "date":
+        return str(value).strip()[:10]
+    return str(value).strip()[:120]
+
+
+def answers(profile: dict | None = None) -> dict:
+    """Только ответы для анкет — в том виде, в котором их читает заполнитель."""
+    data = dict(profile or {})
+    return {key: clean_answer(key, data.get(key)) for key in ANSWER_KEYS}
+
+
+def missing_answers(profile: dict | None = None, keys=None) -> list[str]:
+    """Человеческие названия неотвеченных вопросов (для честного стопа подачи)."""
+    ready = answers(profile)
+    wanted = list(keys or ANSWER_KEYS)
+    humans = dict((k, h) for k, h, _t in ANSWER_FIELDS)
+    return [humans.get(key, key) for key in wanted if not ready.get(key)]
+
 
 def clean_profile(data: dict) -> dict:
     data = dict(data or {})

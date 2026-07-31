@@ -801,6 +801,37 @@
       <div class="field"><label class="lbl">LinkedIn (необязательно)</label><input type="text" name="linkedin" value="{{ profile.linkedin or '' }}"></div>
     </div>
 
+    <details class="ai-extra" open>
+      <summary>{{ ic.i('check', 14) if ic else '' }} Ответы для анкет магазинов <span class="ai-extra-tag">нужно для полной подачи</span></summary>
+      <p class="hint" style="margin:10px 0 14px;">Магазины спрашивают одно и то же: пол, дата выхода, готов ли работать по выходным, вечерам и с раннего утра. Ответь один раз — и WexFlow сможет доводить анкету до конца сам. Что не отвечено — <b>не выдумывается</b>: такой вопрос останется пустым, а подача остановится и подождёт тебя.</p>
+      <div class="grid2">
+        <div class="field"><label class="lbl">Пол</label>
+          <select name="gender">
+            <option value=""{{ ' selected' if not profile.gender else '' }}>Не указывать</option>
+            <option value="male"{{ ' selected' if profile.gender == 'male' else '' }}>Мужской</option>
+            <option value="female"{{ ' selected' if profile.gender == 'female' else '' }}>Женский</option>
+            <option value="other"{{ ' selected' if profile.gender == 'other' else '' }}>Другое</option>
+          </select></div>
+        <div class="field"><label class="lbl">С какой даты можешь выйти</label>
+          <input type="date" name="start_date" value="{{ profile.start_date or '' }}"></div>
+        {% for key, human in [
+            ('retail_experience', 'Есть опыт в рознице/магазине'),
+            ('work_weekends', 'Готов работать каждые вторые выходные'),
+            ('work_evenings', 'Готов на вечерние смены (до ~22:00)'),
+            ('work_early', 'Готов выходить рано утром (с 06:00)'),
+            ('work_night', 'Готов на ночные смены'),
+            ('has_drivers_license', 'Есть водительские права'),
+            ('profile_visible', 'Показывать анкету другим магазинам сети')] %}
+        <div class="field"><label class="lbl">{{ human }}</label>
+          <select name="{{ key }}">
+            <option value=""{{ ' selected' if not profile[key] else '' }}>Не отвечать</option>
+            <option value="yes"{{ ' selected' if profile[key] == 'yes' else '' }}>Да</option>
+            <option value="no"{{ ' selected' if profile[key] == 'no' else '' }}>Нет</option>
+          </select></div>
+        {% endfor %}
+      </div>
+    </details>
+
     <details class="ai-extra">
       <summary>{{ ic.i('sparkles', 14) if ic else '' }} Дополнительно для умного ИИ-заполнения <span class="ai-extra-tag">необязательно</span></summary>
       <p class="hint" style="margin:10px 0 14px;">Чем больше здесь заполнено, тем больше полей на анкетах ИИ закроет сам. Пусто — просто оставит эти вопросы тебе. Всё по желанию.</p>
@@ -964,7 +995,9 @@
     const fd = new FormData();
     ['first_name','last_name','email','phone','address','zipcode','city','country','linkedin',
      'work_authorization','languages','experience_years','current_role','education',
-     'available_from','date_of_birth','about'].forEach((name) => {
+     'available_from','date_of_birth','about',
+     'gender','start_date','retail_experience','work_weekends','work_evenings',
+     'work_early','work_night','has_drivers_license','profile_visible'].forEach((name) => {
       const input = profileForm.querySelector(`[name="${name}"]`);
       if (input) fd.append(name, input.value || '');
     });

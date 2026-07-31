@@ -34,6 +34,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import config
 import profile_store
 import document_rules
+from connectors import site_contract
 from db import Job, get_session, init_db
 
 
@@ -1195,7 +1196,16 @@ def process_job(page, job, profile, submit: bool, ai_fill: bool = False,
             sent = True
         else:
             _save_proof(page, job)   # скрин даже при неуспехе — для разбора/восстановления
-            print("  отправка не подтвердилась — проверь вручную")
+            # Защита: если формы Salling больше нет в привычном виде — говорим
+            # человеку правду («сайт изменился, нужно обновление»), а не общее
+            # «не подтвердилось». Проверяем ТОЛЬКО после неудачи: до неё
+            # придирки контракта могли бы зря остановить рабочую подачу.
+            guard = site_contract.check(page, "salling")
+            if not guard["ok"]:
+                print("  ЗАЩИТА:", site_contract.human_message(guard).replace("\n", " "))
+                _cloud_report(job.id, "failed", site_contract.short_message(guard))
+            else:
+                print("  отправка не подтвердилась — проверь вручную")
     else:
         print("  Прогон без отправки — проверь форму и нажми Ansøg сам.")
         # хвост прошлого прогона не должен сработать за человека — чистим ДО

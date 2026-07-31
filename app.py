@@ -757,10 +757,12 @@ def _watch_connector_prepare_for_phone(job_id: str) -> None:
             )
             _release_connector_launch(wanted)
             return
-        if state == "error":
+        if state in ("error", "site_changed"):
             _report_apply_result_safe(
                 wanted, "prepare_failed",
-                message or "Окно подготовки завершилось с ошибкой.",
+                message or ("Сайт изменил анкету — подготовка остановлена."
+                            if state == "site_changed"
+                            else "Окно подготовки завершилось с ошибкой."),
             )
             _release_connector_launch(wanted)
             return
@@ -980,8 +982,8 @@ def _handle_tg_decisions(decisions: list) -> None:
                 job.id,
                 "submitting",
                 (
-                    "Форма Lidl открыта на ПК. Заполни оставшиеся вопросы и подтверди "
-                    "реальную отправку зелёной кнопкой WexFlow."
+                    "Форма Lidl открыта на ПК. Отвечаю сохранёнными ответами и подаю; "
+                    "если на какой-то вопрос ответа нет — остановлюсь и скажу."
                     if getattr(job, "source", "") == "lidl" else
                     "Форма открыта на ПК и заполнена. Проверь ответы и отправь сам."
                 ),
@@ -2914,7 +2916,10 @@ def _launch_connector_filler(
             payload = {}
         if str(payload.get("job_id", "")) == job_id:
             last_state = str(payload.get("state", ""))
-            if last_state in {"browser_opened", "ready", "submit_ready", "submitted"}:
+            if last_state in {"browser_opened", "ready", "submit_ready", "submitted",
+                              # защита сработала / не хватило ответов — окно всё
+                              # равно открыто, это нормальный конец запуска
+                              "site_changed", "needs_answers", "no_receipt"}:
                 return last_state
             if last_state == "error":
                 message = str(payload.get("message", "")).strip()
@@ -2966,6 +2971,17 @@ def _watch_connector_result_for_phone(job_id: str, source: str) -> None:
             _report_apply_result_safe(
                 wanted, "failed",
                 message or "Окно подачи завершилось с ошибкой.",
+            )
+            _release_connector_launch(wanted)
+            return
+        # Защита от изменений сайта, нехватка ответов и «нажали, но квитанции
+        # нет» — это НЕ подача. Человеку уходит причина, а не молчание.
+        if (str(payload.get("job_id") or "") == wanted
+                and state in {"site_changed", "needs_answers", "no_receipt"}):
+            applications.mark_failed([wanted], source=source)
+            _report_apply_result_safe(
+                wanted, "failed",
+                message or "Подача остановлена — заявка не отправлена.",
             )
             _release_connector_launch(wanted)
             return
@@ -3081,8 +3097,9 @@ def start_connector_apply(
     return _redirect_back(
         request, f"/job/{job_id}",
         notice=(
-            "Режим реальной отправки открыт. Заполни оставшиеся вопросы и нажми "
-            "зелёную кнопку WexFlow внутри анкеты — затем будет нажата настоящая Ansøg."
+            "Полная подача запущена: WexFlow заполнит анкету сохранёнными ответами "
+            "и нажмёт Ansøg сам. Если на какой-то вопрос ответа нет — остановится "
+            "и оставит зелёную кнопку тебе."
             if real_submit else
             "Проверка открыта: WexFlow заполнит форму до Ansøg и гарантированно не нажмёт её."
         ),
@@ -4590,10 +4607,28 @@ def account_save(
     experience_years: str = Form(""), current_role: str = Form(""),
     education: str = Form(""), available_from: str = Form(""),
     date_of_birth: str = Form(""), about: str = Form(""),
+    gender: str = Form(""), start_date: str = Form(""),
+    retail_experience: str = Form(""), work_weekends: str = Form(""),
+    work_evenings: str = Form(""), work_early: str = Form(""),
+    work_night: str = Form(""), has_drivers_license: str = Form(""),
+    profile_visible: str = Form(""),
 ):
     """Общий профиль — только личные данные. Документы (CV/письмо) — в настройках фирмы.
-    Поля после linkedin — необязательные, их использует ИИ-дозаполнение форм (бета)."""
+    Поля после linkedin — необязательные, их использует ИИ-дозаполнение форм (бета).
+    Блок «Ответы для анкет» — те самые вопросы магазинов (пол, дата выхода,
+    выходные/вечера/раннее утро): заполняются один раз и подставляются как есть."""
     profile = profile_store.load_profile()
+    answers_form = {
+        "gender": gender, "start_date": start_date,
+        "retail_experience": retail_experience, "work_weekends": work_weekends,
+        "work_evenings": work_evenings, "work_early": work_early,
+        "work_night": work_night, "has_drivers_license": has_drivers_license,
+        "profile_visible": profile_visible,
+    }
+    profile.update({
+        key: profile_store.clean_answer(key, value)
+        for key, value in answers_form.items()
+    })
     profile.update({
         "first_name": first_name.strip(), "last_name": last_name.strip(),
         "email": email.strip(), "phone": phone.strip(), "address": address.strip(),
@@ -5502,6 +5537,10 @@ async def settings_profile_autosave(request: Request):
     ]:
         if form_key in form:
             profile[profile_key] = str(form.get(form_key) or "").strip()
+    # ответы для анкет магазинов сохраняем через нормализацию (да/нет/пусто)
+    for key in profile_store.ANSWER_KEYS:
+        if key in form:
+            profile[key] = profile_store.clean_answer(key, form.get(key))
     profile = profile_store.clean_profile(profile)
     profile_store.save_profile(profile)
     return JSONResponse({"ok": True, "missing": _profile_missing(profile), "profile": profile})
