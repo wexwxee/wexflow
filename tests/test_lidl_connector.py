@@ -138,6 +138,20 @@ def test_external_sources_use_the_same_apply_button_as_salling():
     assert 'name="mode" value="submit"' in detail
 
 
+def test_pc_job_cards_keep_direct_prepare_without_submit_actions():
+    """Safe preparation must stay visible on cards, not only in the batch dock."""
+    from pathlib import Path
+    index = (
+        Path(__file__).resolve().parents[1] / "templates" / "index.html"
+    ).read_text(encoding="utf-8")
+
+    assert 'action="/job/{{ j.id }}/apply/start"' in index
+    assert 'action="/job/{{ j.id }}/connector/apply"' in index
+    assert index.count('name="mode" value="prepare"') >= 1
+    assert index.count('name="mode" value="dry"') >= 2
+    assert index.count("Подготовить без отправки") >= 3
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items())
              if name.startswith("test_") and callable(value)]

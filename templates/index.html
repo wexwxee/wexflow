@@ -1083,10 +1083,24 @@
       {% else %}
       {% if j.source == 'salling' %}
       <a href="/job/{{ j.id }}/apply"><button class="primary">{{ ic.i('send', 13) }} Подать →</button></a>
+      <form method="post" action="/job/{{ j.id }}/apply/start">
+        <button class="secondary" type="submit" name="mode" value="dry"
+                data-tip-title="Подготовить без отправки"
+                data-tip-body="WexFlow откроет анкету, заполнит поля и прикрепит документы, но не отправит заявку.">
+          {{ ic.i('eye', 13) }} Подготовить
+        </button>
+      </form>
       {% else %}
       <form method="post" action="/job/{{ j.id }}/connector/apply">
-        {% if j.source == 'lidl' %}<input type="hidden" name="mode" value="submit"><input type="hidden" name="submit_ack" value="1">{% endif %}
-        <button class="primary" type="submit" data-tip-title="Помощник анкеты" data-tip-body="{{ 'Откроет Lidl, заполнит данные и документы. Реальная отправка потребует отдельного подтверждения уже внутри анкеты.' if j.source == 'lidl' else 'Откроет отдельное окно браузера, заполнит доступные поля и остановится перед отправкой. Без твоего клика заявка не уйдёт. Если анкета уже начата, вернёшься к ней же.' }}">{{ ic.i('send', 13) }} Подать →</button>
+        {% if j.source == 'lidl' %}<input type="hidden" name="submit_ack" value="1">{% endif %}
+        {% if j.source == 'lidl' %}
+        <button class="secondary" type="submit" name="mode" value="prepare"
+                data-tip-title="Подготовить без отправки"
+                data-tip-body="WexFlow откроет Lidl, заполнит данные, ответы и документы, но гарантированно не нажмёт Ansøg.">
+          {{ ic.i('eye', 13) }} Подготовить
+        </button>
+        {% endif %}
+        <button class="primary" type="submit"{% if j.source == 'lidl' %} name="mode" value="submit"{% endif %} data-tip-title="Помощник анкеты" data-tip-body="{{ 'Откроет Lidl, заполнит данные и документы. Реальная отправка потребует отдельного подтверждения уже внутри анкеты.' if j.source == 'lidl' else 'Откроет отдельное окно браузера, заполнит доступные поля и остановится перед отправкой. Без твоего клика заявка не уйдёт. Если анкета уже начата, вернёшься к ней же.' }}">{{ ic.i('send', 13) }} Подать →</button>
       </form>
       {% endif %}
       {% endif %}
