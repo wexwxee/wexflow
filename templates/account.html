@@ -14,6 +14,21 @@
   @media (max-width:640px){ .grid2 { grid-template-columns:1fr; } }
   .field { margin-bottom:14px; position:relative; }
   .field input.invalid { border-color:var(--err-line); box-shadow:0 0 0 3px rgba(252,165,165,.16); }
+  .field textarea.auto-grow {
+    width:100%;
+    min-height:52px;
+    padding:12px 14px;
+    overflow:hidden;
+    resize:vertical;
+    border:1px solid var(--glass-line);
+    border-radius:10px;
+    background:var(--glass);
+    color:var(--txt);
+    font:inherit;
+    line-height:1.5;
+    box-sizing:border-box;
+  }
+  .field textarea.auto-grow:focus { outline:none; border-color:var(--accent); }
   .field .req { color:var(--err-txt); font-size:12px; margin-top:6px; display:none; }
   .field.missing .req { display:block; }
   /* размеры кнопок — из общей шкалы theme.css; страничных переопределений не держим */
@@ -860,7 +875,7 @@
           </select></div>
         {% endfor %}
         <div class="field" style="grid-column:1/-1;"><label class="lbl">Где видишь себя через два года <span class="hint">(Hvor ser du dig selv om to år?)</span></label>
-          <input type="text" name="two_year_goal" value="{{ profile.two_year_goal or '' }}" placeholder="Напиши свой короткий ответ — WexFlow не будет его придумывать" data-ai-writing data-recommended-language="da"></div>
+          <textarea name="two_year_goal" rows="2" class="auto-grow" placeholder="Напиши свой короткий ответ — WexFlow не будет его придумывать" data-auto-grow data-ai-writing data-recommended-language="da">{{ profile.two_year_goal or '' }}</textarea></div>
       </div>
     </details>
 
@@ -1052,7 +1067,7 @@
             </select></div>
           <div class="field"><label class="lbl">Дата выхода</label><input type="date" name="start_date" data-company-answer></div>
           <div class="field" style="grid-column:1/-1;"><label class="lbl">Где видишь себя через два года</label>
-            <input type="text" name="two_year_goal" data-company-answer data-ai-writing data-recommended-language="da"></div>
+            <textarea name="two_year_goal" rows="2" class="auto-grow" data-auto-grow data-company-answer data-ai-writing data-recommended-language="da"></textarea></div>
           {% for key, human in [
               ('retail_experience', 'Есть опыт в рознице/магазине'),
               ('work_weekends', 'Готов работать каждые вторые выходные'),
@@ -1494,6 +1509,20 @@
       if (!field.contains(event.target)) field.classList.remove('suggest-open');
     });
   });
+
+  (function () {
+    function resizeTextarea(textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.max(52, textarea.scrollHeight) + 'px';
+    }
+
+    document.querySelectorAll('textarea[data-auto-grow]').forEach((textarea) => {
+      const resize = () => requestAnimationFrame(() => resizeTextarea(textarea));
+      textarea.addEventListener('input', resize);
+      textarea.addEventListener('wf:refresh', resize);
+      resize();
+    });
+  })();
 
   // переключатель периода оплаты меняет подпись у цены
   (function () {

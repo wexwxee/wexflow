@@ -89,6 +89,15 @@ def test_account_has_legal_help_searchable_citizenship_and_language_hint():
     assert "Не хочу указывать" in html
 
 
+def test_two_year_goal_expands_to_show_the_full_answer():
+    html = (ROOT / "templates" / "account.html").read_text(encoding="utf-8")
+    assert html.count('<textarea name="two_year_goal"') == 2
+    assert html.count("data-auto-grow") >= 2
+    assert "textarea.scrollHeight" in html
+    assert "textarea.addEventListener('wf:refresh', resize)" in html
+    assert '<input type="text" name="two_year_goal"' not in html
+
+
 def test_gender_decline_and_citizenship_values_are_validated_for_fillers():
     assert profile_store.clean_answer("gender", "prefer_not_say") == "prefer_not_say"
     assert profile_store.clean_answer("gender", "made_up") == ""
