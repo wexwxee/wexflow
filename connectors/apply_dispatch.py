@@ -18,6 +18,8 @@ import time
 import paths
 from connectors import site_contract
 
+IDLE_CLOSE_SECONDS = 5 * 60
+
 for _s in (sys.stdout, sys.stderr):
     try:
         _s.reconfigure(encoding="utf-8")
@@ -233,14 +235,92 @@ def site_changed_banner(page, report: dict) -> None:
     )
 
 
-def _wait_until_closed(ctx, page=None, platform: str = "", job_id: str = "") -> None:
+_IDLE_TRACKER_SCRIPT = """
+(() => {
+    if (window.__wexflowIdleTrackerInstalled) return;
+    window.__wexflowIdleTrackerInstalled = true;
+    window.__wexflowLastActivity = Date.now();
+    const active = () => { window.__wexflowLastActivity = Date.now(); };
+    ['pointerdown', 'pointermove', 'keydown', 'input', 'change',
+     'scroll', 'touchstart', 'wheel'].forEach(name =>
+        window.addEventListener(name, active, {capture: true, passive: true}));
+})();
+"""
+
+
+def _install_idle_tracker(ctx, page) -> None:
+    """Track real user activity even across Lidl navigation."""
+    try:
+        ctx.add_init_script(_IDLE_TRACKER_SCRIPT)
+    except Exception:
+        pass
+    try:
+        page.evaluate(_IDLE_TRACKER_SCRIPT)
+    except Exception:
+        pass
+    try:
+        page.evaluate(
+            """(minutes) => {
+                const host = document.getElementById('wexflow-banner');
+                const root = host && host.shadowRoot;
+                const card = root && root.querySelector('.card');
+                if (!card || root.getElementById('wexflow-idle-note')) return;
+                const note = document.createElement('div');
+                note.id = 'wexflow-idle-note';
+                note.textContent =
+                    `Окно останется открытым. Оно закроется только после ${minutes} мин бездействия.`;
+                note.style.cssText =
+                    'margin-top:8px;color:#aeb7b2;font-size:12px;line-height:1.35;';
+                card.append(note);
+            }""",
+            max(1, int(IDLE_CLOSE_SECONDS // 60)),
+        )
+    except Exception:
+        pass
+
+
+def _wait_until_closed(
+    ctx,
+    page=None,
+    platform: str = "",
+    job_id: str = "",
+    idle_seconds: float = IDLE_CLOSE_SECONDS,
+) -> None:
+    """Keep the prepared form usable until closed or idle for five minutes.
+
+    Persistent Playwright contexts deliberately have ``ctx.browser is None``.
+    Treating that as a closed browser made prepared Lidl windows disappear
+    immediately. Open pages are the reliable lifetime signal here.
+    """
     recorded = False
+    if page is not None:
+        _install_idle_tracker(ctx, page)
     while True:
         try:
-            _ = ctx.pages
-            if not ctx.browser or not ctx.browser.is_connected():
+            pages = list(ctx.pages)
+            if not pages:
                 return
         except Exception:
+            return
+        for current in pages:
+            try:
+                current.evaluate(_IDLE_TRACKER_SCRIPT)
+            except Exception:
+                pass
+        activity = []
+        for current in pages:
+            try:
+                activity.append(float(current.evaluate(
+                    "() => Number(window.__wexflowLastActivity || Date.now())"
+                )))
+            except Exception:
+                pass
+        if activity and (time.time() * 1000.0 - max(activity)) >= idle_seconds * 1000.0:
+            _write_status(
+                job_id,
+                "idle_closed",
+                f"Окно закрыто после {int(idle_seconds // 60)} мин бездействия.",
+            )
             return
         if not recorded and platform == "lidl_easy_apply" and page is not None:
             try:

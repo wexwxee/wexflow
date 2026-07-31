@@ -130,7 +130,7 @@ def test_external_sources_use_the_same_apply_button_as_salling():
     templates = Path(__file__).resolve().parents[1] / "templates"
     index = (templates / "index.html").read_text(encoding="utf-8")
     detail = (templates / "detail.html").read_text(encoding="utf-8")
-    assert index.count("Подать →") == 2
+    assert index.count("Подать →") == 3
     assert "Заполнить форму" not in index and "Продолжить заполнение" not in index
     assert detail.count("Подать заявку →") == 3
     assert "Заполнить форму" not in detail
@@ -150,6 +150,21 @@ def test_pc_job_cards_keep_direct_prepare_without_submit_actions():
     assert index.count('name="mode" value="prepare"') >= 1
     assert index.count('name="mode" value="dry"') >= 2
     assert index.count("Подготовить без отправки") >= 3
+
+
+def test_lidl_card_keeps_submit_before_prepare_like_other_cards():
+    """Lidl must use the same left-to-right action order as Salling cards."""
+    from pathlib import Path
+    index = (
+        Path(__file__).resolve().parents[1] / "templates" / "index.html"
+    ).read_text(encoding="utf-8")
+    lidl_actions = index.split("{% if j.source == 'lidl' %}", 2)[2].split(
+        "{% else %}", 1
+    )[0]
+
+    assert lidl_actions.index('value="submit"') < lidl_actions.index(
+        'value="prepare"'
+    )
 
 
 if __name__ == "__main__":
