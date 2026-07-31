@@ -1077,12 +1077,24 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
                 ts = job.applied_at.isoformat() if job.applied_at else ""
             except Exception:  # noqa: BLE001
                 ts = ""
+            brand_bg, brand_fg = labels.BRAND_COLORS.get(document_rules.brand_key(job), ("", ""))
             items.append({
                 "id": job.id,
+                # title остаётся «как в чате» (его читают старые панели), но
+                # телефон рисует карточку по отдельным полям — иначе название,
+                # ID, часы и адрес слипались в одну обрезанную строку.
                 "title": _tg_display_title(job),
+                "titleBase": job.title or "",
                 "brand": labels.brand(job.brand) if job.brand else "",
+                "brandColor": brand_bg,
+                "brandFg": brand_fg,
                 "city": job.city or "",
+                "address": _job_address(job),
                 "hours": f"{job.hours} ч/нед" if job.hours else "",
+                "employment": labels.EMPLOYMENT.get(job.employment_type or "", job.employment_type or ""),
+                "source": job.source or "salling",
+                "sourceLabel": "" if (job.source or "salling") == "salling"
+                               else _SHORT_SOURCES.get(job.source or "", job.source or ""),
                 "url": job.application_link or "",
                 "ts": ts,
                 "confidence": str(job.applied_confidence or "").strip().lower(),
