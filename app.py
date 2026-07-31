@@ -4701,9 +4701,15 @@ def account_save(
     education: str = Form(""), available_from: str = Form(""),
     date_of_birth: str = Form(""), about: str = Form(""),
     gender: str = Form(""), start_date: str = Form(""),
+    two_year_goal: str = Form(""),
     retail_experience: str = Form(""), work_weekends: str = Form(""),
     work_evenings: str = Form(""), work_early: str = Form(""),
     work_night: str = Form(""), has_drivers_license: str = Form(""),
+    lidl_referral_name: str = Form(""), lidl_current_employee: str = Form(""),
+    lidl_previous_employment: str = Form(""), lidl_discovery: str = Form(""),
+    citizenship: str = Form(""), work_permit: str = Form(""),
+    clean_criminal_record: str = Form(""), relevant_health_condition: str = Form(""),
+    lidl_newsletter: str = Form(""), lidl_profile_scope: str = Form(""),
     profile_visible: str = Form(""),
 ):
     """Общий профиль — только личные данные. Документы (CV/письмо) — в настройках фирмы.
@@ -4712,10 +4718,20 @@ def account_save(
     выходные/вечера/раннее утро): заполняются один раз и подставляются как есть."""
     profile = profile_store.load_profile()
     answers_form = {
-        "gender": gender, "start_date": start_date,
+        "gender": gender, "start_date": start_date, "two_year_goal": two_year_goal,
         "retail_experience": retail_experience, "work_weekends": work_weekends,
         "work_evenings": work_evenings, "work_early": work_early,
         "work_night": work_night, "has_drivers_license": has_drivers_license,
+        "lidl_referral_name": lidl_referral_name,
+        "lidl_current_employee": lidl_current_employee,
+        "lidl_previous_employment": lidl_previous_employment,
+        "lidl_discovery": lidl_discovery,
+        "citizenship": citizenship,
+        "work_permit": work_permit,
+        "clean_criminal_record": clean_criminal_record,
+        "relevant_health_condition": relevant_health_condition,
+        "lidl_newsletter": lidl_newsletter,
+        "lidl_profile_scope": lidl_profile_scope,
         "profile_visible": profile_visible,
     }
     profile.update({

@@ -75,6 +75,18 @@ def test_corrupt_without_backup_does_not_crash():
     assert any(p.name.startswith("profile.corrupt-") for p in d.iterdir()), "битый файл не отложен"
 
 
+def test_lidl_profile_scope_is_validated_and_legacy_yes_stays_local():
+    assert profile_store.clean_answer("lidl_profile_scope", "international") == "international"
+    assert profile_store.clean_answer("lidl_profile_scope", "country") == "country"
+    assert profile_store.clean_answer("lidl_profile_scope", "applied_only") == "applied_only"
+    assert profile_store.clean_answer("lidl_profile_scope", "anything_else") == ""
+    migrated = profile_store.clean_profile({"profile_visible": "yes"})
+    assert migrated["lidl_profile_scope"] == "country"
+    assert profile_store.clean_profile(
+        {"profile_visible": "yes", "lidl_profile_scope": ""}
+    )["lidl_profile_scope"] == ""
+
+
 if __name__ == "__main__":
     tests = [
         test_round_trip,
@@ -82,6 +94,7 @@ if __name__ == "__main__":
         test_backup_mirrors_last_good,
         test_corrupt_recovers_from_bak,
         test_corrupt_without_backup_does_not_crash,
+        test_lidl_profile_scope_is_validated_and_legacy_yes_stays_local,
     ]
     failures = 0
     for fn in tests:

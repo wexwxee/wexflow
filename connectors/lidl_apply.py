@@ -180,6 +180,39 @@ def _select_ui5(page, label: str, value: str) -> bool:
     return False
 
 
+def _set_switch_by_text(page, label_text: str, enabled: bool) -> bool:
+    """Set a UI5 switch next to visible text without toggling it blindly."""
+    try:
+        return bool(page.evaluate(
+            """([labelText, enabled]) => {
+                const wanted = labelText.toLocaleLowerCase('da-DK');
+                const labels = [...document.querySelectorAll(
+                    'label, .sapMText, .sapMLabel, span, p'
+                )].filter(node =>
+                    (node.innerText || '').trim().toLocaleLowerCase('da-DK').includes(wanted)
+                );
+                for (const label of labels) {
+                    let row = label;
+                    for (let depth = 0; row && depth < 7; depth++, row = row.parentElement) {
+                        const control = row.querySelector(
+                            '[role="switch"], .sapMSwt, input[type="checkbox"]'
+                        );
+                        if (!control) continue;
+                        const checked = control.matches(':checked')
+                            || control.getAttribute('aria-checked') === 'true'
+                            || control.classList.contains('sapMSwtOn');
+                        if (checked !== enabled) control.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""",
+            [label_text, bool(enabled)],
+        ))
+    except Exception:
+        return False
+
+
 def _upload(page, selector: str, path: str, role: str = "document") -> bool:
     path = str(path or "").strip()
     if not path or not Path(path).is_file():
@@ -297,6 +330,27 @@ def _click_option(page, option_id: str) -> bool:
     return False
 
 
+def _choose_radio_text(
+    page,
+    question_fragment: str,
+    option_fragments: tuple[str, ...],
+) -> bool:
+    """Choose a saved non-binary radio answer by its visible Danish wording."""
+    question_wanted = question_fragment.casefold()
+    option_wanted = tuple(part.casefold() for part in option_fragments)
+    for group in _radio_groups(page):
+        if question_wanted not in str(group.get("question") or "").casefold():
+            continue
+        options = list(group.get("options") or [])
+        if any(option.get("checked") for option in options):
+            return True
+        for option in options:
+            text = str(option.get("text") or "").casefold()
+            if any(fragment in text for fragment in option_wanted):
+                return _click_option(page, str(option.get("id") or ""))
+    return False
+
+
 def fill_answers(page, profile: dict) -> dict:
     """Ответить на вопросы Lidl сохранёнными ответами человека.
 
@@ -337,10 +391,93 @@ def fill_answers(page, profile: dict) -> dict:
     if start:
         parts = start.split("-")
         human_date = f"{parts[2]}.{parts[1]}.{parts[0]}" if len(parts) == 3 else start
-        for label in ("startdato", "Startdato", "start"):
+        for label in (
+            "Hvornår kan du tidligst påbegynde dit ansættelsesforhold hos os",
+            "startdato",
+            "Startdato",
+        ):
             if _fill_labeled(page, label, human_date):
                 filled.append("дата выхода")
                 break
+
+    text_fields = (
+        (
+            "Blev du henvist til Lidl af en nuværende Lidl-medarbejder",
+            answers.get("lidl_referral_name"),
+            "рекомендация сотрудника Lidl",
+        ),
+        (
+            "Hvis du tidligere har været ansat i Lidl",
+            answers.get("lidl_previous_employment"),
+            "предыдущая работа в Lidl",
+        ),
+        (
+            "Noter venligst, hvis du lider af sygdomme",
+            answers.get("relevant_health_condition"),
+            "сведения о здоровье",
+        ),
+        (
+            "Hvor ser du dig selv om to år",
+            answers.get("two_year_goal"),
+            "цель на два года",
+        ),
+    )
+    for label, value, human in text_fields:
+        if _fill_labeled(page, label, value or ""):
+            filled.append(human)
+
+    select_fields = (
+        (
+            "Er du allerede ansat i Lidl",
+            answers.get("lidl_current_employee"),
+            "уже работает в Lidl",
+        ),
+        (
+            "Hvordan har du fået kendskab til denne stilling",
+            answers.get("lidl_discovery"),
+            "источник вакансии",
+        ),
+        (
+            "Hvad er dit statsborgerskab",
+            answers.get("citizenship"),
+            "гражданство",
+        ),
+        (
+            "Har du en gyldig opholds-/arbejdstilladelse",
+            answers.get("work_permit"),
+            "разрешение на работу",
+        ),
+        (
+            "Kan du fremvise en ren straffeattest",
+            answers.get("clean_criminal_record"),
+            "справка о несудимости",
+        ),
+    )
+    for label, value, human in select_fields:
+        actual = {"yes": "Ja", "no": "Nej"}.get(str(value or ""), value or "")
+        if _select_ui5(page, label, actual):
+            filled.append(human)
+
+    newsletter = str(answers.get("lidl_newsletter") or "")
+    if newsletter and _set_switch_by_text(
+        page,
+        "Jeg vil vide mere om relevante stillinger",
+        newsletter == "yes",
+    ):
+        filled.append("новости Lidl")
+
+    profile_scope = str(answers.get("lidl_profile_scope") or "")
+    scope_options = {
+        "international": ("Lidl International",),
+        "country": ("mit bopælsland",),
+        "applied_only": ("stillinger, jeg selv har søgt",),
+    }
+    if profile_scope and _choose_radio_text(
+        page,
+        "Min profil må gerne tages i betragtning",
+        scope_options.get(profile_scope, ()),
+    ):
+        filled.append("область учёта профиля Lidl")
 
     for group in _radio_groups(page):
         question = str(group.get("question") or "").strip()
@@ -350,7 +487,8 @@ def fill_answers(page, profile: dict) -> dict:
         yes = next((o for o in options if _YES_RE.match(str(o.get("text") or ""))), None)
         no = next((o for o in options if _NO_RE.match(str(o.get("text") or ""))), None)
         if not yes or not no:
-            continue                      # не «да/нет» — не наш случай, не трогаем
+            unanswered.append(question[:120] or "вопрос без подписи")
+            continue                      # не «да/нет» — без сохранённого выбора не трогаем
         key, answer = question_answer(question, answers)
         if not answer:
             unanswered.append(question[:120] or "вопрос без подписи")
@@ -361,7 +499,10 @@ def fill_answers(page, profile: dict) -> dict:
         else:
             unanswered.append(question[:120] or "вопрос без подписи")
 
-    return {"filled": filled, "unanswered": unanswered}
+    return {
+        "filled": list(dict.fromkeys(filled)),
+        "unanswered": list(dict.fromkeys(unanswered)),
+    }
 
 
 def required_left(page) -> list[str]:
@@ -450,13 +591,13 @@ def arm_explicit_submit(page) -> bool:
                 const action = document.createElement('button');
                 action.id = 'wexflow-real-submit';
                 action.type = 'button';
-                action.textContent = 'Отправить заполненную анкету';
+                action.textContent = 'Отправить до конца';
                 action.style.cssText =
                     'width:100%;margin-top:10px;padding:10px 12px;border:0;border-radius:9px;'
                     + 'background:#16d86b;color:#07170d;font-weight:800;cursor:pointer;';
                 const note = document.createElement('div');
                 note.textContent =
-                    'Это реальная отправка. Сначала заполни оставшиеся вопросы Lidl.';
+                    'Проверит готовность и завершит подачу в этом же окне.';
                 note.style.cssText = 'margin-top:8px;color:#ffcf70;font-size:12px;';
                 action.addEventListener('click', () => {
                     const buttons = [...document.querySelectorAll('button')];
@@ -468,7 +609,9 @@ def arm_explicit_submit(page) -> bool:
                         return;
                     }
                     if (!confirm(
-                        'Отправить эту заявку в Lidl сейчас? После подтверждения отменить нельзя.'
+                        'Отправить эту заявку в Lidl сейчас? Нажимая «Ansøg», ты принимаешь '
+                        + 'условия Lidl и подтверждаешь ознакомление с информацией о защите '
+                        + 'данных. После отправки отменить нельзя.'
                     )) return;
                     window.__wexflowSubmitRequested = Date.now();
                     nativeButton.click();
@@ -552,7 +695,7 @@ def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
     checkpoint["unanswered"] = answers_report["unanswered"]
     checkpoint["required_left"] = required_left(page)
     checkpoint["filled"] = filled
-    if allow_submit and checkpoint["reached_submit"]:
+    if checkpoint["reached_submit"]:
         checkpoint["submit_armed"] = arm_explicit_submit(page)
     else:
         checkpoint["submit_armed"] = False

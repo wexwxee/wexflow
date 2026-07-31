@@ -849,8 +849,7 @@
             ('work_evenings', 'Готов на вечерние смены (до ~22:00)'),
             ('work_early', 'Готов выходить рано утром (с 06:00)'),
             ('work_night', 'Готов на ночные смены'),
-            ('has_drivers_license', 'Есть водительские права'),
-            ('profile_visible', 'Показывать анкету другим магазинам сети')] %}
+            ('has_drivers_license', 'Есть водительские права')] %}
         <div class="field"><label class="lbl">{{ human }}</label>
           <select name="{{ key }}" class="{{ 'answered' if profile[key] else '' }}">
             <option value=""{{ ' selected' if not profile[key] else '' }}>Не отвечать</option>
@@ -858,7 +857,58 @@
             <option value="no"{{ ' selected' if profile[key] == 'no' else '' }}>Нет</option>
           </select></div>
         {% endfor %}
+        <div class="field" style="grid-column:1/-1;"><label class="lbl">Где видишь себя через два года <span class="hint">(Hvor ser du dig selv om to år?)</span></label>
+          <input type="text" name="two_year_goal" value="{{ profile.two_year_goal or '' }}" placeholder="Напиши свой короткий ответ — WexFlow не будет его придумывать"></div>
       </div>
+    </details>
+
+    <details class="ai-extra wex-answers" open>
+      <summary>{{ ic.i('store', 14) if ic else '' }} Lidl — данные и согласия <span class="ai-extra-tag">для полной подачи</span></summary>
+      <p class="hint" style="margin:10px 0 14px;">Эти ответы Lidl спрашивает отдельно. Выбери их один раз — WexFlow сохранит и подставит в следующую анкету. Пустые ответы не угадываются.</p>
+      <div class="grid2">
+        <div class="field"><label class="lbl">Тебя порекомендовал сотрудник Lidl? Укажи полное имя <span class="hint">(необязательно)</span></label>
+          <input type="text" name="lidl_referral_name" value="{{ profile.lidl_referral_name or '' }}" placeholder="Оставь пустым, если никто не рекомендовал"></div>
+        <div class="field"><label class="lbl">Ты уже работаешь в Lidl?</label>
+          <select name="lidl_current_employee" class="{{ 'answered' if profile.lidl_current_employee else '' }}">
+            <option value=""{{ ' selected' if not profile.lidl_current_employee else '' }}>Не отвечать</option>
+            <option value="yes"{{ ' selected' if profile.lidl_current_employee == 'yes' else '' }}>Да</option>
+            <option value="no"{{ ' selected' if profile.lidl_current_employee == 'no' else '' }}>Нет</option>
+          </select></div>
+        <div class="field"><label class="lbl">Если раньше работал(а) в Lidl — где и когда <span class="hint">(необязательно)</span></label>
+          <input type="text" name="lidl_previous_employment" value="{{ profile.lidl_previous_employment or '' }}" placeholder="Оставь пустым, если не работал(а)"></div>
+        <div class="field"><label class="lbl">Как узнал(а) об этой вакансии?</label>
+          <input type="text" name="lidl_discovery" value="{{ profile.lidl_discovery or '' }}" placeholder="Точный вариант Lidl, например Jobindex"></div>
+        <div class="field"><label class="lbl">Гражданство <span class="hint">(statsborgerskab)</span></label>
+          <input type="text" name="citizenship" value="{{ profile.citizenship or '' }}" placeholder="Например: Ukraine"></div>
+        <div class="field"><label class="lbl">Есть действующее разрешение на проживание/работу?</label>
+          <select name="work_permit" class="{{ 'answered' if profile.work_permit else '' }}">
+            <option value=""{{ ' selected' if not profile.work_permit else '' }}>Не отвечать</option>
+            <option value="yes"{{ ' selected' if profile.work_permit == 'yes' else '' }}>Да</option>
+            <option value="no"{{ ' selected' if profile.work_permit == 'no' else '' }}>Нет</option>
+          </select></div>
+        <div class="field"><label class="lbl">Можешь предоставить чистую справку о несудимости?</label>
+          <select name="clean_criminal_record" class="{{ 'answered' if profile.clean_criminal_record else '' }}">
+            <option value=""{{ ' selected' if not profile.clean_criminal_record else '' }}>Не отвечать</option>
+            <option value="yes"{{ ' selected' if profile.clean_criminal_record == 'yes' else '' }}>Да</option>
+            <option value="no"{{ ' selected' if profile.clean_criminal_record == 'no' else '' }}>Нет</option>
+          </select></div>
+        <div class="field"><label class="lbl">Заболевания, существенно влияющие на работу <span class="hint">(необязательно)</span></label>
+          <input type="text" name="relevant_health_condition" value="{{ profile.relevant_health_condition or '' }}" placeholder="Оставь пустым, если сообщать нечего"></div>
+        <div class="field"><label class="lbl">Получать новости Lidl о вакансиях?</label>
+          <select name="lidl_newsletter" class="{{ 'answered' if profile.lidl_newsletter else '' }}">
+            <option value=""{{ ' selected' if not profile.lidl_newsletter else '' }}>Не отвечать</option>
+            <option value="yes"{{ ' selected' if profile.lidl_newsletter == 'yes' else '' }}>Да</option>
+            <option value="no"{{ ' selected' if profile.lidl_newsletter == 'no' else '' }}>Нет</option>
+          </select></div>
+        <div class="field" style="grid-column:1/-1;"><label class="lbl">Для каких вакансий Lidl может учитывать твой профиль?</label>
+          <select name="lidl_profile_scope" class="{{ 'answered' if profile.lidl_profile_scope else '' }}">
+            <option value=""{{ ' selected' if not profile.lidl_profile_scope else '' }}>Не выбрано — оставить вопрос тебе</option>
+            <option value="international"{{ ' selected' if profile.lidl_profile_scope == 'international' else '' }}>Все подходящие вакансии Lidl International и международные кадровые резервы</option>
+            <option value="country"{{ ' selected' if profile.lidl_profile_scope == 'country' else '' }}>Подходящие вакансии в стране проживания и местные кадровые резервы</option>
+            <option value="applied_only"{{ ' selected' if profile.lidl_profile_scope == 'applied_only' else '' }}>Только вакансии, на которые я подал(а) сам(а)</option>
+          </select></div>
+      </div>
+      <p class="hint" style="margin:14px 0 0;"><b>Что означает длинный текст перед «Ansøg»:</b> финальным нажатием ты принимаешь пользовательские условия Lidl и подтверждаешь, что ознакомился(ась) с информацией о защите данных. Отдельной галочки у этого текста нет. Перед реальной отправкой WexFlow ещё раз явно предупредит об этом.</p>
     </details>
 
     <details class="ai-extra">
@@ -1025,8 +1075,11 @@
     ['first_name','last_name','email','phone','address','zipcode','city','country','linkedin',
      'work_authorization','languages','experience_years','current_role','education',
      'available_from','date_of_birth','about',
-     'gender','start_date','retail_experience','work_weekends','work_evenings',
-     'work_early','work_night','has_drivers_license','profile_visible'].forEach((name) => {
+     'gender','start_date','two_year_goal','retail_experience','work_weekends','work_evenings',
+     'work_early','work_night','has_drivers_license',
+     'lidl_referral_name','lidl_current_employee','lidl_previous_employment',
+     'lidl_discovery','citizenship','work_permit','clean_criminal_record',
+     'relevant_health_condition','lidl_newsletter','lidl_profile_scope'].forEach((name) => {
       const input = profileForm.querySelector(`[name="${name}"]`);
       if (input) fd.append(name, input.value || '');
     });

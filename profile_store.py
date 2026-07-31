@@ -106,21 +106,33 @@ COUNTRY_FIXES = {
 ANSWER_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("gender", "Пол (магазины спрашивают в анкете)", "choice:male,female,other"),
     ("start_date", "С какой даты можешь выйти", "date"),
+    ("two_year_goal", "Где видишь себя через два года", "text"),
     ("retail_experience", "Есть опыт работы в рознице/магазине", "yesno"),
     ("work_weekends", "Готов(а) работать каждые вторые выходные", "yesno"),
     ("work_evenings", "Готов(а) на вечерние смены (примерно до 22:00)", "yesno"),
     ("work_early", "Готов(а) выходить рано утром (с 06:00)", "yesno"),
     ("work_night", "Готов(а) на ночные смены", "yesno"),
     ("has_drivers_license", "Есть водительские права", "yesno"),
+    ("lidl_referral_name", "Lidl: имя сотрудника, который порекомендовал", "text"),
+    ("lidl_current_employee", "Lidl: уже работаешь в Lidl", "yesno"),
+    ("lidl_previous_employment", "Lidl: где и когда раньше работал(а) в Lidl", "text"),
+    ("lidl_discovery", "Lidl: как узнал(а) о вакансии", "text"),
+    ("citizenship", "Lidl: гражданство", "text"),
+    ("work_permit", "Lidl: есть действующее разрешение на проживание/работу", "yesno"),
+    ("clean_criminal_record", "Lidl: можешь предоставить чистую справку о несудимости", "yesno"),
+    ("relevant_health_condition", "Lidl: заболевания, существенно влияющие на работу", "text"),
+    ("lidl_newsletter", "Lidl: получать новости о вакансиях", "yesno"),
+    (
+        "lidl_profile_scope",
+        "Lidl: для каких вакансий разрешено учитывать профиль",
+        "choice:international,country,applied_only",
+    ),
     ("profile_visible", "Разрешаю показывать анкету другим магазинам этой сети", "yesno"),
 )
 
 ANSWER_KEYS = tuple(key for key, _human, _kind in ANSWER_FIELDS)
 
 _YESNO = {"yes", "no"}
-_GENDERS = {"male", "female", "other"}
-
-
 def clean_answer(key: str, value) -> str:
     """Привести ответ к хранимому виду. Мусор и «не выбрано» → пустая строка."""
     raw = str(value or "").strip().lower()
@@ -134,7 +146,8 @@ def clean_answer(key: str, value) -> str:
             return "no"
         return ""
     if kind.startswith("choice:"):
-        return raw if raw in _GENDERS else ""
+        allowed = {item.strip() for item in kind.removeprefix("choice:").split(",")}
+        return raw if raw in allowed else ""
     if kind == "date":
         return str(value).strip()[:10]
     return str(value).strip()[:120]
@@ -156,6 +169,16 @@ def missing_answers(profile: dict | None = None, keys=None) -> list[str]:
 
 def clean_profile(data: dict) -> dict:
     data = dict(data or {})
+    # Старое общее «показывать профиль» было только да/нет. У Lidl теперь три
+    # точных варианта. При первом чтении сохраняем прежний смысл осторожно:
+    # «да» — только страна проживания, «нет» — лишь лично выбранные вакансии.
+    # Международный talent pool никогда не включаем без явного выбора человека.
+    if "lidl_profile_scope" not in data:
+        legacy_visible = clean_answer("profile_visible", data.get("profile_visible"))
+        if legacy_visible == "yes":
+            data["lidl_profile_scope"] = "country"
+        elif legacy_visible == "no":
+            data["lidl_profile_scope"] = "applied_only"
     city_key = str(data.get("city") or "").strip().lower()
     country_key = str(data.get("country") or "").strip().lower()
     if city_key in CITY_FIXES:

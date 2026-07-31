@@ -99,6 +99,45 @@ def test_question_without_a_stored_answer_is_left_empty():
         playwright.stop()
 
 
+def test_lidl_date_two_year_goal_and_profile_scope_are_filled():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <label for="start">Hvornår kan du tidligst påbegynde dit ansættelsesforhold hos os?</label>
+          <input id="start">
+          <label for="goal">Hvor ser du dig selv om to år?</label>
+          <input id="goal">
+          <label id="scope-label">Min profil må gerne tages i betragtning</label>
+          <div class="sapMRbG" role="radiogroup" aria-labelledby="scope-label">
+            <div class="sapMRb" id="scope-int" role="radio" aria-checked="false">
+              Min profil må gerne tages i betragtning til nuværende og fremtidige
+              relevante stillinger i Lidl International.
+            </div>
+            <div class="sapMRb" id="scope-country" role="radio" aria-checked="false"
+                 onclick="this.setAttribute('aria-checked','true')">
+              Min profil må gerne tages i betragtning til nuværende og fremtidige
+              relevante stillinger i mit bopælsland.
+            </div>
+            <div class="sapMRb" id="scope-own" role="radio" aria-checked="false">
+              Jeg vil kun tages i betragtning til de stillinger, jeg selv har søgt.
+            </div>
+          </div>
+        """ + SUBMIT_BUTTON)
+        profile = dict(
+            PROFILE,
+            two_year_goal="Teamleder med mere ansvar",
+            lidl_profile_scope="country",
+        )
+        report = lidl_apply.fill_answers(page, profile)
+        assert page.input_value("#start") == "15.08.2026"
+        assert page.input_value("#goal") == "Teamleder med mere ansvar"
+        assert page.get_attribute("#scope-country", "aria-checked") == "true"
+        assert "Min profil må gerne tages" not in " ".join(report["unanswered"])
+    finally:
+        browser.close()
+        playwright.stop()
+
+
 def test_submit_refuses_while_a_question_has_no_answer():
     """Ключевая защита: без ответа кнопка Lidl не нажимается вообще."""
     playwright, browser, page = _page()

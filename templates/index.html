@@ -305,7 +305,33 @@
   .num-stepper button { background:var(--card); border:none; color:var(--txt); width:34px; flex:0 0 34px; cursor:pointer; font-size:17px; font-weight:700; line-height:1; border-radius:0; }
   .num-stepper button:hover { background:var(--accent); color:var(--on-accent); }
   .grpchk { display:inline-flex; align-items:center; gap:7px; color:var(--txt); font-size:13px; font-weight:600; cursor:pointer; background:var(--input-bg); border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
-  .grpchk input { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
+  .grpchk input {
+    position:absolute; inline-size:1px; block-size:1px; opacity:0;
+    pointer-events:none;
+  }
+  .grpchk .wex-check {
+    position:relative; display:inline-grid; place-items:center;
+    width:18px; height:18px; flex:0 0 18px;
+    border:1px solid var(--hover-line); border-radius:5px;
+    background:var(--card); color:transparent;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.025);
+    transition:background .14s ease, border-color .14s ease, box-shadow .14s ease, transform .14s ease;
+  }
+  .grpchk .wex-check::after {
+    content:""; width:8px; height:4px;
+    border-left:2px solid currentColor; border-bottom:2px solid currentColor;
+    transform:translateY(-1px) rotate(-45deg);
+  }
+  .grpchk:hover .wex-check { border-color:var(--accent); }
+  .grpchk input:focus-visible + .wex-check {
+    box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+    border-color:var(--accent);
+  }
+  .grpchk input:checked + .wex-check {
+    background:var(--accent); border-color:var(--accent); color:var(--on-accent);
+  }
+  .grpchk input:checked + .wex-check::after { transform:translateY(-1px) rotate(-45deg) scale(1); }
+  .grpchk:active .wex-check { transform:scale(.92); }
   .group-card { cursor:default; }
   .group-jobs { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
   .gjob { color:var(--txt); text-decoration:none; font-size:13px; padding:5px 8px; border-radius:7px; background:var(--glass); border:1px solid var(--glass-line); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -930,10 +956,10 @@
     </div>
     <div class="advanced-options">
     <label class="grpchk" data-tip-title="Группировка" data-tip-body="Собирает вакансии одного магазина в одну карточку.">
-      <input type="checkbox" name="group" value="1" {{ 'checked' if f.group }}> {{ ic.i('store') }} Группировать по магазинам
+      <input type="checkbox" name="group" value="1" {{ 'checked' if f.group }}><span class="wex-check" aria-hidden="true"></span> {{ ic.i('store') }} Группировать по магазинам
     </label>
     <label class="grpchk" data-tip-title="Поданные в общей ленте" data-tip-body="Показывает уже поданные вакансии среди активных, с отдельной подсветкой.">
-      <input type="checkbox" name="show_applied" value="1" {{ 'checked' if f.show_applied }}> {{ ic.i('check', 13) }} Показывать поданные вместе
+      <input type="checkbox" name="show_applied" value="1" {{ 'checked' if f.show_applied }}><span class="wex-check" aria-hidden="true"></span> {{ ic.i('check', 13) }} Показывать поданные вместе
     </label>
     <button class="primary filter-apply" type="submit">{{ ic.i('search', 13) }} Применить фильтры</button>
     {% if resolved.city or resolved.brand or resolved.region or resolved.category or resolved.employment_type or resolved.job_level %}
