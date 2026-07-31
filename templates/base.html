@@ -15,6 +15,10 @@
     var m = document.cookie.match(/(?:^|;\s*)jobhub_theme=(dark|light)/);
     var t = (m && m[1]) || localStorage.getItem("jobhub-theme") || "dark";
     document.documentElement.dataset.theme = t;
+    var savedZoom = Number(localStorage.getItem("wexflow-ui-zoom") || 100);
+    var zoom = Math.max(80, Math.min(150, Number.isFinite(savedZoom) ? savedZoom : 100));
+    document.documentElement.style.setProperty("--wex-ui-zoom", String(zoom / 100));
+    document.documentElement.dataset.uiZoom = String(zoom);
     var params = new URLSearchParams(location.search);
     if (params.get("app_shell") === "edgeapp") {
       document.documentElement.classList.add("edge-app-shell");
@@ -87,6 +91,90 @@
         b.classList.add("loading");
       }
     });
+  })();
+</script>
+<script>
+  // Масштаб интерфейса: одинаковый на всех страницах и сохраняется локально.
+  (function () {
+    function clamp(value) {
+      value = Math.round(Number(value) / 5) * 5;
+      return Math.max(80, Math.min(150, Number.isFinite(value) ? value : 100));
+    }
+    function current() {
+      return clamp(document.documentElement.dataset.uiZoom || 100);
+    }
+    function apply(value, persist) {
+      var zoom = clamp(value);
+      document.documentElement.style.setProperty("--wex-ui-zoom", String(zoom / 100));
+      document.documentElement.dataset.uiZoom = String(zoom);
+      document.querySelectorAll("[data-ui-zoom-value]").forEach(function (el) {
+        el.textContent = zoom + "%";
+      });
+      document.querySelectorAll("[data-ui-zoom-range]").forEach(function (range) {
+        range.value = String(zoom);
+        range.setAttribute("aria-valuetext", zoom + "%");
+      });
+      if (persist !== false) {
+        try { localStorage.setItem("wexflow-ui-zoom", String(zoom)); } catch (_) {}
+      }
+      return zoom;
+    }
+    function closeAll(except) {
+      document.querySelectorAll("[data-ui-zoom-panel]").forEach(function (panel) {
+        if (panel !== except) panel.hidden = true;
+      });
+      document.querySelectorAll("[data-ui-zoom-open]").forEach(function (button) {
+        var controls = button.closest(".wex-view-controls");
+        var panel = controls && controls.querySelector("[data-ui-zoom-panel]");
+        button.setAttribute("aria-expanded", String(Boolean(panel && !panel.hidden)));
+      });
+    }
+    function setup() {
+      apply(current(), false);
+      document.querySelectorAll("[data-ui-zoom-open]").forEach(function (button) {
+        var controls = button.closest(".wex-view-controls");
+        var panel = controls && controls.querySelector("[data-ui-zoom-panel]");
+        if (!panel) return;
+        button.addEventListener("click", function (event) {
+          event.stopPropagation();
+          var opening = panel.hidden;
+          closeAll(opening ? panel : null);
+          panel.hidden = !opening;
+          button.setAttribute("aria-expanded", String(opening));
+          if (opening) panel.querySelector("[data-ui-zoom-range]")?.focus();
+        });
+        panel.addEventListener("click", function (event) { event.stopPropagation(); });
+      });
+      document.querySelectorAll("[data-ui-zoom-range]").forEach(function (range) {
+        range.addEventListener("input", function () { apply(range.value, true); });
+      });
+      document.querySelectorAll("[data-ui-zoom-reset]").forEach(function (button) {
+        button.addEventListener("click", function () { apply(100, true); });
+      });
+      document.addEventListener("click", function () { closeAll(null); });
+    }
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeAll(null);
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key === "0") {
+        event.preventDefault();
+        apply(100, true);
+      } else if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        apply(current() + 5, true);
+      } else if (event.key === "-" || event.key === "_") {
+        event.preventDefault();
+        apply(current() - 5, true);
+      }
+    });
+    document.addEventListener("wheel", function (event) {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      apply(current() + (event.deltaY < 0 ? 5 : -5), true);
+    }, { passive: false });
+    window.WexFlowZoom = { apply: apply, current: current };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", setup);
+    else setup();
   })();
 </script>
 <script>

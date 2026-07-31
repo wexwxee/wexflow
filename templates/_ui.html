@@ -203,10 +203,35 @@
 {%- endmacro %}
 
 {% macro theme_toggle() -%}
-  <button type="button" class="theme-toggle" data-theme-toggle data-tip-title="Тема" data-tip-body="Переключает светлый и тёмный режим интерфейса.">
-    <span class="ic-sun">{{ ic.i('sun', 15) }}</span>
-    <span class="ic-moon">{{ ic.i('moon', 15) }}</span>
-  </button>
+  <div class="wex-view-controls">
+    <button type="button" class="ui-zoom-toggle" data-ui-zoom-open
+            aria-haspopup="dialog" aria-expanded="false"
+            data-tip-title="Масштаб"
+            data-tip-body="Увеличить или уменьшить весь интерфейс. Ctrl + / Ctrl − тоже работают.">
+      {{ ic.i('eye', 15) }} <span data-ui-zoom-value>100%</span>
+    </button>
+    <div class="ui-zoom-panel" data-ui-zoom-panel role="dialog"
+         aria-label="Масштаб интерфейса" hidden>
+      <div class="ui-zoom-head">
+        <span>{{ ic.i('eye', 18) }}</span>
+        <div><b>Масштаб интерфейса</b><small>Текст, поля и кнопки</small></div>
+        <strong data-ui-zoom-value>100%</strong>
+      </div>
+      <input type="range" min="80" max="150" step="5" value="100"
+             data-ui-zoom-range aria-label="Масштаб интерфейса">
+      <div class="ui-zoom-marks" aria-hidden="true">
+        <span>80%</span><span>100%</span><span>125%</span><span>150%</span>
+      </div>
+      <div class="ui-zoom-foot">
+        <span>Рабочая область использует ширину окна автоматически.</span>
+        <button type="button" data-ui-zoom-reset>Сбросить</button>
+      </div>
+    </div>
+    <button type="button" class="theme-toggle" data-theme-toggle data-tip-title="Тема" data-tip-body="Переключает светлый и тёмный режим интерфейса.">
+      <span class="ic-sun">{{ ic.i('sun', 15) }}</span>
+      <span class="ic-moon">{{ ic.i('moon', 15) }}</span>
+    </button>
+  </div>
 {%- endmacro %}
 
 {% macro freshness(age_min, running=false) -%}
