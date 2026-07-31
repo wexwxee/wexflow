@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 
 import config
+import json_store
 import candidate_profiles
 
 UPLOAD_DIR = config.DATA_DIR / "uploads"
@@ -250,7 +251,7 @@ def save_profile(data: dict):
     tmp = path.with_name(path.name + ".tmp")
     with _LOCK:
         tmp.write_text(payload, encoding="utf-8")   # атомарно: пишем во временный…
-        os.replace(tmp, path)                        # …и подменяем одним движением
+        json_store.replace_file(tmp, path)           # …и подменяем одним движением
         # зеркалим последний УСПЕШНО записанный профиль в .bak — если основной файл
         # позже побьётся, load_profile восстановит из него свежее состояние
         try:

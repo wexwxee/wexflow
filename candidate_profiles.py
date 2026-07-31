@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import json_store
+
 
 APP_NAME = "WexFlow"
 PRIMARY_ID = "primary"
@@ -125,7 +127,7 @@ def _save(state: dict, root: Path) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + ".tmp")
     temp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temp, path)
+    json_store.replace_file(temp, path)
     return state
 
 
@@ -202,7 +204,7 @@ def request_remote_switch(profile_id: str, root: Path | None = None) -> dict:
         "profile_id": profile["id"],
         "requested_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }, ensure_ascii=False), encoding="utf-8")
-    os.replace(temp, path)
+    json_store.replace_file(temp, path)
     return profile
 
 

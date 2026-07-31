@@ -17,6 +17,7 @@ import uuid
 from pathlib import Path
 
 import config
+import json_store
 
 PATH = config.DATA_DIR / "settings.json"
 
@@ -54,7 +55,9 @@ def save(data: dict) -> None:
     tmp = PATH.with_name(PATH.name + ".tmp")
     with _LOCK:
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, PATH)         # атомарная подмена
+        # атомарная подмена; в зашифрованной EFS-папке она невозможна —
+        # тогда json_store аккуратно копирует поверх (см. replace_file)
+        json_store.replace_file(tmp, PATH)
 
 
 def mutate(mutator) -> dict:
