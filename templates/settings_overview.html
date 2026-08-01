@@ -66,21 +66,23 @@
       </div>
       <p>{{ s.desc }}</p>
       <div class="settings-meta">
-        {% if s.key == 'account' %}
+        {% if s.key == 'profile' %}
           {% if profile.first_name or profile.email %}
             <span class="settings-pill ok">{{ ic.i('check', 12) }} Профиль заполнен</span>
           {% else %}
             <span class="settings-pill warn">{{ ic.i('x', 12) }} Заполни профиль</span>
           {% endif %}
-          {% if account_tg_id %}
-            <span class="settings-pill ok">{{ ic.i('send', 12) }} Telegram</span>
-          {% else %}
-            <span class="settings-pill">Telegram не подключён</span>
-          {% endif %}
           {% if home %}
             <span class="settings-pill ok">{{ ic.i('home', 12) }} Дом указан</span>
           {% else %}
             <span class="settings-pill warn">Добавь адрес дома</span>
+          {% endif %}
+
+        {% elif s.key == 'account' %}
+          {% if account_tg_id %}
+            <span class="settings-pill ok">{{ ic.i('send', 12) }} Telegram подключён</span>
+          {% else %}
+            <span class="settings-pill">Telegram не подключён</span>
           {% endif %}
 
         {% elif s.key == 'salling' %}

@@ -100,7 +100,7 @@
       <span class="ready-chip {{ 'ok' if cv_ready else 'warn' }}">
         {{ ic.i('file', 12) }} {{ 'CV добавлено' if cv_ready else 'CV не добавлено' }}
       </span>
-      {% if profile_missing %}<a class="ready-link" href="/account#profile">Дополнить профиль →</a>
+      {% if profile_missing %}<a class="ready-link" href="/profile">Дополнить профиль →</a>
       {% elif not cv_ready %}<a class="ready-link" href="/settings/salling#documents">Добавить CV →</a>{% endif %}
     </div>
     <form class="link-form" method="post" action="/apply-by-link/start">

@@ -4736,11 +4736,15 @@ def api_transit(job_id: str):
         return JSONResponse({"ok": False, "error": "маршрут сейчас не посчитался"})
 
 
-@app.get("/account", response_class=HTMLResponse)
-def account_page(request: Request, saved: str = "", missing: str = "",
-                 deleted: str = "", delete_error: str = "",
-                 unlinked: str = "", unlink_warning: str = ""):
-    """Общие настройки приложения: единый профиль, документы и подписка."""
+def _render_account(request: Request, mode: str = "account", saved: str = "",
+                    missing: str = "", deleted: str = "", delete_error: str = "",
+                    unlinked: str = "", unlink_warning: str = ""):
+    """Аккаунт и профиль кандидата — одна страница на две половины.
+
+    Раньше всё жило на одном полотне: вход через Telegram, облако, подписка,
+    личные данные, домашний адрес и ответы для каждой компании — 54 поля
+    подряд. Половины нужны с разной частотой (вход настраивают один раз,
+    ответы правят регулярно), поэтому ``mode`` показывает только свою."""
     candidate = candidate_profiles.active_profile()
     family_candidate = candidate["id"] != candidate_profiles.PRIMARY_ID
     # Основной профиль читает владельца общей сессии устройства. Семейный
@@ -4802,6 +4806,9 @@ def account_page(request: Request, saved: str = "", missing: str = "",
     missing_fields = [x for x in missing.split(",") if x]
     return templates.TemplateResponse("account.html", {
         "request": request, "profile": profile,
+        "mode": mode,
+        # домашний адрес общий для всех источников и живёт теперь здесь
+        "home": settings_store.get_home(),
         "file_info": _profile_file_info(profile),
         "saved": saved, "missing_fields": missing_fields,
         "deleted": deleted, "delete_error": delete_error,
@@ -4820,6 +4827,26 @@ def account_page(request: Request, saved: str = "", missing: str = "",
         "citizenship_options": profile_store.CITIZENSHIP_OPTIONS,
         "lidl_discovery_options": profile_store.LIDL_DISCOVERY_OPTIONS,
     })
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_page(request: Request, saved: str = "", missing: str = "",
+                 deleted: str = "", delete_error: str = "",
+                 unlinked: str = "", unlink_warning: str = ""):
+    """Вход в WexFlow: Telegram, облако и подписка."""
+    return _render_account(request, "account", saved=saved, missing=missing,
+                           deleted=deleted, delete_error=delete_error,
+                           unlinked=unlinked, unlink_warning=unlink_warning)
+
+
+@app.get("/profile", response_class=HTMLResponse)
+def profile_page(request: Request, saved: str = "", missing: str = "",
+                 deleted: str = "", delete_error: str = "",
+                 unlinked: str = "", unlink_warning: str = ""):
+    """Профиль кандидата: личные данные, домашний адрес и ответы для компаний."""
+    return _render_account(request, "profile", saved=saved, missing=missing,
+                           deleted=deleted, delete_error=delete_error,
+                           unlinked=unlinked, unlink_warning=unlink_warning)
 
 
 def _autopilot_geo_options(rule: dict | None = None):
@@ -4998,8 +5025,10 @@ def _document_import_view(preview: dict | None) -> dict | None:
 # остался без плитки: попасть в него можно было только изнутри другого раздела.
 # Теперь и плитки, и вкладки строятся отсюда, разойтись им больше негде.
 SETTINGS_SECTIONS = [
-    {"key": "account", "title": "Аккаунт", "icon": "user", "url": "/account#profile",
-     "desc": "Telegram-вход, подписка и профиль кандидата — общий для всех модулей."},
+    {"key": "profile", "title": "Профиль кандидата", "icon": "user", "url": "/profile",
+     "desc": "Личные данные, домашний адрес и ответы на вопросы анкет — один раз для всех фирм."},
+    {"key": "account", "title": "Аккаунт", "icon": "send", "url": "/account",
+     "desc": "Вход через Telegram, данные в облаке и подписка."},
     {"key": "salling", "title": "Salling", "icon": "cart", "url": "/settings/salling",
      "desc": "Вход в Salling Group и сброс сохранённой сессии."},
     {"key": "lidl", "title": "Lidl", "icon": "store", "url": "/settings/lidl",

@@ -768,7 +768,7 @@
   <div class="wf-setup-bar"><div style="width: {{ (setup.done / setup.total * 100) | round | int }}%;"></div></div>
   <div class="wf-setup-items">
     {% for ok, label, href, go in [
-      (setup.profile, 'Профиль кандидата', '/account', 'Заполнить'),
+      (setup.profile, 'Профиль кандидата', '/profile', 'Заполнить'),
       (setup.login, 'Вход в аккаунт Salling', '/settings/salling', 'Войти'),
       (setup.docs, 'CV / резюме', '/settings/salling', 'Прикрепить'),
       (setup.home, 'Домашний адрес — для расстояний', '/settings/salling#home', 'Указать'),
@@ -1258,7 +1258,7 @@
     </ul>
     <div class="wf-welcome-actions">
       <button type="button" class="ghost" id="wfWelcomeSkip">Пропустить</button>
-      <a href="/account" id="wfWelcomeCta"><button type="button" class="primary">{{ ic.i('user', 14) }} Заполнить профиль →</button></a>
+      <a href="/profile" id="wfWelcomeCta"><button type="button" class="primary">{{ ic.i('user', 14) }} Заполнить профиль →</button></a>
     </div>
   </div>
 </div>

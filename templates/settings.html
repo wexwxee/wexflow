@@ -484,7 +484,7 @@
       кто порекомендовал, обработка данных. Они хранятся вместе с ответами для других
       компаний, поэтому редактируются в Аккаунте.</p>
     <div class="actions">
-      <a class="primary" href="/account?company=lidl#company-answers">Открыть вопросы Lidl</a>
+      <a class="primary" href="/profile?company=lidl#company-answers">Открыть вопросы Lidl</a>
     </div>
   </div>
 
@@ -1018,7 +1018,7 @@
     {% else %}
     <p class="hint" style="margin:0 0 12px;color:var(--err-txt);">Профиль ещё не заполнен — без него подача не сработает.</p>
     {% endif %}
-    <div class="actions"><a class="crosslink" href="/account#profile">Изменить в Аккаунте →</a></div>
+    <div class="actions"><a class="crosslink" href="/profile">Изменить в Аккаунте →</a></div>
   </div>
 
   <!-- Аккаунт Salling -->
@@ -1053,7 +1053,7 @@
       не только в Salling. Поэтому задаётся один раз в Аккаунте.</p>
     {% if home %}<p class="hint" style="margin:0 0 12px;">Сейчас: <b>{{ home.address }}</b></p>
     {% else %}<p class="hint" style="margin:0 0 12px;color:var(--err-txt);">Адрес не задан — расстояние до магазинов не считается.</p>{% endif %}
-    <div class="actions"><a class="crosslink" href="/account#home">{{ 'Изменить в Аккаунте' if home else 'Задать в Аккаунте' }} →</a></div>
+    <div class="actions"><a class="crosslink" href="/profile#home">{{ 'Изменить в Аккаунте' if home else 'Задать в Аккаунте' }} →</a></div>
   </div>
 
   {% endif %}
@@ -1516,7 +1516,7 @@
   <section class="panel">
     <h2>{{ ic.i('user', 17) }} Данные для ответов</h2>
     <p class="hint">ИИ использует только сохранённые факты кандидата. Имя, контакты, опыт, языки и «Коротко о себе» редактируются в общем профиле.</p>
-    <div class="actions"><a class="crosslink" href="/account#profile">Открыть профиль кандидата →</a></div>
+    <div class="actions"><a class="crosslink" href="/profile">Открыть профиль кандидата →</a></div>
   </section>
 
   <script>

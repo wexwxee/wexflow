@@ -35,7 +35,9 @@
       <span class="candidate-profile-avatar">{{ candidate_state.active.initials }}</span>
       <span>{{ candidate_state.active.name }}</span>
     </button>
-    <a class="wex-side-btn {{ 'active' if active == 'account' }}" href="/account" data-tip-title="Аккаунт" data-tip-body="Общий профиль кандидата и вход через Telegram.">{{ ic.i('user', 18) }}<span>Аккаунт</span></a>
+    {# В боковом меню — то, что открывают чаще: сам профиль. Вход через Telegram
+       и подписка живут в «Аккаунте», ссылка на него стоит на странице профиля. #}
+    <a class="wex-side-btn {{ 'active' if active == 'account' }}" href="/profile" data-tip-title="Профиль" data-tip-body="Личные данные, домашний адрес и ответы для анкет. Вход через Telegram — в «Аккаунте».">{{ ic.i('user', 18) }}<span>Профиль</span></a>
     {% if show_billing() %}
     <a class="wex-side-btn" href="/account#подписка" data-tip-title="Твой тариф" data-tip-body="Текущий тариф подписки. Нажми, чтобы посмотреть планы.">{{ ic.i('star', 18) }}<span>{{ plan_label() }}</span></a>
     {% endif %}
