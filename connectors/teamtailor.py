@@ -26,18 +26,41 @@ _HEADERS = {"User-Agent": "WexFlow/1.0 (+job-apply-hub)"}
 _TIMEOUT = 20.0
 
 
+def _base_url(value: str) -> str:
+    """Корень карьерного сайта из домена или полного адреса."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    base = value if value.startswith("http") else f"https://{value}"
+    return base.rstrip("/")
+
+
+def _company_bases(company: dict) -> list[str]:
+    """Все известные корни сайта фирмы: свой домен и поддомен Teamtailor.
+
+    Порядок = приоритет. Второй адрес нужен для самолечения: фирма могла
+    переехать в любую сторону, а каталог у пользователя обновляется только
+    вместе с новой версией приложения.
+    """
+    bases = []
+    for value in ((company.get("domain") or ""), (company.get("slug") or "")):
+        base = _base_url(value if "." in value or value.startswith("http")
+                         else (f"{value}.teamtailor.com" if value else ""))
+        if base and base not in bases:
+            bases.append(base)
+    return bases
+
+
 def _feed_url(company: dict) -> str:
     """Адрес публичного JSON-фида компании.
 
     Поддерживаем оба варианта: поддомен ``slug.teamtailor.com`` и собственный
     карьерный домен (``domain``), который многие фирмы вешают на Teamtailor.
     """
-    domain = (company.get("domain") or "").strip()
-    if domain:
-        base = domain if domain.startswith("http") else f"https://{domain}"
-    else:
-        base = f"https://{company['slug']}.teamtailor.com"
-    return base.rstrip("/") + "/jobs.json"
+    bases = _company_bases(company)
+    if not bases:
+        raise RuntimeError("в каталоге нет ни домена, ни slug")
+    return bases[0] + "/jobs.json"
 
 
 def _first_address(jobposting: dict) -> dict:
@@ -59,13 +82,64 @@ class TeamtailorConnector(Connector):
         data = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
         return data.get("companies", data) if isinstance(data, dict) else data
 
-    def fetch_company(self, company: dict) -> list[JobItem]:
-        """Вакансии одной компании. Бросает при сетевой/JSON-ошибке —
-        наверху (search) ловится, чтобы одна фирма не валила весь список."""
-        url = _feed_url(company)
+    # Найденные новые адреса переехавших фирм (на время работы приложения).
+    _moved: dict[str, str] = {}
+
+    def _fetch_feed(self, url: str) -> dict:
+        """Скачать JSON Feed. Бросает, если это не фид (например, HTML-страница)."""
         r = httpx.get(url, headers=_HEADERS, timeout=_TIMEOUT, follow_redirects=True)
         r.raise_for_status()
         data = r.json()
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            raise RuntimeError(f"по адресу {url} не JSON-фид вакансий")
+        return data
+
+    def _discover_feed(self, company: dict, tried: str) -> tuple[str, dict] | None:
+        """Найти новый адрес фида, если фирма переехала.
+
+        Карьерные сайты переезжают (чаще всего с ``slug.teamtailor.com`` на
+        собственный домен), и тогда старый ``jobs.json`` отдаёт 404. Старый
+        адрес при этом обычно ПЕРЕНАПРАВЛЯЕТ на новый — идём по редиректу и
+        пробуем фид там. Так переезд заживает у всех сам, не дожидаясь новой
+        версии приложения с обновлённым каталогом.
+        """
+        seen = {tried}
+        for base in _company_bases(company):
+            roots = [base]
+            try:  # куда ведёт корень сайта — там и живёт новый фид
+                r = httpx.get(base + "/", headers=_HEADERS, timeout=_TIMEOUT,
+                              follow_redirects=True)
+                final = _base_url(f"{r.url.scheme}://{r.url.host}")
+                if final:
+                    roots.append(final)
+            except Exception:  # noqa: BLE001 — разведка не обязана удаваться
+                pass
+            for root in roots:
+                url = root + "/jobs.json"
+                if url in seen or not url.startswith("https://"):
+                    continue
+                seen.add(url)
+                try:
+                    return url, self._fetch_feed(url)
+                except Exception:  # noqa: BLE001 — просто не тот адрес
+                    continue
+        return None
+
+    def fetch_company(self, company: dict) -> list[JobItem]:
+        """Вакансии одной компании. Бросает при сетевой/JSON-ошибке —
+        наверху (search) ловится, чтобы одна фирма не валила весь список."""
+        key = str(company.get("slug") or company.get("domain") or "")
+        url = self._moved.get(key) or _feed_url(company)
+        try:
+            data = self._fetch_feed(url)
+        except Exception:
+            found = self._discover_feed(company, url)
+            if found is None:
+                self._moved.pop(key, None)  # запомненный адрес тоже мог устареть
+                raise
+            url, data = found
+            self._moved[key] = url
+            print(f"  teamtailor: {key or url} — рабочий адрес фида {url}")
         company_name = company.get("name") or data.get("title") or company.get("slug", "")
         items: list[JobItem] = []
         for it in data.get("items", []):
