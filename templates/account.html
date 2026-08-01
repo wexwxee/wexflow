@@ -46,6 +46,8 @@
   }
   .field.suggest-open { z-index:40; margin-bottom:176px; }
   .field.suggest-open .suggest-menu { display:block; }
+  /* поле дома с живыми подсказками адресов — переехало сюда из раздела Salling */
+  .address-field.suggest-open { margin-bottom:204px; }
   @media (max-width:640px){ .field.suggest-open { margin-bottom:166px; } }
   .suggest-menu::-webkit-scrollbar { width:10px; }
   .suggest-menu::-webkit-scrollbar-track { background:transparent; }
@@ -978,6 +980,189 @@
     <div class="actions" style="margin-top:16px;"><span id="autosaveStatus" class="autosave">{{ ic.i('check', 13) }} Изменения сохраняются автоматически</span></div>
   </form>
 
+  <!-- Домашний адрес: общий для всех источников, поэтому живёт здесь,
+       а не внутри раздела конкретного работодателя. -->
+  <form id="home" class="panel" method="post" action="/set-home">
+    <h2>{{ ic.i('home', 17) }} Домашний адрес</h2>
+    <p class="hint">Нужен для сортировки и фильтра вакансий по расстоянию. Начни вводить улицу, город или индекс — появятся реальные варианты из датской адресной базы.</p>
+    <div class="field address-field" data-address-suggest>
+      <input id="homeAddressInput" type="text" name="address" value="{{ home.address if home else '' }}" placeholder="например: Sonnerupvej 104 или København" autocomplete="off" spellcheck="false">
+      <div class="suggest-menu" id="homeAddressSuggest"></div>
+    </div>
+    {% if home %}<p class="hint">Текущий: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %}</p>{% endif %}
+    <div class="actions">
+      <button class="secondary" type="submit">{{ 'Обновить дом' if home else 'Задать дом' }}</button>
+      <button class="secondary" type="button" id="geoHomeBtn" data-tip-title="Определить адрес" data-tip-body="Работает только в установленном WexFlow: Windows отдаёт координаты, приложение превращает их в ближайший датский адрес.">{{ ic.i('pin', 15) }} Определить мой адрес</button>
+    </div>
+    <p class="hint" id="geoHomeMsg" hidden></p>
+  </form>
+  <script>
+    (function () {
+      var field = document.querySelector("[data-address-suggest]");
+      var input = document.getElementById("homeAddressInput");
+      var menu = document.getElementById("homeAddressSuggest");
+      var btn = document.getElementById("geoHomeBtn");
+      var msg = document.getElementById("geoHomeMsg");
+      var timer = null;
+      var controller = null;
+      var items = [];
+      var active = -1;
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function closeSuggest() {
+        if (field) field.classList.remove("suggest-open");
+        active = -1;
+      }
+
+      function renderSuggest(stateText) {
+        if (!field || !menu) return;
+        var meta = '<div class="suggest-meta">Адреса из датской базы DAWA</div>';
+        function keepVisible() {
+          var rect = menu.getBoundingClientRect();
+          if (rect.bottom > window.innerHeight - 18 || rect.top < 18) {
+            field.scrollIntoView({ block: "center", behavior: "smooth" });
+          }
+        }
+        if (stateText) {
+          menu.innerHTML = meta + '<div class="suggest-empty">' + escapeHtml(stateText) + '</div>';
+          field.classList.add("suggest-open");
+          requestAnimationFrame(keepVisible);
+          return;
+        }
+        if (!items.length) {
+          menu.innerHTML = meta + '<div class="suggest-empty">Ничего не найдено. Попробуй добавить номер дома, город или индекс.</div>';
+          field.classList.add("suggest-open");
+          requestAnimationFrame(keepVisible);
+          return;
+        }
+        menu.innerHTML = meta + items.map(function (item, i) {
+          var parts = String(item.label || "").split(",");
+          var main = parts.shift() || item.label;
+          var sub = parts.join(",").trim();
+          return '<button type="button" class="suggest-item' + (i === active ? ' active' : '') + '" data-index="' + i + '">'
+            + '<span class="suggest-main">' + escapeHtml(main) + '</span>'
+            + (sub ? '<span class="suggest-sub">' + escapeHtml(sub) + '</span>' : '')
+            + '</button>';
+        }).join("");
+        field.classList.add("suggest-open");
+        requestAnimationFrame(keepVisible);
+      }
+
+      function chooseSuggest(index) {
+        var item = items[index];
+        if (!item || !input) return;
+        input.value = item.value || item.label;
+        closeSuggest();
+        input.focus();
+      }
+
+      function loadSuggestions() {
+        if (!input) return;
+        var q = input.value.trim();
+        if (q.length < 2) {
+          items = [];
+          closeSuggest();
+          return;
+        }
+        if (controller) controller.abort();
+        controller = new AbortController();
+        renderSuggest("Ищу адреса...");
+        fetch("/api/address-suggestions?q=" + encodeURIComponent(q), {
+          credentials: "include",
+          signal: controller.signal
+        }).then(function (r) {
+          if (!r.ok) throw new Error("bad status");
+          return r.json();
+        }).then(function (data) {
+          items = (data && data.items) || [];
+          active = -1;
+          renderSuggest("");
+        }).catch(function (err) {
+          if (err && err.name === "AbortError") return;
+          items = [];
+          renderSuggest("Не удалось загрузить подсказки. Можно ввести адрес вручную.");
+        });
+      }
+
+      if (input && field && menu) {
+        input.addEventListener("input", function () {
+          clearTimeout(timer);
+          timer = setTimeout(loadSuggestions, 230);
+        });
+        input.addEventListener("focus", function () {
+          if (input.value.trim().length >= 2 && items.length) renderSuggest("");
+        });
+        input.addEventListener("keydown", function (event) {
+          if (!field.classList.contains("suggest-open")) return;
+          if (event.key === "Escape") { closeSuggest(); return; }
+          if (!items.length) return;
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            active = Math.min(items.length - 1, active + 1);
+            renderSuggest("");
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            active = Math.max(0, active - 1);
+            renderSuggest("");
+          }
+          if (event.key === "Enter" && active >= 0) {
+            event.preventDefault();
+            chooseSuggest(active);
+          }
+        });
+        menu.addEventListener("click", function (event) {
+          var button = event.target.closest(".suggest-item");
+          if (!button) return;
+          chooseSuggest(Number(button.dataset.index));
+        });
+        document.addEventListener("click", function (event) {
+          if (!field.contains(event.target)) closeSuggest();
+        });
+      }
+
+      if (!btn) return;
+      function show(t) { if (msg) { msg.hidden = false; msg.textContent = t; } }
+      btn.addEventListener("click", function () {
+        var api = window.pywebview && window.pywebview.api;
+        if (!api || !api.get_location) {
+          show("Определение адреса работает только в установленном WexFlow. Здесь адрес можно ввести вручную.");
+          return;
+        }
+        btn.disabled = true;
+        show("Определяю местоположение…");
+        api.get_location().then(function (loc) {
+          if (!loc || !loc.ok) {
+            btn.disabled = false;
+            show("Не удалось определить адрес. Открой Параметры Windows → Конфиденциальность и безопасность → Расположение: включи «Службы определения местоположения» и «Разрешить классическим приложениям доступ к расположению», затем нажми кнопку снова.");
+            return;
+          }
+          var fd = new FormData();
+          fd.append("lat", loc.lat);
+          fd.append("lon", loc.lng);
+          fetch("/set-home-coords", { method: "POST", body: fd, credentials: "include" })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d && d.ok) { show("Готово: " + d.address); location.reload(); }
+              else { btn.disabled = false; show("Не получилось сохранить адрес."); }
+            })
+            .catch(function () { btn.disabled = false; show("Ошибка сети при сохранении."); });
+        }).catch(function () {
+          btn.disabled = false;
+          show("Не удалось получить местоположение от Windows. Проверь: Параметры Windows → Конфиденциальность и безопасность → Расположение → включены службы геолокации и доступ для классических приложений.");
+        });
+      });
+    })();
+  </script>
+
   <section class="panel company-answers-panel" id="company-answers">
     <style>
       .company-answer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
@@ -1085,7 +1270,9 @@
 
       <section class="company-settings-block" data-company-only="lidl" hidden>
         <h3>{{ ic.i('store', 14) if ic else '' }} Вопросы анкеты Lidl</h3>
-        <p class="hint">Это точные поля Lidl EasyApply. Они не показываются в настройках других компаний.</p>
+        <p class="hint">Это точные поля Lidl EasyApply. Они не показываются в настройках других компаний.
+          Вход в кандидатский кабинет и отслеживание заявок — в
+          <a class="crosslink" href="/settings/lidl">разделе Lidl →</a></p>
         <div class="grid2">
           <div class="field"><label class="lbl">Уже работаешь в Lidl?</label>
             <select name="lidl_current_employee" data-company-answer>
@@ -1257,8 +1444,14 @@
         label.value = custom.value.trim();
       }
     });
+    // Ссылка вида /account?company=lidl#company-answers сразу открывает нужную
+    // компанию: со страницы Lidl человек попадает прямо на её вопросы, а не в
+    // общий редактор, где ещё надо вспомнить, что выбрать.
+    const asked = new URLSearchParams(location.search).get('company') || '';
+    const known = asked && [...company.options].some(o => o.value === asked);
     const firstSavedCompany = Object.keys(rules)[0] || '';
-    if (firstSavedCompany) loadRule(firstSavedCompany);
+    if (known) loadRule(asked);
+    else if (firstSavedCompany) loadRule(firstSavedCompany);
     else {
       syncCompanyOnly('');
       settingsBody.hidden = true;
