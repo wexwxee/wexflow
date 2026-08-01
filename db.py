@@ -1,5 +1,8 @@
 """Модель вакансии и доступ к SQLite."""
+import shutil
+import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import UniqueConstraint, event, text
@@ -114,20 +117,186 @@ engine = create_engine(
 )
 
 
+journal_mode_warning = ""   # непустая строка = база работает НЕ в режиме WAL
+
+
 @event.listens_for(engine, "connect")
 def _sqlite_pragmas(dbapi_conn, _rec):
     """WAL + busy_timeout на каждое соединение: читатели не блокируют писателя
-    (и наоборот), а запись ждёт занятую базу, а не падает мгновенно."""
+    (и наоборот), а запись ждёт занятую базу, а не падает мгновенно.
+
+    Ответ PRAGMA journal_mode ПРОВЕРЯЕМ: переключение молча не срабатывает,
+    если базу уже держит другое соединение. Раньше это оставалось незамеченным
+    — база продолжала работать в старом откатном журнале, а её при этом писали
+    несколько процессов сразу (сервер, hub, воркеры подачи). Именно так
+    выглядели поломки 06.07 и 31.07: файл в режиме 1 и размер больше, чем
+    записано в его же заголовке — след оборванной записи без WAL.
+    """
+    global journal_mode_warning
     cur = dbapi_conn.cursor()
     try:
         cur.execute("PRAGMA journal_mode=WAL")
+        mode = str((cur.fetchone() or [""])[0] or "").lower()
         cur.execute("PRAGMA busy_timeout=30000")
         cur.execute("PRAGMA synchronous=NORMAL")   # с WAL безопасно и быстрее
+        cur.execute("PRAGMA wal_autocheckpoint=400")  # ~1.6 МБ, а не 15-32 МБ
+        if mode != "wal":
+            journal_mode_warning = (
+                f"база открыта в режиме журнала «{mode}», а не WAL — "
+                "несколько процессов писать её одновременно не должны"
+            )
+            print(f"база: ВНИМАНИЕ — {journal_mode_warning}")
+        else:
+            journal_mode_warning = ""
     finally:
         cur.close()
 
 
+def checkpoint(truncate: bool = True) -> str:
+    """Слить журнал WAL в саму базу и обнулить его.
+
+    Пока этого не происходит, «горячее» состояние живёт в jobs.db-wal: он рос
+    до 15-32 МБ, и любая его несовместимость с базой роняла ВСЁ приложение,
+    хотя сам файл базы был цел."""
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql(
+                f"PRAGMA wal_checkpoint({'TRUNCATE' if truncate else 'PASSIVE'})")
+        return ""
+    except Exception as exc:  # noqa: BLE001 — контрольная точка не критична
+        return str(exc)[:200]
+
+
+def _sqlite_ok(path: Path, ignore_journal: bool = False) -> bool:
+    """Читается ли база. ignore_journal=True — смотреть только сам файл,
+    не применяя WAL (immutable: без блокировок и без создания файлов)."""
+    if not path.exists():
+        return False
+    uri = f"file:{path.as_posix()}?mode=ro" + ("&immutable=1" if ignore_journal else "")
+    try:
+        con = sqlite3.connect(uri, uri=True, timeout=10)
+        try:
+            return str(con.execute("PRAGMA quick_check(1)").fetchone()[0]).lower() == "ok"
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def ensure_healthy_db(db_path: Path | None = None) -> str:
+    """Проверить базу ДО работы и починить, если сломался только журнал.
+
+    Разбор поломки 01.08.2026: сам jobs.db был полностью цел (5787 вакансий,
+    1231 заявка), а «database disk image is malformed» давал журнал WAL,
+    разошедшийся с базой. Приложение при этом не запускалось вовсе. Теперь
+    такой журнал уводится в сторону, и WexFlow продолжает работать на данных
+    последней контрольной точки вместо полного отказа.
+
+    Возвращает описание того, что сделано (пустая строка — всё было в порядке).
+    """
+    path = Path(db_path or config.DB_PATH)
+    if not path.exists() or _sqlite_ok(path):
+        return ""
+    if not _sqlite_ok(path, ignore_journal=True):
+        return restore_from_backup(path)     # сам файл битый — только копия спасёт
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    moved = []
+    for suffix in ("-wal", "-shm"):
+        journal = path.with_name(path.name + suffix)
+        if not journal.exists():
+            continue
+        try:
+            journal.rename(path.with_name(f"_badjournal_{stamp}_{path.name}{suffix}"))
+            moved.append(journal.name)
+        except OSError:
+            # журнал держит другой процесс — чинит тот, кто стартовал первым
+            return ""
+    if not moved:
+        return ""
+    note = ("журнал разошёлся с базой и убран в сторону: "
+            + ", ".join(moved) + "; данные базы не пострадали")
+    print(f"база: {note}")
+    return note
+
+
+def backup_db(keep: int = 5, db_path: Path | None = None) -> Path | None:
+    """Копия базы штатным способом SQLite (можно делать на живой базе).
+
+    До 01.08.2026 бэкап был ровно один и от 26 июня: любая поломка стоила
+    месяца истории. Держим несколько свежих и удаляем старые."""
+    path = Path(db_path or config.DB_PATH)
+    if not path.exists():
+        return None
+    folder = path.parent / "_backups"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{path.stem}_{datetime.now().strftime('%Y%m%d_%H%M')}.db"
+    try:
+        src = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=30)
+        try:
+            dst = sqlite3.connect(target)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+    except Exception as exc:  # noqa: BLE001 — бэкап не должен ронять приложение
+        print(f"бэкап базы: не удался — {str(exc)[:150]}")
+        target.unlink(missing_ok=True)
+        return None
+    old = sorted(folder.glob(f"{path.stem}_*.db"), key=lambda p: p.stat().st_mtime)
+    for extra in old[:-keep]:
+        try:
+            extra.unlink()
+        except OSError:
+            pass
+    return target
+
+
+def newest_backup(db_path: Path | None = None) -> Path | None:
+    """Самая свежая целая копия базы (для восстановления)."""
+    path = Path(db_path or config.DB_PATH)
+    candidates = sorted(
+        list((path.parent / "_backups").glob(f"{path.stem}_*.db"))
+        + list(path.parent.glob(f"{path.name}.backup_*")),
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
+    return next((p for p in candidates if _sqlite_ok(p, ignore_journal=True)), None)
+
+
+def restore_from_backup(db_path: Path | None = None) -> str:
+    """Последняя линия обороны: сама база не читается — ставим свежую копию."""
+    path = Path(db_path or config.DB_PATH)
+    backup = newest_backup(path)
+    if backup is None:
+        return "целой копии базы рядом нет"
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    for suffix in ("", "-wal", "-shm"):
+        broken = path.with_name(path.name + suffix)
+        if broken.exists():
+            try:
+                broken.rename(path.with_name(f"_corrupt_{stamp}_{path.name}{suffix}"))
+            except OSError as exc:
+                return f"битую базу не удалось убрать в сторону: {exc}"
+    shutil.copy2(backup, path)
+    return f"база восстановлена из копии {backup.name}"
+
+
+last_repair = ""          # что пришлось починить в базе при последнем запуске
+
+# Лечим ДО первого обращения к базе: одно только открытие файла с испорченным
+# журналом вкатывает его битые кадры внутрь и добивает целый файл. Проверка
+# стоит ~37 мс на базе в 30 МБ, поэтому делаем её при загрузке модуля — в
+# каждом процессе (сервер, hub, воркеры), кто успел первым, тот и починил.
+try:
+    last_repair = ensure_healthy_db()
+except Exception as _exc:  # noqa: BLE001 — проверка не должна мешать запуску
+    print(f"база: проверку целостности выполнить не удалось — {_exc}")
+
+
 def init_db():
+    global last_repair
+    last_repair = ensure_healthy_db() or last_repair
     SQLModel.metadata.create_all(engine)
     _migrate()
 

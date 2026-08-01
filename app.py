@@ -45,6 +45,7 @@ import account as account_mod
 import cloud_auth
 import transit
 from db import Application, Job, init_db, get_session, select, utcnow
+import db as db_mod
 import scraper
 import connector_sync
 import applications
@@ -287,6 +288,27 @@ def _autopilot_status_payload() -> dict:
     st["now"] = time.time()  # серверное «сейчас» — фронт считает дельты от него
     st["ai_usage"] = _ai_usage_payload()
     return st
+
+
+_db_repair_note = ""      # что пришлось починить в базе при запуске
+_db_backup_note = ""      # когда и куда сделана последняя копия базы
+
+
+def _db_checkpoint_tick() -> None:
+    """Слить журнал WAL в саму базу. Без этого он рос до десятков мегабайт,
+    и его несовместимость с базой роняла приложение целиком (01.08.2026)."""
+    error = db_mod.checkpoint()
+    if error:
+        print(f"база: контрольная точка не удалась — {error}")
+
+
+def _db_backup_tick() -> None:
+    """Свежие копии базы: до 01.08.2026 копия была одна и от 26 июня."""
+    global _db_backup_note
+    db_mod.checkpoint()               # копируем уже слитое состояние
+    made = db_mod.backup_db()
+    if made:
+        _db_backup_note = f"{made.name}"
 
 
 def _data_age_minutes() -> int | None:
@@ -2426,6 +2448,14 @@ async def _lifespan(app):
         max_instances=1,
         coalesce=True,
     )
+    # Сохранность базы (разбор поломки 01.08.2026): журнал WAL разрастался до
+    # 15-32 МБ и ни разу не сливался в саму базу — любая его несовместимость
+    # роняла всё приложение. Регулярная контрольная точка держит базу свежей,
+    # а копии дают откуда восстановиться (раньше копия была одна, от 26 июня).
+    sched.add_job(_db_checkpoint_tick, "interval", minutes=15,
+                  id="db_checkpoint", max_instances=1, coalesce=True)
+    sched.add_job(_db_backup_tick, "interval", hours=12,
+                  id="db_backup", max_instances=1, coalesce=True)
     sched.start()
     _scheduler = sched
     _reschedule_autopilot_scan()  # подстроить интервал под текущее состояние автопилота
@@ -2456,7 +2486,9 @@ async def _lifespan(app):
         kwargs={"force": True},
         daemon=True,
     ).start()
+    threading.Thread(target=_db_backup_tick, daemon=True).start()
     yield
+    db_mod.checkpoint()   # выходим с чистым журналом, а не с 15 МБ «горячего» хвоста
     _tg_stop.set()
     try:
         import translate_worker
@@ -2537,7 +2569,8 @@ def api_apply_progress():
 
 def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
                      cloud_fail_streak: int = 0, connector_errors=None,
-                     cloud_error: str = "") -> list:
+                     cloud_error: str = "", db_repair: str = "",
+                     db_journal: str = "") -> list:
     """Сторожа деградации (шаг 7): приложение стоит на чужих недокументированных
     опорах (лента вакансий Salling, их форма подачи) — падение опоры надо хотя бы
     ЗАМЕЧАТЬ и говорить о нём пользователю, а не молча показывать пустой список.
@@ -2571,6 +2604,20 @@ def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
                 "Проверь интернет; локальный поиск и ручная подача работают."
             ),
         })
+    if db_repair:
+        warns.append({
+            "id": "db-repaired",
+            "text": "База вакансий не открывалась из-за испорченного журнала — "
+                    "WexFlow убрал его и продолжил работу на последнем сохранённом "
+                    "состоянии. Вакансии дозагрузятся сами; поданные заявки на месте.",
+        })
+    if db_journal:
+        warns.append({
+            "id": "db-journal-mode",
+            "text": "База работает не в защищённом режиме журнала (WAL). "
+                    "Закрой WexFlow полностью и запусти заново — иначе "
+                    "одновременная запись из нескольких окон может её повредить.",
+        })
     if connector_errors:
         warns.append({
             "id": "connectors-degraded",
@@ -2593,7 +2640,8 @@ def api_health():
         _sync_state.get("last_hits"), bool(_sync_state.get("sync_failed")), streak,
         int(_tg_poll_state.get("fail_streak") or 0),
         _sync_state.get("connector_errors") or [],
-        str(_tg_poll_state.get("last_error") or ""))}
+        str(_tg_poll_state.get("last_error") or ""),
+        str(db_mod.last_repair or ""), str(db_mod.journal_mode_warning or ""))}
 
 
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")

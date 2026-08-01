@@ -188,6 +188,15 @@ def main() -> int:
             print(f"  убрано в сторону: {target.name}")
     shutil.copy2(backup, db_path)
     print(f"  поставлен бэкап: {backup.name} -> jobs.db")
+    # Бэкап мог быть снят в старом откатном режиме журнала. Если оставить его
+    # так, приложение (сервер, hub, воркеры) будет писать базу несколькими
+    # процессами БЕЗ WAL — именно в таком виде база ломалась 06.07 и 31.07.
+    con = sqlite3.connect(db_path)
+    try:
+        mode = con.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+        print(f"  режим журнала: {mode}")
+    finally:
+        con.close()
 
     updated, created = restore_applied(db_path, marks)
     print(f"  отметок «подано» возвращено: {updated}, добавлено записей: {created}")
