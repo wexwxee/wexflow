@@ -21,6 +21,8 @@
   .st-pill.ok { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
   .st-pill.warn { color:var(--err-txt); border-color:var(--err-line); background:var(--err-bg); }
   .st-err { color:var(--err-txt); background:var(--err-bg); border:1px solid var(--err-line); border-radius:9px; padding:8px 10px; font-size:12.5px; }
+  /* заметка, а не поломка: рядом стоит зелёная плашка «работают» */
+  .st-note { color:var(--muted); background:var(--glass); border:1px solid var(--glass-line); border-radius:9px; padding:8px 10px; font-size:12.5px; }
   .st-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; }
   .st-actions a, .st-actions button {
     display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:9px; font-size:12.5px;
@@ -146,7 +148,7 @@
         {% for e in connector_errors[:3] %}<div class="st-err">{{ e }}</div>{% endfor %}
         <p>Сбой одного источника не трогает остальные и не задевает Salling.</p>
       {% elif connector_warnings %}
-        {% for w in connector_warnings[:3] %}<div class="st-err">{{ w }}</div>{% endfor %}
+        {% for w in connector_warnings[:3] %}<div class="st-note">{{ w }}</div>{% endfor %}
         <p>Отдельные фирмы каталога молчат (закрыли или сменили карьерный сайт).
            Источник в целом работает, остальные вакансии приходят как обычно.</p>
       {% else %}
