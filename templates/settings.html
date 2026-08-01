@@ -424,15 +424,11 @@
 <section class="wex-workbench wex-narrow">
   <p class="sub"><a class="back-link" href="/settings"><span class="ar">←</span> Все настройки</a></p>
 
+  {# Вкладки и плитки на /settings — один список из app.SETTINGS_SECTIONS. #}
   <nav class="sec-nav">
-    <a class="{{ 'active' if settings_section == 'salling' else '' }}" href="/settings/salling">{{ ic.i('cart', 13) }} Salling</a>
-    <a class="{{ 'active' if settings_section == 'lidl' else '' }}" href="/settings/lidl">{{ ic.i('store', 13) }} Lidl</a>
-    <a class="{{ 'active' if settings_section == 'documents' else '' }}" href="/settings/documents">{{ ic.i('file', 13) }} Документы</a>
-    <a class="{{ 'active' if settings_section == 'autopilot' else '' }}" href="/settings/autopilot">{{ ic.i('zap', 13) }} Автопилот</a>
-    <a class="{{ 'active' if settings_section == 'telegram' else '' }}" href="/settings/telegram">{{ ic.i('send', 13) }} Telegram</a>
-    <a class="{{ 'active' if settings_section == 'forms' else '' }}" href="/settings/forms">{{ ic.i('sparkles', 13) }} Анкеты и ИИ</a>
-    <a class="{{ 'active' if settings_section == 'ai' else '' }}" href="/settings/ai">{{ ic.i('zap', 13) }} ИИ и лимиты</a>
-    <a href="/account#profile">{{ ic.i('user', 13) }} Аккаунт</a>
+    {% for s in settings_sections %}
+    <a class="{{ 'active' if settings_section == s.key else '' }}" href="{{ s.url }}">{{ ic.i(s.icon, 13) }} {{ s.title }}</a>
+    {% endfor %}
   </nav>
 
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
@@ -490,8 +486,11 @@
   </div>
   {% endif %}
 
-  {% if settings_section == 'ai' %}
-  <!-- ═══ ИИ и лимиты: провайдеры, мастера подключения, раздельные лимиты ═══ -->
+  {% if settings_section == 'forms' %}
+  <!-- ═══ ИИ и лимиты: провайдеры, мастера подключения, раздельные лимиты ═══
+       Живёт на одной странице с анкетами: ключ, лимиты и то, что ИИ разрешено
+       делать, — это один разговор. Раньше было два раздела, и лимиты
+       упоминались в обоих. ═══ -->
   <style>
     .ai-lead{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:16px}
     .ai-lead .ai-lead-txt{flex:1;min-width:260px}
@@ -566,8 +565,8 @@
     @media (max-width:620px){ .ai-prov-grid{grid-template-columns:1fr} }
   </style>
 
-  <section class="panel">
-    <h2>{{ ic.i('zap', 17) }} ИИ и лимиты</h2>
+  <section class="panel" id="ai-providers">
+    <h2>{{ ic.i('zap', 17) }} Ключ ИИ и лимиты</h2>
     <div class="ai-lead">
       <p class="hint ai-lead-txt" style="margin:0;">WexFlow использует ИИ для подбора фильтров, разбора документов и
         дозаполнения анкет. Подключается <b>твой личный бесплатный ключ</b>: он хранится только на этом компьютере,

@@ -26,6 +26,9 @@
   .settings-pill.ok { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
   .settings-pill.warn { color:var(--err-txt); border-color:var(--err-line); background:var(--err-bg); }
   .settings-card .arrow { color:var(--muted); }
+  .settings-diag { margin:16px 2px 0; color:var(--muted); font-size:13px; }
+  .settings-diag a { color:var(--accent); text-decoration:none; font-weight:650; margin-left:6px; }
+  .settings-diag a:hover { text-decoration:underline; }
   .settings-card:hover .arrow { color:var(--accent); }
   @media (max-width:760px) { .settings-grid { grid-template-columns:1fr; } }
 </style>
@@ -52,134 +55,88 @@
   {% if saved %}<div class="ok">{{ ic.i('check', 13) }} Сохранено.</div>{% endif %}
   {% if geoerror %}<div class="err">Не удалось распознать адрес дома — попробуй точнее.</div>{% endif %}
 
+  {# Плитки и вкладки внутри разделов строятся из одного списка (app.SETTINGS_SECTIONS),
+     чтобы наборы разделов не расходились между двумя навигациями. #}
   <div class="settings-grid">
-    <a class="settings-card" href="/account#profile">
+    {% for s in settings_sections %}
+    <a class="settings-card" href="{{ s.url }}">
       <div class="settings-card-top">
-        <h2>{{ ic.i('user', 18) }} Аккаунт</h2>
+        <h2>{{ ic.i(s.icon, 18) }} {{ s.title }}</h2>
         <span class="arrow">→</span>
       </div>
-      <p>Telegram-вход и общий профиль кандидата для всех модулей.</p>
+      <p>{{ s.desc }}</p>
       <div class="settings-meta">
-        {% if profile.first_name or profile.email %}
-          <span class="settings-pill ok">{{ ic.i('check', 12) }} Профиль заполнен</span>
-        {% else %}
-          <span class="settings-pill warn">{{ ic.i('x', 12) }} Заполни профиль</span>
-        {% endif %}
-        {% if account_tg_id %}
-          <span class="settings-pill ok">{{ ic.i('send', 12) }} Telegram</span>
-        {% else %}
-          <span class="settings-pill">Telegram не подключён</span>
-        {% endif %}
-      </div>
-    </a>
+        {% if s.key == 'account' %}
+          {% if profile.first_name or profile.email %}
+            <span class="settings-pill ok">{{ ic.i('check', 12) }} Профиль заполнен</span>
+          {% else %}
+            <span class="settings-pill warn">{{ ic.i('x', 12) }} Заполни профиль</span>
+          {% endif %}
+          {% if account_tg_id %}
+            <span class="settings-pill ok">{{ ic.i('send', 12) }} Telegram</span>
+          {% else %}
+            <span class="settings-pill">Telegram не подключён</span>
+          {% endif %}
+          {% if home %}
+            <span class="settings-pill ok">{{ ic.i('home', 12) }} Дом указан</span>
+          {% else %}
+            <span class="settings-pill warn">Добавь адрес дома</span>
+          {% endif %}
 
-    <a class="settings-card" href="/settings/salling">
-      <div class="settings-card-top">
-        <h2>{{ ic.i('cart', 18) }} Salling</h2>
-        <span class="arrow">→</span>
-      </div>
-      <p>Логин Salling, домашний адрес, сохранённая браузерная сессия и сброс входа.</p>
-      <div class="settings-meta">
-        {% if creds.email %}
-          <span class="settings-pill ok">{{ ic.i('unlock', 12) }} Логин сохранён</span>
-        {% else %}
-          <span class="settings-pill warn">Добавь логин</span>
+        {% elif s.key == 'salling' %}
+          {% if creds.email %}
+            <span class="settings-pill ok">{{ ic.i('unlock', 12) }} Логин сохранён</span>
+          {% else %}
+            <span class="settings-pill warn">Добавь логин</span>
+          {% endif %}
+
+        {% elif s.key == 'lidl' %}
+          {% if lidl_credentials.has_password %}
+            <span class="settings-pill ok">{{ ic.i('unlock', 12) }} Вход сохранён</span>
+          {% else %}
+            <span class="settings-pill warn">Добавь пароль</span>
+          {% endif %}
+          <span class="settings-pill {{ 'ok' if lidl_monitor.connected and lidl_monitor.enabled else '' }}">{{ lidl_monitor.phase_label }}</span>
+          <span class="settings-pill">Подано: {{ lidl_applied_count }}</span>
+
+        {% elif s.key == 'documents' %}
+          {% if file_info.cv_status == 'ok' %}
+            <span class="settings-pill ok">{{ ic.i('check', 12) }} Общий CV готов</span>
+          {% else %}
+            <span class="settings-pill warn">Добавь общий CV</span>
+          {% endif %}
+          <span class="settings-pill">{{ document_rule_count }} персональных</span>
+
+        {% elif s.key == 'autopilot' %}
+          <span class="settings-pill {{ 'ok' if autopilot.enabled else '' }}">{{ 'Включён' if autopilot.enabled else 'Выключен' }}</span>
+          <span class="settings-pill">Подходит: {{ autopilot_count }}</span>
+          {% set np = autopilot_profiles|length %}
+          <span class="settings-pill">{{ np }} {{ L.plural(np, 'набор', 'набора', 'наборов') }}</span>
+
+        {% elif s.key == 'forms' %}
+          <span class="settings-pill {{ 'ok' if ai_fill_available else 'warn' }}">{{ 'Ключ подключён' if ai_fill_available else 'Ключ не подключён' }}</span>
+          <span class="settings-pill {{ 'ok' if ai_fill_on else '' }}">{{ 'Заполнение включено' if ai_fill_on else 'Заполнение выключено' }}</span>
+          {% if ai_fill_motivation_on %}<span class="settings-pill">Черновики включены</span>{% endif %}
+
+        {% elif s.key == 'telegram' %}
+          {% if account_tg_id %}
+            <span class="settings-pill ok">Подключён</span>
+          {% else %}
+            <span class="settings-pill warn">{{ ic.i('user', 12) }} Подключи в «Аккаунте»</span>
+          {% endif %}
+          <span class="settings-pill">Готовы к отправке: {{ autopilot_tg_stats.eligible_current }}</span>
+          <span class="settings-pill">Ожидают решения: {{ autopilot_tg_stats.pending }}</span>
         {% endif %}
-        {% if home %}
-          <span class="settings-pill ok">{{ ic.i('home', 12) }} Дом указан</span>
-        {% else %}
-          <span class="settings-pill">Добавь адрес</span>
-        {% endif %}
       </div>
     </a>
-
-    <a class="settings-card" href="/settings/lidl">
-      <div class="settings-card-top">
-        <h2>{{ ic.i('store', 18) }} Lidl</h2>
-        <span class="arrow">→</span>
-      </div>
-      <p>Постоянное место для email и пароля Lidl, входа в кабинет и проверки этапов заявок.</p>
-      <div class="settings-meta">
-        {% if lidl_credentials.has_password %}
-          <span class="settings-pill ok">{{ ic.i('unlock', 12) }} Вход сохранён</span>
-        {% else %}
-          <span class="settings-pill warn">Добавь пароль</span>
-        {% endif %}
-        <span class="settings-pill {{ 'ok' if lidl_monitor.connected and lidl_monitor.enabled else '' }}">{{ lidl_monitor.phase_label }}</span>
-        <span class="settings-pill">Подано: {{ lidl_applied_count }}</span>
-      </div>
-    </a>
-
-    <a class="settings-card" href="/settings/documents">
-      <div class="settings-card-top">
-        <h2>{{ ic.i('file', 18) }} Документы</h2>
-        <span class="arrow">→</span>
-      </div>
-      <p>Общий CV и письмо плюс отдельные комплекты для брендов и конкретных магазинов.</p>
-      <div class="settings-meta">
-        {% if file_info.cv_status == 'ok' %}
-          <span class="settings-pill ok">{{ ic.i('check', 12) }} Общий CV готов</span>
-        {% else %}
-          <span class="settings-pill warn">Добавь общий CV</span>
-        {% endif %}
-        <span class="settings-pill">{{ document_rule_count }} персональных</span>
-      </div>
-    </a>
-
-    <a class="settings-card" href="/settings/autopilot">
-      <div class="settings-card-top">
-        <h2>{{ ic.i('zap', 18) }} Автопилот</h2>
-        <span class="arrow">→</span>
-      </div>
-      <p>Наборы фильтров под разные цели, режим работы, лимиты и автоотправка.</p>
-      <div class="settings-meta">
-        <span class="settings-pill {{ 'ok' if autopilot.enabled else '' }}">{{ 'Включён' if autopilot.enabled else 'Выключен' }}</span>
-        <span class="settings-pill">Подходит: {{ autopilot_count }}</span>
-        {% set np = autopilot_profiles|length %}
-        <span class="settings-pill">{{ np }} {{ L.plural(np, 'набор', 'набора', 'наборов') }}</span>
-      </div>
-    </a>
-
-    <a class="settings-card" href="/settings/forms">
-      <div class="settings-card-top">
-        <h2>{{ ic.i('sparkles', 18) }} Анкеты и ИИ</h2>
-        <span class="arrow">→</span>
-      </div>
-      <p>Безопасное дозаполнение внешних анкет и отдельное разрешение на мотивационные черновики.</p>
-      <div class="settings-meta">
-        <span class="settings-pill {{ 'ok' if ai_fill_on else '' }}">{{ 'ИИ включён' if ai_fill_on else 'ИИ выключен' }}</span>
-        {% if ai_fill_motivation_on %}<span class="settings-pill">Черновики включены</span>{% endif %}
-      </div>
-    </a>
-
-    <a class="settings-card" href="/status">
-      <div class="settings-card-top">
-        <h2>{{ ic.i('sparkles', 18) }} Состояние системы</h2>
-        <span class="arrow">→</span>
-      </div>
-      <p>Всё ли работает: свежесть базы, подача, Telegram, профиль, автопилот и обновления — одним экраном.</p>
-      <div class="settings-meta">
-        <span class="settings-pill">Диагностика</span>
-      </div>
-    </a>
-
-    <a class="settings-card" href="/settings/telegram">
-      <div class="settings-card-top">
-        <h2>{{ ic.i('send', 18) }} Telegram-уведомления</h2>
-        <span class="arrow">→</span>
-      </div>
-      <p>Проверочное сообщение и ручная отправка текущих подходящих. Вход через Telegram — в разделе «Аккаунт».</p>
-      <div class="settings-meta">
-        {% if account_tg_id %}
-          <span class="settings-pill ok">Подключён</span>
-        {% else %}
-          <span class="settings-pill warn">{{ ic.i('user', 12) }} Подключи в «Аккаунте»</span>
-        {% endif %}
-        <span class="settings-pill">Готовы к отправке: {{ autopilot_tg_stats.eligible_current }}</span>
-        <span class="settings-pill">Ожидают решения: {{ autopilot_tg_stats.pending }}</span>
-      </div>
-    </a>
+    {% endfor %}
   </div>
+
+  {# Диагностика — не настройка: отдельной строкой, чтобы не соперничала с разделами. #}
+  <p class="settings-diag">
+    Что-то работает не так?
+    <a href="/status">{{ ic.i('sparkles', 13) }} Состояние системы →</a>
+  </p>
 </section>
 {{ ui.shell_end() }}
 {% endblock %}

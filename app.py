@@ -4247,7 +4247,7 @@ async def api_ai_text_assist(request: Request):
         return JSONResponse({
             "ok": False,
             "error_code": "not_connected",
-            "error": "ИИ ещё не подключён. Открой «Настройки → ИИ и лимиты».",
+            "error": "ИИ ещё не подключён. Открой «Настройки → ИИ и анкеты».",
         })
 
     source_names = {"auto": "Russian or Ukrainian (detect it)", "ru": "Russian", "uk": "Ukrainian"}
@@ -4469,7 +4469,7 @@ async def api_autopilot_ai_suggest(request: Request):
         return {
             "ok": False,
             "error_code": "not_connected",
-            "error": "ИИ ещё не подключён. Открой «Настройки → ИИ и лимиты» и подключи "
+            "error": "ИИ ещё не подключён. Открой «Настройки → ИИ и анкеты» и подключи "
                      "бесплатный ключ (Groq — за пару минут, без карты).",
             "setupUrl": "/settings/ai",
         }
@@ -4993,6 +4993,28 @@ def _document_import_view(preview: dict | None) -> dict | None:
     return result
 
 
+# Единый список разделов настроек. Раньше он существовал дважды — плитками на
+# /settings и вкладками внутри разделов, — списки разошлись, и «ИИ и лимиты»
+# остался без плитки: попасть в него можно было только изнутри другого раздела.
+# Теперь и плитки, и вкладки строятся отсюда, разойтись им больше негде.
+SETTINGS_SECTIONS = [
+    {"key": "account", "title": "Аккаунт", "icon": "user", "url": "/account#profile",
+     "desc": "Telegram-вход, подписка и профиль кандидата — общий для всех модулей."},
+    {"key": "salling", "title": "Salling", "icon": "cart", "url": "/settings/salling",
+     "desc": "Вход в Salling Group и сброс сохранённой сессии."},
+    {"key": "lidl", "title": "Lidl", "icon": "store", "url": "/settings/lidl",
+     "desc": "Вход в кандидатский кабинет, отслеживание заявок и ответы на анкету Lidl."},
+    {"key": "documents", "title": "Документы", "icon": "file", "url": "/settings/documents",
+     "desc": "Общий CV и письмо плюс отдельные комплекты для брендов и магазинов."},
+    {"key": "autopilot", "title": "Автопилот", "icon": "zap", "url": "/settings/autopilot",
+     "desc": "Наборы фильтров под разные цели, режим работы, лимиты и автоотправка."},
+    {"key": "forms", "title": "ИИ и анкеты", "icon": "sparkles", "url": "/settings/forms",
+     "desc": "Ключ ИИ и лимиты, дозаполнение внешних анкет и мотивационные черновики."},
+    {"key": "telegram", "title": "Telegram", "icon": "send", "url": "/settings/telegram",
+     "desc": "Проверочное сообщение и ручная отправка текущих подходящих вакансий."},
+]
+
+
 def _settings_context(
     request: Request,
     saved: str = "",
@@ -5062,8 +5084,7 @@ def _settings_context(
         "documents": ("Документы", "CV и мотивационные письма для брендов и отдельных магазинов"),
         "autopilot": ("Автопилот", "Наборы фильтров, режим работы и автоотправка"),
         "telegram": ("Telegram", "Статус @wexflowbot, проверка и ручная отправка текущих"),
-        "forms": ("Анкеты и ИИ", "Умное дозаполнение внешних форм и безопасные черновики"),
-        "ai": ("ИИ и лимиты", "Провайдеры ИИ, подключение бесплатного Groq и остаток ресурса"),
+        "forms": ("ИИ и анкеты", "Ключ и лимиты ИИ, дозаполнение внешних форм и черновики"),
         "overview": ("Настройки", "Короткая карта управления WexFlow"),
     }
     settings_title, settings_meta = titles.get(section, titles["salling"])
@@ -5126,6 +5147,7 @@ def _settings_context(
         "default_radius_km": autopilot.DEFAULT_HOME_RADIUS_KM,
         "tg_daily_max": autopilot.TG_DAILY_MAX,
         "autostart": autostart.status(),
+        "settings_sections": SETTINGS_SECTIONS,
     }
 
 
@@ -5266,8 +5288,10 @@ def settings_forms(request: Request, saved: str = "", geoerror: str = "", missin
 
 
 @app.get("/settings/ai", response_class=HTMLResponse)
-def settings_ai(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
-    return _render_settings_section(request, "ai", saved=saved, geoerror=geoerror, missing=missing)
+def settings_ai():
+    """Старый отдельный раздел «ИИ и лимиты» слит с «ИИ и анкеты».
+    Адрес оставлен рабочим: на него ведут закладки и старые ссылки."""
+    return RedirectResponse("/settings/forms#ai-providers", status_code=307)
 
 
 @app.post("/settings/ai/migrate-gemini")
@@ -6771,7 +6795,7 @@ def apply_batch(
         return _redirect_back(
             request,
             "/",
-            error="ИИ-заполнение не запущено: сначала подключи ИИ в «Настройки → ИИ и лимиты».",
+            error="ИИ-заполнение не запущено: сначала подключи ИИ в «Настройки → ИИ и анкеты».",
         )
     # Коннекторы работают только assisted: пакетный Salling worker не должен
     # получить их id даже через вручную подделанную форму.
