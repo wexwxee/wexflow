@@ -7,7 +7,7 @@
 {% block body %}
 <style>
   .hub-screen {
-    min-height: calc(100vh - 2px);
+    min-height: calc(var(--wf-vh) - 2px);
     display: grid;
     place-items: center;
     padding: 42px 22px 70px;
@@ -423,8 +423,8 @@
     position: fixed;
     inset: var(--desktop-frame-h, 0) 0 0 84px;
     z-index: 0;
-    width: calc(100vw - 84px);
-    height: calc(100vh - var(--desktop-frame-h, 0px));
+    width: calc(var(--wf-vw) - 84px);
+    height: calc(var(--wf-vh) - var(--desktop-frame-h, 0px));
     pointer-events: none;
     opacity: .58;
     mix-blend-mode: screen;
@@ -541,7 +541,7 @@
     .hub-aurora,
     .hub-dots {
       left: 0;
-      width: 100vw;
+      width: var(--wf-vw);
     }
     .hub-screen {
       align-items: start;

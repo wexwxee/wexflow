@@ -161,8 +161,12 @@
   backdrop-filter:blur(7px);
 }
 .wf-ai-dialog {
+  /* Окно живёт в немасштабируемом слое: увеличиваем его само, иначе при
+     125–150% оно выглядело мелким рядом с остальным интерфейсом. Высоту
+     считаем в его же координатах, чтобы низ не уезжал за край. */
+  zoom:var(--wex-ui-zoom, 1);
   width:min(760px, 100%);
-  max-height:calc(100vh - 40px);
+  max-height:calc(100vh / var(--wex-ui-zoom, 1) - 40px);
   overflow:auto;
   padding:18px;
   border:1px solid var(--glass-line, #354039);
@@ -263,6 +267,6 @@ html[data-theme="light"] .wf-ai-dialog { box-shadow:0 18px 48px rgba(37,44,40,.1
 @media (max-width:700px) {
   .wf-ai-grid { grid-template-columns:1fr; }
   .wf-ai-modal { padding:8px; }
-  .wf-ai-dialog { max-height:calc(100vh - 16px); padding:14px; }
+  .wf-ai-dialog { max-height:calc(100vh / var(--wex-ui-zoom, 1) - 16px); padding:14px; }
   .wf-ai-privacy { width:100%; margin-left:0; }
 }

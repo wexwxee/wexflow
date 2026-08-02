@@ -104,6 +104,19 @@ body {
   font-size: 14px;
   zoom: var(--wex-ui-zoom, 1);
   transition: background-color .15s ease, color .15s ease;
+  /* Размер окна В КООРДИНАТАХ УВЕЛИЧЕННОГО интерфейса.
+     CSS zoom множит все длины, а vw/vh остаются «оконными», поэтому
+     при 125–150% окна вроде панели пакетной подачи уезжали вправо и
+     обрезались снизу. Везде внутри body вместо 100vw/100vh берём
+     var(--wf-vw)/var(--wf-vh) — тогда край окна совпадает при любом
+     масштабе. */
+  --wf-vw: calc(100vw / var(--wex-ui-zoom, 1));
+  --wf-vh: calc(100vh / var(--wex-ui-zoom, 1));
+}
+/* Слой всплывающих элементов не масштабируется — там окно как есть. */
+:root, #wf-overlay-root {
+  --wf-vw: 100vw;
+  --wf-vh: 100vh;
 }
 
 .desktop-framebar {
@@ -168,7 +181,7 @@ body.wex-window-fullscreen .wex-resize { pointer-events:none !important; }
 .wn-overlay[hidden] { display: none; }
 .wn-modal {
   width: min(560px, 100%);
-  max-height: 80vh;
+  max-height: calc(var(--wf-vh) * .8);
   display: flex;
   flex-direction: column;
   background: var(--card);
@@ -279,7 +292,7 @@ a { color: var(--accent); text-decoration: none; }
   font-weight: 500;
 }
 .wex-shell {
-  min-height: 100vh;
+  min-height: var(--wf-vh);
   background: transparent;
 }
 .wex-sidebar {
@@ -436,8 +449,8 @@ a { color: var(--accent); text-decoration: none; }
 .candidate-profile-overlay[hidden] { display: none; }
 body.candidate-profile-open { overflow: hidden; }
 .candidate-profile-modal {
-  width: min(520px, calc(100vw - 32px));
-  max-height: min(720px, calc(100vh - 48px));
+  width: min(520px, calc(var(--wf-vw) - 32px));
+  max-height: min(720px, calc(var(--wf-vh) - 48px));
   overflow: auto;
   padding: 22px;
   border: 1px solid var(--glass-line);
@@ -674,7 +687,7 @@ body.candidate-profile-open { overflow: hidden; }
   .candidate-profile-action span { font-size: 20px; }
 }
 .wex-main {
-  min-height: calc(100vh - var(--desktop-frame-h));
+  min-height: calc(var(--wf-vh) - var(--desktop-frame-h));
   margin-left: 84px;
   display: flex;
   flex-direction: column;
@@ -945,8 +958,16 @@ html[data-theme="light"] .glass {
   top: calc(var(--desktop-frame-h) + 56px);
   right: 16px;
   z-index: 1200;
-  width: min(440px, calc(100vw - 32px));
+  width: min(440px, calc(var(--wf-vw) - 32px));
   pointer-events: none;
+}
+/* Уведомления переезжают в немасштабируемый слой, но встать должны под
+   увеличенной шапкой и читаться так же крупно — поэтому масштабируем
+   сам стек, а окно внутри него считаем в его же координатах. */
+#wf-overlay-root > .system-response-stack {
+  zoom: var(--wex-ui-zoom, 1);
+  --wf-vw: calc(100vw / var(--wex-ui-zoom, 1));
+  --wf-vh: calc(100vh / var(--wex-ui-zoom, 1));
 }
 .system-response {
   box-shadow: var(--shadow-sm);
@@ -1088,7 +1109,7 @@ label.lbl {
   z-index: 10050;
   top: calc(100% + 9px);
   right: 0;
-  width: min(390px, calc(100vw - 32px));
+  width: min(390px, calc(var(--wf-vw) - 32px));
   padding: 15px;
   border: 1px solid var(--glass-line);
   border-radius: 14px;
