@@ -157,11 +157,33 @@ def _lock_owner_alive() -> bool:
         pid = int(LOCK_PATH.read_text(encoding="utf-8").strip().split()[0])
         if pid <= 0:
             return False
-        os.kill(pid, 0)
+        try:
+            os.kill(pid, 0)
+        except SystemError:
+            # os.kill(pid, 0) is unreliable for some GUI processes in a
+            # windowed PyInstaller build and may raise WinError 6 as
+            # SystemError. OpenProcess performs a read-only existence check.
+            if os.name != "nt":
+                return False
+            import ctypes
+            from ctypes import wintypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = (
+                wintypes.DWORD, wintypes.BOOL, wintypes.DWORD,
+            )
+            kernel32.OpenProcess.restype = wintypes.HANDLE
+            kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return ctypes.get_last_error() == 5  # access denied means alive
         return True
     except PermissionError:
         return True
-    except (OSError, ValueError, IndexError):
+    except (OSError, SystemError, ValueError, IndexError):
         return False
 
 
