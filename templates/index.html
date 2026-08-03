@@ -382,6 +382,16 @@
   .badge.trip svg { display:block; }
   /* иконки видов транспорта идут вплотную друг к другу, а не вразброс */
   .badge.trip svg + svg { margin-left:-3px; }
+  /* Ожидание и «маршрута нет» — приглушённые: это подпись к пустому месту,
+     а не результат. Иначе половина списка кричала бы ярче настоящих цифр. */
+  .badge.trip-wait, .badge.trip-none {
+    display:inline-flex; align-items:center; gap:5px; background:var(--glass);
+    color:var(--muted); border-color:var(--line);
+  }
+  .badge.trip-wait svg, .badge.trip-none svg { display:block; opacity:.75; }
+  .badge.trip-wait svg { animation:tripWait 2.4s linear infinite; }
+  @keyframes tripWait { 0%,70%,100% { opacity:.35; } 35% { opacity:.85; } }
+  @media (prefers-reduced-motion:reduce){ .badge.trip-wait svg { animation:none; } }
   .badge.st-new { background:var(--accent-soft); color:var(--accent); border-color:rgba(30,215,96,.32); }
   .badge.st-seen { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
   .badge.st-applied { background:rgba(167,139,250,.14); color:#c4b5fd; border-color:rgba(167,139,250,.38); font-weight:800; }
@@ -1110,7 +1120,9 @@
       {% set src_txt = short_sources.get(j.source, j.source) if j.source != 'salling' else '' %}
       {% if brand_txt and not (src_txt and brand_txt.lower().startswith(src_txt.lower())) %}
       {% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_txt }}</span>{% endif %}
-      {% if j.id in trips %}<span class="badge trip" data-tip-title="Время в пути" data-tip-body="Реальный маршрут на общественном транспорте от домашнего адреса (посчитан и сохранён заранее). Иконки показывают, чем добираться: автобус, S-tog, метро. Расстояние по прямой бывает обманчивым: короткая линия на карте может означать долгий объезд.">{% for kind in (trips[j.id].kinds or ['bus']) | unique %}{{ ic.i(kind, 11) }}{% endfor %} {{ trips[j.id].minutes }} мин{% if trips[j.id].modes %} · {{ trips[j.id].modes }}{% endif %}</span>{% endif %}
+      {% if j.id in trips %}<span class="badge trip" data-tip-title="Время в пути" data-tip-body="Реальный маршрут на общественном транспорте от домашнего адреса (посчитан и сохранён заранее). Иконки показывают, чем добираться: автобус, S-tog, метро. Расстояние по прямой бывает обманчивым: короткая линия на карте может означать долгий объезд.">{% for kind in (trips[j.id].kinds or ['bus']) | unique %}{{ ic.i(kind, 11) }}{% endfor %} {{ trips[j.id].minutes }} мин{% if trips[j.id].modes %} · {{ trips[j.id].modes }}{% endif %}</span>
+      {% elif route_state.get(j.id) == 'pending' %}<span class="badge trip-wait" data-tip-title="Маршрут ещё считается" data-tip-body="Время в пути считает бесплатный сервис расписаний, и он разрешает только один запрос за раз — примерно один адрес в 12 секунд. Вакансии, которые ты сейчас видишь, WexFlow ставит в очередь первыми, так что бейдж появится через несколько минут и сохранится навсегда. Пустое место здесь не значит, что доехать нельзя.">{{ ic.i('clock', 11) }} считаю маршрут</span>
+      {% elif route_state.get(j.id) == 'none' %}<span class="badge trip-none" data-tip-title="Прямого маршрута не нашлось" data-tip-body="Сервис расписаний не построил путь на общественном транспорте от твоего дома к этому адресу. Обычно это значит пересадку с большим ожиданием или место в стороне от маршрутов — проверь кнопкой «Маршрут», там доступны и машина с велосипедом.">{{ ic.i('alert', 11) }} маршрут не найден</span>{% endif %}
       {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно ПО ПРЯМОЙ от домашнего адреса — не путь. Реальное время в пути показано соседним бейджем, когда посчитано.">≈ {{ distances[j.id] }} км по прямой</span>{% endif %}
       {% if j.status != 'new' %}<span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>{% endif %}
     </div>

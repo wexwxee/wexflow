@@ -3730,6 +3730,7 @@ def index(
     # расстояние от дома (если задан) + сортировка по близости
     distances = {}
     trips = {}          # id -> {"minutes","transfers","modes"} из кэша маршрутов
+    route_state = {}    # id -> "pending" | "none": почему бейджа времени ещё нет
     if home:
         tcache = transit.snapshot()
         need_route = []
@@ -3746,7 +3747,13 @@ def index(
                     "kinds": transit.kinds_of(res)[:3],
                 }
             elif res is None:
+                # Маршрут ещё не считали. Пустое место на карточке читалось как
+                # «сюда не доехать», хотя очередь просто до неё не дошла.
+                route_state[j.id] = "pending"
                 need_route.append(j)
+            else:
+                # Transitous ответил «маршрута нет» — это ответ, а не ожидание.
+                route_state[j.id] = "none"
         # то, что человек открыл, считаем первым — иначе время в пути появлялось
         # бы у случайных вакансий, а не у тех, на которые он смотрит
         if need_route:
@@ -3971,7 +3978,8 @@ def index(
         "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
         "sync_running": _sync_state["running"],
         "sync_error": _sync_state["last_error"],
-        "home": home, "distances": distances, "trips": trips, "geoerror": geoerror,
+        "home": home, "distances": distances, "trips": trips,
+        "route_state": route_state, "geoerror": geoerror,
         "presets": _preset_views,
         "active_preset": _active_preset,
         "active_profile_modified": _active_profile_modified,
