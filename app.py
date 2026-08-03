@@ -13,7 +13,8 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from collections import Counter
-from urllib.parse import parse_qsl, quote_plus, unquote, urlencode, urlsplit, urlunsplit
+from urllib.parse import (parse_qsl, quote_plus, unquote, urlencode, urlparse,
+                          urlsplit, urlunsplit)
 
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
@@ -3142,6 +3143,37 @@ def _manual_link_job(url: str) -> Job:
             raise
         session.refresh(job)
         return job
+
+
+def _job_source_url(job) -> str:
+    """Ссылка на вакансию у работодателя — или пусто, если её нет.
+
+    Показываем только http/https: в поле ссылки лежат данные из чужих фидов,
+    а `javascript:` в кликабельной ссылке — это уже не «посмотреть оригинал».
+    """
+    if job is None:
+        return ""
+    raw = str(getattr(job, "application_link", "") or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return ""
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return raw
+
+
+def _job_source_host(job) -> str:
+    """Домен первоисточника — человеку видно, куда именно он уходит."""
+    url = _job_source_url(job)
+    if not url:
+        return ""
+    try:
+        return (urlparse(url).hostname or "").removeprefix("www.")
+    except ValueError:
+        return ""
 
 
 def _connector_status_path(job_id: str):
@@ -6600,6 +6632,11 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             "distance": distance,
             "has_home": bool(home),
             "maps_url": maps_url,
+            # Ссылка на первоисточник: описание в WexFlow — снимок, сделанный при
+            # сборе. Работодатель мог его поправить, и человеку нужен способ
+            # посмотреть вакансию своими глазами, а не верить нашей копии.
+            "source_url": _job_source_url(job),
+            "source_host": _job_source_host(job),
             "facts": facts,
             "description_html": html_sanitize.sanitize_html(job.description if job else ""),
             "description_ru_html": html_sanitize.sanitize_html(job.description_ru if job else ""),

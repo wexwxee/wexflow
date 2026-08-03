@@ -340,6 +340,12 @@
       </form>
       {% endif %}
       <a href="{{ maps_url }}"><button class="secondary">{{ ic.i('map', 14) }} Маршрут в Google Maps</button></a>
+      {% if source_url %}
+      <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer"
+         title="Откроется в браузере: {{ source_host }}">
+        <button class="secondary" type="button">{{ ic.i('link', 14) }} Открыть оригинал на сайте</button>
+      </a>
+      {% endif %}
     </div>
     {% if has_home and job.lat is not none %}
     <p>
@@ -394,6 +400,12 @@
     {% endif %}
 
     <h2 class="section-title">Оригинал</h2>
+    {% if source_url %}
+    <p class="meta">Это снимок описания, сделанный когда WexFlow нашёл вакансию. Работодатель мог его с тех пор поправить —
+      <a href="{{ source_url }}" target="_blank" rel="noopener noreferrer"
+         title="Откроется в браузере: {{ source_host }}">открыть вакансию у работодателя →</a>
+      <span style="opacity:.7;">({{ source_host }})</span></p>
+    {% endif %}
     <div class="desc">{{ description_html | safe }}</div>
   {% endif %}
 </section>
