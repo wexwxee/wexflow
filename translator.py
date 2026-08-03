@@ -106,12 +106,84 @@ def _translate_google_to_ru(source_html: str) -> str:
     return _plain_text_to_html("\n\n".join(translated_blocks))
 
 
-def translate_to_ru(source_html: str, *, title: str = "") -> str:
+_AI_PROMPT = (
+    "Переведи описание вакансии на русский язык.\n"
+    "Правила:\n"
+    "1. Переводи ТОЛЬКО то, что написано. Ничего не добавляй, не убирай и не "
+    "пересказывай своими словами — человек принимает по этому тексту решение о работе.\n"
+    "2. Сохрани структуру: абзацы, списки (каждый пункт с новой строки, начиная с «- »), "
+    "заголовки разделов.\n"
+    "3. Названия компаний, магазинов, городов и адреса оставь как есть.\n"
+    "4. Числа, часы в неделю, даты и суммы перенеси без изменений.\n"
+    "5. Верни только перевод, без пояснений и без markdown-разметки вроде ```.\n"
+)
+
+
+def ai_available() -> bool:
+    """Подключён ли ИИ, которым можно перевести описание."""
+    try:
+        import ai_gateway
+        return ai_gateway.available()
+    except Exception:  # noqa: BLE001 — отсутствие ИИ не должно ломать перевод
+        return False
+
+
+def _translate_ai_to_ru(source_html: str, *, title: str = "") -> tuple[str, str]:
+    """Перевод подключённым ИИ. Возвращает (html, имя движка)."""
+    import ai_gateway
+
+    text = _plain_text(source_html)
+    if not text:
+        return "", ""
+    # Описания вакансий короткие, но подрезаем на всякий случай: длинный ответ
+    # упрётся в лимит токенов и вернётся обрубленным.
+    if len(text) > 12000:
+        text = text[:12000]
+    prompt = _AI_PROMPT
+    if title:
+        prompt += f"\nНазвание вакансии: {title}\n"
+    prompt += "\nТекст вакансии:\n" + text
+    result = ai_gateway.generate_text(
+        prompt, temperature=0.1, max_tokens=4096, timeout=90.0,
+    )
+    if not result.ok:
+        raise TranslationError(result.error_message or "ИИ не ответил")
+    reply = (result.reply or "").strip()
+    # Модель иногда оборачивает ответ в ```; текст от этого не страдает, но
+    # в готовом переводе такие «рёбра» выглядят как мусор.
+    reply = re.sub(r"^```[a-z]*\s*|\s*```$", "", reply).strip()
+    if not reply:
+        raise TranslationError("ИИ вернул пустой перевод")
+    engine = f"ИИ ({result.provider}{', ' + result.model if result.model else ''})"
+    return _plain_text_to_html(reply), engine
+
+
+def translate_to_ru_with_engine(
+    source_html: str, *, title: str = "", prefer_ai: bool = False,
+) -> tuple[str, str]:
+    """Перевести описание и сказать, чем именно. Возвращает (html, движок).
+
+    ИИ подключается только по явной кнопке (prefer_ai): фоновый перевод всех
+    вакансий подряд сжёг бы бесплатную квоту за один проход. Если ИИ не
+    ответил, молча уходим на обычный переводчик — человек всё равно получит
+    русский текст.
+    """
+    if prefer_ai and ai_available():
+        try:
+            html_ru, engine = _translate_ai_to_ru(source_html, title=title)
+            if html_ru:
+                return html_ru, engine
+        except Exception as exc:  # noqa: BLE001 — падаем на обычный переводчик
+            print(f"перевод ИИ не удался, беру обычный переводчик: {str(exc)[:140]}")
     if config.DEEPL_API_KEY:
-        return translate_html_to_ru(source_html, title=title)
+        return translate_html_to_ru(source_html, title=title), "DeepL"
     if _argos_pair_available():
-        return _translate_offline_to_ru(source_html)
-    return _translate_google_to_ru(source_html)
+        return _translate_offline_to_ru(source_html), "Argos Translate offline"
+    return _translate_google_to_ru(source_html), "Google Translate"
+
+
+def translate_to_ru(source_html: str, *, title: str = "") -> str:
+    return translate_to_ru_with_engine(source_html, title=title)[0]
 
 
 def translate_html_to_ru(html: str, *, title: str = "") -> str:

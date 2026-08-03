@@ -60,7 +60,8 @@ def pick_next(jobs):
 def translate_one(job) -> None:
     """Перевести описание одной вакансии и сохранить в БД (description_ru).
     Бросает translator.TranslationError, если переводчик недоступен."""
-    ru_html = translator.translate_to_ru(job.description, title=job.title or "")
+    ru_html, engine = translator.translate_to_ru_with_engine(
+        job.description, title=job.title or "")
     ru_plain = translator._plain_text(ru_html)
     if not ru_plain:
         return
@@ -69,6 +70,7 @@ def translate_one(job) -> None:
         if fresh is None:
             return
         fresh.description_ru = ru_html
+        fresh.description_ru_engine = engine
         s.add(fresh)
         s.commit()
     # обновим объект в памяти, чтобы pick_next не выбрал его снова в этом проходе

@@ -518,6 +518,22 @@
     display:flex; align-items:center; justify-content:center; gap:6px;
     color:var(--muted); font-size:10.5px; text-align:center;
   }
+  /* Компактный вид: пока человек отмечает вакансии, панель не должна
+     закрывать список. На увеличенном масштабе она включается сама. */
+  .batch-collapse .chev {
+    display:block; line-height:1; font-size:15px; transition:transform .16s ease;
+  }
+  .batchbar.compact { padding:11px 13px; width:min(580px, calc(var(--wf-vw) - 124px)); }
+  .batchbar.compact.show { gap:9px; }
+  .batchbar.compact .batch-subtitle,
+  .batchbar.compact .batch-doc-note,
+  .batchbar.compact .batch-ai,
+  .batchbar.compact .batch-safety { display:none; }
+  .batchbar.compact .batch-title { font-size:14px; }
+  .batchbar.compact .batch-count { min-width:25px; height:25px; font-size:12px; }
+  .batchbar.compact .bactions button { min-height:38px; }
+  .batchbar.compact .bactions button small { display:none; }
+  .batchbar.compact .batch-collapse .chev { transform:rotate(180deg); }
   @media (max-width:820px){
     .batchbar { left:50%; width:calc(var(--wf-vw) - 24px); bottom:12px; max-height:calc(var(--wf-vh) - 24px); }
     .batch-docs { grid-template-columns:1fr; }
@@ -1180,8 +1196,13 @@
       <div class="batch-subtitle">WexFlow обработает их по одной — следующая форма откроется после завершения предыдущей.
         Salling и Lidl идут своими окнами, по очереди: Lidl начнётся, когда закончится пачка Salling.</div>
     </div>
-    <button type="button" id="selclear" class="batch-clear" aria-label="Очистить выбранные вакансии"
-            title="Очистить выбор">×</button>
+    <div class="batch-head-actions" style="display:flex;gap:7px;flex:0 0 auto;">
+      <button type="button" id="selcollapse" class="batch-clear batch-collapse"
+              aria-label="Свернуть панель"
+              title="Свернуть панель, чтобы видеть список во время выбора"><span class="chev">⌄</span></button>
+      <button type="button" id="selclear" class="batch-clear" aria-label="Очистить выбранные вакансии"
+              title="Очистить выбор">×</button>
+    </div>
   </div>
 
   <div class="batch-doc-note">
@@ -1374,6 +1395,36 @@
     try { localStorage.setItem(SEL_KEY, JSON.stringify([...saved])); } catch (e) {}
   }
 
+  // Панель выбора умеет сворачиваться до полоски со счётчиком и кнопками:
+  // на увеличенном масштабе развёрнутая закрывала половину списка, а отмечать
+  // вакансии при этом нужно именно в списке. Решение человека запоминаем.
+  const COMPACT_KEY = 'wex_batch_compact';
+  const collapseBtn = document.getElementById('selcollapse');
+  function setCompact(on, remember) {
+    bar.classList.toggle('compact', on);
+    if (collapseBtn) {
+      collapseBtn.setAttribute('aria-label', on ? 'Развернуть панель' : 'Свернуть панель');
+      collapseBtn.title = on
+        ? 'Развернуть панель — документы, ИИ и пояснения'
+        : 'Свернуть панель, чтобы видеть список во время выбора';
+    }
+    if (remember) { try { localStorage.setItem(COMPACT_KEY, on ? '1' : '0'); } catch (e) {} }
+  }
+  function fitPanel() {
+    let stored = null;
+    try { stored = localStorage.getItem(COMPACT_KEY); } catch (e) {}
+    if (stored !== null) { setCompact(stored === '1', false); return; }
+    // Человек ещё не выбирал сам: сворачиваем, если панель съедает список.
+    // Меряем в развёрнутом виде — иначе высота будет уже урезанной.
+    bar.classList.remove('compact');
+    setCompact(bar.scrollHeight > window.innerHeight * 0.5, false);
+  }
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', () => setCompact(!bar.classList.contains('compact'), true));
+  }
+  // Масштаб страницы меняют прямо во время работы — пересчитываем.
+  window.addEventListener('resize', () => { if (bar.classList.contains('show')) fitPanel(); });
+
   function refreshSel() {
     const n = selboxes.filter(c => c.checked).length;
     selcount.textContent = n;
@@ -1384,7 +1435,9 @@
         ? 'вакансию'
         : ((n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) ? 'вакансии' : 'вакансий');
     }
+    const wasVisible = bar.classList.contains('show');
     bar.classList.toggle('show', n > 0);
+    if (n > 0 && !wasVisible) fitPanel();
     selboxes.forEach(c => c.closest('[data-jobcard]').classList.toggle('selected', c.checked));
   }
   selboxes.forEach(c => c.addEventListener('change', () => { refreshSel(); persistSel(); }));

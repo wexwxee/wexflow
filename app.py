@@ -1290,8 +1290,10 @@ def _translate_job_now(job_id: str) -> bool:
             return False
         title, description, ru = job.title, job.description, job.description_ru
     if not translator._plain_text(ru or ""):
+        engine = ""
         try:
-            ru_html = translator.translate_to_ru(description, title=title or "")
+            ru_html, engine = translator.translate_to_ru_with_engine(
+                description, title=title or "")
         except translator.TranslationError as e:
             print(f"translate-on-demand: переводчик недоступен — {e}")
             ru_html = ""
@@ -1300,6 +1302,7 @@ def _translate_job_now(job_id: str) -> bool:
                 fresh = s.get(Job, job_id)
                 if fresh is not None:
                     fresh.description_ru = ru_html
+                    fresh.description_ru_engine = engine
                     s.add(fresh)
                     s.commit()
             ru = ru_html
@@ -6600,7 +6603,11 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             "facts": facts,
             "description_html": html_sanitize.sanitize_html(job.description if job else ""),
             "description_ru_html": html_sanitize.sanitize_html(job.description_ru if job else ""),
-            "translator_name": translator.provider_name(),
+            # Показываем движок, которым перевод РЕАЛЬНО сделан: после ИИ-перевода
+            # подпись «через Google Translate» была бы неправдой.
+            "translator_name": (getattr(job, "description_ru_engine", "") if job else "")
+                               or translator.provider_name(),
+            "translator_ai_available": translator.ai_available(),
             "translator_install": translator_setup.status(),
             "trerror": trerror,
         }
@@ -7079,13 +7086,20 @@ def apply_batch(
 
 
 @app.post("/job/{job_id}/translate")
-def translate_job(job_id: str):
+def translate_job(job_id: str, engine: str = Form("")):
+    # ИИ переводит только по отдельной кнопке: фоновый перевод всех вакансий
+    # подряд сжёг бы бесплатную квоту за один проход.
+    prefer_ai = str(engine or "").strip().lower() == "ai"
     error = ""
     with get_session() as s:
         job = s.get(Job, job_id)
         if job and job.description:
             try:
-                job.description_ru = translator.translate_to_ru(job.description, title=job.title)
+                text_ru, used = translator.translate_to_ru_with_engine(
+                    job.description, title=job.title, prefer_ai=prefer_ai,
+                )
+                job.description_ru = text_ru
+                job.description_ru_engine = used
                 s.add(job)
                 s.commit()
             except translator.TranslationError as e:

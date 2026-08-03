@@ -41,7 +41,8 @@ class Job(SQLModel, table=True):
     created: Optional[str] = None
     modified: Optional[str] = None
     description: Optional[str] = None            # HTML
-    description_ru: Optional[str] = None         # HTML, перевод DeepL на русский
+    description_ru: Optional[str] = None         # HTML, перевод на русский
+    description_ru_engine: Optional[str] = None  # чем переведено: ИИ, DeepL, Argos, Google
     application_link: Optional[str] = None
     requisition_id: Optional[str] = None
 
@@ -310,6 +311,7 @@ def _migrate():
             ("lat", "lat FLOAT"),
             ("lon", "lon FLOAT"),
             ("description_ru", "description_ru TEXT"),
+            ("description_ru_engine", "description_ru_engine TEXT"),
             ("applied_confidence", "applied_confidence TEXT"),
             ("application_status_updated_at", "application_status_updated_at DATETIME"),
             ("application_status_source", "application_status_source VARCHAR"),

@@ -363,13 +363,34 @@
     {% if job.description_ru %}
       {% if translator_name %}<p class="meta">Переведено через {{ translator_name }}.</p>{% endif %}
       <div class="desc translation">{{ description_ru_html | safe }}</div>
-      <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
+      <form class="translate-form" method="post" action="/job/{{ job.id }}/translate"
+            style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
         <button class="secondary" type="submit" data-loading-text="Обновляю перевод...">Обновить перевод</button>
+        {% if translator_ai_available %}
+        <button class="secondary" type="submit" name="engine" value="ai"
+                data-loading-text="Перевожу с ИИ..."
+                title="Живее и точнее обычного переводчика, но тратит квоту подключённого ИИ">
+          Перевести заново с ИИ
+        </button>
+        {% endif %}
       </form>
     {% else %}
-      <form class="translate-form" method="post" action="/job/{{ job.id }}/translate" style="margin-top:10px;">
+      <form class="translate-form" method="post" action="/job/{{ job.id }}/translate"
+            style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
         <button type="submit" class="primary" data-loading-text="Перевожу...">Перевести на русский</button>
+        {% if translator_ai_available %}
+        <button type="submit" class="secondary" name="engine" value="ai"
+                data-loading-text="Перевожу с ИИ..."
+                title="Живее и точнее обычного переводчика, но тратит квоту подключённого ИИ">
+          Перевести с ИИ
+        </button>
+        {% endif %}
       </form>
+    {% endif %}
+    {% if translator_ai_available %}
+      <p class="meta">ИИ переводит живее машинного переводчика, но расходует квоту подключённого ИИ,
+        поэтому сам он этого не делает — только по кнопке. Если ИИ не ответит, перевод всё равно
+        придёт обычным переводчиком.</p>
     {% endif %}
 
     <h2 class="section-title">Оригинал</h2>
