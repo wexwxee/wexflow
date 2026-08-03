@@ -460,15 +460,16 @@
     </form>
   </div>
 
-  <div class="panel">
+  <div class="panel" data-monitor-settings="lidl">
     <h2>{{ ic.i('clock', 17) }} Отслеживание заявок Lidl</h2>
-    <p class="hint">WexFlow проверяет раздел <b>Søgte jobs</b> каждые 3 часа и переносит найденные этапы в «Мои отклики». Если работодатель нигде не публикует статус, его можно изменить вручную.</p>
+    <p class="hint">WexFlow проверяет раздел <b>Søgte jobs</b> каждые 30 минут и переносит найденные этапы в «Мои отклики». Окно можно закрыть после успешного входа — дальше проверка работает в фоне.</p>
     <div class="actions" style="margin-bottom:12px;">
-      <span class="badge {{ 'ok' if lidl_monitor.connected and lidl_monitor.enabled else '' }}">Кабинет: {{ lidl_monitor.phase_label }}</span>
+      <span class="badge {{ 'ok' if lidl_monitor.connected and lidl_monitor.enabled else '' }}" data-monitor-phase>Кабинет: {{ lidl_monitor.phase_label }}</span>
       <span class="badge">Подано в Lidl: {{ lidl_applied_count }}</span>
-      {% if lidl_monitor.last_success_at %}<span class="hint" style="margin:0;">Последняя проверка: {{ lidl_monitor.last_success_at }}</span>{% endif %}
+      <span class="hint" style="margin:0;" data-monitor-checked{% if not lidl_monitor.last_success_at %} hidden{% endif %}>Последняя проверка: {{ lidl_monitor.last_success_at }}</span>
     </div>
-    {% if lidl_monitor.last_error %}<div class="err">{{ lidl_monitor.last_error }}</div>{% endif %}
+    <div class="err" data-monitor-error{% if not lidl_monitor.last_error %} hidden{% endif %}>{{ lidl_monitor.last_error }}</div>
+    <div class="ok" data-monitor-ok{% if not (lidl_monitor.connected and not lidl_monitor.last_error) %} hidden{% endif %}>{{ ic.i('check',13) }} Вход подтверждён. Фоновый мониторинг активен.</div>
     <div class="actions">
       <form method="post" action="/settings/lidl/connect"><button class="primary" type="submit">{{ ic.i('unlock', 13) }} {{ 'Переподключить' if lidl_monitor.connected else 'Подключить кабинет' }}</button></form>
       <form method="post" action="/settings/lidl/check"><button class="secondary" type="submit" {{ 'disabled' if not lidl_monitor.connected else '' }}>{{ ic.i('refresh', 13) }} Проверить сейчас</button></form>
@@ -1038,21 +1039,20 @@
     <div class="actions"><button class="secondary" type="submit">Сохранить вход</button></div>
   </form>
 
-  <div id="salling-monitor" class="panel">
+  <div id="salling-monitor" class="panel" data-monitor-settings="salling">
     <h2>{{ ic.i('clock', 17) }} Отслеживание из профиля Salling</h2>
     <p class="hint">WexFlow читает официальный раздел <b>Søgte stillinger</b>: ID вакансии, статус, название, дату и бренд. Так кабинет подтверждает факт подачи и сообщает об интервью, оффере или отказе.</p>
     <div class="actions" style="align-items:center;flex-wrap:wrap;">
-      <span class="badge {{ 'ok' if salling_monitor.phase == 'connected' and salling_monitor.enabled else '' }}">
+      <span class="badge {{ 'ok' if salling_monitor.phase == 'connected' and salling_monitor.enabled else '' }}" data-monitor-phase>
         {{ salling_monitor.phase_label }}
       </span>
-      <span class="hint" style="margin:0;">
+      <span class="hint" style="margin:0;" data-monitor-checked>
         В кабинете: {{ salling_monitor.application_count }} · в WexFlow подано: {{ salling_applied_count }}
         {% if salling_monitor.last_success_at %} · проверено {{ salling_monitor.last_success_at }}{% endif %}
       </span>
     </div>
-    {% if salling_monitor.last_error %}
-    <p class="hint" style="margin:10px 0 0;color:var(--warn-txt);">{{ salling_monitor.last_error }}</p>
-    {% endif %}
+    <p class="hint" data-monitor-error style="margin:10px 0 0;color:var(--warn-txt);"{% if not salling_monitor.last_error %} hidden{% endif %}>{{ salling_monitor.last_error }}</p>
+    <div class="ok" data-monitor-ok{% if not (salling_monitor.connected and not salling_monitor.last_error) %} hidden{% endif %}>{{ ic.i('check',13) }} Вход подтверждён. Фоновый мониторинг активен.</div>
     <div class="actions" style="flex-wrap:wrap;">
       {% if not salling_monitor.enabled %}
       <form method="post" action="/settings/salling-monitor/connect"><button class="primary" type="submit">Подключить и проверить</button></form>
@@ -1063,7 +1063,7 @@
       <form method="post" action="/settings/salling-monitor/login"><button class="secondary" type="submit">Открыть кабинет / войти снова</button></form>
       <a class="crosslink" href="https://candidatecareercockpit-a3r1eyssyw.dispatcher.hana.ondemand.com/" target="_blank" rel="noopener">Открыть профиль Salling →</a>
     </div>
-    <p class="hint" style="margin:10px 0 0;">Проверка запускается при старте WexFlow и затем раз в 3 часа. Во время открытой анкеты она ждёт, чтобы два окна не использовали один браузерный профиль одновременно.</p>
+    <p class="hint" style="margin:10px 0 0;">Проверка запускается при старте WexFlow и затем каждые 30 минут. Во время открытой анкеты она ждёт, чтобы два окна не использовали один браузерный профиль одновременно.</p>
   </div>
 
   <div id="documents" class="panel">
@@ -2946,5 +2946,49 @@
     tg.innerHTML = show ? eyeOffSvg : eyeSvg;
     tg.title = show ? 'Скрыть пароль' : 'Показать пароль';
   });
+
+  // Подключение кабинета выполняется отдельным процессом. Показываем его живой
+  // результат на этой же странице, чтобы «вошёл, но всё ещё крутится» больше
+  // не выглядело зависанием.
+  (function monitorConnectionState() {
+    const panel = document.querySelector('[data-monitor-settings]');
+    if (!panel) return;
+    const source = panel.dataset.monitorSettings;
+    let initialPhase = '';
+    function poll() {
+      fetch('/api/application-monitors', { cache:'no-store' })
+        .then((response) => response.json())
+        .then((payload) => {
+          const state = payload.sources && payload.sources[source];
+          if (!state) throw new Error('monitor state missing');
+          const phase = panel.querySelector('[data-monitor-phase]');
+          const checked = panel.querySelector('[data-monitor-checked]');
+          const error = panel.querySelector('[data-monitor-error]');
+          const ok = panel.querySelector('[data-monitor-ok]');
+          if (!initialPhase) initialPhase = state.phase || '';
+          if (phase) {
+            phase.textContent = (source === 'lidl' ? 'Кабинет: ' : '') + state.phase_label;
+            phase.classList.toggle('ok', !!(state.connected && state.enabled));
+          }
+          if (checked) {
+            checked.hidden = !state.last_success_at;
+            checked.textContent = source === 'salling'
+              ? 'В кабинете: ' + state.application_count + (state.last_success_at ? ' · проверено ' + state.last_success_at : '')
+              : 'Последняя проверка: ' + (state.last_success_at || '');
+          }
+          const problem = state.last_error || state.last_notification_error || '';
+          if (error) { error.hidden = !problem; error.textContent = problem; }
+          if (ok) {
+            ok.hidden = !(state.connected && !state.last_error);
+            ok.textContent = '✓ Вход подтверждён. Фоновый мониторинг активен; следующая проверка не позже чем через ' + payload.intervalMinutes + ' минут.';
+          }
+          const transient = state.busy || state.phase === 'connecting' || state.phase === 'checking';
+          if (initialPhase && initialPhase !== state.phase && !transient) initialPhase = state.phase;
+          window.setTimeout(poll, transient ? 1500 : 15000);
+        })
+        .catch(() => window.setTimeout(poll, 6000));
+    }
+    window.setTimeout(poll, 600);
+  }());
 </script>
 {% endblock %}

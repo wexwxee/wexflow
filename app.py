@@ -232,6 +232,7 @@ _scheduler = None  # BackgroundScheduler; нужен, чтобы знать вр
 # чтобы база не устаревала). Источник — лёгкий Algolia API, частый опрос допустим.
 AUTOPILOT_SCAN_MIN = 3
 IDLE_SCAN_MIN = 30
+PORTAL_MONITOR_INTERVAL_MINUTES = 30
 
 
 def _scan_interval_min() -> int:
@@ -2551,7 +2552,7 @@ async def _lifespan(app):
     sched.add_job(
         _lidl_monitor_tick,
         "interval",
-        hours=3,
+        minutes=PORTAL_MONITOR_INTERVAL_MINUTES,
         id="lidl_monitor",
         max_instances=1,
         coalesce=True,
@@ -2559,7 +2560,7 @@ async def _lifespan(app):
     sched.add_job(
         _salling_monitor_tick,
         "interval",
-        hours=3,
+        minutes=PORTAL_MONITOR_INTERVAL_MINUTES,
         id="salling_monitor",
         max_instances=1,
         coalesce=True,
@@ -5076,6 +5077,23 @@ def _application_center_filter(entries: list[dict], selected: str) -> list[dict]
     return result
 
 
+def _application_center_search(entries: list[dict], query: str) -> list[dict]:
+    """Small local search for the compact application center."""
+    words = [part.casefold() for part in re.split(r"\s+", str(query or "").strip()) if part]
+    if not words:
+        return list(entries)
+    result = []
+    for row in entries:
+        haystack = " ".join((
+            str(row.get("title") or ""), str(row.get("brand") or ""),
+            str(row.get("city") or ""), str(row.get("source") or ""),
+            str((row.get("tracker") or {}).get("label") or ""),
+        )).casefold()
+        if all(word in haystack for word in words):
+            result.append(row)
+    return result
+
+
 def _application_monitor_view(source: str) -> dict:
     """One honest UI payload for a candidate portal, including degraded states."""
     monitor = salling_monitor if source == "salling" else lidl_monitor
@@ -5098,6 +5116,19 @@ def _application_monitor_view(source: str) -> dict:
         "settings_url": "/settings/salling" if source == "salling" else "/settings/lidl",
     })
     return data
+
+
+@app.get("/api/application-monitors")
+def api_application_monitors():
+    """Live, non-secret state for settings and the application center."""
+    views = [_application_monitor_view("salling"), _application_monitor_view("lidl")]
+    return {
+        "ok": True,
+        "sources": {item["source"]: item for item in views},
+        "busy": any(item.get("busy") for item in views),
+        "intervalMinutes": PORTAL_MONITOR_INTERVAL_MINUTES,
+        "telegramConnected": bool(_cloud_profile_enabled()),
+    }
 
 
 def _portal_snapshot(job: Job, portal_states: dict[str, dict]) -> dict:
@@ -5203,7 +5234,20 @@ def audit_log(request: Request):
     if selected not in _APPLICATION_CENTER_FILTERS:
         selected = "active"
     counts = _application_center_counts(entries)
-    visible_entries = _application_center_filter(entries, selected)
+    query = str(request.query_params.get("q") or "").strip()[:80]
+    visible_entries = _application_center_search(
+        _application_center_filter(entries, selected), query
+    )
+    matched_total = len(visible_entries)
+    page_size = 12
+    total_pages = max(1, (matched_total + page_size - 1) // page_size)
+    try:
+        page = int(request.query_params.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
+    page = min(max(page, 1), total_pages)
+    page_start = (page - 1) * page_size
+    visible_entries = visible_entries[page_start:page_start + page_size]
     monitor_views = [
         _application_monitor_view("salling"),
         _application_monitor_view("lidl"),
@@ -5213,7 +5257,12 @@ def audit_log(request: Request):
         "groups": _audit_groups(visible_entries, now),
         "entries": visible_entries,
         "total": len(entries),
-        "visible_total": len(visible_entries),
+        "visible_total": matched_total,
+        "page_visible_total": len(visible_entries),
+        "query": query,
+        "page": page,
+        "total_pages": total_pages,
+        "page_numbers": list(range(max(1, page - 2), min(total_pages, page + 2) + 1)),
         "counts": counts,
         "selected_view": selected,
         "monitors": monitor_views,
@@ -5222,6 +5271,8 @@ def audit_log(request: Request):
             for item in monitor_views
         ),
         "source_labels": JOB_SOURCE_LABELS,
+        "monitor_interval_minutes": PORTAL_MONITOR_INTERVAL_MINUTES,
+        "telegram_connected": bool(_cloud_profile_enabled()),
     })
 
 

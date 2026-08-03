@@ -6,356 +6,135 @@
 
 {% block style %}
 <style>
-  .applications-workbench { display:grid; gap:18px; }
-  .application-hero {
-    position:relative; overflow:hidden; display:grid; grid-template-columns:minmax(0,1.5fr) minmax(250px,.7fr);
-    gap:28px; padding:25px 27px; border:1px solid var(--glass-line); border-radius:20px;
-    background:linear-gradient(135deg, color-mix(in srgb,var(--accent) 10%,var(--card)) 0%,var(--card) 58%,var(--card-2) 100%);
-  }
-  .application-hero::after { content:""; position:absolute; width:260px; height:260px; right:-105px; top:-145px;
-    border-radius:50%; background:var(--accent); filter:blur(80px); opacity:.12; pointer-events:none; }
-  .hero-kicker { display:flex; align-items:center; gap:7px; margin:0 0 8px; color:var(--accent); font-size:11px;
-    font-weight:850; text-transform:uppercase; letter-spacing:.08em; }
-  .application-hero h2 { margin:0; color:var(--txt-strong); font-size:clamp(23px,3vw,34px); line-height:1.08; letter-spacing:-.035em; }
-  .application-hero p { max-width:700px; margin:11px 0 0; color:var(--muted); font-size:13.5px; line-height:1.58; }
-  .truth-rules { position:relative; z-index:1; display:grid; align-content:center; gap:9px; }
-  .truth-rule { display:grid; grid-template-columns:10px 1fr; gap:9px; align-items:start; font-size:12px; line-height:1.4; color:var(--muted); }
-  .truth-rule b { color:var(--txt); }
-  .truth-dot { width:8px; height:8px; margin-top:4px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent); }
-  .truth-dot.warn { background:var(--warn-txt); box-shadow:0 0 0 4px color-mix(in srgb,var(--warn-txt) 12%,transparent); }
-  .truth-dot.red { background:var(--err-txt); box-shadow:0 0 0 4px color-mix(in srgb,var(--err-txt) 12%,transparent); }
+  .applications-workbench{display:grid;gap:12px;padding-bottom:28px}
+  .application-command{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:17px 19px;border:1px solid var(--glass-line);border-radius:16px;background:linear-gradient(120deg,color-mix(in srgb,var(--accent) 9%,var(--card)),var(--card) 58%)}
+  .command-kicker{display:flex;align-items:center;gap:6px;color:var(--accent);font-size:10.5px;font-weight:850;text-transform:uppercase;letter-spacing:.08em}
+  .application-command h2{margin:4px 0 0;color:var(--txt-strong);font-size:21px;line-height:1.16;letter-spacing:-.025em}
+  .application-command p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+  .tg-monitor-state{display:flex;align-items:center;gap:9px;min-width:250px;padding:10px 12px;border:1px solid var(--glass-line);border-radius:12px;background:var(--glass)}
+  .tg-monitor-state>span:first-child{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;color:{{ 'var(--ok-txt)' if telegram_connected else 'var(--muted)' }};background:{{ 'var(--ok-bg)' if telegram_connected else 'var(--card)' }}}
+  .tg-monitor-state b{display:block;color:var(--txt);font-size:11.8px}.tg-monitor-state small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;line-height:1.35}
 
-  .application-metrics { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:9px; }
-  .metric-card { min-width:0; padding:13px 14px; border:1px solid var(--glass-line); border-radius:14px; background:var(--card);
-    color:inherit; text-decoration:none; transition:transform .14s ease,border-color .14s ease,background .14s ease; }
-  .metric-card:hover { transform:translateY(-2px); border-color:var(--hover-line); background:var(--card-2); }
-  .metric-value { display:block; color:var(--txt-strong); font-family:"Space Grotesk",system-ui,sans-serif; font-size:25px; font-weight:780; line-height:1; }
-  .metric-label { display:block; margin-top:7px; color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .metric-card.action .metric-value { color:var(--warn-txt); }
-  .metric-card.interview .metric-value { color:var(--info-txt); }
-  .metric-card.offer .metric-value { color:var(--ok-txt); }
-  .metric-card.rejected .metric-value { color:var(--err-txt); }
+  .application-metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}
+  .metric-card{display:flex;align-items:baseline;justify-content:space-between;gap:7px;min-width:0;padding:9px 11px;border:1px solid var(--glass-line);border-radius:11px;background:var(--card);color:inherit;text-decoration:none}
+  .metric-card:hover{border-color:var(--hover-line);background:var(--card-2)}
+  .metric-value{color:var(--txt-strong);font:760 18px/1 "Space Grotesk",system-ui,sans-serif}.metric-label{min-width:0;color:var(--muted);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .metric-card.action .metric-value{color:var(--warn-txt)}.metric-card.interview .metric-value{color:var(--info-txt)}.metric-card.offer .metric-value{color:var(--ok-txt)}.metric-card.rejected .metric-value{color:var(--err-txt)}
 
-  .portal-section { display:grid; gap:9px; }
-  .section-heading { display:flex; align-items:end; justify-content:space-between; gap:16px; }
-  .section-heading h2 { margin:0; color:var(--txt-strong); font-size:15px; letter-spacing:-.01em; }
-  .section-heading p { margin:3px 0 0; color:var(--muted); font-size:12px; }
-  .portal-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .portal-card { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:12px; align-items:center; padding:14px;
-    border:1px solid var(--glass-line); border-radius:15px; background:var(--card); }
-  .portal-card.ok { border-color:color-mix(in srgb,var(--ok-line) 75%,var(--glass-line)); }
-  .portal-card.warning { border-color:color-mix(in srgb,var(--warn-line) 82%,var(--glass-line)); }
-  .portal-card.syncing { border-color:color-mix(in srgb,var(--info-line) 80%,var(--glass-line)); }
-  .portal-logo { display:grid; place-items:center; width:36px; height:36px; border-radius:11px; background:var(--glass);
-    color:var(--accent); border:1px solid var(--glass-line); font:800 15px/1 "Space Grotesk",system-ui,sans-serif; }
-  .portal-copy { min-width:0; }
-  .portal-title { display:flex; align-items:center; gap:7px; color:var(--txt-strong); font-size:13px; font-weight:750; }
-  .portal-state-dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
-  .portal-card.ok .portal-state-dot { background:var(--ok-txt); }
-  .portal-card.warning .portal-state-dot { background:var(--warn-txt); }
-  .portal-card.syncing .portal-state-dot { background:var(--info-txt); animation:portalPulse 1.2s infinite; }
-  @keyframes portalPulse { 50% { opacity:.32; transform:scale(.75); } }
-  .portal-meta { margin-top:3px; color:var(--muted); font-size:11.5px; line-height:1.35; }
-  .portal-error { margin-top:4px; color:var(--warn-txt); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .portal-actions { display:flex; gap:6px; align-items:center; }
-  .portal-actions form { margin:0; }
-  .mini-btn,.app-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; text-decoration:none; border-radius:9px;
-    border:1px solid var(--glass-line); background:var(--glass); color:var(--txt); font-weight:700; cursor:pointer; }
-  .mini-btn { min-height:32px; padding:6px 10px; font-size:11.5px; }
-  .mini-btn:hover,.app-btn:hover { border-color:var(--hover-line); background:var(--card-2); }
+  .monitor-strip{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .portal-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--glass-line);border-radius:13px;background:var(--card)}
+  .portal-card.ok{border-color:color-mix(in srgb,var(--ok-line) 72%,var(--glass-line))}.portal-card.warning{border-color:var(--warn-line)}.portal-card.syncing{border-color:var(--info-line)}
+  .portal-logo{display:grid;place-items:center;width:31px;height:31px;border-radius:9px;border:1px solid var(--glass-line);background:var(--glass);color:var(--accent);font:800 12px/1 "Space Grotesk",system-ui,sans-serif}
+  .portal-copy{min-width:0}.portal-title{display:flex;align-items:center;gap:6px;color:var(--txt);font-size:11.8px;font-weight:780}.portal-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+  .portal-card.ok .portal-dot{background:var(--ok-txt)}.portal-card.warning .portal-dot{background:var(--warn-txt)}.portal-card.syncing .portal-dot{background:var(--info-txt);animation:portalPulse 1.1s infinite}
+  @keyframes portalPulse{50%{opacity:.3;transform:scale(.72)}}
+  .portal-meta,.portal-error{margin-top:3px;font-size:10.4px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.portal-meta{color:var(--muted)}.portal-error{color:var(--warn-txt)}
+  .portal-actions{display:flex;gap:5px}.portal-actions form{margin:0}.mini-btn,.app-btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:30px;padding:5px 9px;border:1px solid var(--glass-line);border-radius:8px;background:var(--glass);color:var(--txt);font-size:10.8px;font-weight:720;text-decoration:none;cursor:pointer}.mini-btn:hover,.app-btn:hover{border-color:var(--hover-line);background:var(--card-2)}
 
-  .application-toolbar { display:flex; align-items:center; gap:8px; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin; }
-  .view-tab { display:inline-flex; align-items:center; gap:7px; flex:0 0 auto; padding:8px 11px; border:1px solid var(--glass-line);
-    border-radius:10px; color:var(--muted); background:var(--glass); font-size:12px; font-weight:720; text-decoration:none; }
-  .view-tab:hover { color:var(--txt); border-color:var(--hover-line); }
-  .view-tab.active { color:var(--on-accent); border-color:var(--accent); background:var(--accent); }
-  html[data-theme="dark"] .view-tab.active { color:#06130b; }
-  .tab-count { display:grid; place-items:center; min-width:19px; height:19px; padding:0 5px; border-radius:999px; background:rgba(127,127,127,.15); font-size:10.5px; }
-  .view-tab.active .tab-count { background:rgba(0,0,0,.16); }
+  .application-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,300px);gap:9px;align-items:center}
+  .application-toolbar{display:flex;align-items:center;gap:6px;overflow-x:auto;padding-bottom:1px;scrollbar-width:thin}
+  .view-tab{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:7px 9px;border:1px solid var(--glass-line);border-radius:9px;color:var(--muted);background:var(--glass);font-size:10.8px;font-weight:720;text-decoration:none}
+  .view-tab.active{color:var(--on-accent);border-color:var(--accent);background:var(--accent)}html[data-theme="dark"] .view-tab.active{color:#06130b}.tab-count{opacity:.78}
+  .application-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px}.search-box{position:relative}.search-box svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}.search-box input{width:100%;height:34px;padding:6px 9px 6px 31px;border-radius:9px;font-size:11.5px}
 
-  .application-list-head { display:flex; align-items:baseline; justify-content:space-between; gap:16px; }
-  .application-list-head h2 { margin:0; color:var(--txt-strong); font-size:17px; }
-  .application-list-head span { color:var(--muted); font-size:12px; }
-  .application-list { display:grid; gap:10px; }
-  .application-card { position:relative; overflow:visible; display:grid; gap:15px; padding:17px 18px 16px 20px;
-    border:1px solid var(--glass-line); border-radius:16px; background:var(--card); }
-  .application-card::before { content:""; position:absolute; inset:13px auto 13px 0; width:3px; border-radius:0 4px 4px 0; background:var(--accent); opacity:.65; }
-  .application-card.status-interview::before { background:var(--info-txt); opacity:1; }
-  .application-card.status-offer::before { background:var(--ok-txt); opacity:1; }
-  .application-card.status-rejected::before { background:var(--err-txt); opacity:.85; }
-  .application-card.status-no_response::before,.application-card.activity-incomplete::before { background:var(--warn-txt); opacity:.85; }
-  .application-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
-  .application-title-wrap { min-width:0; }
-  .application-title { display:block; color:var(--txt-strong); font-size:15px; font-weight:750; line-height:1.28; text-decoration:none; }
-  .application-title:hover { color:var(--accent); }
-  .application-meta { margin-top:5px; color:var(--muted); font-size:11.8px; line-height:1.4; }
-  .application-badges { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:5px; max-width:48%; }
-  .fact-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border:1px solid var(--glass-line); border-radius:999px;
-    color:var(--muted); background:var(--glass); font-size:10.7px; font-weight:720; white-space:nowrap; }
-  .fact-badge.official,.fact-badge.strong { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
-  .fact-badge.warning { color:var(--warn-txt); border-color:var(--warn-line); background:var(--warn-bg); }
-  .fact-badge.status-interview { color:var(--info-txt); border-color:var(--info-line); background:var(--info-bg); }
-  .fact-badge.status-offer { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
-  .fact-badge.status-rejected { color:var(--err-txt); border-color:var(--err-line); background:var(--err-bg); }
-  .fact-badge.status-no_response { color:var(--warn-txt); border-color:var(--warn-line); background:var(--warn-bg); }
-
-  .application-pipeline { display:grid; grid-template-columns:auto 1fr auto 1fr auto 1fr auto; align-items:start; gap:7px; padding:0 3px; }
-  .pipeline-step { display:grid; justify-items:center; gap:5px; min-width:56px; color:var(--muted); font-size:9.7px; font-weight:700; text-align:center; }
-  .pipeline-node { display:grid; place-items:center; width:22px; height:22px; border-radius:50%; border:2px solid var(--glass-line); background:var(--card); color:transparent; }
-  .pipeline-step.done .pipeline-node { color:var(--on-accent); border-color:var(--accent); background:var(--accent); }
-  html[data-theme="dark"] .pipeline-step.done .pipeline-node { color:#06130b; }
-  .pipeline-step.current .pipeline-node { border-color:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 13%,transparent); }
-  .pipeline-step.interview.current .pipeline-node { border-color:var(--info-txt); box-shadow:0 0 0 4px color-mix(in srgb,var(--info-txt) 13%,transparent); }
-  .pipeline-step.offer.current .pipeline-node { border-color:var(--ok-txt); box-shadow:0 0 0 4px color-mix(in srgb,var(--ok-txt) 13%,transparent); }
-  .pipeline-step.negative .pipeline-node { color:var(--err-txt); border-color:var(--err-txt); background:var(--err-bg); }
-  .pipeline-step.silent .pipeline-node { color:var(--warn-txt); border-color:var(--warn-txt); background:var(--warn-bg); }
-  .pipeline-step.current,.pipeline-step.done { color:var(--txt); }
-  .pipeline-line { height:2px; margin-top:10px; border-radius:2px; background:var(--glass-line); }
-  .pipeline-line.done { background:var(--accent); opacity:.72; }
-  .pipeline-line.negative { background:var(--err-txt); opacity:.7; }
-  .pipeline-line.silent { background:var(--warn-txt); opacity:.7; }
-  .pipeline-empty { padding:9px 12px; border-radius:10px; background:var(--warn-bg); color:var(--warn-txt); font-size:11.5px; line-height:1.45; }
-
-  .application-insight { display:grid; grid-template-columns:auto minmax(0,1fr); gap:10px; align-items:start; padding:11px 12px;
-    border:1px solid var(--glass-line); border-radius:12px; background:var(--glass); }
-  .insight-icon { display:grid; place-items:center; width:27px; height:27px; border-radius:8px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); }
-  .application-insight.urgent .insight-icon { color:var(--warn-txt); background:var(--warn-bg); }
-  .application-insight.priority .insight-icon { color:var(--info-txt); background:var(--info-bg); }
-  .insight-title { color:var(--txt); font-size:11.7px; font-weight:800; }
-  .insight-copy { margin-top:3px; color:var(--muted); font-size:11.5px; line-height:1.45; }
-  .portal-raw { margin-top:5px; color:var(--muted); font-size:10.8px; }
-  .portal-raw b { color:var(--txt); font-weight:700; }
-
-  .application-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-  .application-origin { min-width:0; color:var(--muted); font-size:10.8px; line-height:1.4; }
-  .application-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
-  .app-btn { min-height:33px; padding:6px 10px; font-size:11.5px; }
-  .proof-button { cursor:pointer; }
-  .stage-menu { position:relative; }
-  .stage-menu summary { list-style:none; }
-  .stage-menu summary::-webkit-details-marker { display:none; }
-  .stage-popover { position:absolute; right:0; bottom:calc(100% + 7px); z-index:40; width:245px; padding:11px; border:1px solid var(--glass-line);
-    border-radius:12px; background:var(--card); box-shadow:0 18px 48px rgba(0,0,0,.35); }
-  .stage-popover p { margin:0 0 8px; color:var(--muted); font-size:10.8px; line-height:1.4; }
-  .stage-popover form { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-  .stage-popover button { min-height:31px; padding:5px 6px; font-size:10.8px; }
-  .stage-popover button:last-child { grid-column:1/-1; }
-
-  .application-empty { display:grid; justify-items:center; gap:10px; padding:46px 20px; border:1px dashed var(--glass-line); border-radius:16px;
-    background:var(--glass); text-align:center; color:var(--muted); }
-  .application-empty .empty-icon { display:grid; place-items:center; width:44px; height:44px; border-radius:14px; background:var(--card); color:var(--accent); }
-  .application-empty h3 { margin:2px 0 0; color:var(--txt); font-size:15px; }
-  .application-empty p { margin:0; max-width:480px; font-size:12px; line-height:1.5; }
-
-  .proof-overlay { position:fixed; inset:0; z-index:3200; display:grid; place-items:center; padding:28px; background:rgba(0,0,0,.72); backdrop-filter:blur(4px); }
-  .proof-overlay[hidden] { display:none; }
-  .proof-box { max-width:min(920px,calc(var(--wf-vw)*.94)); max-height:calc(var(--wf-vh)*.88); display:grid; gap:8px; }
-  .proof-box img { max-width:100%; max-height:calc(var(--wf-vh)*.8); border-radius:12px; border:1px solid var(--glass-line); box-shadow:0 30px 80px rgba(0,0,0,.6); background:#fff; }
-  .proof-cap { display:flex; justify-content:space-between; align-items:center; gap:12px; color:#e8efe9; font-size:12px; }
-
-  @media(max-width:1100px){ .application-metrics{grid-template-columns:repeat(3,1fr)} }
-  @media(max-width:780px){
-    .application-hero{grid-template-columns:1fr;padding:20px}.truth-rules{grid-template-columns:1fr 1fr}.portal-grid{grid-template-columns:1fr}
-    .application-card-head,.application-footer{align-items:flex-start;flex-direction:column}.application-badges{max-width:none;justify-content:flex-start}
-    .application-actions{justify-content:flex-start}.application-pipeline{gap:3px}.pipeline-step{min-width:42px;font-size:8.8px}
-  }
-  @media(max-width:520px){
-    .application-metrics{grid-template-columns:repeat(2,1fr)}.truth-rules{grid-template-columns:1fr}.portal-card{grid-template-columns:auto 1fr}
-    .portal-actions{grid-column:1/-1}.portal-actions .mini-btn{flex:1}.application-card{padding:15px 13px 14px 16px}
-    .application-pipeline{grid-template-columns:auto 1fr auto 1fr auto}.application-pipeline .offer,.application-pipeline .line-to-offer{display:none}
-  }
+  .application-list-head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding:0 2px}.application-list-head h2{margin:0;color:var(--txt-strong);font-size:14px}.application-list-head span{color:var(--muted);font-size:10.8px}
+  .application-list{display:grid;gap:6px}.application-row{position:relative;border:1px solid var(--glass-line);border-radius:12px;background:var(--card);overflow:visible}.application-row[open]{border-color:var(--hover-line);box-shadow:0 10px 28px rgba(0,0,0,.08)}
+  .application-row::before{content:"";position:absolute;inset:9px auto 9px 0;width:3px;border-radius:0 3px 3px 0;background:var(--accent);opacity:.72}.application-row.status-interview::before{background:var(--info-txt)}.application-row.status-offer::before{background:var(--ok-txt)}.application-row.status-rejected::before{background:var(--err-txt)}.application-row.status-no_response::before,.application-row.activity-incomplete::before{background:var(--warn-txt)}
+  .application-row summary{display:grid;grid-template-columns:105px minmax(0,1fr) minmax(150px,220px) 16px;gap:12px;align-items:center;min-height:60px;padding:9px 12px 9px 15px;list-style:none;cursor:pointer}.application-row summary::-webkit-details-marker{display:none}
+  .row-stage{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10.7px;font-weight:750}.stage-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 11%,transparent)}.status-interview .stage-dot{background:var(--info-txt)}.status-offer .stage-dot{background:var(--ok-txt)}.status-rejected .stage-dot{background:var(--err-txt)}.status-no_response .stage-dot,.activity-incomplete .stage-dot{background:var(--warn-txt)}
+  .row-main{min-width:0}.row-title{display:block;color:var(--txt-strong);font-size:12.6px;font-weight:760;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row-meta{margin-top:3px;color:var(--muted);font-size:10.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row-next{min-width:0;text-align:right}.row-next b{display:block;color:var(--txt);font-size:10.8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row-next small{display:block;margin-top:3px;color:var(--muted);font-size:9.8px}.row-chevron{width:8px;height:8px;border-right:1.8px solid var(--muted);border-bottom:1.8px solid var(--muted);transform:rotate(45deg) translateY(-2px);transition:transform .16s}.application-row[open] .row-chevron{transform:rotate(225deg) translate(-2px,-2px)}
+  .row-details{display:grid;gap:10px;padding:0 14px 13px 15px;border-top:1px solid var(--glass-line)}.detail-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(220px,.65fr);gap:10px;padding-top:11px}.application-insight{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;padding:10px 11px;border:1px solid var(--glass-line);border-radius:10px;background:var(--glass)}.insight-icon{display:grid;place-items:center;width:25px;height:25px;border-radius:7px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}.application-insight.urgent .insight-icon{color:var(--warn-txt);background:var(--warn-bg)}.application-insight.priority .insight-icon{color:var(--info-txt);background:var(--info-bg)}.insight-title{color:var(--txt);font-size:10.9px;font-weight:800}.insight-copy{margin-top:3px;color:var(--muted);font-size:10.7px;line-height:1.42}.portal-raw{margin-top:4px;color:var(--muted);font-size:10.2px}.portal-raw b{color:var(--txt)}
+  .fact-stack{display:flex;align-content:flex-start;justify-content:flex-end;gap:5px;flex-wrap:wrap}.fact-badge{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid var(--glass-line);border-radius:999px;background:var(--glass);color:var(--muted);font-size:9.8px;font-weight:720}.fact-badge.official,.fact-badge.strong{color:var(--ok-txt);border-color:var(--ok-line);background:var(--ok-bg)}.fact-badge.warning{color:var(--warn-txt);border-color:var(--warn-line);background:var(--warn-bg)}
+  .compact-pipeline{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.pipe-step{padding:4px 7px;border:1px solid var(--glass-line);border-radius:7px;color:var(--muted);font-size:9.8px;font-weight:720}.pipe-step.done{color:var(--ok-txt);border-color:var(--ok-line);background:var(--ok-bg)}.pipe-step.current{color:var(--info-txt);border-color:var(--info-line);background:var(--info-bg)}.pipe-step.negative{color:var(--err-txt);border-color:var(--err-line);background:var(--err-bg)}.pipe-arrow{color:var(--muted);font-size:10px}
+  .application-footer{display:flex;align-items:center;justify-content:space-between;gap:12px}.application-origin{min-width:0;color:var(--muted);font-size:10px;line-height:1.35}.application-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.stage-menu{position:relative}.stage-menu summary{display:inline-flex;min-height:30px;padding:5px 9px}.stage-popover{position:absolute;right:0;bottom:calc(100% + 6px);z-index:40;width:235px;padding:10px;border:1px solid var(--glass-line);border-radius:11px;background:var(--card);box-shadow:0 18px 48px rgba(0,0,0,.3)}.stage-popover p{margin:0 0 7px;color:var(--muted);font-size:10px;line-height:1.35}.stage-popover form{display:grid;grid-template-columns:1fr 1fr;gap:5px}.stage-popover button{min-height:29px;padding:4px;font-size:10px}.stage-popover button:last-child{grid-column:1/-1}
+  .application-empty{display:grid;justify-items:center;gap:8px;padding:34px 18px;border:1px dashed var(--glass-line);border-radius:13px;background:var(--glass);text-align:center;color:var(--muted)}.application-empty h3{margin:0;color:var(--txt);font-size:14px}.application-empty p{margin:0;max-width:480px;font-size:11px;line-height:1.45}
+  .pagination{display:flex;align-items:center;justify-content:center;gap:5px}.page-link{display:grid;place-items:center;min-width:31px;height:31px;padding:0 8px;border:1px solid var(--glass-line);border-radius:8px;background:var(--glass);color:var(--muted);font-size:10.8px;font-weight:720;text-decoration:none}.page-link.active{color:var(--on-accent);border-color:var(--accent);background:var(--accent)}
+  .proof-overlay{position:fixed;inset:0;z-index:3200;display:grid;place-items:center;padding:28px;background:rgba(0,0,0,.72);backdrop-filter:blur(4px)}.proof-overlay[hidden]{display:none}.proof-box{max-width:min(920px,calc(var(--wf-vw)*.94));max-height:calc(var(--wf-vh)*.88);display:grid;gap:8px}.proof-box img{max-width:100%;max-height:calc(var(--wf-vh)*.8);border-radius:12px;border:1px solid var(--glass-line);background:#fff}.proof-cap{display:flex;justify-content:space-between;align-items:center;color:#e8efe9;font-size:11px}
+  @media(max-width:1050px){.application-metrics{grid-template-columns:repeat(3,1fr)}.application-controls{grid-template-columns:1fr}.application-row summary{grid-template-columns:95px minmax(0,1fr) minmax(130px,190px) 14px}}
+  @media(max-width:720px){.application-command{align-items:flex-start;flex-direction:column}.tg-monitor-state{width:100%;min-width:0}.monitor-strip{grid-template-columns:1fr}.application-row summary{grid-template-columns:90px minmax(0,1fr) 14px}.row-next{display:none}.detail-grid{grid-template-columns:1fr}.fact-stack{justify-content:flex-start}.application-footer{align-items:flex-start;flex-direction:column}.application-actions{justify-content:flex-start}.portal-card{grid-template-columns:auto 1fr}.portal-actions{grid-column:1/-1}.portal-actions .mini-btn{flex:1}}
+  @media(max-width:460px){.application-metrics{grid-template-columns:repeat(2,1fr)}.application-row summary{grid-template-columns:72px minmax(0,1fr) 12px;gap:8px;padding-left:12px}.row-stage{font-size:9.5px}.stage-dot{width:7px;height:7px}.row-title{font-size:11.5px}.application-search{grid-template-columns:1fr}.application-search button{display:none}}
 </style>
 {% endblock %}
 
 {% block body %}
 {{ ui.shell_start('audit') }}
 <header class="wex-topbar">
-  <div class="wex-title-stack">
-    <h1>{{ ui.brand('Мои отклики') }}</h1>
-    <span class="wex-title-meta">Решения, ожидание и подтверждения — без догадок</span>
-  </div>
-  <div class="wex-topbar-spacer"></div>
-  <div class="wex-header-actions">{{ ui.theme_toggle() }}</div>
+  <div class="wex-title-stack"><h1>{{ ui.brand('Мои отклики') }}</h1><span class="wex-title-meta">коротко: этап, следующий шаг и источник</span></div>
+  <div class="wex-topbar-spacer"></div><div class="wex-header-actions">{{ ui.theme_toggle() }}</div>
 </header>
 
 <main class="wex-workbench wex-narrow applications-workbench">
-  <section class="application-hero">
-    <div>
-      <div class="hero-kicker">{{ ic.i('sparkles', 13) }} Умный центр откликов</div>
-      <h2>Понятно, что происходит<br>после каждой подачи</h2>
-      <p>WexFlow соединяет собственную историю, квитанции и официальные кабинеты работодателей. Он подсказывает следующий шаг, но никогда не выдаёт догадку за решение компании.</p>
-    </div>
-    <div class="truth-rules">
-      <div class="truth-rule"><span class="truth-dot"></span><span><b>Кабинет или квитанция</b> — сильное подтверждение.</span></div>
-      <div class="truth-rule"><span class="truth-dot warn"></span><span><b>Нет ответа</b> — молчание, а не отказ.</span></div>
-      <div class="truth-rule"><span class="truth-dot red"></span><span><b>Отказ</b> — только явный статус или твоя отметка.</span></div>
-    </div>
+  <section class="application-command">
+    <div><div class="command-kicker">{{ ic.i('sparkles',12) }} Центр откликов</div><h2>Важное видно без длинной ленты</h2><p>Строка показывает текущий этап. Нажми на неё — откроются подробности и действия.</p></div>
+    <div class="tg-monitor-state"><span>{{ ic.i('bell',15) }}</span><div><b>{{ 'Telegram-уведомления готовы' if telegram_connected else 'Подключи Telegram для уведомлений' }}</b><small>{{ 'Ответы и новые этапы придут автоматически.' if telegram_connected else 'Аккаунт → Telegram; события сохранятся в очереди до подключения.' }}</small></div></div>
   </section>
 
   <nav class="application-metrics" aria-label="Сводка откликов">
-    <a class="metric-card" href="/audit?view=waiting"><span class="metric-value">{{ counts.waiting }}</span><span class="metric-label">Ждут ответа</span></a>
-    <a class="metric-card action" href="/audit?view=action"><span class="metric-value">{{ counts.action }}</span><span class="metric-label">Нужно внимание</span></a>
-    <a class="metric-card interview" href="/audit?view=interview"><span class="metric-value">{{ counts.interview }}</span><span class="metric-label">Собеседования</span></a>
+    <a class="metric-card" href="/audit?view=waiting"><span class="metric-value">{{ counts.waiting }}</span><span class="metric-label">Ждут</span></a>
+    <a class="metric-card action" href="/audit?view=action"><span class="metric-value">{{ counts.action }}</span><span class="metric-label">Нужно действие</span></a>
+    <a class="metric-card interview" href="/audit?view=interview"><span class="metric-value">{{ counts.interview }}</span><span class="metric-label">Интервью</span></a>
     <a class="metric-card offer" href="/audit?view=offer"><span class="metric-value">{{ counts.offer }}</span><span class="metric-label">Офферы</span></a>
     <a class="metric-card rejected" href="/audit?view=rejected"><span class="metric-value">{{ counts.rejected }}</span><span class="metric-label">Отказы</span></a>
-    <a class="metric-card" href="/audit?view=no_response"><span class="metric-value">{{ counts.no_response }}</span><span class="metric-label">Долгое молчание</span></a>
+    <a class="metric-card" href="/audit?view=all"><span class="metric-value">{{ counts.all }}</span><span class="metric-label">Всего</span></a>
   </nav>
 
-  <section class="portal-section">
-    <div class="section-heading">
-      <div><h2>Официальные кабинеты</h2><p>Проверяются при запуске и затем каждые 3 часа.</p></div>
-    </div>
-    <div class="portal-grid">
-      {% for monitor in monitors %}
-      <article class="portal-card {{ monitor.tone }}">
-        <span class="portal-logo">{{ 'S' if monitor.source == 'salling' else 'Li' }}</span>
-        <div class="portal-copy">
-          <div class="portal-title"><span class="portal-state-dot"></span>{{ monitor.name }} · {{ monitor.headline }}</div>
-          <div class="portal-meta">В кабинете: {{ monitor.application_count }}{% if monitor.last_success_at %} · успешно {{ monitor.last_success_at }}{% endif %}</div>
-          {% if monitor.last_error %}<div class="portal-error" title="{{ monitor.last_error }}">{{ monitor.last_error }}</div>{% endif %}
-        </div>
-        <div class="portal-actions">
-          {% if monitor.enabled and monitor.connected %}
-          <form method="post" action="/audit/sync/{{ monitor.source }}"><button class="mini-btn" type="submit" {{ 'disabled' if monitor.busy else '' }}>{{ ic.i('refresh', 12) }} Проверить</button></form>
-          {% endif %}
-          <a class="mini-btn" href="{{ monitor.settings_url }}">{{ 'Настроить' if monitor.connected else 'Подключить' }}</a>
-        </div>
-      </article>
-      {% endfor %}
-    </div>
-  </section>
-
-  {% set tabs = [
-    ('active','В работе',counts.active), ('action','Нужно действие',counts.action), ('waiting','Ждём',counts.waiting),
-    ('interview','Собеседования',counts.interview), ('offer','Офферы',counts.offer), ('rejected','Отказы',counts.rejected),
-    ('no_response','Нет ответа',counts.no_response), ('all','Все',counts.all)
-  ] %}
-  <nav class="application-toolbar" aria-label="Фильтр откликов">
-    {% for code, label, count in tabs %}
-    <a class="view-tab {{ 'active' if selected_view == code }}" href="/audit?view={{ code }}">{{ label }} <span class="tab-count">{{ count }}</span></a>
+  <section class="monitor-strip" aria-label="Мониторинг кабинетов">
+    {% for monitor in monitors %}
+    <article class="portal-card {{ monitor.tone }}" data-monitor-source="{{ monitor.source }}" data-initial-busy="{{ '1' if monitor.busy else '0' }}">
+      <span class="portal-logo">{{ 'S' if monitor.source == 'salling' else 'Li' }}</span>
+      <div class="portal-copy"><div class="portal-title"><span class="portal-dot"></span><span data-monitor-headline>{{ monitor.name }} · {{ monitor.headline }}</span></div><div class="portal-meta" data-monitor-meta>В кабинете: {{ monitor.application_count }} · проверка каждые {{ monitor_interval_minutes }} мин{% if monitor.last_success_at %} · {{ monitor.last_success_at }}{% endif %}</div><div class="portal-error" data-monitor-error{% if not monitor.last_error and not monitor.last_notification_error %} hidden{% endif %}>{{ monitor.last_error or monitor.last_notification_error }}</div></div>
+      <div class="portal-actions">{% if monitor.enabled and monitor.connected %}<form method="post" action="/audit/sync/{{ monitor.source }}"><button class="mini-btn" type="submit" {{ 'disabled' if monitor.busy else '' }}>{{ ic.i('refresh',11) }} Проверить</button></form>{% endif %}<a class="mini-btn" href="{{ monitor.settings_url }}">{{ 'Настроить' if monitor.connected else 'Подключить' }}</a></div>
+    </article>
     {% endfor %}
-  </nav>
-
-  <div class="application-list-head">
-    <h2>{{ dict(active='В работе',action='Нужно действие',waiting='Ожидают ответа',interview='Собеседования',offer='Офферы',rejected='Отказы',no_response='Нет ответа',all='Все отклики').get(selected_view) }}</h2>
-    <span>Показано {{ visible_total }} из {{ total }}</span>
-  </div>
-
-  {% set st_ru = {'applied':'Подано','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа'} %}
-  {% if visible_total == 0 %}
-  <section class="application-empty">
-    <span class="empty-icon">{{ ic.i('check', 22) }}</span>
-    <h3>{{ 'Откликов пока нет' if total == 0 else 'В этом разделе пусто' }}</h3>
-    <p>{{ 'Когда анкета будет начата или подана, здесь появится её путь и следующий шаг.' if total == 0 else 'Выбери другой раздел — история не удалена и всегда доступна во вкладке «Все».' }}</p>
-    {% if total == 0 %}<a class="app-btn" href="/?status=active">Открыть вакансии</a>{% endif %}
   </section>
+
+  {% set tabs = [('active','В работе',counts.active),('action','Действие',counts.action),('waiting','Ждём',counts.waiting),('interview','Интервью',counts.interview),('offer','Офферы',counts.offer),('rejected','Отказы',counts.rejected),('no_response','Нет ответа',counts.no_response),('all','Все',counts.all)] %}
+  <section class="application-controls">
+    <nav class="application-toolbar" aria-label="Фильтр откликов">{% for code,label,count in tabs %}<a class="view-tab {{ 'active' if selected_view == code }}" href="/audit?view={{ code }}{% if query %}&q={{ query|urlencode }}{% endif %}">{{ label }} <span class="tab-count">{{ count }}</span></a>{% endfor %}</nav>
+    <form class="application-search" method="get" action="/audit"><input type="hidden" name="view" value="{{ selected_view }}"><label class="search-box">{{ ic.i('search',13) }}<input type="search" name="q" value="{{ query }}" placeholder="Найти вакансию, город или сеть"></label><button class="mini-btn" type="submit">Найти</button></form>
+  </section>
+
+  <div class="application-list-head"><h2>{{ dict(active='В работе',action='Нужно действие',waiting='Ожидают ответа',interview='Собеседования',offer='Офферы',rejected='Отказы',no_response='Нет ответа',all='Все отклики').get(selected_view) }}</h2><span>{{ visible_total }} найдено · по {{ 12 }} на странице</span></div>
+  {% set st_ru = {'applied':'Подано','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа'} %}
+  {% if page_visible_total == 0 %}
+  <section class="application-empty"><span>{{ ic.i('search' if query else 'check',20) }}</span><h3>{{ 'Ничего не найдено' if query else ('Откликов пока нет' if total == 0 else 'В этом разделе пусто') }}</h3><p>{{ 'Измени запрос или выбери другую вкладку.' if query else 'Когда анкета будет начата или подана, здесь появится её этап и следующий шаг.' }}</p>{% if query %}<a class="app-btn" href="/audit?view={{ selected_view }}">Сбросить поиск</a>{% elif total == 0 %}<a class="app-btn" href="/?status=active">Открыть вакансии</a>{% endif %}</section>
   {% else %}
   <section class="application-list">
     {% for r in entries %}
-    <article class="application-card status-{{ r.status }} activity-{{ r.activity }}">
-      <header class="application-card-head">
-        <div class="application-title-wrap">
-          <a class="application-title" href="/job/{{ r.id }}">{{ r.title }}</a>
-          <div class="application-meta">
-            {{ source_labels.get(r.source, r.source) }}{% if r.brand %} · {{ brand_label(r.brand) }}{% endif %}{% if r.city %} · {{ r.city }}{% endif %}
-            {% if r.activity == 'submitted' and r.applied_at %} · подано {{ r.applied_at.strftime('%d.%m.%Y') }} · {{ r.tracker.age_label }} назад{% endif %}
-          </div>
-        </div>
-        <div class="application-badges">
-          {% if r.activity == 'submitted' %}
-          <span class="fact-badge status-{{ r.status }}">{{ st_ru.get(r.status,r.status) }}</span>
-          <span class="fact-badge {{ r.tracker.confirmation_tone }}">{% if r.tracker.confirmation_tone in ('official','strong') %}{{ ic.i('check',10) }}{% elif r.tracker.confirmation_tone == 'warning' %}{{ ic.i('alert',10) }}{% endif %}{{ r.tracker.confirmation_label }}{% if r.tracker.confirmation_tone == 'official' %} {{ 'Salling' if r.source == 'salling' else ('Lidl' if r.source == 'lidl' else '') }}{% endif %}</span>
-          {% else %}
-          <span class="fact-badge warning">{{ ic.i('alert',10) }} {{ r.tracker.confirmation_label }}</span>
-          {% endif %}
-        </div>
-      </header>
-
-      {% if r.activity == 'submitted' %}
-      <div class="application-pipeline" aria-label="Этап заявки">
-        <div class="pipeline-step done"><span class="pipeline-node">{{ ic.i('check',11) }}</span><span>Подано</span></div>
-        <span class="pipeline-line {{ 'done' if r.status in ('interview','offer') else ('negative' if r.status == 'rejected' else ('silent' if r.status == 'no_response' else '')) }}"></span>
-        {% if r.status == 'rejected' %}
-        <div class="pipeline-step negative"><span class="pipeline-node">{{ ic.i('x',11) }}</span><span>Отказ</span></div>
-        {% elif r.status == 'no_response' %}
-        <div class="pipeline-step silent"><span class="pipeline-node">{{ ic.i('clock',11) }}</span><span>Нет ответа</span></div>
-        {% else %}
-        <div class="pipeline-step {{ 'done' if r.status in ('interview','offer') else 'current' }}"><span class="pipeline-node">{% if r.status in ('interview','offer') %}{{ ic.i('check',11) }}{% endif %}</span><span>{{ 'Ответ получен' if r.status in ('interview','offer') else 'Ждём ответ' }}</span></div>
-        {% endif %}
-        <span class="pipeline-line {{ 'done' if r.status in ('interview','offer') else '' }}"></span>
-        <div class="pipeline-step interview {{ 'done' if r.status == 'offer' else ('current' if r.status == 'interview' else '') }}"><span class="pipeline-node">{% if r.status == 'offer' %}{{ ic.i('check',11) }}{% endif %}</span><span>Собеседование</span></div>
-        <span class="pipeline-line line-to-offer {{ 'done' if r.status == 'offer' else '' }}"></span>
-        <div class="pipeline-step offer {{ 'current' if r.status == 'offer' }}"><span class="pipeline-node"></span><span>Оффер</span></div>
+    <details class="application-row status-{{ r.status }} activity-{{ r.activity }}">
+      <summary><span class="row-stage"><i class="stage-dot"></i>{{ st_ru.get(r.status,'не завершено' if r.activity != 'submitted' else r.status) }}</span><span class="row-main"><span class="row-title">{{ r.title }}</span><span class="row-meta">{{ source_labels.get(r.source,r.source) }}{% if r.brand %} · {{ brand_label(r.brand) }}{% endif %}{% if r.city %} · {{ r.city }}{% endif %}</span></span><span class="row-next"><b>{{ r.tracker.action_label }}</b><small>{% if r.applied_at %}{{ r.applied_at.strftime('%d.%m.%Y') }} · {{ r.tracker.age_label }}{% else %}нужно закончить{% endif %}</small></span><i class="row-chevron"></i></summary>
+      <div class="row-details">
+        <div class="detail-grid"><div class="application-insight {{ 'urgent' if r.tracker.urgency >= 4 else ('priority' if r.tracker.urgency >= 2 else '') }}"><span class="insight-icon">{{ ic.i('alert' if r.tracker.urgency >= 3 else 'sparkles',13) }}</span><div><div class="insight-title">{{ r.tracker.signal }} · {{ r.tracker.action_label }}</div><div class="insight-copy">{{ r.tracker.action }}</div>{% if r.activity != 'submitted' %}<div class="portal-raw">Действие <b>не завершено</b> и не считается откликом.</div>{% elif r.portal.raw %}<div class="portal-raw"><b>В кабинете:</b> {{ r.portal.raw }}</div>{% endif %}</div></div><div class="fact-stack">{% if r.activity == 'submitted' %}<span class="fact-badge {{ r.tracker.confirmation_tone }}">{{ r.tracker.confirmation_label }}</span><span class="fact-badge">{{ st_ru.get(r.status,r.status) }}</span>{% else %}<span class="fact-badge warning">{{ r.tracker.confirmation_label }}</span>{% endif %}</div></div>
+        {% if r.activity == 'submitted' %}<div class="compact-pipeline"><span class="pipe-step done">Подано</span><span class="pipe-arrow">→</span>{% if r.status == 'rejected' %}<span class="pipe-step negative">Отказ</span>{% elif r.status == 'no_response' %}<span class="pipe-step current">Нет ответа</span>{% else %}<span class="pipe-step {{ 'done' if r.status in ('interview','offer') else 'current' }}">{{ 'Ответ получен' if r.status in ('interview','offer') else 'Ждём ответ' }}</span><span class="pipe-arrow">→</span><span class="pipe-step {{ 'done' if r.status == 'offer' else ('current' if r.status == 'interview' else '') }}">Собеседование</span><span class="pipe-arrow">→</span><span class="pipe-step {{ 'current' if r.status == 'offer' else '' }}">Оффер</span>{% endif %}</div>{% endif %}
+        <footer class="application-footer"><div class="application-origin">{% if r.activity == 'submitted' %}{{ r.tracker.source_label or 'Этап сохранён в WexFlow' }}{% if r.tracker.updated_at %} · {{ r.tracker.updated_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}{% else %}Последняя попытка {{ r.applied_at.strftime('%d.%m.%Y %H:%M') if r.applied_at else '' }}{% endif %}</div><div class="application-actions">{% if r.proof %}<button type="button" class="app-btn proof-button" data-proof="/applied-proof/{{ r.proof }}">{{ ic.i('file',10) }} Доказательство</button>{% endif %}<a class="app-btn" href="/job/{{ r.id }}">Открыть</a>{% if r.activity == 'submitted' %}<details class="stage-menu"><summary class="app-btn">Изменить этап</summary><div class="stage-popover"><p>Только фактический результат. Работодателю ничего не отправится.</p><form method="post" action="/job/{{ r.id }}/status"><button type="submit" name="status" value="applied">Подано</button><button type="submit" name="status" value="interview">Собеседование</button><button type="submit" name="status" value="offer">Оффер</button><button type="submit" name="status" value="rejected">Отказ</button><button type="submit" name="status" value="no_response">Нет ответа</button></form></div></details>{% endif %}</div></footer>
       </div>
-      {% else %}
-      <div class="pipeline-empty">{{ ic.i('alert',12) }} Эта анкета не дошла до подтверждённой подачи и не считается откликом.</div>
-      {% endif %}
-
-      <div class="application-insight {{ 'urgent' if r.tracker.urgency >= 4 else ('priority' if r.tracker.urgency >= 2 else '') }}">
-        <span class="insight-icon">{{ ic.i('sparkles' if r.tracker.urgency < 3 else 'alert',14) }}</span>
-        <div>
-          <div class="insight-title">{{ r.tracker.signal }} · {{ r.tracker.action_label }}</div>
-          <div class="insight-copy">{{ r.tracker.action }}</div>
-          {% if r.portal.raw %}<div class="portal-raw"><b>В кабинете:</b> {{ r.portal.raw }}</div>{% endif %}
-        </div>
-      </div>
-
-      <footer class="application-footer">
-        <div class="application-origin">
-          {% if r.activity == 'submitted' %}
-            {% if r.tracker.source_label %}Этап {{ r.tracker.source_label }}{% else %}Этап сохранён в истории WexFlow{% endif %}
-            {% if r.tracker.updated_at %} · {{ r.tracker.updated_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}
-          {% else %}Последняя попытка {{ r.applied_at.strftime('%d.%m.%Y %H:%M') if r.applied_at else '' }}{% endif %}
-        </div>
-        <div class="application-actions">
-          {% if r.proof %}<button type="button" class="app-btn proof-button" data-proof="/applied-proof/{{ r.proof }}">{{ ic.i('file',11) }} Доказательство</button>{% endif %}
-          <a class="app-btn" href="/job/{{ r.id }}">Открыть вакансию</a>
-          {% if r.activity == 'submitted' %}
-          <details class="stage-menu">
-            <summary class="app-btn">Изменить этап</summary>
-            <div class="stage-popover">
-              <p>Только фактический результат. Работодателю ничего не отправится.</p>
-              <form method="post" action="/job/{{ r.id }}/status">
-                <button type="submit" name="status" value="applied">Подано</button>
-                <button type="submit" name="status" value="interview">Собеседование</button>
-                <button type="submit" name="status" value="offer">Оффер</button>
-                <button type="submit" name="status" value="rejected">Отказ</button>
-                <button type="submit" name="status" value="no_response">Нет ответа</button>
-              </form>
-            </div>
-          </details>
-          {% endif %}
-        </div>
-      </footer>
-    </article>
+    </details>
     {% endfor %}
   </section>
   {% endif %}
 
-  <div class="proof-overlay" id="proofOverlay" hidden>
-    <div class="proof-box">
-      <div class="proof-cap"><span>Снимок результата подачи</span><button type="button" class="mini-btn" id="proofClose">Закрыть</button></div>
-      <img id="proofImg" alt="Скриншот результата подачи">
-    </div>
-  </div>
+  {% if total_pages > 1 %}<nav class="pagination" aria-label="Страницы">{% if page > 1 %}<a class="page-link" href="/audit?view={{ selected_view }}&page={{ page-1 }}{% if query %}&q={{ query|urlencode }}{% endif %}">←</a>{% endif %}{% for number in page_numbers %}<a class="page-link {{ 'active' if number == page }}" href="/audit?view={{ selected_view }}&page={{ number }}{% if query %}&q={{ query|urlencode }}{% endif %}">{{ number }}</a>{% endfor %}{% if page < total_pages %}<a class="page-link" href="/audit?view={{ selected_view }}&page={{ page+1 }}{% if query %}&q={{ query|urlencode }}{% endif %}">→</a>{% endif %}</nav>{% endif %}
+
+  <div class="proof-overlay" id="proofOverlay" hidden><div class="proof-box"><div class="proof-cap"><span>Снимок результата подачи</span><button type="button" class="mini-btn" id="proofClose">Закрыть</button></div><img id="proofImg" alt="Скриншот результата подачи"></div></div>
 </main>
 
 <script>
-  (function () {
-    var overlay = document.getElementById('proofOverlay');
-    var img = document.getElementById('proofImg');
-    function closeProof() { overlay.hidden = true; img.removeAttribute('src'); }
-    document.querySelectorAll('[data-proof]').forEach(function (button) {
-      button.addEventListener('click', function () { img.src = button.dataset.proof; overlay.hidden = false; });
-    });
-    document.getElementById('proofClose').addEventListener('click', closeProof);
-    overlay.addEventListener('click', function (event) { if (event.target === overlay) closeProof(); });
-    document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !overlay.hidden) closeProof(); });
-    document.addEventListener('click', function (event) {
-      document.querySelectorAll('.stage-menu[open]').forEach(function (menu) { if (!menu.contains(event.target)) menu.removeAttribute('open'); });
-    });
-    {% if monitor_busy %}setTimeout(function () { location.reload(); }, 7000);{% endif %}
-  }());
+(function(){
+  var overlay=document.getElementById('proofOverlay'),img=document.getElementById('proofImg');
+  function closeProof(){if(!overlay)return;overlay.hidden=true;img.removeAttribute('src')}
+  document.querySelectorAll('[data-proof]').forEach(function(button){button.addEventListener('click',function(event){event.preventDefault();img.src=button.dataset.proof;overlay.hidden=false})});
+  var close=document.getElementById('proofClose');if(close)close.addEventListener('click',closeProof);if(overlay)overlay.addEventListener('click',function(event){if(event.target===overlay)closeProof()});
+  document.addEventListener('keydown',function(event){if(event.key==='Escape')closeProof()});
+  document.addEventListener('click',function(event){document.querySelectorAll('.stage-menu[open]').forEach(function(menu){if(!menu.contains(event.target))menu.removeAttribute('open')})});
+
+  var hadBusy=[].some.call(document.querySelectorAll('[data-monitor-source]'),function(card){return card.dataset.initialBusy==='1'}),polls=0;
+  function monitorPoll(){fetch('/api/application-monitors',{cache:'no-store'}).then(function(r){return r.json()}).then(function(data){
+    Object.keys(data.sources||{}).forEach(function(source){var state=data.sources[source],card=document.querySelector('[data-monitor-source="'+source+'"]');if(!card)return;card.className='portal-card '+(state.tone||'muted');var h=card.querySelector('[data-monitor-headline]'),m=card.querySelector('[data-monitor-meta]'),e=card.querySelector('[data-monitor-error]');if(h)h.textContent=(state.name||source)+' · '+(state.headline||state.phase_label||'');if(m)m.textContent='В кабинете: '+(state.application_count||0)+' · проверка каждые '+data.intervalMinutes+' мин'+(state.last_success_at?' · '+state.last_success_at:'');if(e){e.textContent=state.last_error||state.last_notification_error||'';e.hidden=!e.textContent}});
+    polls+=1;if(hadBusy&&!data.busy){location.reload();return}setTimeout(monitorPoll,data.busy?2200:30000)
+  }).catch(function(){setTimeout(monitorPoll,10000)})}
+  setTimeout(monitorPoll,hadBusy?1200:12000);
+}());
 </script>
 {{ ui.shell_end() }}
 {% endblock %}

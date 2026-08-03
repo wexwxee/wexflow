@@ -57,6 +57,7 @@ def test_visible_applied_job_statuses_are_parsed_conservatively():
     parsed = {item["job_id"]: item for item in lidl_monitor.extract_applications(body, jobs)}
     assert parsed["lidl:728695"]["status"] == "applied"
     assert parsed["lidl:728700"]["status"] == "interview"
+    assert lidl_monitor.classify_status("I proces")["code"] == "applied"
     assert lidl_monitor.classify_status("Tilfældig profiltekst")["code"] == "unknown"
 
 
@@ -202,3 +203,36 @@ def test_disabling_monitor_keeps_browser_session_but_stops_checks():
     assert state["enabled"] is False
     assert state["connected"] is True
     assert state["phase"] == "off"
+
+
+def test_orphaned_check_becomes_actionable_instead_of_spinning_forever():
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(lidl_monitor, "STATE_PATH", Path(tmp) / "monitor.json"), \
+            mock.patch.object(lidl_monitor, "LOCK_PATH", Path(tmp) / "monitor.lock"):
+        lidl_monitor.save_state(
+            enabled=True, connected=False, phase="checking",
+            phase_started_at="2026-08-03T00:00:00+00:00",
+        )
+        state = lidl_monitor.view()
+
+    assert state["busy"] is False
+    assert state["phase"] == "needs_login"
+    assert "прервал" in state["last_error"]
+
+
+def test_failed_telegram_delivery_stays_queued_and_retries():
+    change = {
+        "source": "lidl", "job_id": "lidl:retry", "title": "Butiksassistent",
+        "previous_status": "applied", "status": "interview",
+        "status_label": "Собеседование",
+    }
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(lidl_monitor, "STATE_PATH", Path(tmp) / "monitor.json"), \
+            mock.patch.object(lidl_monitor, "LOCK_PATH", Path(tmp) / "monitor.lock"):
+        lidl_monitor._queue_notifications([change])
+        with mock.patch("cloud_auth.send_digest", return_value=False):
+            assert lidl_monitor._flush_notifications() is False
+        assert len(lidl_monitor.load_state()["pending_notifications"]) == 1
+        with mock.patch("cloud_auth.send_digest", return_value=True):
+            assert lidl_monitor._flush_notifications() is True
+        assert lidl_monitor.load_state()["pending_notifications"] == []

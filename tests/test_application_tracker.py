@@ -83,3 +83,34 @@ def test_tracker_suggests_one_followup_only_after_two_weeks():
     advice = application_tracker.view(old, now=now)
     assert advice["action_required"] is True
     assert advice["action_label"] == "Можно уточнить"
+
+
+def test_telegram_status_card_is_actionable_and_escapes_portal_text():
+    text = application_tracker.status_notification({
+        "source": "lidl",
+        "title": "Butik <script>",
+        "brand": "Lidl & Co",
+        "city": "Herlev",
+        "previous_status": "applied",
+        "status": "interview",
+        "status_label": "Inviteret",
+        "url": "https://example.test/job/1",
+    })
+
+    assert "приглашение на собеседование" in text
+    assert "Butik &lt;script&gt;" in text
+    assert "Lidl &amp; Co" in text
+    assert '<a href="https://example.test/job/1">' in text
+    assert "<script>" not in text
+
+
+def test_multiple_status_changes_are_sent_as_one_calm_digest():
+    changes = [
+        {"source": "salling", "job_id": str(i), "title": f"Job {i}", "status": "rejected"}
+        for i in range(4)
+    ]
+    with mock.patch("cloud_auth.send_digest", return_value=True) as send:
+        assert application_tracker.notify_status_changes(changes, source_name="Salling Group") is True
+
+    send.assert_called_once()
+    assert "4 обновления" in send.call_args.args[0]

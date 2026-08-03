@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
+from urllib.parse import urlparse
 
 from db import Job, get_session, select, utcnow
 
@@ -23,6 +25,19 @@ STATUS_SOURCES = {
     "salling_portal": "получено из кабинета Salling",
     "automatic": "определено WexFlow",
     "recovered": "восстановлено из журнала",
+}
+
+_SOURCE_NAMES = {
+    "lidl": "Lidl",
+    "salling": "Salling Group",
+}
+
+_STATUS_EMOJI = {
+    "applied": "✅",
+    "interview": "📅",
+    "offer": "🎉",
+    "rejected": "📨",
+    "no_response": "⏳",
 }
 
 CONFIRMATION_LABELS = {
@@ -108,6 +123,95 @@ def _advice(status: str, age_days: int) -> dict:
         "urgency": 2,
         "signal": "Долгое ожидание",
     }
+
+
+def _safe_link(value: str) -> str:
+    """Only let Telegram render ordinary web links from an employer record."""
+    raw = str(value or "").strip()
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return ""
+    return raw if parsed.scheme in ("http", "https") and parsed.netloc else ""
+
+
+def status_notification(change: dict, *, source_name: str = "") -> str:
+    """Build one compact, actionable Telegram status card.
+
+    Portal text and vacancy data are escaped because Telegram parses this
+    message as HTML.  The wording only states facts read from the official
+    candidate portal; it never turns silence into a rejection.
+    """
+    status = str(change.get("status") or "").strip()
+    previous = str(change.get("previous_status") or "").strip()
+    source = str(change.get("source") or "").strip()
+    company = source_name or _SOURCE_NAMES.get(source, source.title() or "Работодатель")
+    title = html.escape(str(change.get("title") or "Вакансия").strip())
+    brand = html.escape(str(change.get("brand") or "").strip())
+    city = html.escape(str(change.get("city") or "").strip())
+    company_safe = html.escape(company)
+    current_label = html.escape(
+        str(change.get("status_label") or STATUS_LABELS.get(status) or status).strip()
+    )
+    previous_label = html.escape(
+        str(change.get("previous_label") or STATUS_LABELS.get(previous) or previous).strip()
+    )
+
+    headings = {
+        "applied": f"✅ <b>{company_safe} подтвердил подачу</b>",
+        "interview": f"📅 <b>{company_safe}: приглашение на собеседование</b>",
+        "offer": f"🎉 <b>{company_safe}: появился оффер</b>",
+        "rejected": f"📨 <b>{company_safe} обновил решение</b>",
+        "no_response": "⏳ <b>Долгое ожидание ответа</b>",
+    }
+    lines = [headings.get(status, f"🔔 <b>{company_safe}: новый статус</b>"), "", f"<b>{title}</b>"]
+    meta = " · ".join(part for part in (brand, city) if part)
+    if meta:
+        lines.append(meta)
+    if previous_label and previous_label != current_label:
+        lines.extend(["", f"{previous_label} → <b>{current_label}</b>"])
+    else:
+        lines.extend(["", f"Статус: <b>{current_label}</b>"])
+
+    advice = _advice(status, int(change.get("age_days") or 0))
+    if status in ("interview", "offer"):
+        lines.extend(["", f"💡 <b>{html.escape(advice['action_label'])}</b>", html.escape(advice["action"])])
+    elif status == "rejected":
+        lines.extend(["", "WexFlow сохранил решение в «Моих откликах». Повторная подача заблокирована."])
+    elif status == "applied":
+        lines.extend(["", "Заявка найдена в официальном кабинете и сохранена в «Моих откликах»."])
+
+    link = _safe_link(change.get("url") or "")
+    if link:
+        lines.extend(["", f'<a href="{html.escape(link, quote=True)}">Открыть вакансию</a>'])
+    lines.append("Источник: официальный кабинет работодателя")
+    return "\n".join(lines)[:2000]
+
+
+def notify_status_changes(changes: list[dict], *, source_name: str = "") -> bool:
+    """Deliver portal changes to Telegram; callers retain failures for retry."""
+    items = [item for item in (changes or []) if str(item.get("status") or "") in STATUS_LABELS]
+    if not items:
+        return True
+    import cloud_auth
+
+    if len(items) == 1:
+        return bool(cloud_auth.send_digest(status_notification(items[0], source_name=source_name)))
+
+    company = html.escape(source_name or _SOURCE_NAMES.get(
+        str(items[0].get("source") or ""), "Работодатель"
+    ))
+    lines = [f"🔔 <b>{company}: {len(items)} обновления по откликам</b>", ""]
+    for item in items[:10]:
+        status = str(item.get("status") or "")
+        emoji = _STATUS_EMOJI.get(status, "•")
+        title = html.escape(str(item.get("title") or "Вакансия").strip())
+        label = html.escape(str(item.get("status_label") or STATUS_LABELS.get(status, status)))
+        lines.append(f"{emoji} <b>{title}</b> — {label}")
+    if len(items) > 10:
+        lines.append(f"…и ещё {len(items) - 10}")
+    lines.extend(["", "Все изменения сохранены в «Моих откликах». Источник — официальный кабинет работодателя."])
+    return bool(cloud_auth.send_digest("\n".join(lines)[:2000]))
 
 
 def set_status(job: Job, status: str, *, source: str, now=None) -> bool:

@@ -62,6 +62,28 @@ def test_real_cockpit_table_is_parsed_by_requisition_id():
     assert rows[2]["status"] == "rejected"
 
 
+def test_current_cockpit_packed_accessibility_rows_are_parsed():
+    body = """
+Id
+Status
+Titel
+Dato
+Brand
+200092\tApplied
+Salgsassistent til Textil - København V
+01.05.2026\t.føtex
+203328\tInvited to interview
+1. assistent - Brønshøj
+15.06.2026\tNetto Danmark
+"""
+    rows = salling_monitor.parse_applied_jobs(body, [])
+    assert [(row["requisition_id"], row["status"]) for row in rows] == [
+        ("200092", "applied"),
+        ("203328", "interview"),
+    ]
+    assert rows[0]["brand"] == ".føtex"
+
+
 def test_profile_count_prevents_treating_unauthorised_empty_table_as_truth():
     main = "Søgte stillinger Du kan følge dine ansøgninger her 42 Søgte stillinger"
     assert salling_monitor.applied_count_hint(main) == 42
