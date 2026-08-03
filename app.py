@@ -3177,7 +3177,15 @@ def _launch_connector_filler(
     with _connector_launch_lock:
         if job_id in _connector_launches:
             _connector_processes[job_id] = proc
+    return _await_connector_window(proc, job_id, status_path)
 
+
+def _await_connector_window(proc, job_id: str, status_path) -> str:
+    """Дождаться, пока воркер коннектора подтвердит настоящее окно браузера.
+
+    Общая для одиночного помощника и пакетной подачи: успешный ``Popen`` ещё
+    не значит, что форма открылась — воркер мог упасть без профиля.
+    """
     deadline = time.monotonic() + 15.0
     last_state = ""
     while time.monotonic() < deadline:
@@ -3211,6 +3219,68 @@ def _launch_connector_filler(
         "браузер не подтвердил запуск за 15 секунд"
         + (f" (этап: {last_state})" if last_state else "")
     )
+
+
+def _connector_batch_cmd(ids: list[str], submit: bool) -> list[str]:
+    """Команда пакетной подачи коннектора.
+
+    dev: [python, -m, connectors.apply_dispatch, --batch, ...]. Собранное
+    приложение запускает само себя воркером — Python на чужом ПК нет.
+    """
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "--worker-connector-batch", *ids]
+    else:
+        cmd = [sys.executable, "-m", "connectors.apply_dispatch", "--batch", *ids]
+    if submit:
+        cmd.append("--submit")
+    return cmd
+
+
+def _release_connector_batch(ids: list[str], proc) -> None:
+    """Освободить слоты пачки, когда её единственное окно закрылось."""
+    try:
+        proc.wait()
+    except Exception:  # noqa: BLE001 — сторож не должен ронять приложение
+        pass
+    for jid in ids:
+        _release_connector_launch(jid)
+
+
+def _launch_connector_batch(ids: list[str], submit: bool = False):
+    """Запустить пакетную подачу Lidl одним окном и дождаться его появления.
+
+    Один процесс на всю пачку — намеренно: коннекторы делят один профиль
+    браузера, и параллельные окна дрались бы за него ровно так же, как
+    когда-то дрались пачки Salling.
+    """
+    ids = [str(j).strip() for j in ids if str(j or "").strip()]
+    if not ids:
+        return None
+    status_path = _connector_status_path(ids[0])
+    try:
+        status_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = 0x00000008 | 0x00000200
+    proc = subprocess.Popen(_connector_batch_cmd(ids, submit), **kwargs)
+    # Пакетный воркер ведёт тот же файл прогресса, что и Salling, поэтому
+    # общая проверка «идёт ли подача» должна смотреть именно на него.
+    global _last_apply_proc, _last_apply_spawn_ts
+    _last_apply_proc = proc
+    _last_apply_spawn_ts = time.time()
+    # Занимаем слоты всей пачки: пока идёт её окно, кнопка «Подать» на
+    # отдельной карточке не должна открыть второе окно той же анкеты.
+    now = time.monotonic()
+    with _connector_launch_lock:
+        for jid in ids:
+            _connector_launches[jid] = now
+            _connector_processes[jid] = proc
+    threading.Thread(target=_release_connector_batch, args=(list(ids), proc),
+                     daemon=True, name="connector-batch-release").start()
+    _await_connector_window(proc, ids[0], status_path)
+    return proc
 
 
 def _watch_connector_result_for_phone(job_id: str, source: str) -> None:
@@ -6763,6 +6833,67 @@ def _run_apply_worker(
         log.close()  # потомок унаследовал свой хэндл; родительский больше не нужен
 
 
+def _wait_for_salling_batch_to_finish(spawn_ts: float, timeout: float = 3600.0) -> None:
+    """Дождаться, пока пачка Salling ДОРАБОТАЕТ (а не пока закроют окно).
+
+    Воркер Salling ставит active=False сразу после последней анкеты, но окно
+    намеренно остаётся открытым для проверки. Ждать закрытия окна значило бы
+    не запустить Lidl вообще, поэтому ориентируемся на флаг в прогрессе.
+    """
+    deadline = time.time() + timeout
+    path = config.DATA_DIR / "apply_progress.json"
+    while time.time() < deadline and not _tg_stop.is_set():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            data = {}
+        started = _progress_started_ts(data)
+        if started >= spawn_ts - 10 and not data.get("active"):
+            return
+        proc = _last_apply_proc
+        if started < spawn_ts - 10 and proc is not None and proc.poll() is not None:
+            return  # воркер умер, не успев написать свой прогресс
+        _tg_stop.wait(2)
+
+
+def _start_batch_apply(salling_ids: list[str], lidl_ids: list[str],
+                       submit: bool, use_ai: bool) -> str:
+    """Запустить пачку: Salling своим воркером, Lidl — своим, строго по очереди.
+
+    Одновременно два заполняющих браузера не запускаем: даже с разными
+    профилями они дерутся за окно и путают человека, какой из них сейчас
+    отвечает за анкету. Возвращает текст ошибки, если запуск сорвался сразу,
+    и пустую строку, когда пачка пошла.
+    """
+    if salling_ids and not lidl_ids:
+        _run_apply_worker(salling_ids, submit=submit, ai_fill=use_ai)
+        return ""
+    if lidl_ids and not salling_ids:
+        try:
+            _launch_connector_batch(lidl_ids, submit=submit)
+        except Exception as exc:  # noqa: BLE001 — окно не открылось, честно скажем
+            applications.mark_failed(lidl_ids, source="lidl")
+            return f"Не удалось открыть анкеты Lidl: {str(exc)[:140]}"
+        return ""
+
+    def _sequential() -> None:
+        spawn_ts = time.time()
+        try:
+            _run_apply_worker(salling_ids, submit=submit, ai_fill=use_ai)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  пачка Salling не запустилась: {str(exc)[:140]}")
+        else:
+            _wait_for_salling_batch_to_finish(spawn_ts)
+        try:
+            _launch_connector_batch(lidl_ids, submit=submit)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  пачка Lidl не запустилась: {str(exc)[:140]}")
+            applications.mark_failed(lidl_ids, source="lidl")
+
+    threading.Thread(target=_sequential, daemon=True, name="batch-apply").start()
+    return ""
+
+
 def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool = False,
                          phone_confirm: bool = False):
     """Запуск apply.py для авто/фоновой подачи (очередь автопилота/Mini App).
@@ -6874,10 +7005,13 @@ def apply_batch(
             "/",
             error="ИИ-заполнение не запущено: сначала подключи ИИ в «Настройки → ИИ и анкеты».",
         )
-    # Коннекторы работают только assisted: пакетный Salling worker не должен
-    # получить их id даже через вручную подделанную форму.
+    # Пачкой умеют подаваться два источника: Salling своим воркером и Lidl
+    # своим. Остальные коннекторы остаются assisted-по-одной — их заполнитель
+    # не знает форму настолько, чтобы жать кнопку без человека.
     snapshots = _load_jobs_snapshot(ids)
-    ids = [jid for jid, job in snapshots if getattr(job, "source", "salling") == "salling"]
+    batchable = {"salling", "lidl"}
+    ids = [jid for jid, job in snapshots
+           if job is not None and getattr(job, "source", "salling") in batchable]
     if not ids:
         return _redirect_back(
             request, "/",
@@ -6924,7 +7058,18 @@ def apply_batch(
             request, "/",
             error="Подача уже идёт — дождись её окончания. Второй раз не запускаю, чтобы не ушли дубли.",
         )
-    _run_apply_worker(safe, submit=(mode == "submit"), ai_fill=use_ai)
+    sources = {jid: getattr(job, "source", "salling") or "salling"
+               for jid, job in _load_jobs_snapshot(safe)}
+    salling_ids = [jid for jid in safe if sources.get(jid) == "salling"]
+    lidl_ids = [jid for jid in safe if sources.get(jid) == "lidl"]
+    if lidl_ids:
+        # Карточка сразу показывает «анкета в работе»: пачка Lidl доходит до
+        # своего окна не мгновенно, а человек должен видеть, что процесс пошёл.
+        applications.mark_submitting(lidl_ids, origin="batch", source="lidl")
+    launch_error = _start_batch_apply(salling_ids, lidl_ids,
+                                      submit=(mode == "submit"), use_ai=use_ai)
+    if launch_error:
+        return _redirect_back(request, "/", error=launch_error)
     url = f"/?batch={len(safe)}&mode={mode}"
     if leadership:
         url += f"&skipped={len(leadership)}"

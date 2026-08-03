@@ -210,6 +210,16 @@ def run_worker(mode: str, rest: list) -> None:
             submit="--submit" in rest,
         )
 
+    elif mode == "--worker-connector-batch":
+        # Пакетная подача Lidl: одно окно, вакансии по очереди. Отправку
+        # разрешает только явно переданный --submit из подтверждённой формы.
+        from connectors.apply_dispatch import run_batch as connector_batch
+        connector_batch(
+            [a for a in rest if not a.startswith("--")],
+            submit="--submit" in rest,
+            keep_open="--auto-close" not in rest,
+        )
+
     elif mode == "--worker-lidl-monitor-login":
         import lidl_monitor
         if lidl_monitor.run_login():

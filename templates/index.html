@@ -1073,7 +1073,9 @@
   <div class="card job-status-{{ j.status }}" data-jobcard
        onclick="if(!event.target.closest('.row') && !event.target.closest('.selwrap')){ const cb=this.querySelector('[data-selbox]'); if(cb){ cb.checked=!cb.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); }else{ location.href='/job/{{ j.id }}'; } }"
        aria-label="Открыть вакансию {{ j.title }}" style="cursor:pointer;">
-    {% if not j.applied_at and j.source == 'salling' %}
+    {# Пачкой умеют подаваться Salling и Lidl: у обоих заполнитель знает форму
+       целиком. Остальные коннекторы остаются assisted-по-одной. #}
+    {% if not j.applied_at and j.source in ('salling', 'lidl') %}
     <label class="selwrap" aria-label="Выбрать для пакетной подачи">
       <input type="checkbox" name="job_ids" value="{{ j.id }}" form="batchform" data-selbox>
       <span class="selbox-ui"></span>
@@ -1175,7 +1177,8 @@
         <span class="batch-count" id="selcount">0</span>
         <span>Вакансии выбраны</span>
       </div>
-      <div class="batch-subtitle">WexFlow обработает их по одной — следующая форма откроется после завершения предыдущей.</div>
+      <div class="batch-subtitle">WexFlow обработает их по одной — следующая форма откроется после завершения предыдущей.
+        Salling и Lidl идут своими окнами, по очереди: Lidl начнётся, когда закончится пачка Salling.</div>
     </div>
     <button type="button" id="selclear" class="batch-clear" aria-label="Очистить выбранные вакансии"
             title="Очистить выбор">×</button>
@@ -1198,6 +1201,7 @@
         <span class="batch-ai-meta-line"><b>С ИИ:</b> после обычного заполнения подключённый ИИ проверит оставшиеся короткие поля и списки и подставит только факты, уже сохранённые в профиле. Если подходящего факта нет — поле останется пустым.</span>
         <span class="batch-ai-meta-note">На простой анкете разницы не будет: WexFlow и без ИИ уже заполнил всё знакомое. ИИ не придумывает опыт, гражданство или зарплату, не меняет выбранные документы и сам не нажимает «Отправить».</span>
         {% if batch_ai_motivation_on %}<span class="batch-ai-meta-note">Отдельная функция черновиков мотивации включена: короткие ответы нужно проверить перед отправкой.</span>{% else %}<span class="batch-ai-meta-note">Черновики мотивационных ответов выключены.</span>{% endif %}
+        <span class="batch-ai-meta-note">К анкетам Lidl это не относится: там WexFlow отвечает только сохранёнными ответами из «Вопросов анкет», а если ответа нет — останавливается и оставляет вопрос тебе.</span>
         {% if not batch_ai_available %}<b>Сначала подключи Gemini или Groq.</b>{% endif %}
         <a href="/settings/forms">Настройки ИИ →</a>
       </span>

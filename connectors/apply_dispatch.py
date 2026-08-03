@@ -487,6 +487,254 @@ def _wait_until_closed(
         time.sleep(1.0)
 
 
+def batch_jobs(job_ids) -> list[dict]:
+    """Снимок пачки: только вакансии Lidl EasyApply с рабочей ссылкой.
+
+    Последний барьер источника для пакетной подачи. Как и у Salling, ни один
+    вызывающий (включая будущий код) не может подсунуть сюда чужую платформу:
+    пакетно мы жмём кнопку сами, а это разрешено только там, где заполнитель
+    знает форму до последнего поля.
+    """
+    from db import Job, get_session
+
+    items: list[dict] = []
+    seen: set[str] = set()
+    with get_session() as session:
+        for raw in job_ids or []:
+            jid = str(raw or "").strip()
+            if not jid or jid in seen:
+                continue
+            seen.add(jid)
+            job = session.get(Job, jid)
+            if job is None:
+                continue
+            url = str(job.application_link or "").strip()
+            if detect(url) != "lidl_easy_apply":
+                print(f"  пропуск (не анкета Lidl EasyApply): {job.title or jid}")
+                continue
+            items.append({
+                "id": job.id,
+                "title": job.title or "",
+                "city": job.city or "",
+                "url": url,
+            })
+    return items
+
+
+def _prepare_one(page, item: dict, profile: dict, submit: bool) -> tuple[str, str]:
+    """Заполнить одну анкету пачки. Возвращает (state, message).
+
+    Одна вакансия никогда не роняет пачку: любая беда превращается в статус
+    и понятный текст, после чего очередь идёт дальше.
+    """
+    job_id = item["id"]
+    from connectors import lidl_apply
+
+    try:
+        lidl_apply.prepare(page, item["url"], profile, allow_submit=submit)
+    except site_contract.SiteChanged as changed:
+        # Работодатель переделал анкету: не заполняем, не жмём, честно
+        # объясняем человеку и идём к следующей вакансии.
+        message = site_contract.human_message(changed.report)
+        print("  ЗАЩИТА:", message.replace("\n", " "))
+        try:
+            site_changed_banner(page, changed.report)
+        except Exception:
+            pass
+        _proof_to_chat(page, job_id, prepared=True, note=message)
+        short = site_contract.short_message(changed.report)
+        _write_status(job_id, "site_changed", short)
+        return "site_changed", short
+    except Exception as exc:
+        message = f"Анкета заполнена не полностью: {str(exc)[:160]}"
+        print("  warning:", exc)
+        _write_status(job_id, "error", message)
+        return "error", message
+
+    if not submit:
+        message = "Анкета заполнена, отправка не нажата."
+        _write_status(job_id, "ready", "Форма подготовлена до финальной кнопки без отправки.")
+        return "ready", message
+
+    result = lidl_apply.submit(page, profile)
+    state = result["state"]
+    message = result["message"]
+    if state == "submitted":
+        _record_confirmed_submission(job_id)
+        _write_status(job_id, "submitted", message)
+        proof_ready = bool(result.get("proof_ready", True))
+        if not proof_ready:
+            proof_ready = lidl_apply.prepare_submission_proof(page)
+        if proof_ready:
+            _send_proof_to_chat(page, job_id)
+        else:
+            print("  пруф не отправлен: окно обработки данных Lidl не закрылось")
+        print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
+        return "submitted", message
+    if state == "no_receipt":
+        _write_status(job_id, "no_receipt", message)
+        _proof_to_chat(page, job_id, prepared=True, note=message)
+        print("  кнопка нажата, но квитанция Lidl не найдена")
+        return "no_receipt", message
+    note = ("Не хватает ответов для автоматической подачи: " + message
+            + ". Ответь в приложении: раздел «Вопросы анкет» "
+              "(или «Профиль → Ответы для анкет») — и подай эту вакансию ещё раз.")
+    _write_status(job_id, "needs_answers", note)
+    _proof_to_chat(page, job_id, prepared=True, note=note)
+    print("  Lidl не принял отправку:", message)
+    return "needs_answers", note
+
+
+def run_batch(job_ids, submit: bool = False, keep_open: bool = True) -> None:
+    """Пакетная подача Lidl: одно окно браузера, вакансии строго по очереди.
+
+    Ровно та же механика, что у пакетной подачи Salling, — общий файл
+    прогресса и те же статусы для телефона. Отдельный процесс на каждую
+    вакансию не годился: коннекторы делят один профиль браузера и дрались бы
+    за него, как когда-то дрались пачки Salling.
+    """
+    from connectors.browser import launch_browser
+    from playwright.sync_api import sync_playwright
+
+    import apply as _apply
+
+    # Рукопожатие идёт по первому ПЕРЕДАННОМУ id: приложение ждёт статус
+    # именно по нему, а первая вакансия могла и не пройти отбор.
+    first_id = next((str(j).strip() for j in job_ids or [] if str(j or "").strip()), "")
+    items = batch_jobs(job_ids)
+    if not items:
+        print("нечего подавать: подходящих анкет Lidl в пачке нет")
+        _write_status(first_id, "error",
+                      "В пачке не оказалось анкет Lidl EasyApply — подавать нечего.")
+        return
+    print(f"Пакетная подача Lidl: вакансий {len(items)}, "
+          f"{'С ОТПРАВКОЙ' if submit else 'прогон без отправки'}")
+    # Отсеянные не должны навсегда остаться «в работе»: приложение пометило
+    # так всю пачку ещё до того, как воркер увидел их ссылки.
+    taken = {it["id"] for it in items}
+    for raw in job_ids or []:
+        jid = str(raw or "").strip()
+        if jid and jid not in taken:
+            _mark_batch_failed(jid)
+
+    prog_items = [{"id": it["id"], "title": it["title"], "city": it["city"],
+                   "state": "pending"} for it in items]
+    prog = {
+        "active": True, "mode": "submit" if submit else "dry",
+        "total": len(items), "done": 0, "ok": 0, "unconfirmed": 0, "failed": 0,
+        "current": None, "items": prog_items,
+        "started_at": _apply._now_iso(), "updated_at": _apply._now_iso(),
+        "finished_at": None,
+    }
+    _apply._write_progress(prog)
+    _apply._cloud_progress(prog)
+
+    def _finish() -> None:
+        prog["active"] = False
+        prog["current"] = None
+        prog["finished_at"] = _apply._now_iso()
+        prog["updated_at"] = _apply._now_iso()
+        _apply._write_progress(prog)
+        _apply._cloud_progress(prog)
+
+    confirmed = 0
+    _write_status(first_id, "starting")
+    try:
+        with sync_playwright() as p:
+            ctx = launch_browser(p)
+            _write_status(first_id, "browser_opened")
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            last_profile: dict = {}
+            for i, item in enumerate(items):
+                job_id = item["id"]
+                print(f"\n=== {item['title']} — {item['city']} ===")
+                prog["current"] = {"idx": i + 1, "id": job_id,
+                                   "title": item["title"], "city": item["city"]}
+                prog_items[i]["state"] = "submitting"
+                prog["updated_at"] = _apply._now_iso()
+                _apply._write_progress(prog)
+                _apply._cloud_progress(prog)
+                _apply._cloud_report(
+                    job_id,
+                    "submitting" if submit else "preparing",
+                    "WexFlow заполняет анкету Lidl" if submit else
+                    "WexFlow заполняет анкету — отправку не нажимает",
+                )
+                if page.is_closed():
+                    page = ctx.new_page()
+                # Документы выбираются под каждую вакансию отдельно: комплект
+                # магазина важнее общего, поэтому профиль грузим на каждом шаге.
+                last_profile = load_profile_for_job(job_id)
+                state, message = _prepare_one(page, item, last_profile, submit)
+
+                if state == "submitted":
+                    confirmed += 1
+                    prog_items[i]["state"] = "ok"
+                    prog["ok"] += 1
+                    _apply._cloud_report(job_id, "submitted", message)
+                elif state == "no_receipt":
+                    prog_items[i]["state"] = "unconfirmed"
+                    prog["unconfirmed"] += 1
+                    _mark_batch_failed(job_id)
+                    _apply._cloud_report(job_id, "unconfirmed", message)
+                elif state == "ready":
+                    prog_items[i]["state"] = "ok"
+                    _apply._cloud_report(job_id, *_apply._prepare_report())
+                else:
+                    prog_items[i]["state"] = "failed"
+                    prog["failed"] += 1
+                    _mark_batch_failed(job_id)
+                    _apply._cloud_report(
+                        job_id,
+                        "failed" if submit else "prepare_failed",
+                        message,
+                    )
+                prog["done"] = i + 1
+                prog["updated_at"] = _apply._now_iso()
+                _apply._write_progress(prog)
+                _apply._cloud_progress(prog)
+                # Чистая вкладка между анкетами: следующая форма не должна
+                # видеть остатки предыдущей.
+                if i + 1 < len(items):
+                    try:
+                        page.goto("about:blank", wait_until="domcontentloaded", timeout=10000)
+                    except Exception:
+                        if page.is_closed():
+                            page = ctx.new_page()
+            _finish()
+            if submit:
+                print(f"\n========\nИТОГ: Lidl подтвердил квитанцией {confirmed} из {len(items)}. "
+                      "Остальные остались неподтверждёнными — их видно в списке.")
+            else:
+                print(f"\n========\nПрогон завершён ({len(items)} анкет) — ничего не отправлял.")
+            if keep_open:
+                print("\n>>> Готово. Последняя анкета остаётся открытой.")
+                _wait_until_closed(
+                    ctx,
+                    page=page,
+                    platform="lidl_easy_apply",
+                    job_id=items[-1]["id"],
+                    profile=last_profile,
+                )
+            try:
+                ctx.close()
+            except Exception:
+                pass
+    except BaseException as exc:
+        _finish()
+        _write_status(first_id, "error", str(exc) or exc.__class__.__name__)
+        raise
+
+
+def _mark_batch_failed(job_id: str) -> None:
+    """Снять «в работе» с неподтверждённой заявки, не роняя пачку."""
+    try:
+        import applications
+        applications.mark_failed([job_id], source="lidl")
+    except Exception as exc:  # noqa: BLE001 — реестр не должен ронять подачу
+        print("  не удалось отметить незавершённую заявку:", str(exc)[:120])
+
+
 def run(
     url: str,
     keep_open: bool = False,
@@ -597,11 +845,21 @@ def run(
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    if not args:
-        sys.exit("Использование: python -m connectors.apply_dispatch <url> [--keep-open]")
-    run(
-        args[0],
-        keep_open="--keep-open" in sys.argv,
-        job_id=args[1] if len(args) > 1 else "",
-        submit="--submit" in sys.argv,
-    )
+    if "--batch" in sys.argv:
+        # Пакетный режим: аргументы — id вакансий, ссылки берём из базы.
+        if not args:
+            sys.exit("Использование: python -m connectors.apply_dispatch --batch <job_id> [...]")
+        run_batch(
+            args,
+            submit="--submit" in sys.argv,
+            keep_open="--auto-close" not in sys.argv,
+        )
+    else:
+        if not args:
+            sys.exit("Использование: python -m connectors.apply_dispatch <url> [--keep-open]")
+        run(
+            args[0],
+            keep_open="--keep-open" in sys.argv,
+            job_id=args[1] if len(args) > 1 else "",
+            submit="--submit" in sys.argv,
+        )
