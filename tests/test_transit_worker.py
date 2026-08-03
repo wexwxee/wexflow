@@ -67,6 +67,9 @@ def test_loop_makes_one_request_per_pass_and_syncs_rarely():
         clock["t"] += seconds
         return None
 
+    # Screen-priority requests are global by design, so every loop test must
+    # start without leftovers from another test (or the live application DB).
+    transit_worker._wanted.clear()
     transit_worker._stop.clear()
     with (
         mock.patch.object(transit, "cached", return_value=None),
@@ -80,6 +83,7 @@ def test_loop_makes_one_request_per_pass_and_syncs_rarely():
             now_fn=lambda: clock["t"],
         )
     transit_worker._stop.set()
+    transit_worker._wanted.clear()
 
     # HOME на 55.7050 — ближайшая из ряда 55.700…55.703 это j3; кэш замокан
     # пустым, поэтому она же выбирается каждый проход

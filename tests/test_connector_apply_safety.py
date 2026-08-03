@@ -131,6 +131,52 @@ def test_phone_gets_confirmed_only_from_connector_receipt():
         assert "lidl:confirmed" not in app._connector_processes
 
 
+def test_phone_does_not_get_a_duplicate_when_connector_already_sent_proof():
+    with tempfile.TemporaryDirectory() as folder:
+        status = Path(folder) / "status.json"
+        status.write_text(json.dumps({
+            "job_id": "lidl:proof-sent",
+            "state": "needs_answers",
+            "message": "Заполни обязательный ответ.",
+            "phone_reported": True,
+        }, ensure_ascii=False), encoding="utf-8")
+        app._connector_launches["lidl:proof-sent"] = 1.0
+        app._connector_processes["lidl:proof-sent"] = _LiveProcess()
+        with mock.patch.object(app, "_connector_status_path", return_value=status), \
+                mock.patch.object(app.applications, "mark_failed") as failed, \
+                mock.patch.object(app, "_report_apply_result_safe") as report:
+            app._watch_connector_result_for_phone("lidl:proof-sent", "lidl")
+        failed.assert_called_once_with(["lidl:proof-sent"], source="lidl")
+        report.assert_not_called()
+
+
+def test_lidl_monitor_can_reconnect_headlessly_with_saved_credentials():
+    import lidl_credentials_store
+
+    with mock.patch.object(
+            app.lidl_monitor, "load_state",
+            return_value={"enabled": True, "connected": False}), \
+            mock.patch.object(app.lidl_monitor, "is_busy", return_value=False), \
+            mock.patch.object(
+                lidl_credentials_store, "status", return_value={"has_password": True}), \
+            mock.patch.object(app.subprocess, "Popen") as spawn:
+        assert app._launch_lidl_monitor_worker("check") is True
+    spawn.assert_called_once()
+
+
+def test_salling_monitor_can_start_from_saved_credentials():
+    with mock.patch.object(
+            app.salling_monitor, "load_state",
+            return_value={"enabled": True, "connected": False}), \
+            mock.patch.object(app.salling_monitor, "is_busy", return_value=False), \
+            mock.patch.object(
+                app.credentials_store, "status",
+                return_value={"email": "candidate@example.com", "has_password": True}), \
+            mock.patch.object(app.subprocess, "Popen") as spawn:
+        assert app._launch_salling_monitor_worker("check") is True
+    spawn.assert_called_once()
+
+
 def test_phone_gets_unconfirmed_when_connector_closes_without_receipt():
     with tempfile.TemporaryDirectory() as folder:
         status = Path(folder) / "status.json"

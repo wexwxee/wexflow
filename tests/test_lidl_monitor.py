@@ -153,6 +153,47 @@ def test_first_portal_snapshot_also_persists_a_known_stage():
         assert job.application_status_source == "lidl_portal"
 
 
+def test_no_receipt_job_is_checked_and_portal_confirmation_becomes_submission():
+    _engine, sessions = _database()
+    with sessions() as session:
+        session.add(Job(
+            id="lidl:verify",
+            source="lidl",
+            title="Butiksassistent",
+            requisition_id="728999",
+            status="seen",
+        ))
+        session.commit()
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(lidl_monitor, "STATE_PATH", Path(tmp) / "monitor.json"), \
+            mock.patch("db.get_session", sessions):
+        assert lidl_monitor.queue_verification("lidl:verify") is True
+        known = lidl_monitor._known_jobs()
+        assert [item["id"] for item in known] == ["lidl:verify"]
+        lidl_monitor._persist_statuses([{
+            "job_id": "lidl:verify",
+            "title": "Butiksassistent",
+            "status": "applied",
+            "status_label": "На рассмотрении",
+        }])
+        assert lidl_monitor.load_state()["pending_verifications"] == []
+    with sessions() as session:
+        job = session.get(Job, "lidl:verify")
+        assert job.status == "applied"
+        assert job.applied_at is not None
+        assert job.applied_confidence == "portal"
+        assert job.application_status_source == "lidl_portal"
+
+
+def test_dead_monitor_lock_is_removed_immediately():
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(lidl_monitor, "LOCK_PATH", Path(tmp) / "monitor.lock"), \
+            mock.patch.object(lidl_monitor.os, "kill", side_effect=ProcessLookupError):
+        lidl_monitor.LOCK_PATH.write_text("999999 2026-08-03", encoding="utf-8")
+        assert lidl_monitor.is_busy() is False
+        assert not lidl_monitor.LOCK_PATH.exists()
+
+
 def test_disabling_monitor_keeps_browser_session_but_stops_checks():
     with tempfile.TemporaryDirectory() as tmp, \
             mock.patch.object(lidl_monitor, "STATE_PATH", Path(tmp) / "monitor.json"):

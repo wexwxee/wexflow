@@ -254,6 +254,55 @@ def test_submit_refuses_while_a_required_field_is_empty():
         playwright.stop()
 
 
+def test_required_ui5_textarea_is_detected_and_can_be_reused_from_profile():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <label class="sapMLabel sapMLabelRequired" for="availability">
+            Stillingen er på deltid med en ugentlig arbejdstid på 7 timer.
+            Hvordan passer det dig?
+          </label>
+          <div class="sapMInputBase sapMTextArea sapMInputBaseRequired">
+            <textarea id="availability"></textarea>
+          </div>
+        """ + SUBMIT_BUTTON)
+        assert any("Stillingen er på deltid" in item for item in lidl_apply.required_left(page))
+        profile = dict(
+            PROFILE,
+            lidl_part_time_availability=(
+                "7 timer om ugen passer mig godt, og jeg kan tage ekstravagter efter aftale."
+            ),
+        )
+        lidl_apply.fill_answers(page, profile)
+        assert page.input_value("#availability") == profile["lidl_part_time_availability"]
+        assert lidl_apply.required_left(page) == []
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_validation_dialog_after_click_is_blocked_not_no_receipt():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <label for="availability">Hvordan passer det dig?</label>
+          <textarea id="availability"></textarea>
+          <button id="send" onclick="
+            document.getElementById('availability').setAttribute('aria-invalid', 'true');
+            document.body.insertAdjacentHTML(
+              'beforeend',
+              '<div role=&quot;dialog&quot;>Venligst udfyld alle påkrævede felter.</div>'
+            );
+          ">Ansøg</button>
+        """)
+        result = lidl_apply.submit(page, PROFILE, wait_seconds=5)
+        assert result["state"] == "blocked"
+        assert "Hvordan passer det dig" in result["message"]
+    finally:
+        browser.close()
+        playwright.stop()
+
+
 def test_submit_sends_and_requires_a_real_receipt():
     playwright, browser, page = _page()
     try:

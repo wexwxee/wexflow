@@ -92,7 +92,21 @@ def test_salling_page_points_to_moved_blocks():
 
 def test_lidl_page_links_to_its_form_answers():
     assert 'href="/profile?company=lidl#company-answers"' in _get("/settings/lidl")
-    assert client.get("/profile?company=lidl").status_code == 200
+    response = client.get("/profile?company=lidl")
+    assert response.status_code == 200
+    assert 'name="lidl_part_time_availability"' in response.text
+
+
+def test_salling_settings_show_official_profile_monitor():
+    html = _get("/settings/salling")
+    assert 'id="salling-monitor"' in html
+    assert "Søgte stillinger" in html
+    # The current machine may already have monitoring enabled; both states
+    # must expose a working control and the test must not depend on user data.
+    assert (
+        'action="/settings/salling-monitor/connect"' in html
+        or 'action="/settings/salling-monitor/check"' in html
+    )
 
 
 if __name__ == "__main__":

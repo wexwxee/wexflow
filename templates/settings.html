@@ -462,7 +462,7 @@
 
   <div class="panel">
     <h2>{{ ic.i('clock', 17) }} Отслеживание заявок Lidl</h2>
-    <p class="hint">WexFlow проверяет раздел <b>Søgte jobs</b> каждые 3 часа и переносит найденные этапы в общий Журнал. Если работодатель нигде не публикует статус, его можно изменить вручную.</p>
+    <p class="hint">WexFlow проверяет раздел <b>Søgte jobs</b> каждые 3 часа и переносит найденные этапы в «Мои отклики». Если работодатель нигде не публикует статус, его можно изменить вручную.</p>
     <div class="actions" style="margin-bottom:12px;">
       <span class="badge {{ 'ok' if lidl_monitor.connected and lidl_monitor.enabled else '' }}">Кабинет: {{ lidl_monitor.phase_label }}</span>
       <span class="badge">Подано в Lidl: {{ lidl_applied_count }}</span>
@@ -472,7 +472,7 @@
     <div class="actions">
       <form method="post" action="/settings/lidl/connect"><button class="primary" type="submit">{{ ic.i('unlock', 13) }} {{ 'Переподключить' if lidl_monitor.connected else 'Подключить кабинет' }}</button></form>
       <form method="post" action="/settings/lidl/check"><button class="secondary" type="submit" {{ 'disabled' if not lidl_monitor.connected else '' }}>{{ ic.i('refresh', 13) }} Проверить сейчас</button></form>
-      <a class="crosslink" href="/audit">Открыть журнал заявок →</a>
+      <a class="crosslink" href="/audit">Открыть «Мои отклики» →</a>
     </div>
   </div>
 
@@ -1037,6 +1037,34 @@
     </div>
     <div class="actions"><button class="secondary" type="submit">Сохранить вход</button></div>
   </form>
+
+  <div id="salling-monitor" class="panel">
+    <h2>{{ ic.i('clock', 17) }} Отслеживание из профиля Salling</h2>
+    <p class="hint">WexFlow читает официальный раздел <b>Søgte stillinger</b>: ID вакансии, статус, название, дату и бренд. Так кабинет подтверждает факт подачи и сообщает об интервью, оффере или отказе.</p>
+    <div class="actions" style="align-items:center;flex-wrap:wrap;">
+      <span class="badge {{ 'ok' if salling_monitor.phase == 'connected' and salling_monitor.enabled else '' }}">
+        {{ salling_monitor.phase_label }}
+      </span>
+      <span class="hint" style="margin:0;">
+        В кабинете: {{ salling_monitor.application_count }} · в WexFlow подано: {{ salling_applied_count }}
+        {% if salling_monitor.last_success_at %} · проверено {{ salling_monitor.last_success_at }}{% endif %}
+      </span>
+    </div>
+    {% if salling_monitor.last_error %}
+    <p class="hint" style="margin:10px 0 0;color:var(--warn-txt);">{{ salling_monitor.last_error }}</p>
+    {% endif %}
+    <div class="actions" style="flex-wrap:wrap;">
+      {% if not salling_monitor.enabled %}
+      <form method="post" action="/settings/salling-monitor/connect"><button class="primary" type="submit">Подключить и проверить</button></form>
+      {% else %}
+      <form method="post" action="/settings/salling-monitor/check"><button class="primary" type="submit">Проверить сейчас</button></form>
+      <form method="post" action="/settings/salling-monitor/disable"><button class="secondary" type="submit">Выключить</button></form>
+      {% endif %}
+      <form method="post" action="/settings/salling-monitor/login"><button class="secondary" type="submit">Открыть кабинет / войти снова</button></form>
+      <a class="crosslink" href="https://candidatecareercockpit-a3r1eyssyw.dispatcher.hana.ondemand.com/" target="_blank" rel="noopener">Открыть профиль Salling →</a>
+    </div>
+    <p class="hint" style="margin:10px 0 0;">Проверка запускается при старте WexFlow и затем раз в 3 часа. Во время открытой анкеты она ждёт, чтобы два окна не использовали один браузерный профиль одновременно.</p>
+  </div>
 
   <div id="documents" class="panel">
     <h2>{{ ic.i('file', 17) }} Документы для подачи</h2>

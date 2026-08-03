@@ -749,6 +749,15 @@ def _launch_browser(p):
     Visual C++ Redistributable («side-by-side configuration is incorrect»).
     Системные браузеры имеют все зависимости и открываются без проблем.
     """
+    # Монитор кандидатского кабинета читает тот же persistent profile. Даём
+    # короткой фоновой проверке закончить, чтобы Chrome не получил два хозяина.
+    try:
+        import salling_monitor
+        deadline = time.monotonic() + 45
+        while salling_monitor.is_busy() and time.monotonic() < deadline:
+            time.sleep(0.5)
+    except Exception:
+        pass
     _clear_stale_browser_locks()
     _disable_autofill(str(config.BROWSER_PROFILE_DIR))
     no_autofill_args = [

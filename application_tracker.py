@@ -20,9 +20,94 @@ STATUS_SOURCES = {
     "submission": "зафиксировано при подаче",
     "manual": "изменено вручную",
     "lidl_portal": "получено из кабинета Lidl",
+    "salling_portal": "получено из кабинета Salling",
     "automatic": "определено WexFlow",
     "recovered": "восстановлено из журнала",
 }
+
+CONFIRMATION_LABELS = {
+    "portal": ("Подтверждено кабинетом", "official"),
+    "receipt": ("Есть квитанция сайта", "strong"),
+    "indirect": ("Подача не подтверждена", "warning"),
+    "manual": ("Отмечено вручную", "neutral"),
+}
+
+
+def _day_word(value: int) -> str:
+    value = abs(int(value))
+    if value % 10 == 1 and value % 100 != 11:
+        return "день"
+    if value % 10 in (2, 3, 4) and value % 100 not in (12, 13, 14):
+        return "дня"
+    return "дней"
+
+
+def _advice(status: str, age_days: int) -> dict:
+    """Conservative next step: useful guidance without inventing employer intent."""
+    if status == "offer":
+        return {
+            "action_label": "Разобрать оффер",
+            "action": "Проверь зарплату, часы, место работы и срок ответа. Сохрани письмо или договор.",
+            "action_required": True,
+            "urgency": 4,
+            "signal": "Нужен твой ответ",
+        }
+    if status == "interview":
+        return {
+            "action_label": "Подготовиться",
+            "action": "Подтверди время и адрес или ссылку. Подготовь короткий рассказ о себе и примеры опыта.",
+            "action_required": True,
+            "urgency": 3,
+            "signal": "Следующий этап",
+        }
+    if status == "rejected":
+        return {
+            "action_label": "Заявка закрыта",
+            "action": "Ничего отправлять не нужно. Отказ считается фактом только по кабинету, письму или твоей отметке.",
+            "action_required": False,
+            "urgency": 0,
+            "signal": "Есть решение",
+        }
+    if status == "no_response":
+        return {
+            "action_label": "Продолжать поиск",
+            "action": "Это долгое молчание, а не отказ. Работодатель ещё может ответить, но ждать только эту вакансию не стоит.",
+            "action_required": False,
+            "urgency": 1,
+            "signal": "Ответа не было",
+        }
+    if age_days < 7:
+        left = 7 - age_days
+        return {
+            "action_label": "Пока ждём",
+            "action": f"Сейчас всё нормально. Проверь почту и спам через {left} {_day_word(left)}.",
+            "action_required": False,
+            "urgency": 0,
+            "signal": "Свежая заявка",
+        }
+    if age_days < 14:
+        return {
+            "action_label": "Проверить почту",
+            "action": "Проверь входящие, спам и кандидатский кабинет. Молчание на этом сроке ещё не означает отказ.",
+            "action_required": False,
+            "urgency": 1,
+            "signal": "Ждём ответ",
+        }
+    if age_days < 30:
+        return {
+            "action_label": "Можно уточнить",
+            "action": "Если есть контакт рекрутера, можно один раз вежливо спросить о статусе. Без повторной подачи.",
+            "action_required": True,
+            "urgency": 2,
+            "signal": "Давно без движения",
+        }
+    return {
+        "action_label": "Не зависать на заявке",
+        "action": "Ответ заметно задержался. Продолжай новые подачи; эта заявка останется в истории и обновится, если кабинет даст статус.",
+        "action_required": True,
+        "urgency": 2,
+        "signal": "Долгое ожидание",
+    }
 
 
 def set_status(job: Job, status: str, *, source: str, now=None) -> bool:
@@ -51,6 +136,20 @@ def view(job: Job, *, now=None) -> dict:
         if applied_at and job.status == "applied" else None
     )
     updated_at = job.application_status_updated_at or applied_at
+    confirmation_label, confirmation_tone = CONFIRMATION_LABELS.get(
+        str(job.applied_confidence or ""),
+        ("Запись из истории WexFlow", "neutral"),
+    )
+    advice = _advice(job.status, age_days)
+    # Этап «ответ работодателя» не назначается автоматически: для поданной
+    # заявки он остаётся ожиданием, пока кабинет или человек не даст факт.
+    progress = {
+        "applied": 1,
+        "interview": 3,
+        "offer": 4,
+        "rejected": 2,
+        "no_response": 1,
+    }.get(job.status, 0)
     return {
         "status": job.status,
         "label": STATUS_LABELS.get(job.status, job.status),
@@ -60,6 +159,12 @@ def view(job: Job, *, now=None) -> dict:
         "age_days": age_days,
         "no_response_due_at": due_at,
         "no_response_days": NO_RESPONSE_DAYS,
+        "age_label": f"{age_days} {_day_word(age_days)}",
+        "confirmation_label": confirmation_label,
+        "confirmation_tone": confirmation_tone,
+        "progress": progress,
+        "terminal": job.status in ("rejected", "no_response"),
+        **advice,
     }
 
 

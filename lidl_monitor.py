@@ -65,7 +65,7 @@ def _now() -> str:
 
 def _default_state() -> dict:
     return {
-        "version": 1,
+        "version": 2,
         "enabled": False,
         "connected": False,
         "phase": "off",
@@ -73,6 +73,7 @@ def _default_state() -> dict:
         "last_success_at": "",
         "last_error": "",
         "applications": {},
+        "pending_verifications": [],
     }
 
 
@@ -82,13 +83,15 @@ def load_state() -> dict:
     base.update(state or {})
     if not isinstance(base.get("applications"), dict):
         base["applications"] = {}
+    if not isinstance(base.get("pending_verifications"), list):
+        base["pending_verifications"] = []
     return base
 
 
 def save_state(**changes) -> dict:
     state = load_state()
     state.update(changes)
-    state["version"] = 1
+    state["version"] = 2
     atomic_write_json(STATE_PATH, state, indent=2)
     return state
 
@@ -128,23 +131,38 @@ def view() -> dict:
     }
 
 
+def _lock_owner_alive() -> bool:
+    try:
+        raw = LOCK_PATH.read_text(encoding="utf-8").strip().split()[0]
+        pid = int(raw)
+        if pid <= 0:
+            return False
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except (OSError, ValueError, IndexError):
+        return False
+
+
 def is_busy() -> bool:
     try:
         age = time.time() - LOCK_PATH.stat().st_mtime
     except OSError:
         return False
-    return age < 15 * 60
+    if age >= 15 * 60 or not _lock_owner_alive():
+        try:
+            LOCK_PATH.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
 
 
 @contextmanager
 def _exclusive_run():
     LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-    if LOCK_PATH.exists():
-        try:
-            if time.time() - LOCK_PATH.stat().st_mtime >= 15 * 60:
-                LOCK_PATH.unlink(missing_ok=True)
-        except OSError:
-            pass
+    is_busy()  # also clears an expired lock or a lock left by a dead worker
     try:
         fd = os.open(str(LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
@@ -273,16 +291,32 @@ def diff_snapshots(previous: dict, current: list[dict]) -> list[dict]:
 def _known_jobs() -> list[dict]:
     from db import Job, get_session, select
 
+    pending = {
+        str(item or "").strip()
+        for item in (load_state().get("pending_verifications") or [])
+        if str(item or "").strip()
+    }
     with get_session() as session:
-        jobs = session.exec(select(Job).where(
-            Job.source == "lidl",
-            Job.applied_at.is_not(None),
-        )).all()
+        jobs = session.exec(select(Job).where(Job.source == "lidl")).all()
+        jobs = [job for job in jobs if job.applied_at is not None or job.id in pending]
     return [{
         "id": job.id,
         "title": job.title or "",
         "requisition_id": job.requisition_id or "",
     } for job in jobs]
+
+
+def queue_verification(job_id: str) -> bool:
+    """Remember a clicked/no-receipt application until the portal confirms it."""
+    wanted = str(job_id or "").strip()
+    if not wanted:
+        return False
+    state = load_state()
+    pending = [str(item) for item in (state.get("pending_verifications") or [])]
+    if wanted not in pending:
+        pending.append(wanted)
+    save_state(pending_verifications=pending[-100:])
+    return True
 
 
 def _launch_context(playwright, *, headless: bool):
@@ -460,6 +494,7 @@ def _application_map(items: list[dict]) -> dict:
 def _persist_statuses(items: list[dict]) -> None:
     """Persist recognised portal stages, including the very first snapshot."""
     from db import Job, get_session
+    import applications
     import application_tracker
 
     status_updates = {
@@ -467,18 +502,50 @@ def _persist_statuses(items: list[dict]) -> None:
         "offer": "offer",
         "rejected": "rejected",
     }
+    verified: set[str] = set()
     for item in items:
         new_status = str(item.get("status") or "")
         job_id = str(item.get("job_id") or "")
-        if job_id and new_status in status_updates:
+        if not job_id or new_status in ("", "unknown"):
+            continue
+        if new_status == "applied":
+            with get_session() as session:
+                job = session.get(Job, job_id)
+                if job and job.applied_at is None:
+                    application_tracker.set_status(job, "applied", source="lidl_portal")
+                    job.applied_confidence = "portal"
+                    session.add(job)
+                    session.commit()
+                    session.refresh(job)
+                    applications.record_submitted([job])
+                if job:
+                    verified.add(job_id)
+        elif new_status in status_updates:
             with get_session() as session:
                 job = session.get(Job, job_id)
                 if job and job.status not in ("offer", "closed"):
+                    first_confirmation = job.applied_at is None
+                    if first_confirmation:
+                        application_tracker.set_status(
+                            job, "applied", source="lidl_portal"
+                        )
+                        job.applied_confidence = "portal"
                     application_tracker.set_status(
                         job, status_updates[new_status], source="lidl_portal"
                     )
                     session.add(job)
                     session.commit()
+                    if first_confirmation:
+                        session.refresh(job)
+                        applications.record_submitted([job])
+                    verified.add(job_id)
+    if verified:
+        state = load_state()
+        pending = [
+            str(item) for item in (state.get("pending_verifications") or [])
+            if str(item) not in verified
+        ]
+        save_state(pending_verifications=pending)
 
 
 def _apply_changes(changes: list[dict]) -> None:

@@ -120,6 +120,11 @@ ANSWER_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("lidl_referral_name", "Lidl: имя сотрудника, который порекомендовал", "text"),
     ("lidl_current_employee", "Lidl: уже работаешь в Lidl", "yesno"),
     ("lidl_previous_employment", "Lidl: где и когда раньше работал(а) в Lidl", "text"),
+    (
+        "lidl_part_time_availability",
+        "Lidl: как тебе подходит указанный неполный график",
+        "text",
+    ),
     ("lidl_discovery", "Lidl: как узнал(а) о вакансии", "text"),
     ("citizenship", "Lidl: гражданство", "text"),
     ("work_permit", "Lidl: есть действующее разрешение на проживание/работу", "yesno"),
@@ -192,6 +197,7 @@ COMPANY_CONSENT_KEYS: tuple[str, ...] = (
 # ответом для других работодателей.
 COMPANY_LOCAL_KEYS: tuple[str, ...] = (
     "lidl_discovery",
+    "lidl_part_time_availability",
 ) + COMPANY_CONSENT_KEYS
 
 COMPANY_OVERRIDE_KEYS = REUSABLE_ANSWER_KEYS + COMPANY_LOCAL_KEYS

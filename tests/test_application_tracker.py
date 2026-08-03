@@ -48,3 +48,38 @@ def test_tracker_view_keeps_submission_age_and_due_date():
     assert data["age_days"] == 10
     assert data["no_response_due_at"] == applied_at + dt.timedelta(days=60)
     assert data["label"] == "Подано"
+
+
+def test_tracker_advice_separates_silence_from_rejection():
+    now = dt.datetime(2026, 8, 3, 12, 0)
+    quiet = Job(
+        id="quiet", title="Quiet", status="no_response",
+        applied_at=now - dt.timedelta(days=61),
+        application_status_source="automatic",
+    )
+    rejected = Job(
+        id="rejected", title="Rejected", status="rejected",
+        applied_at=now - dt.timedelta(days=10),
+        application_status_source="salling_portal",
+        applied_confidence="portal",
+    )
+
+    silence = application_tracker.view(quiet, now=now)
+    refusal = application_tracker.view(rejected, now=now)
+
+    assert silence["label"] == "Нет ответа"
+    assert "не отказ" in silence["action"]
+    assert refusal["label"] == "Отказ"
+    assert refusal["source_label"] == "получено из кабинета Salling"
+    assert refusal["confirmation_tone"] == "official"
+
+
+def test_tracker_suggests_one_followup_only_after_two_weeks():
+    now = dt.datetime(2026, 8, 3, 12, 0)
+    fresh = Job(id="fresh-advice", status="applied", applied_at=now - dt.timedelta(days=5))
+    old = Job(id="old-advice", status="applied", applied_at=now - dt.timedelta(days=18))
+
+    assert application_tracker.view(fresh, now=now)["action_required"] is False
+    advice = application_tracker.view(old, now=now)
+    assert advice["action_required"] is True
+    assert advice["action_label"] == "Можно уточнить"

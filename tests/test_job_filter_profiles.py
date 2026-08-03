@@ -22,6 +22,22 @@ def test_profile_query_rejects_unknown_enum_values():
     assert clean == "q=%D0%BA%D0%B0%D1%81%D1%81%D0%B8%D1%80"
 
 
+def test_profile_query_keeps_smart_commute_and_revisit_fields():
+    clean = app._clean_filter_query(
+        "sort=commute&radius=12,5&max_commute=45&max_transfers=1&revisit=90"
+    )
+    assert clean == (
+        "sort=commute&radius=12.5&max_commute=45&max_transfers=1&revisit=90"
+    )
+
+
+def test_profile_query_rejects_unsafe_route_limits():
+    clean = app._clean_filter_query(
+        "radius=-5&max_commute=999&max_transfers=8&revisit=tomorrow"
+    )
+    assert clean == ""
+
+
 def test_filter_query_can_remove_one_active_chip():
     filters = {
         "q": "кассир",

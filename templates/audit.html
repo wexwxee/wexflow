@@ -2,80 +2,168 @@
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
 
-{% block title %}WexFlow · Журнал заявок{% endblock %}
+{% block title %}WexFlow · Мои отклики{% endblock %}
 
 {% block style %}
 <style>
-  .audit-intro {
-    display:flex; align-items:flex-start; gap:10px; margin:0 0 18px; padding:12px 14px;
-    border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--glass);
-    color:var(--txt); font-size:13.5px; line-height:1.5;
+  .applications-workbench { display:grid; gap:18px; }
+  .application-hero {
+    position:relative; overflow:hidden; display:grid; grid-template-columns:minmax(0,1.5fr) minmax(250px,.7fr);
+    gap:28px; padding:25px 27px; border:1px solid var(--glass-line); border-radius:20px;
+    background:linear-gradient(135deg, color-mix(in srgb,var(--accent) 10%,var(--card)) 0%,var(--card) 58%,var(--card-2) 100%);
   }
-  .audit-intro svg { flex:0 0 auto; margin-top:1px; color:var(--accent); }
-  .audit-count { color:var(--muted); font-size:13px; margin:0 0 12px; }
-  .audit-day {
-    font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
-    color:var(--muted); margin:16px 0 6px; padding-bottom:5px; border-bottom:1px solid var(--glass-line);
-  }
-  .audit-day:first-of-type { margin-top:0; }
-  .audit-row {
-    display:flex; align-items:center; gap:12px; padding:11px 13px; margin-bottom:7px;
-    border:1px solid var(--glass-line); border-radius:var(--radius-card); background:var(--card);
-    text-decoration:none; color:var(--txt); transition:border-color .14s ease, background .14s ease;
-  }
-  .audit-row:hover { border-color:var(--hover-line); background:var(--card-2); }
-  .audit-open { display:flex; align-items:center; gap:14px; flex:1; min-width:0; color:inherit; text-decoration:none; }
-  .audit-time {
-    flex:0 0 auto; width:46px; font-size:13px; font-weight:700; color:var(--muted);
-    font-family:"Space Grotesk", system-ui, sans-serif;
-  }
-  .audit-main { flex:1; min-width:0; display:grid; gap:2px; }
-  .audit-title { color:var(--txt-strong); font-weight:650; font-size:14px; line-height:1.25;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .audit-sub { color:var(--muted); font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .audit-track { flex:0 0 auto; position:relative; }
-  .audit-track summary { list-style:none; cursor:pointer; border:1px solid var(--glass-line); border-radius:9px;
-    padding:6px 9px; font-size:12px; font-weight:750; color:var(--txt); background:var(--glass); }
-  .audit-track summary::-webkit-details-marker { display:none; }
-  .audit-track-menu { position:absolute; right:0; top:calc(100% + 6px); z-index:30; width:230px; padding:10px;
-    border:1px solid var(--glass-line); border-radius:12px; background:var(--card); box-shadow:0 18px 45px rgba(0,0,0,.34); }
-  .audit-track-menu p { margin:0 0 8px; color:var(--muted); font-size:11.5px; line-height:1.4; }
-  .audit-track-menu form { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-  .audit-track-menu button { min-height:32px; padding:5px 7px; font-size:11.5px; }
-  .audit-row .badge { flex:0 0 auto; }
-  .audit-empty {
-    display:grid; place-items:center; gap:10px; padding:48px 20px; text-align:center; color:var(--muted);
-  }
-  .audit-empty svg { color:var(--accent); opacity:.8; }
-  .audit-empty p { margin:0; font-size:14px; }
+  .application-hero::after { content:""; position:absolute; width:260px; height:260px; right:-105px; top:-145px;
+    border-radius:50%; background:var(--accent); filter:blur(80px); opacity:.12; pointer-events:none; }
+  .hero-kicker { display:flex; align-items:center; gap:7px; margin:0 0 8px; color:var(--accent); font-size:11px;
+    font-weight:850; text-transform:uppercase; letter-spacing:.08em; }
+  .application-hero h2 { margin:0; color:var(--txt-strong); font-size:clamp(23px,3vw,34px); line-height:1.08; letter-spacing:-.035em; }
+  .application-hero p { max-width:700px; margin:11px 0 0; color:var(--muted); font-size:13.5px; line-height:1.58; }
+  .truth-rules { position:relative; z-index:1; display:grid; align-content:center; gap:9px; }
+  .truth-rule { display:grid; grid-template-columns:10px 1fr; gap:9px; align-items:start; font-size:12px; line-height:1.4; color:var(--muted); }
+  .truth-rule b { color:var(--txt); }
+  .truth-dot { width:8px; height:8px; margin-top:4px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent); }
+  .truth-dot.warn { background:var(--warn-txt); box-shadow:0 0 0 4px color-mix(in srgb,var(--warn-txt) 12%,transparent); }
+  .truth-dot.red { background:var(--err-txt); box-shadow:0 0 0 4px color-mix(in srgb,var(--err-txt) 12%,transparent); }
 
-  .badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px;
-    font-size:12px; font-weight:700; border:1px solid var(--glass-line); background:var(--glass); color:var(--muted); }
-  .badge.st-applied { background:rgba(167,139,250,.14); color:#c4b5fd; border-color:rgba(167,139,250,.38); }
-  html[data-theme="light"] .badge.st-applied { background:#f1edff; color:#6d28d9; border-color:#d8ccff; }
-  .badge.st-interview { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
-  .badge.st-offer { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
-  .badge.st-rejected { background:var(--err-bg); color:var(--err-txt); border-color:var(--err-line); }
-  .badge.st-no_response { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); }
-  @media(max-width:760px){ .audit-row{align-items:flex-start;flex-wrap:wrap}.audit-open{flex-wrap:wrap}.audit-track{margin-left:auto}.audit-row>.badge{display:none} }
-  /* способ подтверждения подачи (журнал доверия) */
-  .badge.cf-receipt { background:var(--ok-bg); color:var(--ok-txt); border-color:var(--ok-line); }
-  .badge.cf-indirect { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); }
-  .badge.cf-manual { background:var(--glass); color:var(--muted); border-color:var(--glass-line); }
-  .badge.act-preparing { background:var(--info-bg); color:var(--info-txt); border-color:var(--info-line); }
-  .badge.act-incomplete { background:var(--warn-bg); color:var(--warn-txt); border-color:var(--warn-line); }
-  /* скрин-доказательство: кнопка-бейдж + просмотр поверх страницы */
-  .badge.cf-proof { cursor:pointer; min-height:0; padding:3px 10px; font-size:12px; }
-  .badge.cf-proof:hover { border-color:var(--accent); color:var(--accent); }
-  .proof-overlay { position:fixed; inset:0; z-index:3200; display:grid; place-items:center;
-    padding:28px; background:rgba(0,0,0,.72); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+  .application-metrics { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:9px; }
+  .metric-card { min-width:0; padding:13px 14px; border:1px solid var(--glass-line); border-radius:14px; background:var(--card);
+    color:inherit; text-decoration:none; transition:transform .14s ease,border-color .14s ease,background .14s ease; }
+  .metric-card:hover { transform:translateY(-2px); border-color:var(--hover-line); background:var(--card-2); }
+  .metric-value { display:block; color:var(--txt-strong); font-family:"Space Grotesk",system-ui,sans-serif; font-size:25px; font-weight:780; line-height:1; }
+  .metric-label { display:block; margin-top:7px; color:var(--muted); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .metric-card.action .metric-value { color:var(--warn-txt); }
+  .metric-card.interview .metric-value { color:var(--info-txt); }
+  .metric-card.offer .metric-value { color:var(--ok-txt); }
+  .metric-card.rejected .metric-value { color:var(--err-txt); }
+
+  .portal-section { display:grid; gap:9px; }
+  .section-heading { display:flex; align-items:end; justify-content:space-between; gap:16px; }
+  .section-heading h2 { margin:0; color:var(--txt-strong); font-size:15px; letter-spacing:-.01em; }
+  .section-heading p { margin:3px 0 0; color:var(--muted); font-size:12px; }
+  .portal-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .portal-card { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:12px; align-items:center; padding:14px;
+    border:1px solid var(--glass-line); border-radius:15px; background:var(--card); }
+  .portal-card.ok { border-color:color-mix(in srgb,var(--ok-line) 75%,var(--glass-line)); }
+  .portal-card.warning { border-color:color-mix(in srgb,var(--warn-line) 82%,var(--glass-line)); }
+  .portal-card.syncing { border-color:color-mix(in srgb,var(--info-line) 80%,var(--glass-line)); }
+  .portal-logo { display:grid; place-items:center; width:36px; height:36px; border-radius:11px; background:var(--glass);
+    color:var(--accent); border:1px solid var(--glass-line); font:800 15px/1 "Space Grotesk",system-ui,sans-serif; }
+  .portal-copy { min-width:0; }
+  .portal-title { display:flex; align-items:center; gap:7px; color:var(--txt-strong); font-size:13px; font-weight:750; }
+  .portal-state-dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+  .portal-card.ok .portal-state-dot { background:var(--ok-txt); }
+  .portal-card.warning .portal-state-dot { background:var(--warn-txt); }
+  .portal-card.syncing .portal-state-dot { background:var(--info-txt); animation:portalPulse 1.2s infinite; }
+  @keyframes portalPulse { 50% { opacity:.32; transform:scale(.75); } }
+  .portal-meta { margin-top:3px; color:var(--muted); font-size:11.5px; line-height:1.35; }
+  .portal-error { margin-top:4px; color:var(--warn-txt); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .portal-actions { display:flex; gap:6px; align-items:center; }
+  .portal-actions form { margin:0; }
+  .mini-btn,.app-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; text-decoration:none; border-radius:9px;
+    border:1px solid var(--glass-line); background:var(--glass); color:var(--txt); font-weight:700; cursor:pointer; }
+  .mini-btn { min-height:32px; padding:6px 10px; font-size:11.5px; }
+  .mini-btn:hover,.app-btn:hover { border-color:var(--hover-line); background:var(--card-2); }
+
+  .application-toolbar { display:flex; align-items:center; gap:8px; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin; }
+  .view-tab { display:inline-flex; align-items:center; gap:7px; flex:0 0 auto; padding:8px 11px; border:1px solid var(--glass-line);
+    border-radius:10px; color:var(--muted); background:var(--glass); font-size:12px; font-weight:720; text-decoration:none; }
+  .view-tab:hover { color:var(--txt); border-color:var(--hover-line); }
+  .view-tab.active { color:var(--on-accent); border-color:var(--accent); background:var(--accent); }
+  html[data-theme="dark"] .view-tab.active { color:#06130b; }
+  .tab-count { display:grid; place-items:center; min-width:19px; height:19px; padding:0 5px; border-radius:999px; background:rgba(127,127,127,.15); font-size:10.5px; }
+  .view-tab.active .tab-count { background:rgba(0,0,0,.16); }
+
+  .application-list-head { display:flex; align-items:baseline; justify-content:space-between; gap:16px; }
+  .application-list-head h2 { margin:0; color:var(--txt-strong); font-size:17px; }
+  .application-list-head span { color:var(--muted); font-size:12px; }
+  .application-list { display:grid; gap:10px; }
+  .application-card { position:relative; overflow:visible; display:grid; gap:15px; padding:17px 18px 16px 20px;
+    border:1px solid var(--glass-line); border-radius:16px; background:var(--card); }
+  .application-card::before { content:""; position:absolute; inset:13px auto 13px 0; width:3px; border-radius:0 4px 4px 0; background:var(--accent); opacity:.65; }
+  .application-card.status-interview::before { background:var(--info-txt); opacity:1; }
+  .application-card.status-offer::before { background:var(--ok-txt); opacity:1; }
+  .application-card.status-rejected::before { background:var(--err-txt); opacity:.85; }
+  .application-card.status-no_response::before,.application-card.activity-incomplete::before { background:var(--warn-txt); opacity:.85; }
+  .application-card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
+  .application-title-wrap { min-width:0; }
+  .application-title { display:block; color:var(--txt-strong); font-size:15px; font-weight:750; line-height:1.28; text-decoration:none; }
+  .application-title:hover { color:var(--accent); }
+  .application-meta { margin-top:5px; color:var(--muted); font-size:11.8px; line-height:1.4; }
+  .application-badges { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:5px; max-width:48%; }
+  .fact-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border:1px solid var(--glass-line); border-radius:999px;
+    color:var(--muted); background:var(--glass); font-size:10.7px; font-weight:720; white-space:nowrap; }
+  .fact-badge.official,.fact-badge.strong { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
+  .fact-badge.warning { color:var(--warn-txt); border-color:var(--warn-line); background:var(--warn-bg); }
+  .fact-badge.status-interview { color:var(--info-txt); border-color:var(--info-line); background:var(--info-bg); }
+  .fact-badge.status-offer { color:var(--ok-txt); border-color:var(--ok-line); background:var(--ok-bg); }
+  .fact-badge.status-rejected { color:var(--err-txt); border-color:var(--err-line); background:var(--err-bg); }
+  .fact-badge.status-no_response { color:var(--warn-txt); border-color:var(--warn-line); background:var(--warn-bg); }
+
+  .application-pipeline { display:grid; grid-template-columns:auto 1fr auto 1fr auto 1fr auto; align-items:start; gap:7px; padding:0 3px; }
+  .pipeline-step { display:grid; justify-items:center; gap:5px; min-width:56px; color:var(--muted); font-size:9.7px; font-weight:700; text-align:center; }
+  .pipeline-node { display:grid; place-items:center; width:22px; height:22px; border-radius:50%; border:2px solid var(--glass-line); background:var(--card); color:transparent; }
+  .pipeline-step.done .pipeline-node { color:var(--on-accent); border-color:var(--accent); background:var(--accent); }
+  html[data-theme="dark"] .pipeline-step.done .pipeline-node { color:#06130b; }
+  .pipeline-step.current .pipeline-node { border-color:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 13%,transparent); }
+  .pipeline-step.interview.current .pipeline-node { border-color:var(--info-txt); box-shadow:0 0 0 4px color-mix(in srgb,var(--info-txt) 13%,transparent); }
+  .pipeline-step.offer.current .pipeline-node { border-color:var(--ok-txt); box-shadow:0 0 0 4px color-mix(in srgb,var(--ok-txt) 13%,transparent); }
+  .pipeline-step.negative .pipeline-node { color:var(--err-txt); border-color:var(--err-txt); background:var(--err-bg); }
+  .pipeline-step.silent .pipeline-node { color:var(--warn-txt); border-color:var(--warn-txt); background:var(--warn-bg); }
+  .pipeline-step.current,.pipeline-step.done { color:var(--txt); }
+  .pipeline-line { height:2px; margin-top:10px; border-radius:2px; background:var(--glass-line); }
+  .pipeline-line.done { background:var(--accent); opacity:.72; }
+  .pipeline-line.negative { background:var(--err-txt); opacity:.7; }
+  .pipeline-line.silent { background:var(--warn-txt); opacity:.7; }
+  .pipeline-empty { padding:9px 12px; border-radius:10px; background:var(--warn-bg); color:var(--warn-txt); font-size:11.5px; line-height:1.45; }
+
+  .application-insight { display:grid; grid-template-columns:auto minmax(0,1fr); gap:10px; align-items:start; padding:11px 12px;
+    border:1px solid var(--glass-line); border-radius:12px; background:var(--glass); }
+  .insight-icon { display:grid; place-items:center; width:27px; height:27px; border-radius:8px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); }
+  .application-insight.urgent .insight-icon { color:var(--warn-txt); background:var(--warn-bg); }
+  .application-insight.priority .insight-icon { color:var(--info-txt); background:var(--info-bg); }
+  .insight-title { color:var(--txt); font-size:11.7px; font-weight:800; }
+  .insight-copy { margin-top:3px; color:var(--muted); font-size:11.5px; line-height:1.45; }
+  .portal-raw { margin-top:5px; color:var(--muted); font-size:10.8px; }
+  .portal-raw b { color:var(--txt); font-weight:700; }
+
+  .application-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .application-origin { min-width:0; color:var(--muted); font-size:10.8px; line-height:1.4; }
+  .application-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+  .app-btn { min-height:33px; padding:6px 10px; font-size:11.5px; }
+  .proof-button { cursor:pointer; }
+  .stage-menu { position:relative; }
+  .stage-menu summary { list-style:none; }
+  .stage-menu summary::-webkit-details-marker { display:none; }
+  .stage-popover { position:absolute; right:0; bottom:calc(100% + 7px); z-index:40; width:245px; padding:11px; border:1px solid var(--glass-line);
+    border-radius:12px; background:var(--card); box-shadow:0 18px 48px rgba(0,0,0,.35); }
+  .stage-popover p { margin:0 0 8px; color:var(--muted); font-size:10.8px; line-height:1.4; }
+  .stage-popover form { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .stage-popover button { min-height:31px; padding:5px 6px; font-size:10.8px; }
+  .stage-popover button:last-child { grid-column:1/-1; }
+
+  .application-empty { display:grid; justify-items:center; gap:10px; padding:46px 20px; border:1px dashed var(--glass-line); border-radius:16px;
+    background:var(--glass); text-align:center; color:var(--muted); }
+  .application-empty .empty-icon { display:grid; place-items:center; width:44px; height:44px; border-radius:14px; background:var(--card); color:var(--accent); }
+  .application-empty h3 { margin:2px 0 0; color:var(--txt); font-size:15px; }
+  .application-empty p { margin:0; max-width:480px; font-size:12px; line-height:1.5; }
+
+  .proof-overlay { position:fixed; inset:0; z-index:3200; display:grid; place-items:center; padding:28px; background:rgba(0,0,0,.72); backdrop-filter:blur(4px); }
   .proof-overlay[hidden] { display:none; }
-  .proof-box { max-width:min(920px, calc(var(--wf-vw) * .94)); max-height:calc(var(--wf-vh) * .88); display:grid; gap:8px; }
-  .proof-box img { max-width:100%; max-height:calc(var(--wf-vh) * .8); border-radius:12px;
-    border:1px solid var(--glass-line); box-shadow:0 30px 80px rgba(0,0,0,.6); background:#fff; }
-  .proof-cap { display:flex; justify-content:space-between; align-items:center; gap:12px;
-    color:#e8efe9; font-size:13px; }
-  .proof-cap button { min-height:0; padding:5px 12px; }
+  .proof-box { max-width:min(920px,calc(var(--wf-vw)*.94)); max-height:calc(var(--wf-vh)*.88); display:grid; gap:8px; }
+  .proof-box img { max-width:100%; max-height:calc(var(--wf-vh)*.8); border-radius:12px; border:1px solid var(--glass-line); box-shadow:0 30px 80px rgba(0,0,0,.6); background:#fff; }
+  .proof-cap { display:flex; justify-content:space-between; align-items:center; gap:12px; color:#e8efe9; font-size:12px; }
+
+  @media(max-width:1100px){ .application-metrics{grid-template-columns:repeat(3,1fr)} }
+  @media(max-width:780px){
+    .application-hero{grid-template-columns:1fr;padding:20px}.truth-rules{grid-template-columns:1fr 1fr}.portal-grid{grid-template-columns:1fr}
+    .application-card-head,.application-footer{align-items:flex-start;flex-direction:column}.application-badges{max-width:none;justify-content:flex-start}
+    .application-actions{justify-content:flex-start}.application-pipeline{gap:3px}.pipeline-step{min-width:42px;font-size:8.8px}
+  }
+  @media(max-width:520px){
+    .application-metrics{grid-template-columns:repeat(2,1fr)}.truth-rules{grid-template-columns:1fr}.portal-card{grid-template-columns:auto 1fr}
+    .portal-actions{grid-column:1/-1}.portal-actions .mini-btn{flex:1}.application-card{padding:15px 13px 14px 16px}
+    .application-pipeline{grid-template-columns:auto 1fr auto 1fr auto}.application-pipeline .offer,.application-pipeline .line-to-offer{display:none}
+  }
 </style>
 {% endblock %}
 
@@ -83,109 +171,191 @@
 {{ ui.shell_start('audit') }}
 <header class="wex-topbar">
   <div class="wex-title-stack">
-    <h1>{{ ui.brand('Журнал') }}</h1>
-    <span class="wex-title-meta">Поданные и незавершённые анкеты в одном месте</span>
+    <h1>{{ ui.brand('Мои отклики') }}</h1>
+    <span class="wex-title-meta">Решения, ожидание и подтверждения — без догадок</span>
   </div>
   <div class="wex-topbar-spacer"></div>
-  <div class="wex-header-actions">
-    {{ ui.theme_toggle() }}
-  </div>
+  <div class="wex-header-actions">{{ ui.theme_toggle() }}</div>
 </header>
-<section class="wex-workbench wex-narrow">
-  <p class="audit-intro">{{ ic.i('clock', 16) }}
-    <span>Здесь видна история и текущий этап каждой заявки. <b>Анкета открыта</b> и <b>Не завершено</b> означают, что заявка ещё не отправлена.
-    Для поданных заявок видно подтверждение:
-    <b>квитанция</b> — сайт Salling подтвердил приём; <b>вероятно</b> — форма закрылась без квитанции,
-    стоит проверить письмо от Salling; <b>вручную</b> — ты отметил подачу сам. Если спустя <b>60 дней</b> этап всё ещё «Подано», WexFlow поставит «Нет ответа». Поздний ответ работодателя всё равно заменит этот статус.</span></p>
 
-  {% set st_ru = {'applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','no_response':'нет ответа','seen':'просмотрено','closed':'закрыта','hidden':'скрыто','new':'новая'} %}
-
-  {% if total == 0 %}
-    <div class="audit-empty">
-      {{ ic.i('check', 26) }}
-      <p>Пока нет ни поданных, ни начатых анкет.</p>
-      <a class="primary" href="/?status=active">Открыть вакансии</a>
+<main class="wex-workbench wex-narrow applications-workbench">
+  <section class="application-hero">
+    <div>
+      <div class="hero-kicker">{{ ic.i('sparkles', 13) }} Умный центр откликов</div>
+      <h2>Понятно, что происходит<br>после каждой подачи</h2>
+      <p>WexFlow соединяет собственную историю, квитанции и официальные кабинеты работодателей. Он подсказывает следующий шаг, но никогда не выдаёт догадку за решение компании.</p>
     </div>
-  {% else %}
-    <p class="audit-count">Всего: <b>{{ total }}</b> {{ L.plural(total, 'запись', 'записи', 'записей') }}</p>
-    {% for label, rows in groups %}
-      <div class="audit-day">{{ label }}</div>
-      {% for r in rows %}
-      <div class="audit-row">
-        <a class="audit-open" href="/job/{{ r.id }}">
-          <span class="audit-time">{{ r.applied_at.strftime('%H:%M') if r.applied_at else '—' }}</span>
-          <span class="audit-main">
-            <span class="audit-title">{{ r.title }}</span>
-            <span class="audit-sub">{% if r.brand %}{{ brand_label(r.brand) }}{% endif %}{% if r.brand and r.city %} · {% endif %}{% if r.city %}{{ r.city }}{% endif %}{% if r.tracker %} · подано {{ r.tracker.age_days }} дн. назад{% if r.tracker.no_response_due_at %} · «нет ответа» после {{ r.tracker.no_response_due_at.strftime('%d.%m.%Y') }}{% endif %}{% endif %}</span>
-          </span>
-        </a>
-        <span class="badge">{{ source_labels.get(r.source, r.source) }}</span>
-        {% if r.activity == 'preparing' %}
-          <span class="badge act-preparing">анкета открыта</span>
-        {% elif r.activity == 'incomplete' %}
-          <span class="badge act-incomplete">не завершено</span>
-        {% endif %}
-        {% if r.proof %}
-          <button type="button" class="badge cf-proof" data-proof="/applied-proof/{{ r.proof }}"
-                  title="Открыть сохранённый снимок экрана результата подачи">{{ ic.i('file', 11) }} скрин</button>
-        {% endif %}
-        {% if r.activity == 'submitted' and r.confidence == 'receipt' %}
-          <span class="badge cf-receipt" title="Сайт Salling показал квитанцию о приёме заявки">{{ ic.i('check', 11) }} квитанция</span>
-        {% elif r.activity == 'submitted' and r.confidence == 'indirect' %}
-          <span class="badge cf-indirect" title="Форма закрылась без квитанции — вероятно подано; проверь письмо от Salling">{{ ic.i('alert', 11) }} вероятно</span>
-        {% elif r.activity == 'submitted' and r.confidence == 'manual' %}
-          <span class="badge cf-manual" title="Отмечено вручную — WexFlow эту заявку не отправлял">вручную</span>
-        {% endif %}
-        {% if r.activity == 'submitted' %}<span class="badge st-{{ r.status }}">{{ st_ru.get(r.status, r.status) }}</span>{% endif %}
-        {% if r.activity == 'submitted' and r.source == 'lidl' %}
-          <a class="badge" href="/settings/lidl" title="Открыть вход и мониторинг кабинета Lidl">кабинет Lidl →</a>
-        {% endif %}
-        {% if r.activity == 'submitted' %}
-        <details class="audit-track">
-          <summary>Изменить этап</summary>
-          <div class="audit-track-menu">
-            <p>Выбери фактический результат. Это не отправляет данные работодателю.</p>
-            <form method="post" action="/job/{{ r.id }}/status">
-              <button type="submit" name="status" value="applied">Подано</button>
-              <button type="submit" name="status" value="interview">Собеседование</button>
-              <button type="submit" name="status" value="offer">Оффер</button>
-              <button type="submit" name="status" value="rejected">Отказ</button>
-              <button type="submit" name="status" value="no_response">Нет ответа</button>
-            </form>
-          </div>
-        </details>
-        {% endif %}
-      </div>
+    <div class="truth-rules">
+      <div class="truth-rule"><span class="truth-dot"></span><span><b>Кабинет или квитанция</b> — сильное подтверждение.</span></div>
+      <div class="truth-rule"><span class="truth-dot warn"></span><span><b>Нет ответа</b> — молчание, а не отказ.</span></div>
+      <div class="truth-rule"><span class="truth-dot red"></span><span><b>Отказ</b> — только явный статус или твоя отметка.</span></div>
+    </div>
+  </section>
+
+  <nav class="application-metrics" aria-label="Сводка откликов">
+    <a class="metric-card" href="/audit?view=waiting"><span class="metric-value">{{ counts.waiting }}</span><span class="metric-label">Ждут ответа</span></a>
+    <a class="metric-card action" href="/audit?view=action"><span class="metric-value">{{ counts.action }}</span><span class="metric-label">Нужно внимание</span></a>
+    <a class="metric-card interview" href="/audit?view=interview"><span class="metric-value">{{ counts.interview }}</span><span class="metric-label">Собеседования</span></a>
+    <a class="metric-card offer" href="/audit?view=offer"><span class="metric-value">{{ counts.offer }}</span><span class="metric-label">Офферы</span></a>
+    <a class="metric-card rejected" href="/audit?view=rejected"><span class="metric-value">{{ counts.rejected }}</span><span class="metric-label">Отказы</span></a>
+    <a class="metric-card" href="/audit?view=no_response"><span class="metric-value">{{ counts.no_response }}</span><span class="metric-label">Долгое молчание</span></a>
+  </nav>
+
+  <section class="portal-section">
+    <div class="section-heading">
+      <div><h2>Официальные кабинеты</h2><p>Проверяются при запуске и затем каждые 3 часа.</p></div>
+    </div>
+    <div class="portal-grid">
+      {% for monitor in monitors %}
+      <article class="portal-card {{ monitor.tone }}">
+        <span class="portal-logo">{{ 'S' if monitor.source == 'salling' else 'Li' }}</span>
+        <div class="portal-copy">
+          <div class="portal-title"><span class="portal-state-dot"></span>{{ monitor.name }} · {{ monitor.headline }}</div>
+          <div class="portal-meta">В кабинете: {{ monitor.application_count }}{% if monitor.last_success_at %} · успешно {{ monitor.last_success_at }}{% endif %}</div>
+          {% if monitor.last_error %}<div class="portal-error" title="{{ monitor.last_error }}">{{ monitor.last_error }}</div>{% endif %}
+        </div>
+        <div class="portal-actions">
+          {% if monitor.enabled and monitor.connected %}
+          <form method="post" action="/audit/sync/{{ monitor.source }}"><button class="mini-btn" type="submit" {{ 'disabled' if monitor.busy else '' }}>{{ ic.i('refresh', 12) }} Проверить</button></form>
+          {% endif %}
+          <a class="mini-btn" href="{{ monitor.settings_url }}">{{ 'Настроить' if monitor.connected else 'Подключить' }}</a>
+        </div>
+      </article>
       {% endfor %}
+    </div>
+  </section>
+
+  {% set tabs = [
+    ('active','В работе',counts.active), ('action','Нужно действие',counts.action), ('waiting','Ждём',counts.waiting),
+    ('interview','Собеседования',counts.interview), ('offer','Офферы',counts.offer), ('rejected','Отказы',counts.rejected),
+    ('no_response','Нет ответа',counts.no_response), ('all','Все',counts.all)
+  ] %}
+  <nav class="application-toolbar" aria-label="Фильтр откликов">
+    {% for code, label, count in tabs %}
+    <a class="view-tab {{ 'active' if selected_view == code }}" href="/audit?view={{ code }}">{{ label }} <span class="tab-count">{{ count }}</span></a>
     {% endfor %}
+  </nav>
+
+  <div class="application-list-head">
+    <h2>{{ dict(active='В работе',action='Нужно действие',waiting='Ожидают ответа',interview='Собеседования',offer='Офферы',rejected='Отказы',no_response='Нет ответа',all='Все отклики').get(selected_view) }}</h2>
+    <span>Показано {{ visible_total }} из {{ total }}</span>
+  </div>
+
+  {% set st_ru = {'applied':'Подано','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа'} %}
+  {% if visible_total == 0 %}
+  <section class="application-empty">
+    <span class="empty-icon">{{ ic.i('check', 22) }}</span>
+    <h3>{{ 'Откликов пока нет' if total == 0 else 'В этом разделе пусто' }}</h3>
+    <p>{{ 'Когда анкета будет начата или подана, здесь появится её путь и следующий шаг.' if total == 0 else 'Выбери другой раздел — история не удалена и всегда доступна во вкладке «Все».' }}</p>
+    {% if total == 0 %}<a class="app-btn" href="/?status=active">Открыть вакансии</a>{% endif %}
+  </section>
+  {% else %}
+  <section class="application-list">
+    {% for r in entries %}
+    <article class="application-card status-{{ r.status }} activity-{{ r.activity }}">
+      <header class="application-card-head">
+        <div class="application-title-wrap">
+          <a class="application-title" href="/job/{{ r.id }}">{{ r.title }}</a>
+          <div class="application-meta">
+            {{ source_labels.get(r.source, r.source) }}{% if r.brand %} · {{ brand_label(r.brand) }}{% endif %}{% if r.city %} · {{ r.city }}{% endif %}
+            {% if r.activity == 'submitted' and r.applied_at %} · подано {{ r.applied_at.strftime('%d.%m.%Y') }} · {{ r.tracker.age_label }} назад{% endif %}
+          </div>
+        </div>
+        <div class="application-badges">
+          {% if r.activity == 'submitted' %}
+          <span class="fact-badge status-{{ r.status }}">{{ st_ru.get(r.status,r.status) }}</span>
+          <span class="fact-badge {{ r.tracker.confirmation_tone }}">{% if r.tracker.confirmation_tone in ('official','strong') %}{{ ic.i('check',10) }}{% elif r.tracker.confirmation_tone == 'warning' %}{{ ic.i('alert',10) }}{% endif %}{{ r.tracker.confirmation_label }}{% if r.tracker.confirmation_tone == 'official' %} {{ 'Salling' if r.source == 'salling' else ('Lidl' if r.source == 'lidl' else '') }}{% endif %}</span>
+          {% else %}
+          <span class="fact-badge warning">{{ ic.i('alert',10) }} {{ r.tracker.confirmation_label }}</span>
+          {% endif %}
+        </div>
+      </header>
+
+      {% if r.activity == 'submitted' %}
+      <div class="application-pipeline" aria-label="Этап заявки">
+        <div class="pipeline-step done"><span class="pipeline-node">{{ ic.i('check',11) }}</span><span>Подано</span></div>
+        <span class="pipeline-line {{ 'done' if r.status in ('interview','offer') else ('negative' if r.status == 'rejected' else ('silent' if r.status == 'no_response' else '')) }}"></span>
+        {% if r.status == 'rejected' %}
+        <div class="pipeline-step negative"><span class="pipeline-node">{{ ic.i('x',11) }}</span><span>Отказ</span></div>
+        {% elif r.status == 'no_response' %}
+        <div class="pipeline-step silent"><span class="pipeline-node">{{ ic.i('clock',11) }}</span><span>Нет ответа</span></div>
+        {% else %}
+        <div class="pipeline-step {{ 'done' if r.status in ('interview','offer') else 'current' }}"><span class="pipeline-node">{% if r.status in ('interview','offer') %}{{ ic.i('check',11) }}{% endif %}</span><span>{{ 'Ответ получен' if r.status in ('interview','offer') else 'Ждём ответ' }}</span></div>
+        {% endif %}
+        <span class="pipeline-line {{ 'done' if r.status in ('interview','offer') else '' }}"></span>
+        <div class="pipeline-step interview {{ 'done' if r.status == 'offer' else ('current' if r.status == 'interview' else '') }}"><span class="pipeline-node">{% if r.status == 'offer' %}{{ ic.i('check',11) }}{% endif %}</span><span>Собеседование</span></div>
+        <span class="pipeline-line line-to-offer {{ 'done' if r.status == 'offer' else '' }}"></span>
+        <div class="pipeline-step offer {{ 'current' if r.status == 'offer' }}"><span class="pipeline-node"></span><span>Оффер</span></div>
+      </div>
+      {% else %}
+      <div class="pipeline-empty">{{ ic.i('alert',12) }} Эта анкета не дошла до подтверждённой подачи и не считается откликом.</div>
+      {% endif %}
+
+      <div class="application-insight {{ 'urgent' if r.tracker.urgency >= 4 else ('priority' if r.tracker.urgency >= 2 else '') }}">
+        <span class="insight-icon">{{ ic.i('sparkles' if r.tracker.urgency < 3 else 'alert',14) }}</span>
+        <div>
+          <div class="insight-title">{{ r.tracker.signal }} · {{ r.tracker.action_label }}</div>
+          <div class="insight-copy">{{ r.tracker.action }}</div>
+          {% if r.portal.raw %}<div class="portal-raw"><b>В кабинете:</b> {{ r.portal.raw }}</div>{% endif %}
+        </div>
+      </div>
+
+      <footer class="application-footer">
+        <div class="application-origin">
+          {% if r.activity == 'submitted' %}
+            {% if r.tracker.source_label %}Этап {{ r.tracker.source_label }}{% else %}Этап сохранён в истории WexFlow{% endif %}
+            {% if r.tracker.updated_at %} · {{ r.tracker.updated_at.strftime('%d.%m.%Y %H:%M') }}{% endif %}
+          {% else %}Последняя попытка {{ r.applied_at.strftime('%d.%m.%Y %H:%M') if r.applied_at else '' }}{% endif %}
+        </div>
+        <div class="application-actions">
+          {% if r.proof %}<button type="button" class="app-btn proof-button" data-proof="/applied-proof/{{ r.proof }}">{{ ic.i('file',11) }} Доказательство</button>{% endif %}
+          <a class="app-btn" href="/job/{{ r.id }}">Открыть вакансию</a>
+          {% if r.activity == 'submitted' %}
+          <details class="stage-menu">
+            <summary class="app-btn">Изменить этап</summary>
+            <div class="stage-popover">
+              <p>Только фактический результат. Работодателю ничего не отправится.</p>
+              <form method="post" action="/job/{{ r.id }}/status">
+                <button type="submit" name="status" value="applied">Подано</button>
+                <button type="submit" name="status" value="interview">Собеседование</button>
+                <button type="submit" name="status" value="offer">Оффер</button>
+                <button type="submit" name="status" value="rejected">Отказ</button>
+                <button type="submit" name="status" value="no_response">Нет ответа</button>
+              </form>
+            </div>
+          </details>
+          {% endif %}
+        </div>
+      </footer>
+    </article>
+    {% endfor %}
+  </section>
   {% endif %}
 
   <div class="proof-overlay" id="proofOverlay" hidden>
     <div class="proof-box">
-      <div class="proof-cap">
-        <span>Снимок результата подачи — сохранён в момент отправки</span>
-        <button type="button" id="proofClose">Закрыть</button>
-      </div>
+      <div class="proof-cap"><span>Снимок результата подачи</span><button type="button" class="mini-btn" id="proofClose">Закрыть</button></div>
       <img id="proofImg" alt="Скриншот результата подачи">
     </div>
   </div>
-  <script>
-    (function () {
-      var overlay = document.getElementById('proofOverlay');
-      var img = document.getElementById('proofImg');
-      function close() { overlay.hidden = true; img.removeAttribute('src'); }
-      document.querySelectorAll('.cf-proof').forEach(function (b) {
-        b.addEventListener('click', function (e) {
-          e.preventDefault(); e.stopPropagation();   // не уходить по ссылке-строке
-          img.src = b.dataset.proof;
-          overlay.hidden = false;
-        });
-      });
-      document.getElementById('proofClose').addEventListener('click', close);
-      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
-      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !overlay.hidden) close(); });
-    })();
-  </script>
-</section>
+</main>
+
+<script>
+  (function () {
+    var overlay = document.getElementById('proofOverlay');
+    var img = document.getElementById('proofImg');
+    function closeProof() { overlay.hidden = true; img.removeAttribute('src'); }
+    document.querySelectorAll('[data-proof]').forEach(function (button) {
+      button.addEventListener('click', function () { img.src = button.dataset.proof; overlay.hidden = false; });
+    });
+    document.getElementById('proofClose').addEventListener('click', closeProof);
+    overlay.addEventListener('click', function (event) { if (event.target === overlay) closeProof(); });
+    document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && !overlay.hidden) closeProof(); });
+    document.addEventListener('click', function (event) {
+      document.querySelectorAll('.stage-menu[open]').forEach(function (menu) { if (!menu.contains(event.target)) menu.removeAttribute('open'); });
+    });
+    {% if monitor_busy %}setTimeout(function () { location.reload(); }, 7000);{% endif %}
+  }());
+</script>
 {{ ui.shell_end() }}
 {% endblock %}

@@ -1,6 +1,8 @@
 """Prepared connector windows stay usable and close only after real inactivity."""
 import os
 import sys
+import tempfile
+from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -79,7 +81,7 @@ def test_telegram_cancel_closes_prepared_lidl_without_submit():
     ctx = _PersistentContext(page)
     with mock.patch.object(apply, "read_phone_decision", return_value="cancel"), \
             mock.patch.object(apply_dispatch.time, "time", return_value=1001.0), \
-            mock.patch.object(apply_dispatch, "_report_phone_status") as report, \
+            mock.patch.object(apply_dispatch, "_report_phone_status", return_value=True) as report, \
             mock.patch.object(apply_dispatch, "_write_status") as status:
         apply_dispatch._wait_until_closed(
             ctx,
@@ -93,6 +95,7 @@ def test_telegram_cancel_closes_prepared_lidl_without_submit():
         "lidl:telegram-cancel",
         "prepare_cancelled",
         "Отменено из Telegram — заявка не отправлена.",
+        phone_reported=True,
     )
     report.assert_called_once_with(
         "lidl:telegram-cancel",
@@ -112,7 +115,7 @@ def test_telegram_submit_finishes_the_open_lidl_form():
     with mock.patch.object(apply, "read_phone_decision", return_value="submit"), \
             mock.patch.object(lidl_apply, "submit", return_value=result) as submit, \
             mock.patch.object(apply_dispatch, "_record_confirmed_submission") as record, \
-            mock.patch.object(apply_dispatch, "_send_proof_to_chat") as proof, \
+            mock.patch.object(apply_dispatch, "_send_proof_to_chat", return_value=True) as proof, \
             mock.patch.object(apply_dispatch, "_report_phone_status") as report, \
             mock.patch.object(apply_dispatch, "_write_status") as status, \
             mock.patch.object(apply_dispatch.time, "time", return_value=1001.0):
@@ -126,8 +129,11 @@ def test_telegram_submit_finishes_the_open_lidl_form():
 
     submit.assert_called_once_with(page, profile)
     record.assert_called_once_with("lidl:telegram-submit")
-    status.assert_called_once_with("lidl:telegram-submit", "submitted", "Lidl принял заявку.")
-    report.assert_called_once_with("lidl:telegram-submit", "submitted", "Lidl принял заявку.")
+    status.assert_called_once_with(
+        "lidl:telegram-submit", "submitted", "Lidl принял заявку.",
+        phone_reported=True,
+    )
+    report.assert_not_called()
     proof.assert_called_once_with(page, "lidl:telegram-submit")
 
 
@@ -142,7 +148,7 @@ def test_review_card_submit_signal_uses_worker_and_records_receipt():
             mock.patch.object(lidl_apply, "submit", return_value=result) as submit, \
             mock.patch.object(lidl_apply, "show_explicit_submit_result") as show, \
             mock.patch.object(apply_dispatch, "_record_confirmed_submission") as record, \
-            mock.patch.object(apply_dispatch, "_send_proof_to_chat") as proof, \
+            mock.patch.object(apply_dispatch, "_send_proof_to_chat", return_value=True) as proof, \
             mock.patch.object(apply_dispatch, "_report_phone_status") as report, \
             mock.patch.object(apply_dispatch, "_write_status") as status, \
             mock.patch.object(apply_dispatch.time, "time", return_value=1001.0):
@@ -157,8 +163,11 @@ def test_review_card_submit_signal_uses_worker_and_records_receipt():
     submit.assert_called_once_with(page, profile)
     show.assert_called_once_with(page, "submitted", "Lidl принял заявку.")
     record.assert_called_once_with("lidl:review-submit")
-    status.assert_called_once_with("lidl:review-submit", "submitted", "Lidl принял заявку.")
-    report.assert_called_once_with("lidl:review-submit", "submitted", "Lidl принял заявку.")
+    status.assert_called_once_with(
+        "lidl:review-submit", "submitted", "Lidl принял заявку.",
+        phone_reported=True,
+    )
+    report.assert_not_called()
     proof.assert_called_once_with(page, "lidl:review-submit")
 
 
@@ -213,3 +222,29 @@ def test_prepared_connector_proof_requests_telegram_buttons():
     with mock.patch.object(apply_dispatch, "_proof_to_chat") as proof:
         apply_dispatch._send_prepared_proof_to_chat(page, "lidl:buttons")
     proof.assert_called_once_with(page, "lidl:buttons", prepared=True, ask_send=True)
+
+
+def test_proof_filename_is_a_real_png_not_a_windows_alt_stream():
+    import apply
+    import cloud_auth
+    import config
+
+    saved = []
+    page = mock.Mock()
+
+    def screenshot(*, path, full_page):
+        saved.append(Path(path))
+        Path(path).write_bytes(b"png")
+
+    page.screenshot.side_effect = screenshot
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(config, "DATA_DIR", Path(tmp)), \
+            mock.patch.object(apply, "_proof_photo_b64", return_value="cG5n"), \
+            mock.patch.object(cloud_auth, "report_apply_proof", return_value=True):
+        assert apply_dispatch._proof_to_chat(
+            page, "lidl:727909", prepared=True, note="Проверка"
+        ) is True
+    assert len(saved) == 1
+    assert saved[0].suffix == ".png"
+    assert ":" not in saved[0].name
+    assert "lidl_727909" in saved[0].name

@@ -18,7 +18,7 @@ SECRET_GROQ = "gsk_LIVE_SECRET_VALUE_ABCD"
 SECRET_GEMINI = "AIza_LIVE_SECRET_VALUE_WXYZ"
 
 
-def _request(path="/settings/ai") -> Request:
+def _request(path="/settings/forms") -> Request:
     return Request({
         "type": "http", "method": "GET", "path": path,
         "headers": [], "query_string": b"", "scheme": "http",
@@ -67,7 +67,7 @@ def _render(usage=None):
          mock.patch.object(app.ai_gateway, "available", return_value=usage["connected"]), \
          mock.patch.object(app.ai_secrets, "legacy_gemini_key", return_value=""), \
          mock.patch.object(app.ai_secrets, "info", return_value={"connected": False}):
-        response = app.settings_ai(_request())
+        response = app.settings_forms(_request())
     return response.body.decode("utf-8")
 
 
@@ -119,7 +119,7 @@ def test_legacy_gemini_binding_is_offered_on_the_card():
          mock.patch.object(app.ai_gateway, "available", return_value=False), \
          mock.patch.object(app.ai_secrets, "legacy_gemini_key", return_value="AIza_legacy"), \
          mock.patch.object(app.ai_secrets, "info", return_value={"connected": False}):
-        html = app.settings_ai(_request()).body.decode("utf-8")
+        html = app.settings_forms(_request()).body.decode("utf-8")
 
     assert "aiBindLegacy" in html
     assert "Привязать старый ключ" in html

@@ -49,12 +49,19 @@ def status_path(job_id: str = ""):
     return paths.DATA_DIR / f"connector_apply_status_{token}.json"
 
 
-def _write_status(job_id: str, state: str, message: str = "") -> None:
+def _write_status(
+    job_id: str,
+    state: str,
+    message: str = "",
+    *,
+    phone_reported: bool = False,
+) -> None:
     payload = {
         "job_id": str(job_id or ""),
         "state": str(state or ""),
         "message": str(message or "")[:500],
         "updated_at": time.time(),
+        "phone_reported": bool(phone_reported),
     }
     target = status_path(job_id)
     try:
@@ -66,13 +73,13 @@ def _write_status(job_id: str, state: str, message: str = "") -> None:
         pass
 
 
-def _report_phone_status(job_id: str, state: str, message: str) -> None:
+def _report_phone_status(job_id: str, state: str, message: str) -> bool:
     """Show the result of a Telegram decision back in the same phone flow."""
     try:
         import cloud_auth
-        cloud_auth.report_apply_result(job_id, state, message)
+        return bool(cloud_auth.report_apply_result(job_id, state, message))
     except Exception:
-        pass
+        return False
 
 
 def detect(url: str) -> str | None:
@@ -201,14 +208,14 @@ def _record_confirmed_submission(job_id: str) -> bool:
         return False
 
 
-def _send_prepared_proof_to_chat(page, job_id: str) -> None:
+def _send_prepared_proof_to_chat(page, job_id: str) -> bool:
     """Скрин подготовленной анкеты + явное решение «Отправить / Отмена»."""
-    _proof_to_chat(page, job_id, prepared=True, ask_send=True)
+    return _proof_to_chat(page, job_id, prepared=True, ask_send=True)
 
 
-def _send_proof_to_chat(page, job_id: str) -> None:
+def _send_proof_to_chat(page, job_id: str) -> bool:
     """Скрин квитанции — в чат телефона, как у Salling. Никогда не роняет подачу."""
-    _proof_to_chat(page, job_id, prepared=False)
+    return _proof_to_chat(page, job_id, prepared=False)
 
 
 def _proof_to_chat(
@@ -217,7 +224,7 @@ def _proof_to_chat(
     prepared: bool,
     note: str = "",
     ask_send: bool = False,
-) -> None:
+) -> bool:
     """Снять страницу и отправить её в чат. Скрины прогона лежат отдельно от
     доказательств подачи — иначе журнал прицепит их как «отправлено»."""
     try:
@@ -226,7 +233,8 @@ def _proof_to_chat(
         import config
         out = config.DATA_DIR / "logs" / ("prepared" if prepared else "applied")
         out.mkdir(parents=True, exist_ok=True)
-        path = out / f"{datetime.now():%Y%m%d_%H%M%S}_{job_id}.png"
+        safe_job_id = re.sub(r"[^0-9A-Za-zА-Яа-я._-]+", "_", str(job_id or "job"))
+        path = out / f"{datetime.now():%Y%m%d_%H%M%S}_{safe_job_id}.png"
         page.screenshot(path=str(path), full_page=True)
         print(f"  скрин-пруф: logs/{out.name}/{path.name}")
 
@@ -234,7 +242,7 @@ def _proof_to_chat(
         import cloud_auth
         b64 = _apply._proof_photo_b64(path)
         if not b64:
-            return
+            return False
         title = job_id
         try:
             from db import Job, get_session
@@ -253,9 +261,26 @@ def _proof_to_chat(
         else:
             caption = ("✅ <b>Заявка отправлена</b>\n" + str(title)
                        + "\nСайт показал квитанцию — скрин страницы приложен.")
-        cloud_auth.report_apply_proof(job_id, b64, caption, ask_send=ask_send)
+        return bool(cloud_auth.report_apply_proof(job_id, b64, caption, ask_send=ask_send))
     except Exception as exc:  # noqa: BLE001
         print("  скрин не ушёл в чат:", str(exc)[:120])
+        return False
+
+
+def _notify_terminal(
+    page,
+    job_id: str,
+    *,
+    prepared: bool,
+    note: str = "",
+    state: str,
+    message: str,
+) -> bool:
+    """Send exactly one phone result: screenshot first, text only as fallback."""
+    sent = _proof_to_chat(page, job_id, prepared=prepared, note=note)
+    if not sent:
+        sent = _report_phone_status(job_id, state, message)
+    return sent
 
 
 def site_changed_banner(page, report: dict) -> None:
@@ -342,6 +367,7 @@ def _wait_until_closed(
     immediately. Open pages are the reliable lifetime signal here.
     """
     recorded = False
+    terminal_recorded = False
     if page is not None:
         _install_idle_tracker(ctx, page)
     while True:
@@ -365,11 +391,12 @@ def _wait_until_closed(
             except Exception:
                 pass
         if activity and (time.time() * 1000.0 - max(activity)) >= idle_seconds * 1000.0:
-            _write_status(
-                job_id,
-                "idle_closed",
-                f"Окно закрыто после {int(idle_seconds // 60)} мин бездействия.",
-            )
+            if not terminal_recorded:
+                _write_status(
+                    job_id,
+                    "idle_closed",
+                    f"Окно закрыто после {int(idle_seconds // 60)} мин бездействия.",
+                )
             return
         if platform == "lidl_easy_apply" and page is not None:
             try:
@@ -389,25 +416,57 @@ def _wait_until_closed(
                 if result["state"] == "submitted":
                     if job_id:
                         _record_confirmed_submission(job_id)
-                        _write_status(job_id, "submitted", result["message"])
-                        _report_phone_status(job_id, "submitted", result["message"])
                         proof_ready = bool(result.get("proof_ready", True))
                         if not proof_ready:
                             proof_ready = lidl_apply.prepare_submission_proof(page)
+                        phone_reported = False
                         if proof_ready:
-                            _send_proof_to_chat(page, job_id)
+                            phone_reported = _send_proof_to_chat(page, job_id)
                         else:
                             print("  пруф не отправлен: окно обработки данных Lidl не закрылось")
+                        if not phone_reported:
+                            phone_reported = _report_phone_status(
+                                job_id, "submitted", result["message"]
+                            )
+                        _write_status(
+                            job_id, "submitted", result["message"],
+                            phone_reported=phone_reported,
+                        )
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
                     return
                 if result["state"] == "blocked":
                     if job_id:
-                        _write_status(job_id, "needs_answers", result["message"])
+                        note = (
+                            "Не удалось отправить: " + result["message"]
+                            + ". Анкета остаётся открытой — дополни ответ и нажми "
+                              "«Отправить до конца» в окне."
+                        )
+                        phone_reported = _notify_terminal(
+                            page, job_id, prepared=True, note=note,
+                            state="prepared", message=note,
+                        )
+                        _write_status(
+                            job_id, "needs_answers", result["message"],
+                            phone_reported=phone_reported,
+                        )
+                        terminal_recorded = True
                     print("  Lidl не принял отправку:", result["message"])
                 else:
                     if job_id:
-                        _write_status(job_id, "no_receipt", result["message"])
-                        _report_phone_status(job_id, "unconfirmed", result["message"])
+                        try:
+                            import lidl_monitor
+                            lidl_monitor.queue_verification(job_id)
+                        except Exception:
+                            pass
+                        phone_reported = _notify_terminal(
+                            page, job_id, prepared=True, note=result["message"],
+                            state="unconfirmed", message=result["message"],
+                        )
+                        _write_status(
+                            job_id, "no_receipt", result["message"],
+                            phone_reported=phone_reported,
+                        )
+                        terminal_recorded = True
                     print("  кнопка нажата, но квитанция Lidl не найдена")
 
         if platform == "lidl_easy_apply" and page is not None and job_id:
@@ -418,12 +477,15 @@ def _wait_until_closed(
                 action = ""
             if action == "cancel":
                 message = "Отменено из Telegram — заявка не отправлена."
+                phone_reported = _report_phone_status(
+                    job_id, "prepare_cancelled", message
+                )
                 _write_status(
                     job_id,
                     "prepare_cancelled",
                     message,
+                    phone_reported=phone_reported,
                 )
-                _report_phone_status(job_id, "prepare_cancelled", message)
                 print("  отмена из Telegram — заявка НЕ отправлена, закрываю анкету")
                 return
             if action == "submit":
@@ -433,55 +495,74 @@ def _wait_until_closed(
                 result = lidl_apply.submit(page, profile or {})
                 if result["state"] == "submitted":
                     _record_confirmed_submission(job_id)
-                    _write_status(job_id, "submitted", result["message"])
-                    _report_phone_status(job_id, "submitted", result["message"])
                     proof_ready = bool(result.get("proof_ready", True))
                     if not proof_ready:
                         proof_ready = lidl_apply.prepare_submission_proof(page)
+                    phone_reported = False
                     if proof_ready:
-                        _send_proof_to_chat(page, job_id)
+                        phone_reported = _send_proof_to_chat(page, job_id)
                     else:
                         print("  пруф не отправлен: окно обработки данных Lidl не закрылось")
+                    if not phone_reported:
+                        phone_reported = _report_phone_status(
+                            job_id, "submitted", result["message"]
+                        )
+                    _write_status(
+                        job_id, "submitted", result["message"],
+                        phone_reported=phone_reported,
+                    )
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
                     return
                 if result["state"] == "blocked":
-                    _write_status(job_id, "needs_answers", result["message"])
-                    _report_phone_status(
-                        job_id,
-                        "prepared",
-                        "Lidl не принял отправку: " + result["message"]
-                        + ". Анкета остаётся открытой на компьютере.",
+                    note = (
+                        "Не удалось отправить: " + result["message"]
+                        + ". Анкета остаётся открытой — дополни ответ и нажми "
+                          "«Отправить до конца» в окне."
                     )
-                    _proof_to_chat(
-                        page,
-                        job_id,
-                        prepared=True,
-                        note=(
-                            "Не удалось отправить: " + result["message"]
-                            + ". Анкета остаётся открытой — дополни ответ и нажми "
-                              "«Отправить до конца» в окне."
-                        ),
+                    phone_reported = _notify_terminal(
+                        page, job_id, prepared=True, note=note,
+                        state="prepared", message=note,
                     )
+                    _write_status(
+                        job_id, "needs_answers", result["message"],
+                        phone_reported=phone_reported,
+                    )
+                    terminal_recorded = True
                 else:
-                    _write_status(job_id, "no_receipt", result["message"])
-                    _report_phone_status(job_id, "unconfirmed", result["message"])
-                    _proof_to_chat(page, job_id, prepared=True, note=result["message"])
+                    try:
+                        import lidl_monitor
+                        lidl_monitor.queue_verification(job_id)
+                    except Exception:
+                        pass
+                    phone_reported = _notify_terminal(
+                        page, job_id, prepared=True, note=result["message"],
+                        state="unconfirmed", message=result["message"],
+                    )
+                    _write_status(
+                        job_id, "no_receipt", result["message"],
+                        phone_reported=phone_reported,
+                    )
+                    terminal_recorded = True
         if not recorded and platform == "lidl_easy_apply" and page is not None:
             try:
                 from connectors import lidl_apply
                 if lidl_apply.submission_receipt_visible(page):
                     proof_ready = lidl_apply.prepare_submission_proof(page)
                     recorded = _record_confirmed_submission(job_id)
-                    _write_status(
-                        job_id,
-                        "submitted",
-                        "Lidl подтвердил получение заявки.",
-                    )
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
+                    phone_reported = False
                     if proof_ready:
-                        _send_proof_to_chat(page, job_id)
+                        phone_reported = _send_proof_to_chat(page, job_id)
                     else:
                         print("  пруф отложен: окно обработки данных Lidl не закрылось")
+                    if not phone_reported:
+                        phone_reported = _report_phone_status(
+                            job_id, "submitted", "Lidl подтвердил получение заявки."
+                        )
+                    _write_status(
+                        job_id, "submitted", "Lidl подтвердил получение заявки.",
+                        phone_reported=phone_reported,
+                    )
             except Exception:
                 pass
         time.sleep(1.0)
@@ -541,9 +622,9 @@ def _prepare_one(page, item: dict, profile: dict, submit: bool) -> tuple[str, st
             site_changed_banner(page, changed.report)
         except Exception:
             pass
-        _proof_to_chat(page, job_id, prepared=True, note=message)
+        phone_reported = _proof_to_chat(page, job_id, prepared=True, note=message)
         short = site_contract.short_message(changed.report)
-        _write_status(job_id, "site_changed", short)
+        _write_status(job_id, "site_changed", short, phone_reported=phone_reported)
         return "site_changed", short
     except Exception as exc:
         message = f"Анкета заполнена не полностью: {str(exc)[:160]}"
@@ -561,26 +642,40 @@ def _prepare_one(page, item: dict, profile: dict, submit: bool) -> tuple[str, st
     message = result["message"]
     if state == "submitted":
         _record_confirmed_submission(job_id)
-        _write_status(job_id, "submitted", message)
         proof_ready = bool(result.get("proof_ready", True))
         if not proof_ready:
             proof_ready = lidl_apply.prepare_submission_proof(page)
+        phone_reported = False
         if proof_ready:
-            _send_proof_to_chat(page, job_id)
+            phone_reported = _send_proof_to_chat(page, job_id)
         else:
             print("  пруф не отправлен: окно обработки данных Lidl не закрылось")
+        if not phone_reported:
+            phone_reported = _report_phone_status(job_id, "submitted", message)
+        _write_status(job_id, "submitted", message, phone_reported=phone_reported)
         print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
         return "submitted", message
     if state == "no_receipt":
-        _write_status(job_id, "no_receipt", message)
-        _proof_to_chat(page, job_id, prepared=True, note=message)
+        try:
+            import lidl_monitor
+            lidl_monitor.queue_verification(job_id)
+        except Exception:
+            pass
+        phone_reported = _notify_terminal(
+            page, job_id, prepared=True, note=message,
+            state="unconfirmed", message=message,
+        )
+        _write_status(job_id, "no_receipt", message, phone_reported=phone_reported)
         print("  кнопка нажата, но квитанция Lidl не найдена")
         return "no_receipt", message
     note = ("Не хватает ответов для автоматической подачи: " + message
             + ". Ответь в приложении: раздел «Вопросы анкет» "
               "(или «Профиль → Ответы для анкет») — и подай эту вакансию ещё раз.")
-    _write_status(job_id, "needs_answers", note)
-    _proof_to_chat(page, job_id, prepared=True, note=note)
+    phone_reported = _notify_terminal(
+        page, job_id, prepared=True, note=note,
+        state="prepared", message=note,
+    )
+    _write_status(job_id, "needs_answers", note, phone_reported=phone_reported)
     print("  Lidl не принял отправку:", message)
     return "needs_answers", note
 
@@ -671,12 +766,10 @@ def run_batch(job_ids, submit: bool = False, keep_open: bool = True) -> None:
                     confirmed += 1
                     prog_items[i]["state"] = "ok"
                     prog["ok"] += 1
-                    _apply._cloud_report(job_id, "submitted", message)
                 elif state == "no_receipt":
                     prog_items[i]["state"] = "unconfirmed"
                     prog["unconfirmed"] += 1
                     _mark_batch_failed(job_id)
-                    _apply._cloud_report(job_id, "unconfirmed", message)
                 elif state == "ready":
                     prog_items[i]["state"] = "ok"
                     _apply._cloud_report(job_id, *_apply._prepare_report())
@@ -684,11 +777,12 @@ def run_batch(job_ids, submit: bool = False, keep_open: bool = True) -> None:
                     prog_items[i]["state"] = "failed"
                     prog["failed"] += 1
                     _mark_batch_failed(job_id)
-                    _apply._cloud_report(
-                        job_id,
-                        "failed" if submit else "prepare_failed",
-                        message,
-                    )
+                    if state == "error":
+                        _apply._cloud_report(
+                            job_id,
+                            "failed" if submit else "prepare_failed",
+                            message,
+                        )
                 prog["done"] = i + 1
                 prog["updated_at"] = _apply._now_iso()
                 _apply._write_progress(prog)

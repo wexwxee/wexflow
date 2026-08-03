@@ -160,6 +160,30 @@ def test_lidl_discovery_is_company_local_and_uses_exact_site_values():
     assert {"Jobindex", "LinkedIn", "Messe", "Ungarbejder.dk"} <= values
 
 
+def test_lidl_part_time_answer_is_reused_only_for_lidl():
+    answer = "Den angivne ugentlige arbejdstid passer mig godt."
+    profile = {
+        "answer_reuse_consent": "yes",
+        "company_answer_overrides": {
+            "lidl": {
+                "label": "Lidl",
+                "inherit_defaults": "yes",
+                "answers": {"lidl_part_time_availability": answer},
+            },
+        },
+    }
+    assert (
+        profile_store.resolve_company_answers(profile, "Lidl Danmark")[
+            "lidl_part_time_availability"
+        ] == answer
+    )
+    assert (
+        profile_store.resolve_company_answers(profile, "Netto")[
+            "lidl_part_time_availability"
+        ] == ""
+    )
+
+
 def test_long_lidl_goal_and_danmark_brand_keep_the_saved_company_answers():
     goal = (
         "Om to år ser jeg mig selv i gang med en businessuddannelse og med "

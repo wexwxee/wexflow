@@ -40,6 +40,7 @@ import credentials_store
 import lidl_credentials_store
 import lidl_followup
 import lidl_monitor
+import salling_monitor
 import application_tracker
 import subscription
 import account as account_mod
@@ -84,8 +85,15 @@ JOB_SOURCE_LABELS = {
 JOB_FILTER_KEYS = (
     "q", "source", "city", "brand", "region", "category",
     "employment_type", "job_level", "status", "sort", "radius",
-    "group", "show_applied", "period",
+    "max_commute", "max_transfers", "revisit", "group", "show_applied", "period",
 )
+
+DEFAULT_REVISIT_DAYS = 60
+REVISIT_OPTIONS = {"off": 0, "30": 30, "60": 60, "90": 90}
+# Собеседования и офферы не возвращаем в поиск. Отказ/тишина могут снова стать
+# полезными, но карточка всё равно остаётся поданной и повторная отправка закрыта.
+REVISITABLE_APPLICATION_STATUSES = {"applied", "rejected", "no_response"}
+REVISIT_LISTING_FRESH_DAYS = 7
 
 
 def _clean_filter_query(raw_query: str) -> str:
@@ -101,7 +109,24 @@ def _clean_filter_query(raw_query: str) -> str:
             value = "1" if value in {"1", "true", "on"} else ""
         elif key == "status" and value not in SAFE_JOB_STATUSES | {"active"}:
             value = ""
-        elif key == "sort" and value not in {"published", "distance", "title", "city"}:
+        elif key == "sort" and value not in {"published", "distance", "commute", "title", "city"}:
+            value = ""
+        elif key == "radius":
+            try:
+                number = float(value.replace(",", "."))
+                value = (f"{number:.1f}".rstrip("0").rstrip(".")
+                         if 0 < number <= 500 else "")
+            except (TypeError, ValueError):
+                value = ""
+        elif key == "max_commute":
+            try:
+                number = int(float(value.replace(",", ".")))
+                value = str(number) if 5 <= number <= 240 else ""
+            except (TypeError, ValueError):
+                value = ""
+        elif key == "max_transfers" and value not in {"0", "1", "2"}:
+            value = ""
+        elif key == "revisit" and value not in REVISIT_OPTIONS:
             value = ""
         elif key == "period" and value not in {"today", "3d", "all"}:
             value = ""
@@ -120,6 +145,36 @@ def _filter_query(filters: dict, drop: str = "") -> str:
         if value:
             pairs.append((key, str(value)))
     return _clean_filter_query(urlencode(pairs))
+
+
+def _route_matches(trip: dict | None, max_minutes: int = 0,
+                   max_transfers: int | None = None) -> bool:
+    """Строгая проверка фильтра маршрута: неизвестный путь не выдаём за подходящий."""
+    if not trip:
+        return False
+    try:
+        minutes = int(trip.get("minutes") or 0)
+        transfers = int(trip.get("transfers") or 0)
+    except (TypeError, ValueError):
+        return False
+    if minutes <= 0:
+        return False
+    if max_minutes and minutes > max_minutes:
+        return False
+    if max_transfers is not None and transfers > max_transfers:
+        return False
+    return True
+
+
+def _applied_age_days(applied_at, now=None) -> int | None:
+    """Возраст отклика для честной пометки вернувшейся вакансии."""
+    if applied_at is None:
+        return None
+    now = now or utcnow()
+    try:
+        return max(0, int((now - applied_at).total_seconds() // 86400))
+    except (TypeError, ValueError):
+        return None
 
 
 def _allowed_local_write(request: Request) -> bool:
@@ -678,10 +733,18 @@ def _watch_and_report_apply_batch(job_ids: list[str], proc=None,
                 job = s.get(Job, jid)
                 if job is not None and job.status == "applied":
                     autopilot.record_submitted([job])
-                    if str(job.applied_confidence or "").lower() == "receipt":
+                    confidence = str(job.applied_confidence or "").lower()
+                    if confidence == "receipt":
                         _report_apply_result_safe(
                             jid, "submitted",
                             "Сайт показал квитанцию и подтвердил получение заявки.",
+                        )
+                    elif confidence == "portal":
+                        _report_apply_result_safe(
+                            jid, "submitted",
+                            "Официальный кабинет "
+                            + ("Salling" if job.source == "salling" else "Lidl")
+                            + " подтвердил, что заявка подана.",
                         )
                     else:
                         _report_apply_result_safe(
@@ -2323,6 +2386,7 @@ def _handle_tg_remote_command(command: dict) -> str:
 
 _lidl_followup_tick_lock = threading.Lock()
 _lidl_monitor_spawn_lock = threading.Lock()
+_salling_monitor_spawn_lock = threading.Lock()
 _application_tracking_tick_lock = threading.Lock()
 
 
@@ -2362,7 +2426,13 @@ def _launch_lidl_monitor_worker(mode: str) -> bool:
     mode = "login" if mode == "login" else "check"
     if mode == "check":
         state = lidl_monitor.load_state()
-        if not state.get("enabled") or not state.get("connected") or lidl_monitor.is_busy():
+        try:
+            import lidl_credentials_store
+            can_reconnect = bool(lidl_credentials_store.status().get("has_password"))
+        except Exception:
+            can_reconnect = False
+        if (not state.get("enabled") or lidl_monitor.is_busy()
+                or (not state.get("connected") and not can_reconnect)):
             return False
     if not _lidl_monitor_spawn_lock.acquire(blocking=False):
         return False
@@ -2395,6 +2465,48 @@ def _launch_lidl_monitor_worker(mode: str) -> bool:
 
 def _lidl_monitor_tick() -> None:
     _launch_lidl_monitor_worker("check")
+
+
+def _launch_salling_monitor_worker(mode: str) -> bool:
+    """Read the official Salling cockpit without sharing its browser concurrently."""
+    mode = "login" if mode == "login" else "check"
+    if mode == "check":
+        state = salling_monitor.load_state()
+        credentials = credentials_store.status()
+        if (not state.get("enabled") or salling_monitor.is_busy()
+                or (not state.get("connected") and not credentials.get("has_password"))):
+            return False
+    if not _salling_monitor_spawn_lock.acquire(blocking=False):
+        return False
+    try:
+        flag = f"--worker-salling-monitor-{mode}"
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, flag]
+        else:
+            cmd = [sys.executable, str(config.BASE_DIR / "desktop_app.py"), flag]
+        kwargs = {
+            "stdin": subprocess.DEVNULL,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if sys.platform == "win32":
+            kwargs["creationflags"] = (
+                (0x00000008 | 0x00000200) if mode == "login" else 0x08000000
+            )
+        subprocess.Popen(cmd, **kwargs)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        salling_monitor.save_state(
+            phase="error",
+            last_error=f"Не удалось запустить монитор Salling: {str(exc)[:180]}",
+        )
+        return False
+    finally:
+        _salling_monitor_spawn_lock.release()
+
+
+def _salling_monitor_tick() -> None:
+    _launch_salling_monitor_worker("check")
 
 
 def _application_tracking_tick() -> None:
@@ -2445,6 +2557,14 @@ async def _lifespan(app):
         coalesce=True,
     )
     sched.add_job(
+        _salling_monitor_tick,
+        "interval",
+        hours=3,
+        id="salling_monitor",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
         _application_tracking_tick,
         "interval",
         hours=6,
@@ -2483,6 +2603,7 @@ async def _lifespan(app):
         threading.Thread(target=_tg_offer_tick, daemon=True).start()
     threading.Thread(target=_lidl_followup_tick, daemon=True).start()
     threading.Thread(target=_lidl_monitor_tick, daemon=True).start()
+    threading.Thread(target=_salling_monitor_tick, daemon=True).start()
     threading.Thread(target=_application_tracking_tick, daemon=True).start()
     # Repair any stale phone cache left by an older build immediately on start.
     threading.Thread(
@@ -3334,20 +3455,23 @@ def _watch_connector_result_for_phone(job_id: str, source: str) -> None:
             payload = {}
         state = str(payload.get("state") or "")
         message = str(payload.get("message") or "").strip()
+        phone_reported = bool(payload.get("phone_reported"))
         if str(payload.get("job_id") or "") == wanted and state == "submitted":
-            _report_apply_result_safe(
-                wanted, "submitted",
-                message or "Сайт подтвердил получение заявки.",
-            )
+            if not phone_reported:
+                _report_apply_result_safe(
+                    wanted, "submitted",
+                    message or "Сайт подтвердил получение заявки.",
+                )
             _release_connector_launch(wanted)
             _sync_application_views_to_cloud(force=True)
             return
         if str(payload.get("job_id") or "") == wanted and state == "error":
             applications.mark_failed([wanted], source=source)
-            _report_apply_result_safe(
-                wanted, "failed",
-                message or "Окно подачи завершилось с ошибкой.",
-            )
+            if not phone_reported:
+                _report_apply_result_safe(
+                    wanted, "failed",
+                    message or "Окно подачи завершилось с ошибкой.",
+                )
             _release_connector_launch(wanted)
             return
         # Защита от изменений сайта, нехватка ответов и «нажали, но квитанции
@@ -3355,10 +3479,14 @@ def _watch_connector_result_for_phone(job_id: str, source: str) -> None:
         if (str(payload.get("job_id") or "") == wanted
                 and state in {"site_changed", "needs_answers", "no_receipt"}):
             applications.mark_failed([wanted], source=source)
-            _report_apply_result_safe(
-                wanted, "failed",
-                message or "Подача остановлена — заявка не отправлена.",
-            )
+            if state == "no_receipt" and source == "lidl":
+                lidl_monitor.queue_verification(wanted)
+                _launch_lidl_monitor_worker("check")
+            if not phone_reported:
+                _report_apply_result_safe(
+                    wanted, "failed",
+                    message or "Подача остановлена — заявка не отправлена.",
+                )
             _release_connector_launch(wanted)
             return
         with _connector_launch_lock:
@@ -3587,6 +3715,9 @@ def index(
     status: str = "active",
     sort: str = "",
     radius: str = "",
+    max_commute: str = "",
+    max_transfers: str = "",
+    revisit: str = "60",
     group: str = "",
     show_applied: str = "",
     period: str = "all",
@@ -3612,15 +3743,41 @@ def index(
                 status = saved.get("status", status); sort = saved.get("sort", sort)
                 show_applied = saved.get("show_applied", show_applied)
                 radius = saved.get("radius", radius); group = saved.get("group", group)
+                max_commute = saved.get("max_commute", max_commute)
+                max_transfers = saved.get("max_transfers", max_transfers)
+                revisit = saved.get("revisit", revisit)
                 period = saved.get("period", period)
             except Exception:
                 pass
 
     period = period if period in {"today", "3d", "all"} else "all"
+    sort = sort if sort in {"published", "distance", "commute", "title", "city"} else ""
+    revisit = revisit if revisit in REVISIT_OPTIONS else str(DEFAULT_REVISIT_DAYS)
+    revisit_days = REVISIT_OPTIONS[revisit]
+    try:
+        max_commute_value = int(float(str(max_commute).replace(",", ".")))
+        max_commute_value = max_commute_value if 5 <= max_commute_value <= 240 else 0
+    except (TypeError, ValueError):
+        max_commute_value = 0
+    max_commute = str(max_commute_value) if max_commute_value else ""
+    max_transfers = str(max_transfers) if str(max_transfers) in {"0", "1", "2"} else ""
+    max_transfers_value = int(max_transfers) if max_transfers != "" else None
     profile = str(profile or "").strip()[:80]
     home = settings_store.get_home()
     if not sort:
         sort = "distance" if home else "published"
+    if not home:
+        radius = ""
+        max_commute = ""
+        max_commute_value = 0
+        max_transfers = ""
+        max_transfers_value = None
+        if sort in {"distance", "commute"}:
+            sort = "published"
+    import datetime as _dtm
+    now = utcnow()
+    revisit_cutoff = now - _dtm.timedelta(days=revisit_days) if revisit_days else None
+    listing_fresh_cutoff = now - _dtm.timedelta(days=REVISIT_LISTING_FRESH_DAYS)
     with get_session() as s:
         stmt = select(Job)
         source_key = source if source in JOB_SOURCE_LABELS else ""
@@ -3630,7 +3787,15 @@ def index(
             excluded_statuses = ["closed", "hidden"]
             stmt = stmt.where(Job.status.not_in(excluded_statuses))
             if not show_applied:
-                stmt = stmt.where(Job.applied_at.is_(None))
+                active_or_unsubmitted = Job.applied_at.is_(None)
+                if revisit_cutoff is not None and period == "all":
+                    resurfaced = (
+                        (Job.applied_at <= revisit_cutoff)
+                        & (Job.last_seen >= listing_fresh_cutoff)
+                        & Job.status.in_(REVISITABLE_APPLICATION_STATUSES)
+                    )
+                    active_or_unsubmitted = active_or_unsubmitted | resurfaced
+                stmt = stmt.where(active_or_unsubmitted)
         elif status == "applied":
             # «Поданные» — это весь путь заявки, а не только начальный этап.
             stmt = stmt.where(Job.applied_at.is_not(None))
@@ -3640,7 +3805,6 @@ def index(
             day_start, day_end = applications._local_day_utc_bounds()
             stmt = stmt.where(Job.first_seen >= day_start, Job.first_seen < day_end)
         elif period == "3d":
-            import datetime as _dtm
             stmt = stmt.where(Job.first_seen >= utcnow() - _dtm.timedelta(days=3))
         city_lookup = labels.city_query(city)
         city_terms = labels.city_terms(city)
@@ -3727,41 +3891,12 @@ def index(
         ).one()
         last = s.exec(select(func.max(Job.last_seen))).one()
 
-    # расстояние от дома (если задан) + сортировка по близости
+    # Расстояние и реальный маршрут считаются в правильном порядке: сначала
+    # дешёвый радиус по прямой, затем маршруты только для оставшейся выдачи.
     distances = {}
     trips = {}          # id -> {"minutes","transfers","modes"} из кэша маршрутов
     route_state = {}    # id -> "pending" | "none": почему бейджа времени ещё нет
-    if home:
-        tcache = transit.snapshot()
-        need_route = []
-        for j in jobs:
-            if j.lat is None or j.lon is None:
-                continue
-            res = transit.from_snapshot(tcache, home["lat"], home["lon"], j.lat, j.lon)
-            if res and res.get("ok"):
-                trips[j.id] = {
-                    "minutes": int(res.get("minutes") or 0),
-                    "transfers": int(res.get("transfers") or 0),
-                    "modes": ", ".join(str(m) for m in (res.get("modes") or [])[:3] if m),
-                    # виды транспорта (bus/train/metro/…) — иконки в бейдже
-                    "kinds": transit.kinds_of(res)[:3],
-                }
-            elif res is None:
-                # Маршрут ещё не считали. Пустое место на карточке читалось как
-                # «сюда не доехать», хотя очередь просто до неё не дошла.
-                route_state[j.id] = "pending"
-                need_route.append(j)
-            else:
-                # Transitous ответил «маршрута нет» — это ответ, а не ожидание.
-                route_state[j.id] = "none"
-        # то, что человек открыл, считаем первым — иначе время в пути появлялось
-        # бы у случайных вакансий, а не у тех, на которые он смотрит
-        if need_route:
-            try:
-                import transit_worker
-                transit_worker.request(need_route[:60])
-            except Exception:  # noqa: BLE001 — очередь маршрутов не критична
-                pass
+    route_filter_stats = {"active": False, "pending": 0, "unavailable": 0}
     if home:
         for j in jobs:
             if j.lat is not None and j.lon is not None:
@@ -3775,8 +3910,75 @@ def index(
             radius_km = 0
         if radius_km > 0:
             jobs = [j for j in jobs if j.id in distances and distances[j.id] <= radius_km]
+
+        tcache = transit.snapshot()
+        need_route = []
+        for j in jobs:
+            if j.lat is None or j.lon is None:
+                # Без координат маршрут нельзя даже поставить в очередь.
+                route_state[j.id] = "none"
+                continue
+            res = transit.from_snapshot(tcache, home["lat"], home["lon"], j.lat, j.lon)
+            if res and res.get("ok"):
+                trips[j.id] = {
+                    "minutes": int(res.get("minutes") or 0),
+                    "transfers": int(res.get("transfers") or 0),
+                    "modes": ", ".join(str(m) for m in (res.get("modes") or [])[:3] if m),
+                    # виды транспорта (bus/train/metro/…) — иконки в бейдже
+                    "kinds": transit.kinds_of(res)[:3],
+                }
+            elif res is None:
+                route_state[j.id] = "pending"
+                need_route.append(j)
+            else:
+                route_state[j.id] = "none"
+
+        # Сначала считаем ближайшие из уже отфильтрованной выдачи. Так лимит
+        # «до 30 минут» наполняется полезными результатами, а не случайными.
+        need_route.sort(key=lambda j: distances.get(j.id, float("inf")))
+        if need_route:
+            try:
+                import transit_worker
+                transit_worker.request(need_route[:60])
+            except Exception:  # noqa: BLE001 — очередь маршрутов не критична
+                pass
+
+        route_filter_active = bool(max_commute_value or max_transfers_value is not None)
+        route_filter_stats = {
+            "active": route_filter_active,
+            "pending": sum(1 for j in jobs if route_state.get(j.id) == "pending"),
+            "unavailable": sum(1 for j in jobs if route_state.get(j.id) == "none"),
+        }
+        if route_filter_active:
+            jobs = [
+                j for j in jobs
+                if _route_matches(trips.get(j.id), max_commute_value, max_transfers_value)
+            ]
         if sort == "distance":
             jobs.sort(key=lambda j: distances.get(j.id, float("inf")))
+        elif sort == "commute":
+            jobs.sort(key=lambda j: (
+                trips.get(j.id, {}).get("minutes", float("inf")),
+                trips.get(j.id, {}).get("transfers", float("inf")),
+                distances.get(j.id, float("inf")),
+            ))
+
+    revisited_applied = {}
+    if status == "active" and revisit_cutoff is not None:
+        for j in jobs:
+            if (
+                j.applied_at is not None
+                and j.applied_at <= revisit_cutoff
+                and j.last_seen is not None
+                and j.last_seen >= listing_fresh_cutoff
+                and j.status in REVISITABLE_APPLICATION_STATUSES
+            ):
+                revisited_applied[j.id] = {
+                    "days": _applied_age_days(j.applied_at, now) or revisit_days,
+                }
+    # Сортировку расстояния/времени не ломаем, но даём прямой доступ к редким
+    # возвратам над результатами — иначе карточка могла оказаться на дальней странице.
+    revisited_preview = [j for j in jobs if j.id in revisited_applied][:3]
 
     # --- группировка по магазину (адрес) ---
     groups = []
@@ -3788,11 +3990,13 @@ def index(
                 bucket[key] = {
                     "brand": j.brand, "street": j.street, "zip": j.zip, "city": j.city,
                     "region": j.region, "country": j.country, "dist": distances.get(j.id),
-                    "first": j, "jobs": [],
+                    "trip": trips.get(j.id), "first": j, "jobs": [], "revisited_count": 0,
                 }
                 order.append(key)
             g = bucket[key]
             g["jobs"].append(j)
+            if j.id in revisited_applied:
+                g["revisited_count"] += 1
             d = distances.get(j.id)
             if d is not None and (g["dist"] is None or d < g["dist"]):
                 g["dist"] = d
@@ -3855,6 +4059,9 @@ def index(
         "status": status,
         "sort": sort,
         "radius": radius,
+        "max_commute": max_commute,
+        "max_transfers": max_transfers,
+        "revisit": revisit,
         "group": group,
         "show_applied": show_applied,
         "period": period,
@@ -3908,6 +4115,18 @@ def index(
         ),
         "job_level": ("Уровень", labels.bi(labels.LEVEL, level_code) if level_code else ""),
         "radius": ("Радиус", f"{radius} км" if radius else ""),
+        "max_commute": ("В пути", f"до {max_commute} мин" if max_commute else ""),
+        "max_transfers": (
+            "Пересадки",
+            ("без пересадок" if max_transfers == "0" else f"не больше {max_transfers}")
+            if max_transfers != "" else "",
+        ),
+        "revisit": (
+            "Старые отклики",
+            "не возвращать" if revisit == "off" else (
+                f"возвращать через {revisit} дней" if revisit != str(DEFAULT_REVISIT_DAYS) else ""
+            ),
+        ),
         "group": ("Вид", "По магазинам" if group else ""),
         "show_applied": ("Поданные", "Показывать в активных" if show_applied else ""),
         "status": (
@@ -3979,7 +4198,10 @@ def index(
         "sync_running": _sync_state["running"],
         "sync_error": _sync_state["last_error"],
         "home": home, "distances": distances, "trips": trips,
-        "route_state": route_state, "geoerror": geoerror,
+        "route_state": route_state, "route_filter_stats": route_filter_stats,
+        "revisited_applied": revisited_applied, "revisit_days": revisit_days,
+        "revisited_preview": revisited_preview,
+        "geoerror": geoerror,
         "presets": _preset_views,
         "active_preset": _active_preset,
         "active_profile_modified": _active_profile_modified,
@@ -4733,7 +4955,7 @@ def autopilot_mini(request: Request):
     return templates.TemplateResponse("autopilot_mini.html", {"request": request})
 
 
-# ── Журнал аудита подач (read-only): что и когда отправлено под именем ──────
+# ── Центр откликов: факты подачи, этапы, ожидание и следующие действия ──────
 _RU_MONTHS_GEN = [
     "", "января", "февраля", "марта", "апреля", "мая", "июня",
     "июля", "августа", "сентября", "октября", "ноября", "декабря",
@@ -4783,6 +5005,120 @@ def _applied_proofs() -> dict:
     return proofs
 
 
+_APPLICATION_CENTER_FILTERS = {
+    "active", "action", "waiting", "interview", "offer",
+    "rejected", "no_response", "all",
+}
+
+
+def _application_center_counts(entries: list[dict]) -> dict:
+    """Counters shown in the application-center summary and filter tabs."""
+    def submitted(status: str) -> int:
+        return sum(
+            row.get("activity") == "submitted" and row.get("status") == status
+            for row in entries
+        )
+
+    incomplete = sum(row.get("activity") != "submitted" for row in entries)
+    waiting = submitted("applied")
+    interview = submitted("interview")
+    offer = submitted("offer")
+    rejected = submitted("rejected")
+    no_response = submitted("no_response")
+    action = sum(
+        row.get("activity") != "submitted"
+        or bool((row.get("tracker") or {}).get("action_required"))
+        for row in entries
+    )
+    return {
+        "all": len(entries),
+        "active": len(entries) - rejected - no_response,
+        "waiting": waiting,
+        "action": action,
+        "interview": interview,
+        "offer": offer,
+        "rejected": rejected,
+        "no_response": no_response,
+        "incomplete": incomplete,
+    }
+
+
+def _application_center_filter(entries: list[dict], selected: str) -> list[dict]:
+    selected = selected if selected in _APPLICATION_CENTER_FILTERS else "active"
+    if selected == "all":
+        result = list(entries)
+    elif selected == "active":
+        result = [
+            row for row in entries
+            if row.get("activity") != "submitted"
+            or row.get("status") not in ("rejected", "no_response")
+        ]
+    elif selected == "action":
+        result = [
+            row for row in entries
+            if row.get("activity") != "submitted"
+            or bool((row.get("tracker") or {}).get("action_required"))
+        ]
+    else:
+        wanted_status = "applied" if selected == "waiting" else selected
+        result = [
+            row for row in entries
+            if row.get("activity") == "submitted" and row.get("status") == wanted_status
+        ]
+    if selected == "action":
+        result.sort(
+            key=lambda row: (
+                int((row.get("tracker") or {}).get("urgency") or 0),
+                row.get("applied_at") or utcnow(),
+            ),
+            reverse=True,
+        )
+    return result
+
+
+def _application_monitor_view(source: str) -> dict:
+    """One honest UI payload for a candidate portal, including degraded states."""
+    monitor = salling_monitor if source == "salling" else lidl_monitor
+    data = dict(monitor.view())
+    if data.get("busy") or data.get("phase") in ("checking", "connecting"):
+        tone, headline = "syncing", "Синхронизация идёт"
+    elif data.get("last_error"):
+        tone, headline = "warning", "Последняя проверка не удалась"
+    elif data.get("enabled") and data.get("connected"):
+        tone, headline = "ok", "Кабинет подключён"
+    elif data.get("connected"):
+        tone, headline = "muted", "Автопроверка выключена"
+    else:
+        tone, headline = "muted", "Кабинет не подключён"
+    data.update({
+        "source": source,
+        "name": "Salling" if source == "salling" else "Lidl",
+        "tone": tone,
+        "headline": headline,
+        "settings_url": "/settings/salling" if source == "salling" else "/settings/lidl",
+    })
+    return data
+
+
+def _portal_snapshot(job: Job, portal_states: dict[str, dict]) -> dict:
+    state = portal_states.get(job.source) or {}
+    applications_map = state.get("applications") or {}
+    candidates = (
+        str(job.id),
+        f"req:{job.requisition_id}" if job.requisition_id else "",
+        str(job.requisition_id or ""),
+    )
+    for key in candidates:
+        item = applications_map.get(key) if key else None
+        if isinstance(item, dict):
+            return {
+                "status": str(item.get("status") or ""),
+                "label": str(item.get("status_label") or ""),
+                "raw": str(item.get("portal_status") or ""),
+            }
+    return {}
+
+
 @app.get("/applied-proof/{name}")
 def applied_proof(name: str):
     """Отдаёт скрин-доказательство подачи из logs/applied. Только просмотр;
@@ -4797,16 +5133,21 @@ def applied_proof(name: str):
 
 @app.get("/audit", response_class=HTMLResponse)
 def audit_log(request: Request):
-    """Submitted jobs plus unfinished assisted connector forms. Read-only."""
+    """Application center: sourced stages, silence, next actions and proofs."""
     from db import utcnow
     proofs = _applied_proofs()
+    now = utcnow()
+    portal_states = {
+        "salling": salling_monitor.load_state(),
+        "lidl": lidl_monitor.load_state(),
+    }
     with get_session() as s:
         rows = s.exec(
             select(Job).where(Job.applied_at.is_not(None)).order_by(Job.applied_at.desc())
         ).all()
         entries = []
         for j in rows:
-            tracker = application_tracker.view(j)
+            tracker = application_tracker.view(j, now=now)
             entries.append({
                 "id": j.id, "title": j.title, "city": j.city, "brand": j.brand,
                 "status": j.status, "applied_at": j.applied_at,
@@ -4814,6 +5155,7 @@ def audit_log(request: Request):
                 "source": j.source, "activity": "submitted",
                 "proof": proofs.get(str(j.requisition_id or "")) or proofs.get(str(j.id)) or "",
                 "tracker": tracker,
+                "portal": _portal_snapshot(j, portal_states),
             })
         pending = s.exec(select(Application).where(
             Application.source != "salling",
@@ -4835,15 +5177,79 @@ def audit_log(request: Request):
                 "source": application.source,
                 "activity": "preparing" if application.state == "submitting" else "incomplete",
                 "proof": "",
-                "tracker": {},
+                "portal": {},
+                "tracker": {
+                    "label": "Анкета открыта" if application.state == "submitting" else "Не завершено",
+                    "signal": "Нужен твой ответ",
+                    "action_label": "Продолжить анкету" if application.state == "submitting" else "Проверить и повторить",
+                    "action": (
+                        "Закончи обязательные поля и сам подтверди финальную отправку."
+                        if application.state == "submitting" else
+                        "Заявка не подтверждена работодателем. Открой карточку, проверь причину и продолжи с места остановки."
+                    ),
+                    "action_required": True,
+                    "urgency": 4,
+                    "progress": 0,
+                    "terminal": False,
+                    "confirmation_label": "Ещё не подано",
+                    "confirmation_tone": "warning",
+                    "age_days": 0,
+                    "age_label": "",
+                    "source_label": "",
+                },
             })
         entries.sort(key=lambda row: row.get("applied_at") or utcnow(), reverse=True)
+    selected = str(request.query_params.get("view") or "active")
+    if selected not in _APPLICATION_CENTER_FILTERS:
+        selected = "active"
+    counts = _application_center_counts(entries)
+    visible_entries = _application_center_filter(entries, selected)
+    monitor_views = [
+        _application_monitor_view("salling"),
+        _application_monitor_view("lidl"),
+    ]
     return templates.TemplateResponse("audit.html", {
         "request": request,
-        "groups": _audit_groups(entries, utcnow()),
+        "groups": _audit_groups(visible_entries, now),
+        "entries": visible_entries,
         "total": len(entries),
+        "visible_total": len(visible_entries),
+        "counts": counts,
+        "selected_view": selected,
+        "monitors": monitor_views,
+        "monitor_busy": any(
+            item.get("busy") or item.get("phase") in ("checking", "connecting")
+            for item in monitor_views
+        ),
         "source_labels": JOB_SOURCE_LABELS,
     })
+
+
+@app.post("/audit/sync/{source}")
+def audit_sync_portal(source: str):
+    """Start a portal refresh while keeping the user in the application center."""
+    target = "/audit"
+    if source == "salling":
+        state = salling_monitor.load_state()
+        if not state.get("enabled"):
+            credentials = credentials_store.status()
+            if not credentials.get("email") or not credentials.get("has_password"):
+                return RedirectResponse(_url_with_system_response(
+                    target, error="Сначала сохрани вход Salling в настройках кабинета."
+                ), status_code=303)
+            salling_monitor.set_enabled(True)
+        launched = _launch_salling_monitor_worker("check")
+        message = "Проверяю официальный кабинет Salling в фоне." if launched else "Проверка Salling уже идёт или окно подачи сейчас занято."
+    elif source == "lidl":
+        if not lidl_monitor.load_state().get("connected"):
+            return RedirectResponse(_url_with_system_response(
+                target, error="Сначала подключи кандидатский кабинет Lidl в настройках."
+            ), status_code=303)
+        launched = _launch_lidl_monitor_worker("check")
+        message = "Проверяю официальный кабинет Lidl в фоне." if launched else "Проверка Lidl уже идёт или кабинет сейчас занят."
+    else:
+        raise HTTPException(status_code=404)
+    return RedirectResponse(_url_with_system_response(target, notice=message), status_code=303)
 
 
 @app.get("/help", response_class=HTMLResponse)
@@ -5191,7 +5597,7 @@ SETTINGS_SECTIONS = [
     {"key": "account", "title": "Аккаунт", "icon": "send", "url": "/account",
      "desc": "Вход через Telegram, данные в облаке и подписка."},
     {"key": "salling", "title": "Salling", "icon": "cart", "url": "/settings/salling",
-     "desc": "Вход в Salling Group и сброс сохранённой сессии."},
+     "desc": "Вход, кандидатский профиль и отслеживание заявок Salling Group."},
     {"key": "lidl", "title": "Lidl", "icon": "store", "url": "/settings/lidl",
      "desc": "Вход в кандидатский кабинет, отслеживание заявок и ответы на анкету Lidl."},
     {"key": "documents", "title": "Документы", "icon": "file", "url": "/settings/documents",
@@ -5267,9 +5673,15 @@ def _settings_context(
                 Job.applied_at.is_not(None),
             ).order_by(Job.applied_at.desc())
         ).all()
+        salling_applied_count = len(session.exec(
+            select(Job).where(
+                Job.source == "salling",
+                Job.applied_at.is_not(None),
+            )
+        ).all())
     lidl_latest_job = lidl_applied_jobs[0] if lidl_applied_jobs else None
     titles = {
-        "salling": ("Salling", "Логин, домашний адрес и управление сохранённой сессией"),
+        "salling": ("Salling", "Логин, кандидатский профиль и отслеживание заявок"),
         "lidl": ("Lidl", "Вход в кандидатский кабинет и автоматическое отслеживание заявок"),
         "documents": ("Документы", "CV и мотивационные письма для брендов и отдельных магазинов"),
         "autopilot": ("Автопилот", "Наборы фильтров, режим работы и автоотправка"),
@@ -5283,6 +5695,8 @@ def _settings_context(
         "profile": profile, "file_info": _profile_file_info(profile),
         "citizenship_options": profile_store.CITIZENSHIP_OPTIONS,
         "creds": credentials_store.status(), "home": settings_store.get_home(),
+        "salling_monitor": salling_monitor.view(),
+        "salling_applied_count": salling_applied_count,
         "lidl_credentials": lidl_credentials_store.status(profile.get("email") or ""),
         "lidl_monitor": lidl_monitor.view(),
         "lidl_applied_count": len(lidl_applied_jobs),
@@ -5365,6 +5779,64 @@ def settings_page(request: Request, saved: str = "", geoerror: str = "", missing
 @app.get("/settings/salling", response_class=HTMLResponse)
 def settings_salling(request: Request, saved: str = "", geoerror: str = "", missing: str = ""):
     return _render_settings_section(request, "salling", saved=saved, geoerror=geoerror, missing=missing)
+
+
+@app.post("/settings/salling-monitor/connect")
+def settings_salling_monitor_connect():
+    target = "/settings/salling"
+    credentials = credentials_store.status()
+    if not credentials.get("email") or not credentials.get("has_password"):
+        return RedirectResponse(_url_with_system_response(
+            target, error="Сначала сохрани email и пароль кандидатского кабинета Salling."
+        ), status_code=303)
+    salling_monitor.set_enabled(True)
+    launched = _launch_salling_monitor_worker("check")
+    message = (
+        "Подключаю кабинет Salling и читаю Søgte stillinger в фоне."
+        if launched else "Проверка уже идёт или сейчас открыто окно подачи Salling."
+    )
+    return RedirectResponse(_url_with_system_response(target, notice=message), status_code=303)
+
+
+@app.post("/settings/salling-monitor/login")
+def settings_salling_monitor_login():
+    target = "/settings/salling"
+    salling_monitor.set_enabled(True)
+    launched = _launch_salling_monitor_worker("login")
+    return RedirectResponse(_url_with_system_response(
+        target,
+        notice=(
+            "Открываю кандидатский кабинет Salling. Заверши вход в появившемся окне."
+            if launched else "Окно кабинета уже открыто или монитор сейчас занят."
+        ),
+    ), status_code=303)
+
+
+@app.post("/settings/salling-monitor/check")
+def settings_salling_monitor_check():
+    target = "/settings/salling"
+    state = salling_monitor.load_state()
+    if not state.get("enabled"):
+        return RedirectResponse(_url_with_system_response(
+            target, error="Сначала включи отслеживание кабинета Salling."
+        ), status_code=303)
+    launched = _launch_salling_monitor_worker("check")
+    return RedirectResponse(_url_with_system_response(
+        target,
+        notice=(
+            "Проверяю Søgte stillinger в фоне."
+            if launched else "Проверка уже идёт или сейчас открыто окно подачи Salling."
+        ),
+    ), status_code=303)
+
+
+@app.post("/settings/salling-monitor/disable")
+def settings_salling_monitor_disable():
+    salling_monitor.set_enabled(False)
+    return RedirectResponse(_url_with_system_response(
+        "/settings/salling",
+        notice="Автоматическая проверка Salling выключена. Сохранённый вход не удалён.",
+    ), status_code=303)
 
 
 @app.get("/settings/lidl", response_class=HTMLResponse)

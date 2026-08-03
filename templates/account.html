@@ -1302,6 +1302,20 @@
             <input type="text" name="lidl_referral_name" data-company-answer placeholder="Пусто, если никто не рекомендовал"></div>
           <div class="field"><label class="lbl">Где и когда раньше работал(а) в Lidl</label>
             <input type="text" name="lidl_previous_employment" data-company-answer placeholder="Пусто, если не работал(а)" data-ai-writing data-recommended-language="da"></div>
+          <div class="field"><label class="lbl">Как тебе подходит указанный неполный график Lidl?</label>
+            <textarea name="lidl_part_time_availability" rows="3" data-company-answer
+                      placeholder="Ответ для вопросов вроде «7 часов в неделю — как тебе подходит?»"
+                      data-ai-writing data-recommended-language="da"></textarea>
+            <div class="wf-quick-options">
+              <button type="button" class="wf-quick-option"
+                      data-fill-target="lidl_part_time_availability"
+                      data-fill-value="Den angivne ugentlige arbejdstid passer mig godt, og jeg er fleksibel i forhold til ekstravagter efter aftale.">Подходит + готов(а) к доп. сменам</button>
+              <button type="button" class="wf-quick-option"
+                      data-fill-target="lidl_part_time_availability"
+                      data-fill-value="Den angivne ugentlige arbejdstid passer mig godt.">Подходит</button>
+            </div>
+            <p class="wf-field-note">Сохраняется только для Lidl. Выбери готовую фразу лишь если она правдива — WexFlow сам ответ не придумывает.</p>
+          </div>
           <div class="field">
             <label class="lbl">Как узнал(а) о вакансии Lidl?</label>
             <select name="lidl_discovery" data-company-answer data-searchable="true"

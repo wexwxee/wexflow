@@ -282,9 +282,11 @@
   .card.job-status-new { --state-line:var(--accent); --state-bg:rgba(30,215,96,.075); }
   .card.job-status-seen { --state-line:var(--info-line); --state-bg:rgba(125,211,252,.052); }
   .card.job-status-applied { --state-line:#a78bfa; --state-bg:rgba(167,139,250,.11); border-color:rgba(167,139,250,.38); }
+  .card.job-revisited { --state-line:#f59e0b; --state-bg:rgba(245,158,11,.095); border-color:rgba(245,158,11,.36); }
   html[data-theme="light"] .card.job-status-new { --state-bg:rgba(13,159,110,.055); }
   html[data-theme="light"] .card.job-status-seen { --state-bg:rgba(29,78,216,.045); }
   html[data-theme="light"] .card.job-status-applied { --state-line:#7c3aed; --state-bg:rgba(124,58,237,.075); border-color:rgba(124,58,237,.26); }
+  html[data-theme="light"] .card.job-revisited { --state-line:#b45309; --state-bg:rgba(245,158,11,.08); border-color:rgba(180,83,9,.27); }
   .card:hover { border-color:var(--hover-line); transform:translateY(-1px); box-shadow:var(--shadow-sm); }
   .card h3 { margin:4px 0 2px; font-size:15.5px; line-height:1.3; color:var(--txt-strong); }
   .badges { display:flex; gap:6px; flex-wrap:wrap; padding-right:32px; }
@@ -824,8 +826,10 @@
 </script>
 {% endif %}
 {% if geoerror %}<div class="notice-line" style="color:var(--err-txt);background:var(--err-bg);">Не удалось распознать адрес — попробуй точнее (например: «M.P. Bruuns Gade 55, Aarhus» или индекс «8000»).</div>{% endif %}
-{% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — сортировка/радиус по расстоянию доступны. <a href="/settings/salling#home">изменить</a></div>
+{% if home %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('home') }} Дом: {{ home.address }}{% if home.lookup_address and home.lookup_address != home.address %} → {{ home.lookup_address }}{% endif %} — доступны радиус и фильтр по реальному времени в пути. <a href="/settings/salling#home">изменить</a></div>
 {% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings/salling#home">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
+{% if route_filter_stats.active and (route_filter_stats.pending or route_filter_stats.unavailable) %}<div class="notice-line" style="color:var(--info-txt);background:var(--info-bg);">{{ ic.i('clock', 13) }} Фильтр по дороге показывает только проверенные маршруты. Ещё считаются: <b>{{ route_filter_stats.pending }}</b>{% if route_filter_stats.unavailable %} · маршрут не найден: <b>{{ route_filter_stats.unavailable }}</b>{% endif %}. Ближайшие адреса уже поставлены первыми в очередь — обнови ленту через несколько минут.</div>{% endif %}
+{% if revisited_preview %}<div class="notice-line" style="color:var(--warn-txt);background:var(--warn-bg);">{{ ic.i('undo', 13) }} <b>Старый отклик снова актуален:</b>{% for old_job in revisited_preview %} <a href="/job/{{ old_job.id }}">{{ old_job.title }}</a>{% if not loop.last %} ·{% endif %}{% endfor %}{% if revisited_applied|length > revisited_preview|length %} · ещё {{ revisited_applied|length - revisited_preview|length }}{% endif %}. Повторная отправка заблокирована.</div>{% endif %}
 {% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('send', 13) }} Запущена пакетная подача на {{ batch }} вакансий ({{ 'с отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — подаётся по одной, прогресс ниже.</div>{% endif %}
 {% if skipped %}<div class="notice-line" style="color:var(--warn-txt,#b06b00);background:var(--warn-bg,rgba(255,180,0,.12));">{{ ic.i('alert', 13) }} Руководящие вакансии пропущены: {{ skipped }} — пакетная подача для них отключена ради безопасности. При необходимости открой вакансию и подай с её страницы.</div>{% endif %}
 {% if dup %}<div class="notice-line" style="color:var(--warn-txt,#b06b00);background:var(--warn-bg,rgba(255,180,0,.12));">{{ ic.i('check', 13) }} Уже поданные вакансии пропущены: {{ dup }} — повторная заявка тому же работодателю не отправится.</div>{% endif %}
@@ -917,7 +921,7 @@
   <input type="hidden" name="period" value="{{ f.period }}">
   {% if active_preset %}<input type="hidden" name="profile" value="{{ active_preset.id }}">{% endif %}
   {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Все поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа','hidden':'Скрытые','closed':'Закрытые'} %}
-  {% set sorts = {'published':'↓ по дате','distance':'по расстоянию','title':'по названию','city':'по городу'} %}
+  {% set sorts = {'published':'↓ по дате','distance':'ближе по прямой','commute':'быстрее добраться','title':'по названию','city':'по городу'} %}
   <div class="filter-quick-grid">
     <div class="field">
       <label>Поиск {{ tip('Умный поиск', 'Ищет по названию, описанию, адресу и городу. Можно писать по-русски: например кассир, пекарь, склад.') }}</label>
@@ -934,12 +938,13 @@
     </div>
     {{ custom_select('source', 'Источник', 'Все источники', sources, f.source, 'Salling работает как раньше. Teamtailor — вакансии других компаний с безопасной подготовкой формы без автоматической отправки.') }}
     <div class="filter-sort">
-      {{ custom_select('sort', 'Сначала показывать', 'по дате', sorts.items(), f.sort, 'Меняет порядок карточек. По расстоянию работает, когда задан домашний адрес.') }}
+      {{ custom_select('sort', 'Сначала показывать', 'по дате', sorts.items(), f.sort, '«Быстрее добраться» использует реальный маршрут на общественном транспорте. Непосчитанные маршруты уходят вниз, а не притворяются быстрыми.') }}
     </div>
     <button class="primary filter-apply" type="submit">{{ ic.i('search', 13) }} Показать</button>
   </div>
 
-  {% set advanced_active = [f.brand, f.region, f.category, f.employment_type, f.job_level, f.radius, f.group, f.show_applied] | select | list | length %}
+  {% set advanced_active = [f.brand, f.region, f.category, f.employment_type, f.job_level, f.radius, f.max_commute, f.max_transfers, f.group, f.show_applied] | select | list | length %}
+  {% if f.revisit != '60' %}{% set advanced_active = advanced_active + 1 %}{% endif %}
   {% if f.status not in ['', 'active', 'applied'] %}{% set advanced_active = advanced_active + 1 %}{% endif %}
   <div class="filter-tools">
     <button type="button" class="advanced-toggle {{ 'open' if advanced_active }}" id="extraToggle"
@@ -972,14 +977,26 @@
     {{ custom_select('job_level', 'Уровень', 'Любой', levels, f.job_level, 'Помогает отделить обычные позиции, under 18, менеджмент и trainee. Если не уверен, оставь Любой.') }}
     {% if home %}
     <div class="field filter-radius">
-      <label>Радиус, км {{ tip('Радиус от дома', 'Оставь пустым или ∞, чтобы не ограничивать выдачу. Расстояние считается от домашнего адреса в настройках.') }}</label>
+      <label>По прямой, км {{ tip('Грубый радиус', 'Быстро отсекает далёкие адреса, но не знает дорог, мостов и расписаний. Для точного отбора используй соседний лимит минут.') }}</label>
       <div class="num-stepper">
         <button type="button" data-step="-1" tabindex="-1">−</button>
         <input name="radius" type="number" min="0" step="1" value="{{ f.radius }}" placeholder="∞" inputmode="numeric">
         <button type="button" data-step="1" tabindex="-1">+</button>
       </div>
     </div>
+    <div class="field filter-commute">
+      <label>В пути, до минут {{ tip('Реальное время в пути', 'Строгий лимит по лучшему найденному маршруту на общественном транспорте. Пока маршрут не посчитан, вакансия не считается подходящей и ставится в очередь.') }}</label>
+      <div class="num-stepper">
+        <button type="button" data-step="-5" tabindex="-1">−</button>
+        <input name="max_commute" type="number" min="5" max="240" step="5" value="{{ f.max_commute }}" placeholder="∞" inputmode="numeric">
+        <button type="button" data-step="5" tabindex="-1">+</button>
+      </div>
+    </div>
+    {% set transfer_options = {'0':'без пересадок','1':'не больше одной','2':'не больше двух'} %}
+    {{ custom_select('max_transfers', 'Пересадки', 'Любое число', transfer_options.items(), f.max_transfers, 'Ограничивает сложность реального маршрута. Например, «без пересадок» оставит только прямой автобус, поезд или метро.') }}
     {% endif %}
+    {% set revisit_options = {'off':'не возвращать','30':'через 30 дней','60':'через 60 дней','90':'через 90 дней'} %}
+    {{ custom_select('revisit', 'Старые отклики', 'через 60 дней', revisit_options.items(), f.revisit, 'Старая поданная вакансия вернётся в «Все активные» только если работодатель всё ещё публикует её. Она будет заметно помечена, а повторная отправка останется заблокирована.') }}
     </div>
     <div class="advanced-options">
     <label class="grpchk" data-tip-title="Группировка" data-tip-body="Собирает вакансии одного магазина в одну карточку.">
@@ -1078,7 +1095,9 @@
   <div class="card group-card">
     <div class="badges">
       {% if g.brand %}{% set bc = brand_colors.get(g.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_label(g.brand) }}</span>{% endif %}
+      {% if g.trip %}<span class="badge trip">{% for kind in (g.trip.kinds or ['bus']) | unique %}{{ ic.i(kind, 11) }}{% endfor %} {{ g.trip.minutes }} мин · {% if g.trip.transfers == 0 %}без пересадок{% else %}{{ g.trip.transfers }} {{ L.plural(g.trip.transfers, 'пересадка', 'пересадки', 'пересадок') }}{% endif %}{% if g.trip.modes %} · {{ g.trip.modes }}{% endif %}</span>{% endif %}
       {% if g.dist is not none %}<span class="badge dist">≈ {{ g.dist }} км по прямой</span>{% endif %}
+      {% if g.revisited_count %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);background:var(--warn-bg);">{{ ic.i('undo', 11) }} старых откликов: {{ g.revisited_count }}</span>{% endif %}
       <span class="badge st-interview">{{ ic.i('store', 12) }} {{ g.jobs|length }} {{ L.plural(g.jobs|length, 'вакансия', 'вакансии', 'вакансий') }}</span>
     </div>
     <h3>{{ ic.i('pin') }} {{ g.street or '' }}{% if g.zip or g.city %}{{ ', ' if g.street }}{{ g.zip or '' }} {{ g.city or '' }}{% endif %}{% if g.country %}, {{ g.country }}{% endif %}</h3>
@@ -1096,7 +1115,7 @@
   {% endfor %}
   {% else %}
   {% for j in jobs %}
-  <div class="card job-status-{{ j.status }}" data-jobcard
+  <div class="card job-status-{{ j.status }}{{ ' job-revisited' if j.id in revisited_applied }}" data-jobcard
        onclick="if(!event.target.closest('.row') && !event.target.closest('.selwrap')){ const cb=this.querySelector('[data-selbox]'); if(cb){ cb.checked=!cb.checked; cb.dispatchEvent(new Event('change',{bubbles:true})); }else{ location.href='/job/{{ j.id }}'; } }"
        aria-label="Открыть вакансию {{ j.title }}" style="cursor:pointer;">
     {# Пачкой умеют подаваться Salling и Lidl: у обоих заполнитель знает форму
@@ -1120,10 +1139,11 @@
       {% set src_txt = short_sources.get(j.source, j.source) if j.source != 'salling' else '' %}
       {% if brand_txt and not (src_txt and brand_txt.lower().startswith(src_txt.lower())) %}
       {% set bc = brand_colors.get(j.brand) %}<span class="badge brand"{% if bc %} style="background:{{ bc[0] }};color:{{ bc[1] }};border-color:{{ bc[0] }};"{% endif %}>{{ brand_txt }}</span>{% endif %}
-      {% if j.id in trips %}<span class="badge trip" data-tip-title="Время в пути" data-tip-body="Реальный маршрут на общественном транспорте от домашнего адреса (посчитан и сохранён заранее). Иконки показывают, чем добираться: автобус, S-tog, метро. Расстояние по прямой бывает обманчивым: короткая линия на карте может означать долгий объезд.">{% for kind in (trips[j.id].kinds or ['bus']) | unique %}{{ ic.i(kind, 11) }}{% endfor %} {{ trips[j.id].minutes }} мин{% if trips[j.id].modes %} · {{ trips[j.id].modes }}{% endif %}</span>
+      {% if j.id in trips %}<span class="badge trip" data-tip-title="Время в пути" data-tip-body="Реальный маршрут на общественном транспорте от домашнего адреса (посчитан и сохранён заранее). Иконки показывают, чем добираться: автобус, S-tog, метро. Расстояние по прямой бывает обманчивым: короткая линия на карте может означать долгий объезд.">{% for kind in (trips[j.id].kinds or ['bus']) | unique %}{{ ic.i(kind, 11) }}{% endfor %} {{ trips[j.id].minutes }} мин · {% if trips[j.id].transfers == 0 %}без пересадок{% else %}{{ trips[j.id].transfers }} {{ L.plural(trips[j.id].transfers, 'пересадка', 'пересадки', 'пересадок') }}{% endif %}{% if trips[j.id].modes %} · {{ trips[j.id].modes }}{% endif %}</span>
       {% elif route_state.get(j.id) == 'pending' %}<span class="badge trip-wait" data-tip-title="Маршрут ещё считается" data-tip-body="Время в пути считает бесплатный сервис расписаний, и он разрешает только один запрос за раз — примерно один адрес в 12 секунд. Вакансии, которые ты сейчас видишь, WexFlow ставит в очередь первыми, так что бейдж появится через несколько минут и сохранится навсегда. Пустое место здесь не значит, что доехать нельзя.">{{ ic.i('clock', 11) }} считаю маршрут</span>
       {% elif route_state.get(j.id) == 'none' %}<span class="badge trip-none" data-tip-title="Прямого маршрута не нашлось" data-tip-body="Сервис расписаний не построил путь на общественном транспорте от твоего дома к этому адресу. Обычно это значит пересадку с большим ожиданием или место в стороне от маршрутов — проверь кнопкой «Маршрут», там доступны и машина с велосипедом.">{{ ic.i('alert', 11) }} маршрут не найден</span>{% endif %}
       {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно ПО ПРЯМОЙ от домашнего адреса — не путь. Реальное время в пути показано соседним бейджем, когда посчитано.">≈ {{ distances[j.id] }} км по прямой</span>{% endif %}
+      {% if j.id in revisited_applied %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);background:var(--warn-bg);" data-tip-title="Старая подача — вакансия снова в ленте" data-tip-body="Ты уже подавал сюда {{ revisited_applied[j.id].days }} дней назад. Вакансия всё ещё видна у работодателя, поэтому WexFlow вернул её для повторной оценки. Автоматически и случайным кликом повторная заявка не отправится.">{{ ic.i('undo', 11) }} подавал {{ revisited_applied[j.id].days }} дн. назад · снова активна</span>{% endif %}
       {% if j.status != 'new' %}<span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>{% endif %}
     </div>
     <h3>{{ j.title }}</h3>
@@ -1186,7 +1206,7 @@
 
 {% if pages > 1 %}
 {% set pparts = [] %}
-{% for k in ['q','source','city','brand','region','category','employment_type','job_level','status','sort','radius','group','show_applied','period'] %}
+{% for k in ['q','source','city','brand','region','category','employment_type','job_level','status','sort','radius','max_commute','max_transfers','revisit','group','show_applied','period'] %}
   {% if f[k] %}{% set _ = pparts.append(k ~ '=' ~ (f[k]|urlencode)) %}{% endif %}
 {% endfor %}
 {% if active_preset %}{% set _ = pparts.append('profile=' ~ (active_preset.id|urlencode)) %}{% endif %}

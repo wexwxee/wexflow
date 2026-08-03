@@ -231,6 +231,15 @@ def run_worker(mode: str, rest: list) -> None:
         import lidl_monitor
         lidl_monitor.run_check()
 
+    elif mode == "--worker-salling-monitor-login":
+        import salling_monitor
+        if salling_monitor.run_login():
+            salling_monitor.run_check()
+
+    elif mode == "--worker-salling-monitor-check":
+        import salling_monitor
+        salling_monitor.run_check()
+
     elif mode == "--worker-salling-apply":
         import apply as salling_apply
         salling_apply.main(rest)

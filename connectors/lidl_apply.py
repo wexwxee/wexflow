@@ -516,6 +516,15 @@ def fill_answers(page, profile: dict) -> dict:
             "предыдущая работа в Lidl",
         ),
         (
+            (
+                "Stillingen er på deltid",
+                "Hvordan passer det dig",
+                "The position is part-time",
+            ),
+            answers.get("lidl_part_time_availability"),
+            "подходящий неполный график Lidl",
+        ),
+        (
             "Noter venligst, hvis du lider af sygdomme",
             answers.get("relevant_health_condition"),
             "сведения о здоровье",
@@ -637,21 +646,62 @@ def required_left(page) -> list[str]:
         return page.evaluate(
             """() => {
                 const left = [];
-                document.querySelectorAll('input[aria-required="true"], .sapMInputBaseRequired input')
-                    .forEach(input => {
-                        if (input.type === 'file' || input.disabled) return;
-                        if ((input.value || '').trim()) return;
-                        const id = input.getAttribute('aria-labelledby') || '';
-                        const label = id.split(/\\s+/)
-                            .map(x => (document.getElementById(x) || {}).innerText || '')
-                            .join(' ').trim();
-                        left.push(label || input.name || 'поле без подписи');
-                    });
-                return left.slice(0, 12);
+                const labelFor = (control) => {
+                    const labelled = (control.getAttribute('aria-labelledby') || '')
+                        .split(/\\s+/).filter(Boolean)
+                        .map(x => (document.getElementById(x) || {}).innerText || '')
+                        .join(' ').trim();
+                    if (labelled) return labelled;
+                    if (control.labels && control.labels.length) {
+                        const text = [...control.labels]
+                            .map(x => x.innerText || x.textContent || '').join(' ').trim();
+                        if (text) return text;
+                    }
+                    const row = control.closest('.sapMInputBase, .sapMTextArea, .sapUiFormElement, tr');
+                    const nearby = row && row.querySelector('label, .sapMLabel');
+                    return ((nearby && (nearby.innerText || nearby.textContent))
+                        || control.name || 'поле без подписи').trim();
+                };
+                document.querySelectorAll('input, textarea, select').forEach(control => {
+                    if (control.type === 'file' || control.type === 'hidden' || control.disabled) return;
+                    const labels = control.labels ? [...control.labels] : [];
+                    const required = control.required
+                        || control.getAttribute('aria-required') === 'true'
+                        || !!control.closest('.sapMInputBaseRequired, .sapMTextAreaRequired')
+                        || labels.some(x => x.classList.contains('sapMLabelRequired'));
+                    const invalid = control.getAttribute('aria-invalid') === 'true'
+                        || !!control.closest('.sapMInputBaseError, .sapMTextAreaError, .sapMInputBaseContentWrapperError');
+                    if (!required && !invalid) return;
+                    if ((control.value || '').trim()) return;
+                    left.push(labelFor(control).replace(/\\s*\\*\\s*$/, ''));
+                });
+                return [...new Set(left)].slice(0, 12);
             }"""
         ) or []
     except Exception:
         return []
+
+
+_VALIDATION_ERROR_RE = re.compile(
+    r"(Venligst\s+udfyld\s+alle\s+påkrævede\s+felter|"
+    r"Please\s+fill\s+(?:in\s+)?all\s+required\s+fields|"
+    r"Заполните\s+все\s+обязательные\s+поля)",
+    re.I,
+)
+
+
+def post_submit_validation_errors(page) -> list[str]:
+    """Read Lidl/UI5 validation shown only after the final button is clicked."""
+    fields = required_left(page)
+    try:
+        text = page.locator(
+            '[role="dialog"], .sapMMessageBox, .sapMDialog, .sapMMessageToast'
+        ).all_inner_texts()
+    except Exception:
+        text = []
+    if any(_VALIDATION_ERROR_RE.search(str(item or "")) for item in text):
+        return fields or ["Lidl просит заполнить все обязательные поля"]
+    return fields
 
 
 _SUBMIT_TEXT_RE = re.compile(
@@ -1006,10 +1056,14 @@ def submit(page, profile: dict, wait_seconds: float = 25.0) -> dict:
                     "message": "Lidl показал квитанцию о получении заявки.",
                     "blockers": [],
                     "proof_ready": proof_ready}
+        validation = post_submit_validation_errors(page)
+        if validation:
+            message = "Lidl не принял форму: " + "; ".join(validation[:6])
+            return {"state": "blocked", "message": message, "blockers": validation}
         page.wait_for_timeout(500)
     return {
         "state": "no_receipt",
-        "message": "Кнопка нажата, но Lidl не показал квитанцию — проверь почту "
-                   "и личный кабинет, прежде чем подавать снова.",
+        "message": "Кнопка нажата, но Lidl не показал квитанцию. WexFlow проверит "
+                   "личный кабинет; не подавай повторно до результата проверки.",
         "blockers": [],
     }
