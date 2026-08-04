@@ -17,7 +17,7 @@ from urllib.parse import (parse_qsl, quote_plus, unquote, urlencode, urlparse,
                           urlsplit, urlunsplit)
 
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.exc import IntegrityError
@@ -33,6 +33,7 @@ import translator
 import translator_setup
 import html_sanitize
 import profile_store
+import candidate_passport
 import form_questions
 import document_rules
 import document_import
@@ -3200,9 +3201,11 @@ def apply_by_link(request: Request, pending: str = ""):
         profile = profile_store.load_profile()
         profile_missing = _profile_missing(profile)
         cv_ready = profile_store.file_status(profile.get("cv_path", "")) == "ok"
+        passport_summary = candidate_passport.summary(profile)
     except Exception:  # noqa: BLE001 — повреждённый профиль не должен ломать страницу
         profile_missing = [label for _key, label in PROFILE_REQUIRED]
         cv_ready = False
+        passport_summary = candidate_passport.summary({})
     counts = Counter(job.source for job in rows)
     sources = [
         {"key": key, "label": JOB_SOURCE_LABELS[key],
@@ -3216,7 +3219,86 @@ def apply_by_link(request: Request, pending: str = ""):
         "pending_state": pending_application.state if pending_application else "",
         "profile_missing": profile_missing,
         "cv_ready": cv_ready,
+        "passport": passport_summary,
     })
+
+
+def _passport_options(
+    include_contact: str,
+    include_answers: str,
+    include_sensitive: str,
+    include_cv: str,
+    include_cover_letter: str,
+) -> candidate_passport.PassportOptions:
+    enabled = {"1", "true", "yes", "on"}
+    checked = lambda value: str(value or "").strip().lower() in enabled
+    return candidate_passport.PassportOptions(
+        include_contact=checked(include_contact),
+        include_answers=checked(include_answers),
+        include_sensitive=checked(include_sensitive),
+        include_cv=checked(include_cv),
+        include_cover_letter=checked(include_cover_letter),
+    )
+
+
+@app.post("/profile/passport/text")
+def candidate_passport_text(
+    vacancy_url: str = Form(""),
+    include_contact: str = Form(""),
+    include_answers: str = Form(""),
+    include_sensitive: str = Form(""),
+    include_cv: str = Form(""),
+    include_cover_letter: str = Form(""),
+):
+    """Return one paste-ready prompt without exposing non-allow-listed fields."""
+    options = _passport_options(
+        include_contact, include_answers, include_sensitive,
+        include_cv, include_cover_letter,
+    )
+    # Clipboard contains text only.  Do not claim that ZIP-only document paths
+    # are attached to a pasted prompt; the separate download keeps the files.
+    options = candidate_passport.PassportOptions(
+        include_contact=options.include_contact,
+        include_answers=options.include_answers,
+        include_sensitive=options.include_sensitive,
+        include_cv=False,
+        include_cover_letter=False,
+    )
+    text = candidate_passport.build_copy_text(
+        profile_store.load_profile(), options, vacancy_url=vacancy_url,
+    )
+    return JSONResponse(
+        {"ok": True, "text": text},
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.post("/profile/passport/export")
+def export_candidate_passport(
+    vacancy_url: str = Form(""),
+    include_contact: str = Form(""),
+    include_answers: str = Form(""),
+    include_sensitive: str = Form(""),
+    include_cv: str = Form(""),
+    include_cover_letter: str = Form(""),
+):
+    """Download Markdown + JSON + explicitly selected documents as one ZIP."""
+    options = _passport_options(
+        include_contact, include_answers, include_sensitive,
+        include_cv, include_cover_letter,
+    )
+    bundle = candidate_passport.build_archive(
+        profile_store.load_profile(), options, vacancy_url=vacancy_url,
+    )
+    return Response(
+        content=bundle.content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{bundle.filename}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 def _normalized_apply_url(url: str) -> str:
@@ -5444,6 +5526,7 @@ def _render_account(request: Request, mode: str = "account", saved: str = "",
         "company_answer_overrides": profile_store.company_overrides(profile),
         "citizenship_options": profile_store.CITIZENSHIP_OPTIONS,
         "lidl_discovery_options": profile_store.LIDL_DISCOVERY_OPTIONS,
+        "passport": candidate_passport.summary(profile),
     })
 
 

@@ -1,0 +1,144 @@
+{% import "_icons.html" as ic %}
+
+{% macro card(passport, id_prefix='passport', compact=false, vacancy_source='') -%}
+{% set fact_count = passport.facts|default(0, true) %}
+{% set answer_count = passport.answers|default(0, true) %}
+{% set cv_ready = passport.cv_ready|default(false, true) %}
+{% set cover_ready = passport.cover_ready|default(false, true) %}
+<style>
+  .passport-card { position:relative; overflow:hidden; }
+  .passport-card::after { content:""; position:absolute; width:190px; height:190px; right:-105px; top:-110px;
+    border-radius:50%; background:radial-gradient(circle,rgba(111,78,255,.18),transparent 68%); pointer-events:none; }
+  .passport-head { display:flex; align-items:flex-start; gap:12px; position:relative; z-index:1; }
+  .passport-mark { display:grid; place-items:center; width:38px; height:38px; flex:0 0 auto;
+    border:1px solid var(--glass-line); border-radius:12px; color:var(--accent); background:var(--accent-soft); }
+  .passport-head h2 { margin:0 0 4px; font-size:17px; }
+  .passport-head p { margin:0; color:var(--muted); font-size:12.5px; line-height:1.5; }
+  .passport-stats { display:flex; flex-wrap:wrap; gap:7px; margin:14px 0; }
+  .passport-stat { padding:5px 9px; border:1px solid var(--glass-line); border-radius:999px;
+    color:var(--muted); background:var(--glass); font-size:11.5px; font-weight:700; }
+  .passport-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .passport-option { display:flex; gap:9px; align-items:flex-start; padding:10px 11px;
+    border:1px solid var(--glass-line); border-radius:10px; background:var(--glass); cursor:pointer; }
+  .passport-option:hover { border-color:var(--hover-line); }
+  .passport-option input { margin:2px 0 0; accent-color:var(--accent); }
+  .passport-option b { display:block; color:var(--txt-strong); font-size:12.5px; }
+  .passport-option small { display:block; margin-top:2px; color:var(--muted); font-size:11px; line-height:1.35; }
+  .passport-option.is-sensitive { border-color:var(--warn-line); background:var(--warn-bg); }
+  .passport-option.is-unavailable { opacity:.55; cursor:not-allowed; }
+  .passport-safety { display:flex; gap:8px; margin:12px 0 0; padding:9px 11px; color:var(--muted);
+    border-radius:10px; background:var(--card-2); font-size:11.5px; line-height:1.45; }
+  .passport-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:13px; }
+  .passport-status { min-height:16px; color:var(--muted); font-size:11.5px; }
+  .passport-status.ok { color:var(--ok-txt); }
+  .passport-status.err { color:var(--danger,#e06464); }
+  .passport-card.compact .passport-options { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  @media (max-width:760px) {
+    .passport-options, .passport-card.compact .passport-options { grid-template-columns:1fr; }
+  }
+</style>
+
+<form id="{{ id_prefix }}" class="panel passport-card {{ 'compact' if compact else '' }}" method="post"
+      action="/profile/passport/export" data-candidate-passport
+      data-text-action="/profile/passport/text" data-vacancy-source="{{ vacancy_source }}">
+  <input type="hidden" name="vacancy_url" value="">
+  <div class="passport-head">
+    <span class="passport-mark">{{ ic.i('file', 19) }}</span>
+    <div>
+      <h2>Паспорт кандидата</h2>
+      <p>{% if compact %}Если сайт не поддерживается, передай готовый профиль другому ИИ или Cowork.
+        {% else %}Один безопасный пакет, который можно передать другому ИИ для вакансий вне WexFlow. Внутри — Markdown, JSON, инструкция и выбранные документы.{% endif %}</p>
+    </div>
+  </div>
+
+  <div class="passport-stats" aria-label="Содержимое паспорта">
+    <span class="passport-stat">{{ fact_count }} {{ L.plural(fact_count, 'факт', 'факта', 'фактов') }}</span>
+    <span class="passport-stat">{{ answer_count }} {{ L.plural(answer_count, 'ответ', 'ответа', 'ответов') }}</span>
+    <span class="passport-stat">{{ ('CV готово' if cv_ready else 'CV не добавлено') }}</span>
+    {% if cover_ready %}<span class="passport-stat">Письмо готово</span>{% endif %}
+  </div>
+
+  <div class="passport-options">
+    <label class="passport-option">
+      <input type="checkbox" name="include_contact" value="1" checked>
+      <span><b>Контакты и адрес</b><small>Email, телефон, LinkedIn и адрес</small></span>
+    </label>
+    <label class="passport-option">
+      <input type="checkbox" name="include_answers" value="1" checked>
+      <span><b>Ответы для анкет</b><small>График, дата выхода, опыт и цель</small></span>
+    </label>
+    <label class="passport-option is-sensitive">
+      <input type="checkbox" name="include_sensitive" value="1">
+      <span><b>Чувствительные факты</b><small>Дата рождения, пол, гражданство, право на работу и справка</small></span>
+    </label>
+    <label class="passport-option {{ '' if cv_ready else 'is-unavailable' }}">
+      <input type="checkbox" name="include_cv" value="1" {{ 'checked' if cv_ready else 'disabled' }}>
+      <span><b>Добавить CV в ZIP</b><small>{{ 'Файл будет вложен' if cv_ready else 'Сначала добавь CV в настройках' }}</small></span>
+    </label>
+    {% if not compact or cover_ready %}
+    <label class="passport-option {{ '' if cover_ready else 'is-unavailable' }}">
+      <input type="checkbox" name="include_cover_letter" value="1" {{ 'checked' if cover_ready else 'disabled' }}>
+      <span><b>Добавить письмо в ZIP</b><small>{{ 'Файл будет вложен' if cover_ready else 'Письмо пока не добавлено' }}</small></span>
+    </label>
+    {% endif %}
+  </div>
+
+  <div class="passport-safety">{{ ic.i('lock', 14) }}<span>Пароли, Telegram, cookies, токены, медицинские сведения и согласия отдельных работодателей исключены всегда. Перед отправкой заявки внешний ИИ обязан остановиться и спросить подтверждение.</span></div>
+  <div class="passport-actions">
+    <button class="primary" type="button" data-passport-copy>{{ ic.i('copy', 14) }} Скопировать для ИИ</button>
+    <button type="submit">{{ ic.i('save', 14) }} Скачать ZIP</button>
+    {% if not compact and not cv_ready %}<a class="crosslink" href="/settings/salling#documents">Добавить CV →</a>{% endif %}
+    <span class="passport-status" data-passport-status aria-live="polite"></span>
+  </div>
+</form>
+
+<script>
+(() => {
+  const forms = document.querySelectorAll('[data-candidate-passport]');
+  const form = forms[forms.length - 1];
+  if (!form || form.dataset.ready === '1') return;
+  form.dataset.ready = '1';
+  const status = form.querySelector('[data-passport-status]');
+  const vacancy = form.querySelector('[name="vacancy_url"]');
+  const sourceSelector = form.dataset.vacancySource;
+  function syncVacancy() {
+    if (!sourceSelector || !vacancy) return;
+    const source = document.querySelector(sourceSelector);
+    vacancy.value = source ? source.value.trim() : '';
+  }
+  function setStatus(message, kind='') {
+    status.textContent = message || '';
+    status.className = 'passport-status' + (kind ? ' ' + kind : '');
+  }
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const area = document.createElement('textarea');
+    area.value = text; area.setAttribute('readonly', '');
+    area.style.position = 'fixed'; area.style.opacity = '0';
+    document.body.appendChild(area); area.select();
+    const ok = document.execCommand('copy'); area.remove();
+    if (!ok) throw new Error('copy failed');
+  }
+  form.querySelector('[data-passport-copy]').addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    syncVacancy(); button.disabled = true; setStatus('Готовлю текст…');
+    try {
+      const response = await fetch(form.dataset.textAction, { method:'POST', body:new FormData(form) });
+      const data = await response.json();
+      if (!response.ok || !data.ok || !data.text) throw new Error(data.error || 'export failed');
+      await copyText(data.text);
+      setStatus('Готово — вставь текст в чат с ИИ', 'ok');
+    } catch (error) {
+      setStatus('Не удалось скопировать. Попробуй скачать ZIP.', 'err');
+    } finally { button.disabled = false; }
+  });
+  form.addEventListener('submit', () => {
+    syncVacancy(); setStatus('Готовлю ZIP…');
+    window.setTimeout(() => setStatus('ZIP передан в загрузки', 'ok'), 1200);
+  });
+})();
+</script>
+{%- endmacro %}

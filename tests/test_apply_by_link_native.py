@@ -46,6 +46,8 @@ def test_native_page_uses_shared_shell_and_vetted_counts():
     assert "127.0.0.1:8078" not in page
     assert "показаны первые" not in page  # old arbitrary card cap is gone
     assert "Осталось заполнить 8 полей" in page
+    assert "Паспорт кандидата" in page
+    assert "/profile/passport/export" in page
 
 
 def test_link_start_rejects_local_file_and_accepts_https():

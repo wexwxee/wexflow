@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
+{% import "_candidate_passport.html" as cp %}
 
 {% block title %}WexFlow · Аккаунт{% endblock %}
 
@@ -998,6 +999,8 @@
 
     <div class="actions" style="margin-top:16px;"><span id="autosaveStatus" class="autosave">{{ ic.i('check', 13) }} Изменения сохраняются автоматически</span></div>
   </form>
+
+  {% if passport is defined %}{{ cp.card(passport, 'profile-passport') }}{% endif %}
 
   <!-- Домашний адрес: общий для всех источников, поэтому живёт здесь,
        а не внутри раздела конкретного работодателя. -->

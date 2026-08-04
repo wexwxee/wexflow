@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_icons.html" as ic %}
 {% import "_ui.html" as ui %}
+{% import "_candidate_passport.html" as cp %}
 
 {% block title %}WexFlow · Подача по ссылке{% endblock %}
 
@@ -104,11 +105,13 @@
       {% elif not cv_ready %}<a class="ready-link" href="/settings/salling#documents">Добавить CV →</a>{% endif %}
     </div>
     <form class="link-form" method="post" action="/apply-by-link/start">
-      <input name="url" type="url" required autocomplete="off" placeholder="https://company.teamtailor.com/jobs/…" aria-label="Ссылка на вакансию">
+      <input id="applyByLinkUrl" name="url" type="url" required autocomplete="off" placeholder="https://company.teamtailor.com/jobs/…" aria-label="Ссылка на вакансию">
       <button class="primary" type="submit">{{ ic.i('send', 14) }} Подготовить форму</button>
     </form>
     <p class="link-note">Поддерживаются Lidl EasyApply, Teamtailor, Greenhouse, Ashby, Lever, Recruitee и Workable. Для неизвестных форм WexFlow попробует универсальное заполнение.</p>
   </div>
+
+  {{ cp.card(passport, 'link-passport', true, '#applyByLinkUrl') }}
 
   <h2 class="link-section-title">Как это работает</h2>
   <div class="link-steps">
