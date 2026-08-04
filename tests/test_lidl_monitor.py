@@ -195,15 +195,16 @@ def test_dead_monitor_lock_is_removed_immediately():
         assert not lidl_monitor.LOCK_PATH.exists()
 
 
-def test_windowed_python_systemerror_does_not_break_live_lock_check():
+def test_windows_live_lock_check_never_calls_os_kill():
     with tempfile.TemporaryDirectory() as tmp, \
             mock.patch.object(lidl_monitor, "LOCK_PATH", Path(tmp) / "monitor.lock"), \
             mock.patch.object(lidl_monitor.os, "name", "nt"), \
-            mock.patch.object(lidl_monitor.os, "kill", side_effect=SystemError("WinError 6")), \
+            mock.patch.object(lidl_monitor.os, "kill") as kill, \
             mock.patch("ctypes.WinDLL") as win_dll:
         win_dll.return_value.OpenProcess.return_value = 123
         lidl_monitor.LOCK_PATH.write_text(f"{os.getpid()} 2026-08-04", encoding="utf-8")
         assert lidl_monitor.is_busy() is True
+        kill.assert_not_called()
         win_dll.return_value.CloseHandle.assert_called_once_with(123)
 
 
