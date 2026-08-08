@@ -47,6 +47,17 @@ class Job(SQLModel, table=True):
     requisition_id: Optional[str] = None
 
     status: str = "new"                          # new | seen | applied | closed | hidden
+    # Подойдёт ли человеку без датского языка и без датского диплома (шаг 2
+    # пересмотра 08.08.2026). Считает relevance.py: ok | danish | diploma |
+    # unclear. None — ещё не оценивали. fit_engine говорит, чем получен вердикт
+    # («rules» — цитата из текста вакансии, «ai:модель» — мнение ИИ о роли),
+    # fit_hash — отпечаток текста, по которому судили: пока он тот же,
+    # пересчитывать нечего.
+    fit: Optional[str] = None
+    fit_reason: Optional[str] = None
+    fit_engine: Optional[str] = None
+    fit_hash: Optional[str] = None
+    fit_at: Optional[datetime] = None
     first_seen: datetime = Field(default_factory=utcnow)
     last_seen: datetime = Field(default_factory=utcnow)
     applied_at: Optional[datetime] = None
@@ -89,6 +100,25 @@ class Application(SQLModel, table=True):
     confidence: Optional[str] = None       # receipt | indirect | manual (для submitted)
     offered_at: Optional[datetime] = None  # когда карточку предлагали (гейт F27)
     submitted_at: Optional[datetime] = None
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class RoleVerdict(SQLModel, table=True):
+    """Вердикт «подойдёт ли без датского» для РОЛИ, а не для вакансии.
+
+    В базе 2549 открытых датских вакансий, но всего ~900 разных ролей:
+    «butiksassistent under 18 år» повторяется 191 раз. Спрашивать ИИ про каждую
+    вакансию — деньги на ветер, поэтому судим роль один раз и раздаём ответ
+    всем её вакансиям (relevance.py). Ключ — хэш «источник + категория +
+    название без города».
+    """
+    key: str = Field(primary_key=True)
+    source: str = ""
+    category: str = ""
+    role: str = ""                          # название без города, для человека
+    verdict: str = "unclear"                # ok | danish | diploma | unclear
+    reason: str = ""                        # короткая причина по-русски
+    engine: str = ""                        # ai:<модель>
     updated_at: datetime = Field(default_factory=utcnow)
 
 
@@ -317,6 +347,11 @@ def _migrate():
             ("applied_confidence", "applied_confidence TEXT"),
             ("application_status_updated_at", "application_status_updated_at DATETIME"),
             ("application_status_source", "application_status_source VARCHAR"),
+            ("fit", "fit VARCHAR"),
+            ("fit_reason", "fit_reason TEXT"),
+            ("fit_engine", "fit_engine VARCHAR"),
+            ("fit_hash", "fit_hash VARCHAR"),
+            ("fit_at", "fit_at DATETIME"),
         ]:
             if name not in cols:
                 conn.execute(text(f"ALTER TABLE job ADD COLUMN {ddl}"))

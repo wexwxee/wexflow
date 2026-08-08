@@ -100,24 +100,34 @@ def name(code: str) -> str:
     return NAMES.get(code, code)
 
 
-# Настройку спрашивают в цикле по вакансиям (приём каталога, проверки ленты),
-# а settings_store.load() читает файл с диска. Держим разобранное значение до
-# следующей записи settings.json — сверяемся по времени изменения файла.
-_cache: dict = {"stamp": None, "codes": None}
+# Настройки ленты спрашивают в цикле по вакансиям (приём каталога, проверки
+# ленты), а settings_store.load() читает файл с диска. Держим разобранное
+# значение до следующей записи settings.json — сверяемся по времени изменения.
+_cache: dict = {"stamp": None, "data": None}
+
+
+def _settings() -> dict:
+    path = settings_store.PATH
+    try:
+        stat = path.stat()
+        stamp = (str(path), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        stamp = (str(path), 0, 0)
+    if _cache["data"] is not None and _cache["stamp"] == stamp:
+        return _cache["data"]
+    data = settings_store.load()
+    _cache.update(stamp=stamp, data=data)
+    return data
+
+
+def _forget() -> None:
+    """Сбросить кэш настроек после записи, не дожидаясь mtime."""
+    _cache.update(stamp=None, data=None)
 
 
 def countries() -> list[str]:
     """Страны, вакансии которых показываем. `["*"]` — любые."""
-    path = settings_store.PATH
-    try:
-        stamp = (str(path), path.stat().st_mtime_ns, path.stat().st_size)
-    except OSError:
-        stamp = (str(path), 0, 0)
-    if _cache["codes"] is not None and _cache["stamp"] == stamp:
-        return list(_cache["codes"])
-    codes = _parse(settings_store.load().get("countries"))
-    _cache.update(stamp=stamp, codes=list(codes))
-    return list(codes)
+    return _parse(_settings().get("countries"))
 
 
 def _parse(raw) -> list[str]:
@@ -145,7 +155,7 @@ def set_countries(values) -> list[str]:
         values = [values]
     codes = _parse(list(values or []))
     settings_store.mutate(lambda data: data.__setitem__("countries", codes))
-    _cache.update(stamp=None, codes=None)   # перечитать, не дожидаясь mtime
+    _forget()
     return codes
 
 
@@ -188,22 +198,65 @@ def country_clause():
     )
 
 
-def visible_clauses(exclude_applied: bool = False) -> list:
+# ── Языковой барьер (шаг 2): вердикт считает relevance.py ──────────────────
+def hide_barrier() -> bool:
+    """Убирать ли из ленты вакансии, где точно нужен датский или местный диплом.
+
+    По умолчанию ДА: аудитория WexFlow — люди без датского, и вакансия, куда их
+    не возьмут, — такой же мусор, как закрытая. Скрывается только УВЕРЕННОЕ
+    «не подойдёт»: «не ясно» остаётся видимым, а число скрытых лента показывает
+    строкой «скрыто N — показать».
+    """
+    value = _settings().get("hide_barrier")
+    return True if value is None else bool(value)
+
+
+def set_hide_barrier(enabled: bool) -> bool:
+    enabled = bool(enabled)
+    settings_store.mutate(lambda data: data.__setitem__("hide_barrier", enabled))
+    _forget()
+    return enabled
+
+
+def barrier_clause():
+    """Условие SQL «языковой барьер не подтверждён» (или None — не фильтруем).
+
+    NULL (ещё не оценивали) и «не ясно» проходят: молчание оценщика не повод
+    прятать вакансию.
+    """
+    if not hide_barrier():
+        return None
+    import relevance
+    return Job.fit.is_(None) | Job.fit.not_in(list(relevance.BARRIER))
+
+
+def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
     """Условия ленты для `select(Job).where(*feed.visible_clauses())`.
 
     exclude_applied=True — ещё и без уже поданных (списки «активных»).
+    fit=False — не применять языковой фильтр: нужно самому оценщику
+    (relevance.py), иначе скрытая вакансия никогда бы не переоценивалась.
     """
     statuses = list(CLOSED_STATUSES) + (["applied"] if exclude_applied else [])
     clauses = [Job.status.not_in(statuses)]
     country = country_clause()
     if country is not None:
         clauses.append(country)
+    if fit:
+        barrier = barrier_clause()
+        if barrier is not None:
+            clauses.append(barrier)
     return clauses
 
 
-def visible(job, exclude_applied: bool = False) -> bool:
+def visible(job, exclude_applied: bool = False, fit: bool = True) -> bool:
     """То же правило для уже загруженной вакансии (без похода в базу)."""
     status = str(getattr(job, "status", "") or "")
     if status in CLOSED_STATUSES or (exclude_applied and status == "applied"):
         return False
-    return allows(getattr(job, "country", None))
+    if not allows(getattr(job, "country", None)):
+        return False
+    if fit and hide_barrier():
+        import relevance
+        return str(getattr(job, "fit", "") or "") not in relevance.BARRIER
+    return True

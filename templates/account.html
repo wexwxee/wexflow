@@ -1056,6 +1056,38 @@
     <p class="hint">Если ничего не отметить, останется Дания. Каталоги Ashby и Greenhouse пока отбирают вакансии только по Дании — из них другие страны не придут даже с этой галочкой.</p>
     <div class="actions"><button class="secondary" type="submit">Сохранить страны</button></div>
   </form>
+
+  <!-- Языковой барьер: вакансия, куда не возьмут без датского, — такой же мусор
+       в ленте, как закрытая. Но скрываем только уверенное «не подойдёт». -->
+  <form id="language" class="panel" method="post" action="/settings/language-barrier">
+    <style>
+      .fb-row { display:flex; gap:10px; flex-wrap:wrap; margin:6px 0 14px; }
+      .fb-cell {
+        flex:1 1 130px; padding:10px 12px; border:1px solid var(--glass-line);
+        border-radius:12px; background:color-mix(in srgb, var(--glass) 75%, transparent);
+      }
+      .fb-num { display:block; font-size:20px; color:var(--txt-strong); }
+      .fb-cap { font-size:12px; color:var(--txt-weak); }
+      .fb-toggle { display:inline-flex; align-items:center; gap:8px; cursor:pointer; }
+    </style>
+    <h2>{{ ic.i('user', 17) }} Датский язык и диплом</h2>
+    <p class="hint">WexFlow оценивает каждую вакансию: возьмут ли на неё человека без датского языка и без датского образования. Сначала работают прямые слова самой вакансии («dansk i tale og skrift»), а роли, о которых текст молчит, оценивает ИИ — один раз на роль, а не на каждую вакансию.</p>
+    <div class="fb-row">
+      <div class="fb-cell"><b class="fb-num">{{ fit_stats.ok }}</b><span class="fb-cap">возьмут без датского</span></div>
+      <div class="fb-cell"><b class="fb-num">{{ fit_stats.danish + fit_stats.diploma }}</b><span class="fb-cap">нужен датский или диплом</span></div>
+      <div class="fb-cell"><b class="fb-num">{{ fit_stats.unclear }}</b><span class="fb-cap">пока не ясно</span></div>
+      <div class="fb-cell"><b class="fb-num">{{ fit_stats.roles_judged }}</b><span class="fb-cap">ролей оценено ИИ</span></div>
+    </div>
+    <label class="fb-toggle">
+      <input type="checkbox" name="hide" value="1" {{ 'checked' if hide_barrier else '' }}>
+      <span>Не показывать в ленте вакансии, где точно нужен датский или местный диплом</span>
+    </label>
+    <p class="hint">Скрывается только уверенное «не подойдёт». Вакансии со статусом «не ясно» остаются в ленте, а над списком всегда видно, сколько скрыто, и одним кликом их можно показать. Оценка ИИ — это мнение по роли, а не отказ работодателя: подать можно на любую.</p>
+    {% if not fit_ai_available %}
+    <p class="hint">ИИ сейчас не подключён, поэтому оценка идёт только по прямым словам вакансий, а остальные роли остаются «не ясно». Ключ подключается в разделе <a href="/settings/forms">«ИИ и анкеты»</a> — он твой личный и бесплатный.</p>
+    {% endif %}
+    <div class="actions"><button class="secondary" type="submit">Сохранить</button></div>
+  </form>
   <script>
     (function () {
       var field = document.querySelector("[data-address-suggest]");

@@ -121,6 +121,9 @@ def sync_items(source: str, items: Iterable[JobItem], session_factory=get_sessio
             data = fresh.model_dump(exclude={
                 "id", "first_seen", "status", "applied_at", "applied_confidence",
                 "lat", "lon",
+                # вердикт «подойдёт без датского» живёт своей жизнью: у свежего
+                # объекта он пустой, и без исключения синк стирал бы разметку
+                "fit", "fit_reason", "fit_engine", "fit_hash", "fit_at",
             })
             for key, value in data.items():
                 setattr(existing, key, value)

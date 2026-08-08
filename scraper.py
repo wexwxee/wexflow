@@ -152,9 +152,15 @@ def sync():
                 s.add(job)
                 new_count += 1
             else:
-                # обновляем поля, но сохраняем пользовательский статус applied
-                # и уже найденные координаты (у свежего hit их нет — затирать нельзя)
-                data = job.model_dump(exclude={"id", "first_seen", "status", "applied_at", "lat", "lon"})
+                # обновляем поля, но сохраняем пользовательский статус applied,
+                # уже найденные координаты (у свежего hit их нет — затирать
+                # нельзя) и вердикт «подойдёт без датского»: у свежего объекта
+                # поля fit_* пустые, и без этого исключения каждый синк стирал
+                # бы разметку и заставлял ИИ судить те же роли заново.
+                data = job.model_dump(exclude={
+                    "id", "first_seen", "status", "applied_at", "lat", "lon",
+                    "fit", "fit_reason", "fit_engine", "fit_hash", "fit_at",
+                })
                 for k, v in data.items():
                     setattr(existing, k, v)
                 existing.last_seen = now

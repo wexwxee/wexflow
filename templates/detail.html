@@ -112,6 +112,13 @@
       {% if cat0 %}<span class="badge" style="color:var(--info-txt);">{{ L.label_or_pretty(L.CATEGORY, cat0) }}</span>{% endif %}
       {% if L.is_leadership(job.title) %}<span class="badge lead" title="Автопилот и пакетная подача такие не отправляют — подать можно только вручную">{{ ic.i('alert', 12) }} руководящая</span>{% endif %}
     </div>
+    {# Языковой барьер: вердикт всегда с причиной, которую можно проверить. #}
+    {% if fit and fit.verdict != 'unclear' %}
+    <div class="notice-line" style="margin-top:10px;{% if fit.barrier %}color:var(--warn-txt);background:var(--warn-bg);{% else %}color:var(--ok-txt);background:var(--ok-bg);{% endif %}">
+      {{ ic.i('alert' if fit.barrier else 'check', 13) }} <b>{{ fit.label|capitalize }}</b>{% if fit.reason %} — {{ fit.reason }}{% endif %}
+      {% if fit.by_ai %}<span class="hint" style="display:block;margin-top:4px;">Это мнение ИИ о такой должности, а не решение работодателя. Подать можно всё равно.</span>{% else %}<span class="hint" style="display:block;margin-top:4px;">Найдено прямо в тексте вакансии.</span>{% endif %}
+    </div>
+    {% endif %}
     <div class="status-row">
       <span class="lbl">Статус заявки:</span>
       {% set sticons = {'applied':'check','interview':'phone','offer':'award','rejected':'x','no_response':'clock','seen':'undo'} %}

@@ -29,6 +29,15 @@
         <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
       </div>
     {% endif %}
+  {% elif barrier_hidden %}
+    {# Всё, что нашлось по запросу, требует датского — это факт, а не пустая база. #}
+    <div class="empty-ic">{{ ic.i('eyeoff', 24) }}</div>
+    <h3>Все найденные вакансии требуют датского</h3>
+    <p>По этому запросу нашлось <b>{{ barrier_hidden }}</b>, и во всех нужен датский язык или местный диплом. Их можно посмотреть — подать никто не запрещает.</p>
+    <div class="empty-actions">
+      <a class="empty-btn" href="{{ barrier_show_url }}">{{ ic.i('eye', 14) }} Показать их</a>
+      <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
+    </div>
   {% elif total_active == 0 and hidden_by_country %}
     {# Вакансии в базе есть, но все за пределами выбранных стран — говорим прямо. #}
     <div class="empty-ic">{{ ic.i('map', 24) }}</div>
@@ -839,6 +848,9 @@
 {% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings/salling#home">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
 {% if route_filter_stats.active and (route_filter_stats.pending or route_filter_stats.unavailable) %}<div class="notice-line" style="color:var(--info-txt);background:var(--info-bg);">{{ ic.i('clock', 13) }} Фильтр по дороге показывает только проверенные маршруты. Ещё считаются: <b>{{ route_filter_stats.pending }}</b>{% if route_filter_stats.unavailable %} · маршрут не найден: <b>{{ route_filter_stats.unavailable }}</b>{% endif %}. Ближайшие адреса уже поставлены первыми в очередь — обнови ленту через несколько минут.</div>{% endif %}
 {% if revisited_preview %}<div class="notice-line" style="color:var(--warn-txt);background:var(--warn-bg);">{{ ic.i('undo', 13) }} <b>Старый отклик снова актуален:</b>{% for old_job in revisited_preview %} <a href="/job/{{ old_job.id }}">{{ old_job.title }}</a>{% if not loop.last %} ·{% endif %}{% endfor %}{% if revisited_applied|length > revisited_preview|length %} · ещё {{ revisited_applied|length - revisited_preview|length }}{% endif %}. Повторная отправка заблокирована.</div>{% endif %}
+{# Языковой барьер: скрытое всегда посчитано и одним кликом возвращается. #}
+{% if barrier_hidden %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('eyeoff', 13) }} Скрыто вакансий, где нужен датский или местный диплом: <b>{{ barrier_hidden }}</b>. <a href="{{ barrier_show_url }}">показать их</a> · <a href="/profile#language">настроить</a></div>{% endif %}
+{% if f.fit == 'all' and barrier_total %}<div class="notice-line" style="color:var(--info-txt);background:var(--info-bg);">{{ ic.i('eye', 13) }} Показаны и те вакансии, где нужен датский или местный диплом: <b>{{ barrier_total }}</b>. <a href="{{ barrier_hide_url }}">снова скрыть</a></div>{% endif %}
 {% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('send', 13) }} Запущена пакетная подача на {{ batch }} вакансий ({{ 'с отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — подаётся по одной, прогресс ниже.</div>{% endif %}
 {% if skipped %}<div class="notice-line" style="color:var(--warn-txt,#b06b00);background:var(--warn-bg,rgba(255,180,0,.12));">{{ ic.i('alert', 13) }} Руководящие вакансии пропущены: {{ skipped }} — пакетная подача для них отключена ради безопасности. При необходимости открой вакансию и подай с её страницы.</div>{% endif %}
 {% if dup %}<div class="notice-line" style="color:var(--warn-txt,#b06b00);background:var(--warn-bg,rgba(255,180,0,.12));">{{ ic.i('check', 13) }} Уже поданные вакансии пропущены: {{ dup }} — повторная заявка тому же работодателю не отправится.</div>{% endif %}
@@ -1155,6 +1167,10 @@
       {% if j.id in distances %}<span class="badge dist" data-tip-title="Расстояние" data-tip-body="Примерно ПО ПРЯМОЙ от домашнего адреса — не путь. Реальное время в пути показано соседним бейджем, когда посчитано.">≈ {{ distances[j.id] }} км по прямой</span>{% endif %}
       {% if j.id in revisited_applied %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);background:var(--warn-bg);" data-tip-title="Старая подача — вакансия снова в ленте" data-tip-body="Ты уже подавал сюда {{ revisited_applied[j.id].days }} дней назад. Вакансия всё ещё видна у работодателя, поэтому WexFlow вернул её для повторной оценки. Автоматически и случайным кликом повторная заявка не отправится.">{{ ic.i('undo', 11) }} подавал {{ revisited_applied[j.id].days }} дн. назад · снова активна</span>{% endif %}
       {% if j.status != 'new' %}<span class="badge st-{{ j.status }}">{% if j.status=='applied' %}{{ check(11) }} {% endif %}{{ st_ru.get(j.status, j.status) }}</span>{% endif %}
+      {# Языковой барьер. «Не ясно» не показываем — это не факт, а молчание. #}
+      {% set fitv = fit_views.get(j.id) %}
+      {% if fitv and fitv.verdict == 'ok' %}<span class="badge" style="color:var(--ok-txt);border-color:var(--ok-line,var(--ok-txt));background:var(--ok-bg);" data-tip-title="Похоже, возьмут без датского" data-tip-body="{{ fitv.reason or 'Оценка по роли.' }}{{ ' Это мнение ИИ по названию должности, а не обещание работодателя.' if fitv.by_ai else '' }}">{{ ic.i('check', 11) }} без датского</span>
+      {% elif fitv and fitv.barrier %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);background:var(--warn-bg);" data-tip-title="{{ fitv.label|capitalize }}" data-tip-body="{{ fitv.reason or 'Оценка по роли.' }}{{ ' Это мнение ИИ по названию должности, а не отказ работодателя — подать всё равно можно.' if fitv.by_ai else '' }}">{{ ic.i('alert', 11) }} {{ fitv.label }}</span>{% endif %}
     </div>
     <h3>{{ j.title }}</h3>
     {% set role_ru = L.role_summary(j.title, j.categories, j.job_level) %}

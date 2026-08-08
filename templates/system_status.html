@@ -85,6 +85,48 @@
     </div>
 
     <div class="st-card">
+      <h2>{{ ic.i('user', 17) }} Без датского языка</h2>
+      <div class="st-meta">
+        {% if fit.running %}
+          <span class="st-pill">{{ ic.i('refresh', 12) }} оцениваю роли…</span>
+        {% elif not fit.ai_available %}
+          <span class="st-pill warn">{{ ic.i('alert', 12) }} ИИ не подключён</span>
+        {% elif fit.unclear > fit.ok + fit.danish %}
+          <span class="st-pill">{{ ic.i('clock', 12) }} оценка ещё идёт</span>
+        {% else %}
+          <span class="st-pill ok">{{ ic.i('check', 12) }} лента размечена</span>
+        {% endif %}
+        <span class="st-pill">возьмут без датского: {{ fit.ok }}</span>
+        <span class="st-pill">нужен датский: {{ fit.danish + fit.diploma }}</span>
+        <span class="st-pill">не ясно: {{ fit.unclear }}</span>
+        <span class="st-pill">ролей оценено: {{ fit.roles_judged }}</span>
+      </div>
+      {% if not fit.ai_available %}
+        <p>Без ключа ИИ WexFlow судит только по прямым словам вакансий («dansk i tale
+        og skrift»), поэтому почти всё остаётся «не ясно» и ничего не скрывается.</p>
+      {% else %}
+        <p>Роли досуживаются малыми порциями после каждого обновления базы. Скрывается
+        только уверенное «нужен датский или местный диплом»{{ ', сейчас фильтр выключен' if not fit.hide_barrier else '' }};
+        «не ясно» всегда остаётся в ленте.</p>
+      {% endif %}
+      {% if fit.error %}<div class="st-err">Последняя ошибка оценки: {{ fit.error }}</div>{% endif %}
+      <div class="st-actions">
+        <button type="button" id="fitRefresh">{{ ic.i('sparkles', 13) }} Оценить роли сейчас</button>
+        <a href="/profile#language">{{ ic.i('sliders', 13) }} Настроить</a>
+      </div>
+      <script>
+        document.getElementById("fitRefresh").addEventListener("click", function (event) {
+          var button = event.currentTarget;
+          button.disabled = true;
+          button.textContent = "Оцениваю…";
+          fetch("/api/relevance/refresh", { method: "POST", credentials: "include" })
+            .then(function () { setTimeout(function () { location.reload(); }, 4000); })
+            .catch(function () { button.disabled = false; button.textContent = "Не вышло, повторить"; });
+        });
+      </script>
+    </div>
+
+    <div class="st-card">
       <h2>{{ ic.i('send', 17) }} Подача заявок</h2>
       <div class="st-meta">
         {% if streak >= 3 %}

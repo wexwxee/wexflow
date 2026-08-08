@@ -20,12 +20,12 @@ from db import Job
 def _with_temp_settings(body):
     orig = settings_store.PATH
     settings_store.PATH = Path(tempfile.mkdtemp()) / "settings.json"
-    feed._cache.update(stamp=None, codes=None)
+    feed._forget()
     try:
         body()
     finally:
         settings_store.PATH = orig
-        feed._cache.update(stamp=None, codes=None)
+        feed._forget()
 
 
 def _sessions():

@@ -168,6 +168,13 @@ def _account_html(signed_in: bool, *, relink: bool = False) -> str:
         "ai_fill_on": False,
         "ai_fill_motivation_on": False,
         "ai_fill_available": False,
+        # настройки ленты живут на той же странице (страны и языковой барьер)
+        "feed_countries": [],
+        "feed_any_country": False,
+        "hide_barrier": True,
+        "fit_stats": {"ok": 0, "danish": 0, "diploma": 0, "unclear": 0,
+                      "total": 0, "roles_judged": 0},
+        "fit_ai_available": False,
     })
 
 

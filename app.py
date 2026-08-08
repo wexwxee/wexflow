@@ -48,6 +48,7 @@ import account as account_mod
 import cloud_auth
 import transit
 import feed
+import relevance
 from db import Application, Job, init_db, get_session, select, utcnow
 import db as db_mod
 import scraper
@@ -88,6 +89,7 @@ JOB_FILTER_KEYS = (
     "q", "source", "city", "brand", "region", "category",
     "employment_type", "job_level", "status", "sort", "radius",
     "max_commute", "max_transfers", "revisit", "group", "show_applied", "period",
+    "fit",
 )
 
 DEFAULT_REVISIT_DAYS = 60
@@ -133,6 +135,8 @@ def _clean_filter_query(raw_query: str) -> str:
         elif key == "revisit" and value not in REVISIT_OPTIONS:
             value = ""
         elif key == "period" and value not in {"today", "3d", "all"}:
+            value = ""
+        elif key == "fit" and value != "all":
             value = ""
         if value:
             values[key] = value
@@ -291,6 +295,14 @@ def _sync_jobs(force_connectors: bool = False):
                 _sync_state["connector_warnings"] = []
                 print(f"дополнительные источники: ошибка — {exc}")
         _sync_state["last_error"] = ""
+        # Вердикт «подойдёт без датского» должен стоять ДО решений автопилота:
+        # раздача уже известных вердиктов дешёвая (доли секунды), а дорогой
+        # разговор с ИИ уходит в отдельный поток ниже.
+        try:
+            if not _relevance_muted():
+                relevance.apply_to_jobs()
+        except Exception as exc:  # noqa: BLE001 — оценка не должна ронять синк
+            print(f"оценка вакансий: ошибка — {exc}")
         autopilot.scan_and_notify()  # автопилот: уведомить о новых совпадениях
         # автоотправка (фаза 3, по умолчанию ВЫКЛ): отправляет ТОЛЬКО при явно
         # включённом auto_submit, в пределах дневного лимита и только новые
@@ -303,6 +315,51 @@ def _sync_jobs(force_connectors: bool = False):
         _sync_state["last_scan"] = time.time()  # отметка «когда последний раз проверяли»
         _sync_state["running"] = False
         _sync_lock.release()
+    _start_relevance_worker()
+
+
+_relevance_lock = threading.Lock()
+_relevance_state = {"running": False, "last_run": 0.0, "last_error": "",
+                    "judged": 0, "requests": 0}
+# Сколько порций ролей отдаём ИИ за один заход. Порция — 25 ролей и ~25 секунд;
+# так разметка идёт «малыми порциями» и не съедает дневной лимит ключа разом.
+RELEVANCE_BATCHES_PER_RUN = 2
+
+
+def _relevance_muted() -> bool:
+    """Оценку не запускаем под тестами и по явному выключателю поддержки.
+
+    Оценка ходит в ИИ по ключу человека — тест не имеет права тратить его
+    деньги и квоту. Это уже случалось: два теста синка увели четыре запроса.
+    """
+    return bool(os.environ.get("PYTEST_CURRENT_TEST")
+                or (os.environ.get("WEXFLOW_NO_RELEVANCE") or "").strip() in ("1", "true"))
+
+
+def _start_relevance_worker() -> None:
+    """Досудить новые роли в фоне: разговор с ИИ не должен держать синк."""
+    if _relevance_state["running"] or _relevance_muted():
+        return
+    threading.Thread(target=_relevance_tick, daemon=True).start()
+
+
+def _relevance_tick() -> None:
+    if not _relevance_lock.acquire(blocking=False):
+        return
+    _relevance_state["running"] = True
+    try:
+        report = relevance.refresh(max_requests=RELEVANCE_BATCHES_PER_RUN)
+        ai = report.get("ai") or {}
+        _relevance_state["judged"] = int(ai.get("judged") or 0)
+        _relevance_state["requests"] = int(ai.get("requests") or 0)
+        _relevance_state["last_error"] = str(ai.get("error") or "")[:200]
+    except Exception as exc:  # noqa: BLE001 — оценка не критична для работы
+        _relevance_state["last_error"] = str(exc)[:200]
+        print(f"оценка ролей: ошибка — {exc}")
+    finally:
+        _relevance_state["last_run"] = time.time()
+        _relevance_state["running"] = False
+        _relevance_lock.release()
 
 
 def _ai_usage_payload() -> dict:
@@ -1864,6 +1921,15 @@ def _tg_card(job) -> str:
         lines.append(f'🗺 <a href="{e(_maps_url(job, home))}">Открыть точку в картах</a>')
     if job.hours:
         lines.append(f"🕒 {e(job.hours)} ч/нед")
+    # Языковой барьер: тот же вердикт, что в приложении. «Не ясно» не пишем —
+    # молчание оценщика не факт и место в карточке занимать не должно.
+    fit_view = relevance.describe(job)
+    if fit_view["verdict"] == relevance.OK:
+        lines.append(f"✅ {e(fit_view['label'])}"
+                     + (f" — {e(fit_view['reason'])}" if fit_view["reason"] else ""))
+    elif fit_view["barrier"]:
+        lines.append(f"⚠️ {e(fit_view['label'])}"
+                     + (f" — {e(fit_view['reason'])}" if fit_view["reason"] else ""))
     if job.application_link:
         lines.append(f'🔗 <a href="{e(job.application_link)}">Открыть вакансию на сайте</a>')
     return ("🆕 <b>Новая подходящая вакансия</b>\n"
@@ -3182,6 +3248,13 @@ def system_status(request: Request):
             "stale": bool(ap_stale),
             "every_min": int(ap.get("every_min") or 30),
         },
+        "fit": {
+            **relevance.stats(),
+            "hide_barrier": feed.hide_barrier(),
+            "ai_available": bool(ai_filters.available() or ai_filters.gemini_available()),
+            "running": bool(_relevance_state["running"]),
+            "error": str(_relevance_state["last_error"] or ""),
+        },
         "seven": _seven_eleven_state(),
     })
 
@@ -3807,6 +3880,7 @@ def index(
     group: str = "",
     show_applied: str = "",
     period: str = "all",
+    fit: str = "",
     profile: str = "",
     page: str = "1",
     geoerror: str = "",
@@ -3833,10 +3907,14 @@ def index(
                 max_transfers = saved.get("max_transfers", max_transfers)
                 revisit = saved.get("revisit", revisit)
                 period = saved.get("period", period)
+                fit = saved.get("fit", fit)
             except Exception:
                 pass
 
     period = period if period in {"today", "3d", "all"} else "all"
+    # fit=all — «показать и те, где нужен датский». Это разовый выбор в списке,
+    # а не отмена настройки: сама настройка живёт в профиле.
+    fit = "all" if fit == "all" else ""
     # Закрытых в ленте нет ни при каком фильтре: подать на них нельзя, а список
     # они засоряют. Сюда же попадает старая кука фильтров со status=closed.
     if status == "closed":
@@ -3874,7 +3952,10 @@ def index(
         if source_key:
             stmt = stmt.where(Job.source == source_key)
         if status == "active":
-            stmt = stmt.where(*feed.visible_clauses())
+            # Языковой барьер отсекаем не здесь, а в Python после всех прочих
+            # фильтров — тогда строка «скрыто N» относится именно к этому
+            # запросу, а не ко всей базе.
+            stmt = stmt.where(*feed.visible_clauses(fit=False))
             if not show_applied:
                 active_or_unsubmitted = Job.applied_at.is_(None)
                 if revisit_cutoff is not None and period == "all":
@@ -3964,6 +4045,16 @@ def index(
         # НЕ-руководящий уровень — дополнительно отсекаем их по названию.
         if level_code in ("employee", "employeeUnder18", "apprentice"):
             jobs = [j for j in jobs if not labels.is_leadership(j.title)]
+
+        # Языковой барьер: вакансии, где точно нужен датский или местный диплом.
+        # «Поданные» не трогаем никогда — это история человека. Скрытое всегда
+        # посчитано и показано строкой, ничего не пропадает молча.
+        barrier_total = sum(1 for j in jobs if relevance.is_barrier(j))
+        barrier_hidden = 0
+        if status != "applied" and fit != "all" and feed.hide_barrier():
+            barrier_hidden = barrier_total
+            if barrier_hidden:
+                jobs = [j for j in jobs if not relevance.is_barrier(j)]
 
         cities = _distinct(s, Job.city)
         sources = _distinct(s, Job.source)
@@ -4169,6 +4260,7 @@ def index(
         "group": group,
         "show_applied": show_applied,
         "period": period,
+        "fit": fit,
     }
     _current_filter_query = _filter_query(_f)
     _preset_views = []
@@ -4236,6 +4328,7 @@ def index(
             "Статус",
             _status_labels.get(status, "") if status not in {"", "active"} else "",
         ),
+        "fit": ("Датский", "показаны и те, где нужен датский" if fit == "all" else ""),
     }
     _filter_chips = [
         {
@@ -4297,6 +4390,14 @@ def index(
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
         "hidden_by_country": hidden_by_country,
         "feed_countries_label": ", ".join(feed.name(c) for c in feed.countries()),
+        # языковой барьер: сколько скрыто этим запросом и куда нажать, чтобы увидеть
+        "barrier_hidden": barrier_hidden,
+        "barrier_total": barrier_total,
+        "barrier_on": bool(feed.hide_barrier()),
+        "barrier_show_url": "/?" + _filter_query({**_f, "fit": "all"}),
+        "barrier_hide_url": "/?" + _filter_query({**_f, "fit": ""}),
+        "fit_labels": relevance.LABELS,
+        "fit_views": {j.id: relevance.describe(j) for j in jobs},
         "autopilot": _ap_rule,
         "autopilot_count": _ap_count,
         "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
@@ -4693,6 +4794,43 @@ async def settings_countries(request: Request):
     autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
     autopilot.reset_tg_queue_for_filters()
     return _redirect_back(request, "/profile#countries", notice=notice)
+
+
+@app.post("/settings/language-barrier")
+async def settings_language_barrier(request: Request):
+    """Скрывать ли из ленты вакансии, где точно нужен датский или диплом."""
+    form = await request.form()
+    enabled = str(form.get("hide") or "").strip().lower() in ("1", "true", "on", "yes")
+    feed.set_hide_barrier(enabled)
+    notice = (
+        "Вакансии, где нужен датский или местный диплом, скрыты из ленты."
+        if enabled else
+        "Лента снова показывает все вакансии, включая те, где нужен датский."
+    )
+    return _redirect_back(request, "/profile#language", notice=notice)
+
+
+@app.post("/api/relevance/refresh")
+def api_relevance_refresh():
+    """Досудить роли прямо сейчас (обычно это делает фон после обновления базы)."""
+    _start_relevance_worker()
+    return JSONResponse({
+        "ok": True,
+        "running": bool(_relevance_state["running"]) or not _relevance_muted(),
+        "stats": relevance.stats(),
+    })
+
+
+@app.get("/api/relevance/status")
+def api_relevance_status():
+    return {
+        "stats": relevance.stats(),
+        "running": bool(_relevance_state["running"]),
+        "last_run": _relevance_state["last_run"],
+        "last_error": _relevance_state["last_error"],
+        "hide_barrier": feed.hide_barrier(),
+        "ai_available": bool(ai_filters.available() or ai_filters.gemini_available()),
+    }
 
 
 @app.post("/set-home-coords")
@@ -5592,6 +5730,10 @@ def _render_account(request: Request, mode: str = "account", saved: str = "",
         # страны ленты — тоже общая настройка поиска, рядом с домом
         "feed_countries": _feed_country_options(),
         "feed_any_country": feed.any_country(),
+        # языковой барьер: тумблер и текущая картина по базе
+        "hide_barrier": feed.hide_barrier(),
+        "fit_stats": relevance.stats(),
+        "fit_ai_available": bool(ai_filters.available() or ai_filters.gemini_available()),
         "file_info": _profile_file_info(profile),
         "saved": saved, "missing_fields": missing_fields,
         "deleted": deleted, "delete_error": delete_error,
@@ -7326,6 +7468,8 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             "distance": distance,
             "has_home": bool(home),
             "maps_url": maps_url,
+            # вердикт «возьмут ли без датского» — с причиной, которую видно
+            "fit": relevance.describe(job) if job else None,
             # Ссылка на первоисточник: описание в WexFlow — снимок, сделанный при
             # сборе. Работодатель мог его поправить, и человеку нужен способ
             # посмотреть вакансию своими глазами, а не верить нашей копии.
