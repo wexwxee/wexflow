@@ -43,6 +43,11 @@ def _batch_stack(stack, snapshot):
     stack.enter_context(mock.patch.object(app, "_load_jobs_snapshot", return_value=snapshot))
     stack.enter_context(mock.patch.object(app, "_claim_apply_slot", return_value=True))
     stack.enter_context(mock.patch.object(app.applications, "mark_submitting"))
+    # Площадки здесь считаем доказанными: этот файл про маршрутизацию пачки по
+    # воркерам, а правило «первая подача идёт одна» проверяет test_trust.py.
+    # Без подмены тесты зависели бы от реальной истории подач на машине.
+    stack.enter_context(mock.patch.object(
+        app.trust, "stats", side_effect=lambda source: {"proven": True}))
 
 
 # --- интерфейс ---------------------------------------------------------------

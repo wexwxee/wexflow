@@ -1750,6 +1750,11 @@
       <button type="button" class="ap-mode-opt {{ 'on' if autopilot_mode=='auto' else '' }}" data-mode="auto">{{ ic.i('zap', 20) }}<span>Автоотправка</span></button>
     </div>
     <div class="ap-hint" id="apModeHint" style="margin-bottom:4px;"></div>
+    {% if trust_block %}
+    {# Честно до включения, а не после: автоотправка на недоверенной площадке
+       промолчит, и человек должен знать это заранее. #}
+    <div class="ap-hint" style="margin-bottom:4px;color:var(--warn-txt);">{{ ic.i('lock', 12) }} Режим «Автоотправка» сейчас никого не отправит: {{ trust_block }}. Первая подача на площадке идёт с твоим подтверждением — см. <a href="/status#trust">«Доверие площадкам»</a>.</div>
+    {% endif %}
     <div class="ap-hint" style="margin-bottom:2px;">Главный переключатель. Ниже — фильтры (что искать), а детали выбранного режима (Telegram-статус, лимиты автоотправки) — в блоках ниже на странице.</div>
     <script>
     (function(){
@@ -2280,6 +2285,10 @@
     </div>
 
     <p class="hint" style="margin-top:6px;">Сейчас под охват «все подходящие» попало бы: <b>{{ autopilot_scope_pool }}</b> вакансий{% if autopilot_scope_pool > autopilot_scope_guard %} <span style="color:var(--err-txt);">— это больше предела {{ autopilot_scope_guard }}, охват «все» сейчас включить нельзя (сузь фильтры)</span>{% endif %}. В очереди на отправку: <b>{{ autopilot_eligible }}</b>.</p>
+    {% if trust_block %}
+    {# Молчание автоотправки объясняем прямо здесь, а не оставляем гадать. #}
+    <p class="hint" style="margin-top:6px;color:var(--warn-txt);">{{ ic.i('lock', 12) }} Автоотправка сейчас никого не отправит: {{ trust_block }}. Доверие площадкам — на странице <a href="/status#trust">«Состояние»</a>.</p>
+    {% endif %}
     <p class="hint" style="margin-top:2px;">Сегодня отправлено автоматически: <b>{{ autopilot_submitted_today }}</b>{% if autopilot.auto_submit %} из {{ autopilot.daily_limit }}{% endif %}.</p>
 
     <div class="actions">

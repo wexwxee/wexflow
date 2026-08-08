@@ -256,18 +256,22 @@ def test_sync_keeps_the_verdict_it_already_paid_for():
     assert kept <= set(fresh.model_dump()), "поля вердикта должны быть в модели"
 
 
-def test_sync_never_spends_the_ai_key_from_a_test():
-    """Обновление базы досуживает роли в фоне, но не в тестах.
+def test_background_work_never_runs_from_a_test():
+    """Фоновые потоки под тестами не запускаются — ни оценка, ни синк в облако.
 
-    Это уже стоило четырёх настоящих запросов на ключе Ивана: тест синка
-    вызывал _sync_jobs, а тот запускал оценку ролей по-настоящему.
+    Оба случая уже били по нам: оценка ролей увела четыре настоящих запроса с
+    ключа Ивана, а фоновый синк дописывал 289 настоящих id в список, который
+    проверял совсем другой тест, и тот падал «сам по себе».
     """
     import app
 
-    assert app._relevance_muted() is True
-    with mock.patch("ai_filters.generate_json") as call:
+    assert app._background_muted() is True
+    with mock.patch("ai_filters.generate_json") as ai, \
+            mock.patch.object(app.threading, "Thread") as thread:
         app._start_relevance_worker()
-        assert call.call_count == 0
+        app._start_view_sync()
+        assert ai.call_count == 0
+        assert thread.call_count == 0, "фоновый поток не должен стартовать в тесте"
 
 
 def test_describe_marks_ai_opinion():

@@ -84,6 +84,51 @@
       </div>
     </div>
 
+    <div class="st-card" id="trust">
+      <h2>{{ ic.i('lock', 17) }} Доверие площадкам</h2>
+      <style>
+        .tr-row {
+          display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+          padding:10px 0; border-top:1px solid var(--glass-line);
+        }
+        .tr-row:first-of-type { border-top:none; }
+        .tr-name { flex:1 1 140px; color:var(--txt-strong); }
+        .tr-facts { flex:2 1 220px; font-size:12px; color:var(--muted); }
+        .tr-row form { margin:0; }
+      </style>
+      <p>Автомат включается не раньше, чем площадка доказала подачу: сайт показал
+      квитанцию И снимок экрана сохранён. Пока доказательства нет, WexFlow сам
+      ничего не отправляет — первая подача идёт с твоим подтверждением.</p>
+      {% for p in trust.platforms %}
+      <div class="tr-row">
+        <span class="tr-name">{{ p.label }}</span>
+        <span class="tr-facts">
+          {% if p.proven %}{{ ic.i('check', 11) }} доказано: {{ p.proofs }}{% if p.receipts %} (квитанция и снимок: {{ p.receipts }}){% endif %}{% if p.portal %} (кабинет работодателя: {{ p.portal }}){% endif %}{% else %}доказанных подач нет{% endif %}
+          · подач всего: {{ p.submitted }}{% if p.receipts_without_proof %} · квитанция без снимка: {{ p.receipts_without_proof }}{% endif %}{% if p.failed %} · не подтвердились: {{ p.failed }}{% endif %}
+        </span>
+        {% if p.proven %}
+        <form method="post" action="/settings/trust/auto">
+          <input type="hidden" name="source" value="{{ p.source }}">
+          <input type="hidden" name="enabled" value="{{ '0' if p.auto else '1' }}">
+          <button type="submit">{{ 'Выключить автомат' if p.auto else 'Включить автомат' }}</button>
+        </form>
+        {% else %}
+        <span class="st-pill">{{ ic.i('lock', 11) }} автомат закрыт</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <form method="post" action="/settings/trust/always-ask" style="margin-top:12px;">
+        <label style="display:inline-flex;gap:8px;align-items:center;cursor:pointer;">
+          <input type="checkbox" name="always_ask" value="1" {{ 'checked' if trust.always_ask else '' }} onchange="this.form.submit()">
+          <span>Спрашивать перед каждой отправкой (можно оставить навсегда)</span>
+        </label>
+      </form>
+      {% if trust.auto_block %}<p>Сейчас автоотправка молчит: {{ trust.auto_block }}.</p>{% endif %}
+      <div class="st-actions">
+        <a href="/audit">{{ ic.i('briefcase', 13) }} Посмотреть доказательства</a>
+      </div>
+    </div>
+
     <div class="st-card">
       <h2>{{ ic.i('user', 17) }} Без датского языка</h2>
       <div class="st-meta">

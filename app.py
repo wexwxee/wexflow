@@ -49,6 +49,7 @@ import cloud_auth
 import transit
 import feed
 import relevance
+import trust
 from db import Application, Job, init_db, get_session, select, utcnow
 import db as db_mod
 import scraper
@@ -299,7 +300,7 @@ def _sync_jobs(force_connectors: bool = False):
         # раздача уже известных вердиктов дешёвая (доли секунды), а дорогой
         # разговор с ИИ уходит в отдельный поток ниже.
         try:
-            if not _relevance_muted():
+            if not _background_muted():
                 relevance.apply_to_jobs()
         except Exception as exc:  # noqa: BLE001 — оценка не должна ронять синк
             print(f"оценка вакансий: ошибка — {exc}")
@@ -326,19 +327,32 @@ _relevance_state = {"running": False, "last_run": 0.0, "last_error": "",
 RELEVANCE_BATCHES_PER_RUN = 2
 
 
-def _relevance_muted() -> bool:
-    """Оценку не запускаем под тестами и по явному выключателю поддержки.
+def _background_muted() -> bool:
+    """Фоновые потоки не запускаются под тестами и по выключателю поддержки.
 
-    Оценка ходит в ИИ по ключу человека — тест не имеет права тратить его
-    деньги и квоту. Это уже случалось: два теста синка увели четыре запроса.
+    Две причины, обе уже стоили нам крови:
+    - оценка ролей ходит в ИИ по ключу человека, и тест не имеет права тратить
+      его деньги: два теста синка однажды увели четыре настоящих запроса;
+    - фоновый синк в облако работает с НАСТОЯЩИМИ вакансиями, а тесты
+      подменяют общие функции модуля. Поток, стартовавший в одном тесте,
+      дописывал свои 289 id в список, который проверял другой, — и падал
+      совершенно посторонний тест.
     """
     return bool(os.environ.get("PYTEST_CURRENT_TEST")
-                or (os.environ.get("WEXFLOW_NO_RELEVANCE") or "").strip() in ("1", "true"))
+                or (os.environ.get("WEXFLOW_NO_BACKGROUND") or "").strip() in ("1", "true"))
+
+
+def _start_view_sync() -> None:
+    """Обновить обе ленты Mini App в фоне после изменения заявки."""
+    if _background_muted():
+        return
+    threading.Thread(target=_sync_application_views_to_cloud,
+                     kwargs={"force": True}, daemon=True).start()
 
 
 def _start_relevance_worker() -> None:
     """Досудить новые роли в фоне: разговор с ИИ не должен держать синк."""
-    if _relevance_state["running"] or _relevance_muted():
+    if _relevance_state["running"] or _background_muted():
         return
     threading.Thread(target=_relevance_tick, daemon=True).start()
 
@@ -2588,11 +2602,7 @@ def _application_tracking_tick() -> None:
         changed = application_tracker.mark_no_response()
         if not changed:
             return
-        threading.Thread(
-            target=_sync_application_views_to_cloud,
-            kwargs={"force": True},
-            daemon=True,
-        ).start()
+        _start_view_sync()
         if _cloud_profile_enabled():
             titles = ", ".join(item["title"] for item in changed[:3])
             suffix = f" и ещё {len(changed) - 3}" if len(changed) > 3 else ""
@@ -3255,6 +3265,14 @@ def system_status(request: Request):
             "running": bool(_relevance_state["running"]),
             "error": str(_relevance_state["last_error"] or ""),
         },
+        # доверие площадкам: где подача уже доказана квитанцией и снимком
+        "trust": {
+            "always_ask": trust.always_ask(),
+            "platforms": [row for row in trust.all_stats()
+                          if row["submitted"] or row["failed"] or row["auto"]
+                          or row["source"] in ("salling", "lidl")],
+            "auto_block": autopilot.auto_submit_block(),
+        },
         "seven": _seven_eleven_state(),
     })
 
@@ -3795,11 +3813,7 @@ def connector_apply_result(
     _release_connector_launch(job_id)
     if outcome == "submitted":
         applications.record_submitted([job])
-        threading.Thread(
-            target=_sync_application_views_to_cloud,
-            kwargs={"force": True},
-            daemon=True,
-        ).start()
+        _start_view_sync()
         return RedirectResponse(_url_with_system_response(
             target,
             notice="Отмечено как поданное вручную. Запись добавлена в журнал.",
@@ -4390,6 +4404,9 @@ def index(
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
         "hidden_by_country": hidden_by_country,
         "feed_countries_label": ", ".join(feed.name(c) for c in feed.countries()),
+        # площадка доказала подачу — предлагаем включить автомат (один раз)
+        "trust_offer": trust.pending_offer(),
+        "trust_always_ask": trust.always_ask(),
         # языковой барьер: сколько скрыто этим запросом и куда нажать, чтобы увидеть
         "barrier_hidden": barrier_hidden,
         "barrier_total": barrier_total,
@@ -4476,11 +4493,7 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
     if status == "applied" and not was_submitted:
         applications.record_submitted([job])
     if status in application_tracker.STATUS_LABELS:
-        threading.Thread(
-            target=_sync_application_views_to_cloud,
-            kwargs={"force": True},
-            daemon=True,
-        ).start()
+        _start_view_sync()
     return _redirect_back(request, "/", notice=status_labels.get(status, "Статус вакансии обновлён."))
 
 
@@ -4796,6 +4809,48 @@ async def settings_countries(request: Request):
     return _redirect_back(request, "/profile#countries", notice=notice)
 
 
+@app.post("/settings/trust/always-ask")
+async def settings_trust_always_ask(request: Request):
+    """Тумблер «спрашивать всегда». Остаётся навсегда и главнее автомата."""
+    form = await request.form()
+    enabled = str(form.get("always_ask") or "").strip().lower() in ("1", "true", "on", "yes")
+    trust.set_always_ask(enabled)
+    return _redirect_back(request, "/status#trust", notice=(
+        "Буду спрашивать перед каждой отправкой."
+        if enabled else
+        "Автомат разрешён на площадках, где подача уже подтверждена квитанцией и снимком."
+    ))
+
+
+@app.post("/settings/trust/auto")
+async def settings_trust_auto(request: Request):
+    """Включить/выключить автомат для одной площадки."""
+    form = await request.form()
+    source = str(form.get("source") or "").strip()
+    wanted = str(form.get("enabled") or "").strip().lower() in ("1", "true", "on", "yes")
+    if source not in trust.SOURCES:
+        return _redirect_back(request, "/status#trust", error="Неизвестная площадка.")
+    enabled, refusal = trust.set_auto(source, wanted)
+    if refusal:
+        return _redirect_back(request, "/status#trust", error=refusal)
+    name = trust.label(source)
+    notice = (f"Автомат для «{name}» включён."
+              + (" Пока включено «спрашивать всегда», отправка всё равно ждёт подтверждения."
+                 if trust.always_ask() else "")
+              ) if enabled else f"Автомат для «{name}» выключен."
+    return _redirect_back(request, "/status#trust", notice=notice)
+
+
+@app.post("/settings/trust/dismiss")
+async def settings_trust_dismiss(request: Request):
+    """«Пока не надо»: предложение включить автомат больше не показываем."""
+    form = await request.form()
+    source = str(form.get("source") or "").strip()
+    if source in trust.SOURCES:
+        trust.dismiss_offer(source)
+    return _redirect_back(request, "/", notice="Хорошо, автомат остаётся выключенным.")
+
+
 @app.post("/settings/language-barrier")
 async def settings_language_barrier(request: Request):
     """Скрывать ли из ленты вакансии, где точно нужен датский или диплом."""
@@ -4816,7 +4871,7 @@ def api_relevance_refresh():
     _start_relevance_worker()
     return JSONResponse({
         "ok": True,
-        "running": bool(_relevance_state["running"]) or not _relevance_muted(),
+        "running": bool(_relevance_state["running"]) or not _background_muted(),
         "stats": relevance.stats(),
     })
 
@@ -6099,6 +6154,8 @@ def _settings_context(
         "autopilot_submitted_today": autopilot.submitted_today(),
         "autopilot_submit_log": autopilot.submit_log(),
         "autopilot_eligible": autopilot.eligible_count(),
+        # почему автоотправка молчит: доверие площадке ещё не заработано
+        "trust_block": autopilot.auto_submit_block(),
         "autopilot_scope_pool": autopilot.scope_all_pool(),
         "autopilot_scope_guard": autopilot.SCOPE_ALL_GUARD,
         "autopilot_tg_stats": autopilot.tg_queue_stats(),
@@ -7944,6 +8001,16 @@ def apply_batch(
                for jid, job in _load_jobs_snapshot(safe)}
     salling_ids = [jid for jid in safe if sources.get(jid) == "salling"]
     lidl_ids = [jid for jid in safe if sources.get(jid) == "lidl"]
+    trust_notes: list[str] = []
+    if mode == "submit":
+        # Первая подача на площадке идёт ОДНА и с квитанцией: ставить сразу
+        # десять заявок на сайт, который ещё ни разу не подтвердил приём, —
+        # это ставка вслепую (шаг 3 пересмотра 08.08.2026).
+        trimmed, trust_notes = trust.trim_unproven(
+            {"salling": salling_ids, "lidl": lidl_ids})
+        salling_ids = trimmed.get("salling", salling_ids)
+        lidl_ids = trimmed.get("lidl", lidl_ids)
+        safe = [jid for jid in safe if jid in set(salling_ids) | set(lidl_ids)]
     if lidl_ids:
         # Карточка сразу показывает «анкета в работе»: пачка Lidl доходит до
         # своего окна не мгновенно, а человек должен видеть, что процесс пошёл.
@@ -7957,6 +8024,8 @@ def apply_batch(
         url += f"&skipped={len(leadership)}"
     if already:
         url += f"&dup={len(already)}"
+    if trust_notes:
+        url = _url_with_system_response(url, notice=" ".join(trust_notes))
     return RedirectResponse(url, status_code=303)
 
 

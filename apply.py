@@ -1040,6 +1040,20 @@ def _proof_photo_b64(path) -> str:
         return ""
 
 
+def _warn_if_no_proof(job, path, outcome: str) -> None:
+    """Снимок экрана обязателен: без файла подача не доказана (шаг 3).
+
+    Сама заявка при этом НЕ отменяется и не «разотмечается» — она реально ушла,
+    и потерять этот факт хуже. Но доверие площадке такая подача не даёт: в
+    журнале и на экране доверия она считается неподтверждённой, поэтому здесь
+    громко говорим, что доказательства нет.
+    """
+    if path:
+        return
+    print(f"  ⚠ снимок экрана НЕ сохранён ({outcome}) — подача записана, "
+          "но доказательства нет: площадке она доверия не даёт")
+
+
 def _cloud_proof(job, path, confidence: str = "receipt", ask_send: bool = False) -> None:
     """Отправить скрин-доказательство в чат Telegram. Никогда не падает."""
     if not path:
@@ -1213,6 +1227,7 @@ def process_job(page, job, profile, submit: bool, ai_fill: bool = False,
         if outcome in ("receipt", "indirect"):
             print("  ОТПРАВЛЕНО ✔" if outcome == "receipt" else "  ВЕРОЯТНО ОТПРАВЛЕНО — проверь письмо от Salling")
             proof = _save_proof(page, job)
+            _warn_if_no_proof(job, proof, outcome)
             _mark_applied(job.id, confidence=outcome)
             _cloud_proof(job, proof, outcome)
             sent = True
@@ -1265,6 +1280,7 @@ def _finish_by_phone(page, job) -> bool:
         outcome = "none"
     if outcome in ("receipt", "indirect"):
         proof = _save_proof(page, job)
+        _warn_if_no_proof(job, proof, outcome)
         _mark_applied(job.id, confidence=outcome)
         _cloud_report(
             job.id,

@@ -848,6 +848,23 @@
 {% else %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('home') }} Задай домашний адрес в <a href="/settings/salling#home">Настройках</a>, чтобы сортировать вакансии по расстоянию и фильтровать по радиусу.</div>{% endif %}
 {% if route_filter_stats.active and (route_filter_stats.pending or route_filter_stats.unavailable) %}<div class="notice-line" style="color:var(--info-txt);background:var(--info-bg);">{{ ic.i('clock', 13) }} Фильтр по дороге показывает только проверенные маршруты. Ещё считаются: <b>{{ route_filter_stats.pending }}</b>{% if route_filter_stats.unavailable %} · маршрут не найден: <b>{{ route_filter_stats.unavailable }}</b>{% endif %}. Ближайшие адреса уже поставлены первыми в очередь — обнови ленту через несколько минут.</div>{% endif %}
 {% if revisited_preview %}<div class="notice-line" style="color:var(--warn-txt);background:var(--warn-bg);">{{ ic.i('undo', 13) }} <b>Старый отклик снова актуален:</b>{% for old_job in revisited_preview %} <a href="/job/{{ old_job.id }}">{{ old_job.title }}</a>{% if not loop.last %} ·{% endif %}{% endfor %}{% if revisited_applied|length > revisited_preview|length %} · ещё {{ revisited_applied|length - revisited_preview|length }}{% endif %}. Повторная отправка заблокирована.</div>{% endif %}
+{# Доверие заработано: площадка подтвердила подачу квитанцией и снимком.
+   Предлагаем автомат ровно один раз — ответ запоминается. #}
+{% if trust_offer %}
+<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);flex-wrap:wrap;">
+  {{ ic.i('check', 13) }} <b>{{ trust_offer.label }}: подача доказана</b> — {% if trust_offer.receipts %}сайт показал квитанцию и снимок сохранён{% else %}заявка найдена в кабинете работодателя{% endif %}{% if trust_offer.proven_title %} («{{ trust_offer.proven_title }}»){% endif %}. Включить автоматическую подачу для этой площадки?
+  <form method="post" action="/settings/trust/auto" style="display:inline;margin-left:6px;">
+    <input type="hidden" name="source" value="{{ trust_offer.source }}">
+    <input type="hidden" name="enabled" value="1">
+    <button class="ghost" type="submit">Включить автомат</button>
+  </form>
+  <form method="post" action="/settings/trust/dismiss" style="display:inline;">
+    <input type="hidden" name="source" value="{{ trust_offer.source }}">
+    <button class="ghost" type="submit">Пока не надо</button>
+  </form>
+  {% if trust_always_ask %}<span class="hint" style="width:100%;">Тумблер «спрашивать всегда» сейчас включён — даже с автоматом WexFlow будет ждать твоего подтверждения. Выключить его можно на странице «Состояние».</span>{% endif %}
+</div>
+{% endif %}
 {# Языковой барьер: скрытое всегда посчитано и одним кликом возвращается. #}
 {% if barrier_hidden %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('eyeoff', 13) }} Скрыто вакансий, где нужен датский или местный диплом: <b>{{ barrier_hidden }}</b>. <a href="{{ barrier_show_url }}">показать их</a> · <a href="/profile#language">настроить</a></div>{% endif %}
 {% if f.fit == 'all' and barrier_total %}<div class="notice-line" style="color:var(--info-txt);background:var(--info-bg);">{{ ic.i('eye', 13) }} Показаны и те вакансии, где нужен датский или местный диплом: <b>{{ barrier_total }}</b>. <a href="{{ barrier_hide_url }}">снова скрыть</a></div>{% endif %}

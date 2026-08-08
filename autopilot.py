@@ -19,6 +19,7 @@ import feed
 import geo
 import labels
 import settings_store
+import trust
 from db import Job, get_session, select
 
 # Значения по умолчанию правила. 0/пусто = «без ограничения».
@@ -51,6 +52,7 @@ DEFAULT_RULE = {
     "daily_limit": 3,           # максимум автоотправок в день
     "submit_scope": "new",      # "new" = только появившиеся ПОСЛЕ включения; "all" = все подходящие
     "autosubmit_baseline": [],  # снимок совпадений на момент включения — их НЕ трогаем (для scope=new)
+    "trust_block_note": "",     # последняя записанная причина молчания автоотправки (шаг 3)
     "event_log": [],            # лента событий автопилота [{ts,kind,text}] (для монитора)
     "last_search_at": 0.0,      # последняя завершённая проверка при включённом автопилоте
     "last_search_new": 0,       # сколько новых совпадений было в последней проверке
@@ -694,15 +696,49 @@ def _eligible_all(rule: dict) -> list[Job]:
     """Подходящие, которые автоотправка ещё НЕ подавала, с учётом охвата:
     - scope=new (по умолчанию): только появившиеся ПОСЛЕ включения (нет в baseline);
     - scope=all: все подходящие сейчас (baseline игнорируется).
-    Уже отправленные ботом исключаются всегда. Свежие — первыми."""
+    Уже отправленные ботом исключаются всегда. Свежие — первыми.
+
+    Площадка, не доказавшая подачу квитанцией и снимком, сюда не попадает
+    вовсе (шаг 3): первая подача на ней идёт с подтверждением человека.
+    """
     done = applications.submitted_ids() | applications.submitting_ids()
     if (rule.get("submit_scope") or "new") == "all":
         todo = [j for j in find_matches() if j.id not in done]
     else:
         baseline = set(rule.get("autosubmit_baseline") or [])
         todo = [j for j in find_matches() if j.id not in baseline and j.id not in done]
+    todo = [j for j in todo if trust.auto_allowed(getattr(j, "source", "salling"))[0]]
     todo.sort(key=_seen_ts, reverse=True)
     return todo
+
+
+def _log_trust_block_once(reason: str) -> None:
+    """Записать причину молчания автоотправки в журнал — но не каждый скан.
+
+    Скан идёт каждые 3 минуты; запись «доверие не заработано» на каждом
+    вытеснила бы из журнала (EVENT_LOG_MAX) реальные подачи за пару часов.
+    """
+    if not reason:
+        return
+    if get_rule().get("trust_block_note") == reason:
+        return
+    save_rule({"trust_block_note": reason})
+    log_event("info", f"Автоотправка молчит: {reason}")
+
+
+def auto_submit_block() -> str:
+    """Почему автоотправка сейчас никого не отправит («» — отправит).
+
+    Ответ показывается человеку словами: молчащий автопилот без объяснения —
+    это ровно та немота, из-за которой перестают доверять программе.
+    """
+    reasons = []
+    for source in trust.SOURCES:
+        allowed, why = trust.auto_allowed(source)
+        if allowed:
+            return ""
+        reasons.append(why)
+    return reasons[0] if reasons else ""
 
 
 def eligible_for_submit(limit_remaining: int) -> list[Job]:
@@ -1085,6 +1121,9 @@ def auto_submit_tick(launcher) -> None:
             return
         jobs = eligible_for_submit(remaining)
         if not jobs:
+            # Молчание объясняем: если отправлять некому именно из-за
+            # недоверенной площадки, человек должен это прочитать, а не гадать.
+            _log_trust_block_once(auto_submit_block())
             return
         ids = [j.id for j in jobs]
         mark_submitting(ids)
