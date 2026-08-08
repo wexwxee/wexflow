@@ -47,6 +47,7 @@ import subscription
 import account as account_mod
 import cloud_auth
 import transit
+import feed
 from db import Application, Job, init_db, get_session, select, utcnow
 import db as db_mod
 import scraper
@@ -108,7 +109,9 @@ def _clean_filter_query(raw_query: str) -> str:
             continue
         if key in {"group", "show_applied"}:
             value = "1" if value in {"1", "true", "on"} else ""
-        elif key == "status" and value not in SAFE_JOB_STATUSES | {"active"}:
+        # «closed» сюда не пускаем: закрытых в ленте нет, и сохранённый профиль
+        # поиска не должен таскать за собой мёртвый фильтр.
+        elif key == "status" and value not in (SAFE_JOB_STATUSES - {"closed"}) | {"active"}:
             value = ""
         elif key == "sort" and value not in {"published", "distance", "commute", "title", "city"}:
             value = ""
@@ -1232,10 +1235,10 @@ CLOUD_JOBS_LIMIT = 500   # сколько вакансий держим в те�
 
 def _all_active_jobs() -> list:
     """Активные вакансии — ровно тот набор, что показывает главный экран
-    приложения (без закрытых, скрытых и поданных)."""
+    приложения (без закрытых, скрытых, поданных и чужих стран)."""
     with get_session() as s:
         return list(s.exec(select(Job).where(
-            Job.status.not_in(["closed", "hidden", "applied"]),
+            *feed.visible_clauses(exclude_applied=True),
             Job.applied_at.is_(None),
         )).all())
 
@@ -2956,7 +2959,7 @@ def _distinct(session, column):
 
 
 def _active_counts(session):
-    rows = session.exec(select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))).all()
+    rows = session.exec(select(Job).where(*feed.visible_clauses(exclude_applied=True))).all()
     counts = {
         "source": Counter(),
         "brand": Counter(),
@@ -3022,7 +3025,7 @@ def hub(request: Request):
             s.exec(
                 select(func.count(Job.id)).where(
                     Job.source == "salling",
-                    Job.status.not_in(["closed", "hidden", "applied"]),
+                    *feed.visible_clauses(exclude_applied=True),
                 )
             ).one()
             or 0
@@ -3044,7 +3047,7 @@ def hub(request: Request):
             "active": s.exec(
                 select(func.count(Job.id)).where(
                     Job.source.in_(connector_sources),
-                    Job.status.not_in(["closed", "hidden", "applied"]),
+                    *feed.visible_clauses(exclude_applied=True),
                 )
             ).one()
             or 0,
@@ -3121,7 +3124,7 @@ def system_status(request: Request):
     with get_session() as s:
         active_jobs = s.exec(
             select(func.count()).select_from(Job).where(
-                Job.status.not_in(["closed", "hidden", "applied"]))
+                *feed.visible_clauses(exclude_applied=True))
         ).one()
 
     try:
@@ -3188,7 +3191,7 @@ def apply_by_link(request: Request, pending: str = ""):
     with get_session() as session:
         rows = session.exec(select(Job).where(
             Job.source != "salling",
-            Job.status.not_in(["closed", "hidden"]),
+            *feed.visible_clauses(),
         )).all()
         pending_job = session.get(Job, pending) if pending else None
         pending_application = None
@@ -3748,12 +3751,12 @@ def _today_summary(home: dict | None) -> dict:
     day_start, day_end = applications._local_day_utc_bounds()
     with get_session() as s:
         fresh_jobs = list(s.exec(select(Job).where(
-            Job.status.not_in(["closed", "hidden", "applied"]),
+            *feed.visible_clauses(exclude_applied=True),
             Job.first_seen >= fresh_cutoff,
         )).all())
         today_new = s.exec(
             select(func.count()).select_from(Job).where(
-                Job.status.not_in(["closed", "hidden", "applied"]),
+                *feed.visible_clauses(exclude_applied=True),
                 Job.first_seen >= day_start,
                 Job.first_seen < day_end,
             )
@@ -3834,6 +3837,10 @@ def index(
                 pass
 
     period = period if period in {"today", "3d", "all"} else "all"
+    # Закрытых в ленте нет ни при каком фильтре: подать на них нельзя, а список
+    # они засоряют. Сюда же попадает старая кука фильтров со status=closed.
+    if status == "closed":
+        status = "active"
     sort = sort if sort in {"published", "distance", "commute", "title", "city"} else ""
     revisit = revisit if revisit in REVISIT_OPTIONS else str(DEFAULT_REVISIT_DAYS)
     revisit_days = REVISIT_OPTIONS[revisit]
@@ -3867,8 +3874,7 @@ def index(
         if source_key:
             stmt = stmt.where(Job.source == source_key)
         if status == "active":
-            excluded_statuses = ["closed", "hidden"]
-            stmt = stmt.where(Job.status.not_in(excluded_statuses))
+            stmt = stmt.where(*feed.visible_clauses())
             if not show_applied:
                 active_or_unsubmitted = Job.applied_at.is_(None)
                 if revisit_cutoff is not None and period == "all":
@@ -3881,9 +3887,14 @@ def index(
                 stmt = stmt.where(active_or_unsubmitted)
         elif status == "applied":
             # «Поданные» — это весь путь заявки, а не только начальный этап.
+            # Страну здесь НЕ фильтруем: поданная заявка — история человека, и
+            # она не должна исчезать из-за смены настройки стран.
             stmt = stmt.where(Job.applied_at.is_not(None))
         elif status:
             stmt = stmt.where(Job.status == status)
+            country_only = feed.country_clause()
+            if country_only is not None:
+                stmt = stmt.where(country_only)
         if period == "today":
             day_start, day_end = applications._local_day_utc_bounds()
             stmt = stmt.where(Job.first_seen >= day_start, Job.first_seen < day_end)
@@ -3965,13 +3976,23 @@ def index(
         counts = _active_counts(s)
         total_active = s.exec(
             select(func.count()).select_from(Job).where(
-                Job.status.not_in(["closed", "hidden"]),
+                *feed.visible_clauses(),
                 Job.applied_at.is_(None),
             )
         ).one()
         applied_count = s.exec(
             select(func.count()).select_from(Job).where(Job.applied_at.is_not(None))
         ).one()
+        # «База пустая» — неправда, когда вакансии есть, но все в других странах.
+        # Считаем это только когда лента и правда пуста: лишний COUNT ни к чему.
+        hidden_by_country = 0
+        if not total_active and feed.country_clause() is not None:
+            hidden_by_country = s.exec(
+                select(func.count()).select_from(Job).where(
+                    Job.status.not_in(feed.CLOSED_STATUSES),
+                    Job.applied_at.is_(None),
+                )
+            ).one()
         last = s.exec(select(func.max(Job.last_seen))).one()
 
     # Расстояние и реальный маршрут считаются в правильном порядке: сначала
@@ -4183,7 +4204,6 @@ def index(
         "offer": "Оффер",
         "rejected": "Отказ",
         "hidden": "Скрытые",
-        "closed": "Закрытые",
     }
     _chip_values = {
         "q": ("Поиск", q),
@@ -4275,6 +4295,8 @@ def index(
         ],
         "f": _f,
         "total_active": total_active, "applied_count": applied_count, "last_update": last,
+        "hidden_by_country": hidden_by_country,
+        "feed_countries_label": ", ".join(feed.name(c) for c in feed.countries()),
         "autopilot": _ap_rule,
         "autopilot_count": _ap_count,
         "data_age_min": (max(0, int((utcnow() - last).total_seconds() // 60)) if last else None),
@@ -4613,6 +4635,64 @@ def set_home(request: Request, address: str = Form(...)):
     target = (ref + sep + "geoerror=1") if ref else "/?geoerror=1"
     target = _url_with_system_response(target, error="Не удалось распознать адрес. Попробуй улицу с номером дома, город или индекс.")
     return RedirectResponse(target, status_code=303)
+
+
+def _feed_country_options() -> list[dict]:
+    """Страны из открытых вакансий базы со счётчиками — выбор для настройки.
+
+    Показываем то, что реально есть в базе (плюс уже выбранное и Данию), а не
+    справочник стран мира: настройка должна отвечать на вопрос «что я сейчас
+    вижу и что появится, если включить соседнюю страну».
+    """
+    with get_session() as s:
+        rows = s.exec(
+            select(Job.country, func.count(Job.id))
+            .where(Job.status.not_in(feed.CLOSED_STATUSES))
+            .group_by(Job.country)
+        ).all()
+    counts: Counter = Counter()
+    unknown = 0
+    for value, count in rows:
+        code = feed.normalize(value)
+        if code:
+            counts[code] += int(count or 0)
+        else:
+            unknown += int(count or 0)
+    selected = feed.countries()
+    for code in [*feed.DEFAULT_COUNTRIES, *(c for c in selected if c != feed.ANY)]:
+        counts.setdefault(code, 0)
+    options = [
+        {
+            "code": code,
+            "name": feed.name(code),
+            "count": counts[code],
+            "selected": feed.any_country() or code in selected,
+        }
+        for code in sorted(counts, key=lambda c: (-counts[c], feed.name(c)))
+    ]
+    if unknown:
+        # Вакансии без страны (добавленные по ссылке) лента показывает всегда —
+        # честно говорим об этом числом, а не молчанием.
+        options.append({"code": "", "name": "Без указания страны", "count": unknown,
+                        "selected": True, "always": True})
+    return options
+
+
+@app.post("/settings/countries")
+async def settings_countries(request: Request):
+    """Страны ленты. По умолчанию Дания; «любая страна» — отдельная галочка."""
+    form = await request.form()
+    if str(form.get("any_country") or "").strip().lower() in ("1", "true", "on", "yes"):
+        codes = feed.set_countries([feed.ANY])
+        notice = "Лента показывает вакансии из любой страны."
+    else:
+        codes = feed.set_countries(form.getlist("country"))
+        notice = "Страны ленты сохранены: " + ", ".join(feed.name(c) for c in codes) + "."
+    # Лента изменилась: то, что стало видно, — не «новые» вакансии, а уже
+    # лежавшие в базе. Иначе автопилот высыпал бы их пачкой как находку.
+    autopilot.save_rule({"seen_ids": [j.id for j in autopilot.find_matches()]})
+    autopilot.reset_tg_queue_for_filters()
+    return _redirect_back(request, "/profile#countries", notice=notice)
 
 
 @app.post("/set-home-coords")
@@ -5509,6 +5589,9 @@ def _render_account(request: Request, mode: str = "account", saved: str = "",
         "mode": mode,
         # домашний адрес общий для всех источников и живёт теперь здесь
         "home": settings_store.get_home(),
+        # страны ленты — тоже общая настройка поиска, рядом с домом
+        "feed_countries": _feed_country_options(),
+        "feed_any_country": feed.any_country(),
         "file_info": _profile_file_info(profile),
         "saved": saved, "missing_fields": missing_fields,
         "deleted": deleted, "delete_error": delete_error,
@@ -5551,7 +5634,7 @@ def profile_page(request: Request, saved: str = "", missing: str = "",
 
 
 def _autopilot_geo_options(rule: dict | None = None):
-    """Списки городов и регионов из активных датских вакансий.
+    """Списки городов и регионов из активных вакансий ленты.
 
     Города подстраиваем под текущий профиль автопилота: если уже выбрана
     категория/бренд/регион/возраст, не показываем весь каталог городов подряд.
@@ -5559,10 +5642,9 @@ def _autopilot_geo_options(rule: dict | None = None):
     with get_session() as s:
         jobs = list(
             s.exec(
-                select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))
+                select(Job).where(*feed.visible_clauses(exclude_applied=True))
             ).all()
         )
-    jobs = [j for j in jobs if (j.country or "").upper() == "DK"]
 
     def clean_city(value: str | None) -> str:
         value = re.sub(r"\s+", " ", (value or "").strip(" ,;"))
@@ -5607,9 +5689,7 @@ def _document_settings_options() -> tuple[list[dict], list[dict]]:
     with get_session() as s:
         jobs = list(
             s.exec(
-                select(Job).where(
-                    Job.status.not_in(["closed", "hidden", "applied"]),
-                )
+                select(Job).where(*feed.visible_clauses(exclude_applied=True))
             ).all()
         )
 
@@ -6974,7 +7054,7 @@ def _send_telegram_demo_card() -> dict:
     if sample is None:
         with get_session() as s:
             sample = s.exec(
-                select(Job).where(Job.status.not_in(["closed", "hidden", "applied"]))
+                select(Job).where(*feed.visible_clauses(exclude_applied=True))
             ).first()
     if sample is None:
         return {"ok": False, "error": "Подходящих вакансий для примера сейчас нет."}

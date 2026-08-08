@@ -9,6 +9,7 @@ import datetime as dt
 from typing import Iterable
 
 import connectors
+import feed
 import geo
 from connectors.base import JobItem, is_denmark
 from db import Job, get_session, init_db, select, utcnow
@@ -29,24 +30,35 @@ def _text(value) -> str:
     return str(value or "").strip()
 
 
-def _is_danish(item: JobItem) -> bool:
-    country = _text(item.country)
-    if country.upper() in {"DK", "DNK"} or country.casefold() in {"denmark", "danmark"}:
-        return True
-    # An explicit foreign country wins over a city-like substring. Only fall
-    # back to city/street when the feed omitted country altogether.
-    if country:
-        return is_denmark(country)
-    return is_denmark(_text(item.city), _text(item.street))
+def item_country(item: JobItem) -> str:
+    """Код страны вакансии: явное поле каталога, иначе догадка по городу.
+
+    Каталоги ATS пишут страну как попало («DK», «Denmark», «Danmark»), а часть
+    вовсе её не присылает — там остаётся смотреть на город и улицу.
+    """
+    raw = _text(item.country)
+    code = feed.normalize(raw)
+    if code:
+        return code
+    if raw and is_denmark(raw):
+        return "DK"
+    if not raw and is_denmark(_text(item.city), _text(item.street)):
+        return "DK"
+    return ""
+
+
+def _wanted(item: JobItem) -> bool:
+    """Берём ли вакансию в базу. Страна — настройка ленты (по умолчанию DK).
+
+    Нераспознанную страну в базу не тащим: каталоги международные, и без
+    опознания сюда полился бы весь мир.
+    """
+    return feed.allows(item_country(item), unknown_ok=False)
 
 
 def job_from_item(item: JobItem, now=None) -> Job:
     now = now or utcnow()
-    country = _text(item.country)
-    if country.upper() in {"DK", "DNK"} or country.casefold() in {"denmark", "danmark"}:
-        country = "DK"
-    elif not country and _is_danish(item):
-        country = "DK"
+    country = item_country(item) or _text(item.country)
     return Job(
         id=str(item.id or "")[:220],
         source=str(item.source or "")[:40],
@@ -92,7 +104,7 @@ def sync_items(source: str, items: Iterable[JobItem], session_factory=get_sessio
     """Upsert one complete connector snapshot and close only its missing rows."""
     now = utcnow()
     clean = [item for item in items
-             if item.source == source and item.id and item.title and _is_danish(item)]
+             if item.source == source and item.id and item.title and _wanted(item)]
     seen_ids = {str(item.id) for item in clean}
     seen_scopes = {_item_scope(source, item.id, item.company) for item in clean}
     seen_scopes.discard("")
@@ -155,7 +167,7 @@ def geocode_missing(source: str, limit: int = GEOCODE_BATCH,
         jobs = session.exec(
             select(Job).where(
                 Job.source == source,
-                Job.status.not_in(["closed", "hidden"]),
+                *feed.visible_clauses(),
                 Job.lat.is_(None),
                 (Job.zip.is_not(None) | Job.city.is_not(None)),
             ).order_by(Job.last_seen.desc()).limit(limit)

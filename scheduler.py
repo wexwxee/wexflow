@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
+import feed
 import scraper
 from db import get_session, Job, select, utcnow
 
@@ -52,7 +53,7 @@ def job_tick():
     cutoff = utcnow() - timedelta(minutes=35)
     with get_session() as s:
         fresh = s.exec(
-            select(Job).where(Job.first_seen >= cutoff, Job.status != "closed")
+            select(Job).where(Job.first_seen >= cutoff, *feed.visible_clauses())
         ).all()
     if fresh:
         notify(f"Новых вакансий: {len(fresh)}", "; ".join(j.title for j in fresh[:5]))

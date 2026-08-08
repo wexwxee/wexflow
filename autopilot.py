@@ -15,6 +15,7 @@ import re
 import uuid
 
 import applications
+import feed
 import geo
 import labels
 import settings_store
@@ -569,7 +570,7 @@ def profile_match_count(p: dict) -> int:
     home = settings_store.get_home()
     with get_session() as s:
         jobs = list(s.exec(select(Job).where(
-            Job.status.not_in(["closed", "hidden", "applied"]),
+            *feed.visible_clauses(exclude_applied=True),
             Job.applied_at.is_(None),
         )).all())
     return sum(1 for j in jobs if _profile_matches(j, p, home))
@@ -608,13 +609,17 @@ def _matches(job: Job, rule: dict, home: dict | None) -> bool:
 
 
 def find_matches() -> list[Job]:
-    """Активные вакансии, подходящие под правило (объекты Job)."""
+    """Активные вакансии ленты, подходящие под правило (объекты Job).
+
+    Набор берём ровно тот же, что показывает главный экран (feed): закрытые,
+    скрытые и вакансии из стран вне настройки автопилоту не предлагаются.
+    """
     rule = get_rule()
     home = settings_store.get_home()
     with get_session() as s:
         jobs = list(
             s.exec(select(Job).where(
-                Job.status.not_in(["closed", "hidden", "applied"]),
+                *feed.visible_clauses(exclude_applied=True),
                 Job.applied_at.is_(None),
             )).all()
         )

@@ -29,6 +29,15 @@
         <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
       </div>
     {% endif %}
+  {% elif total_active == 0 and hidden_by_country %}
+    {# Вакансии в базе есть, но все за пределами выбранных стран — говорим прямо. #}
+    <div class="empty-ic">{{ ic.i('map', 24) }}</div>
+    <h3>В выбранных странах вакансий нет</h3>
+    <p>Лента показывает только: <b>{{ feed_countries_label }}</b>. Открытых вакансий из других стран в базе — <b>{{ hidden_by_country }}</b>. Страны меняются в профиле.</p>
+    <div class="empty-actions">
+      <a class="empty-btn" href="/profile#countries">{{ ic.i('map', 14) }} Настроить страны</a>
+      <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
+    </div>
   {% elif total_active == 0 %}
     <div class="empty-ic">{{ ic.i('cart', 24) }}</div>
     <h3>База вакансий пустая</h3>
@@ -920,7 +929,8 @@
 <form id="filterform" class="search-filter-form" method="get" action="/">
   <input type="hidden" name="period" value="{{ f.period }}">
   {% if active_preset %}<input type="hidden" name="profile" value="{{ active_preset.id }}">{% endif %}
-  {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Все поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа','hidden':'Скрытые','closed':'Закрытые'} %}
+  {# «Закрытые» из выбора убраны: закрытая вакансия в ленту не попадает — подать на неё нельзя. #}
+  {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Все поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа','hidden':'Скрытые'} %}
   {% set sorts = {'published':'↓ по дате','distance':'ближе по прямой','commute':'быстрее добраться','title':'по названию','city':'по городу'} %}
   <div class="filter-quick-grid">
     <div class="field">

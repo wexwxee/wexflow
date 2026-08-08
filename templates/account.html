@@ -1018,6 +1018,44 @@
     </div>
     <p class="hint" id="geoHomeMsg" hidden></p>
   </form>
+
+  <!-- Страны ленты: настройка, а не константа (пересмотр продукта 08.08.2026).
+       По умолчанию Дания; Европа потом включается галочкой, а не правкой кода. -->
+  <form id="countries" class="panel" method="post" action="/settings/countries">
+    <style>
+      .fc-list { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 14px; }
+      .fc-item {
+        display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+        padding:8px 12px; border:1px solid var(--glass-line); border-radius:12px;
+        background:color-mix(in srgb, var(--glass) 75%, transparent);
+      }
+      .fc-item:hover { border-color:var(--accent); }
+      .fc-item:has(input:checked) { border-color:var(--accent); color:var(--txt-strong); }
+      .fc-item b { color:var(--txt-weak); font-weight:600; font-size:12px; }
+      .fc-item.fixed { cursor:default; opacity:.75; }
+      .fc-any { display:inline-flex; align-items:center; gap:8px; cursor:pointer; }
+    </style>
+    <h2>{{ ic.i('map', 17) }} Страны поиска</h2>
+    <p class="hint">Из каких стран вакансии попадают в ленту, в Telegram и к автопилоту. По умолчанию — Дания. Закрытые вакансии в ленту не попадают ни при какой настройке. Цифра рядом — сколько открытых вакансий этой страны уже есть в базе.</p>
+    <div class="fc-list">
+      {% for c in feed_countries %}
+        {% if c.always %}
+        <span class="fc-item fixed" title="Такие вакансии лента показывает всегда">{{ c.name }} <b>{{ c.count }}</b></span>
+        {% else %}
+        <label class="fc-item">
+          <input type="checkbox" name="country" value="{{ c.code }}" {{ 'checked' if c.selected else '' }}>
+          <span>{{ c.name }}</span><b>{{ c.count }}</b>
+        </label>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <label class="fc-any">
+      <input type="checkbox" name="any_country" value="1" {{ 'checked' if feed_any_country else '' }}>
+      <span>Любая страна — не ограничивать ленту</span>
+    </label>
+    <p class="hint">Если ничего не отметить, останется Дания. Каталоги Ashby и Greenhouse пока отбирают вакансии только по Дании — из них другие страны не придут даже с этой галочкой.</p>
+    <div class="actions"><button class="secondary" type="submit">Сохранить страны</button></div>
+  </form>
   <script>
     (function () {
       var field = document.querySelector("[data-address-suggest]");
