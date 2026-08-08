@@ -43,6 +43,7 @@ import lidl_followup
 import lidl_monitor
 import salling_monitor
 import application_tracker
+import email_evidence
 import subscription
 import account as account_mod
 import cloud_auth
@@ -493,11 +494,46 @@ def _sync_account_from_cloud() -> None:
         account_mod.apply_cloud_session(user)
 
 
+_first_ceremony_lock = threading.Lock()
+_first_ceremonies: dict[str, tuple[str, float]] = {}
+_FIRST_CEREMONY_TTL = 30 * 60
+
+
+def _claim_first_ceremony(source: str, job_id: str) -> bool:
+    """Only one unproven submission ceremony may run per platform."""
+    source = str(source or "salling").strip() or "salling"
+    job_id = str(job_id or "").strip()
+    now = time.monotonic()
+    with _first_ceremony_lock:
+        stale = [key for key, (_, ts) in _first_ceremonies.items()
+                 if now - ts > _FIRST_CEREMONY_TTL]
+        for key in stale:
+            _first_ceremonies.pop(key, None)
+        if source in _first_ceremonies:
+            return False
+        _first_ceremonies[source] = (job_id, now)
+        return True
+
+
+def _release_first_ceremony(job_id: str) -> None:
+    job_id = str(job_id or "").strip()
+    if not job_id:
+        return
+    with _first_ceremony_lock:
+        for source, (active_id, _) in list(_first_ceremonies.items()):
+            if active_id == job_id:
+                _first_ceremonies.pop(source, None)
+
+
 def _report_apply_result_safe(job_id: str, state: str, msg: str = "") -> bool:
     try:
         return bool(cloud_auth.report_apply_result(job_id, state, msg))
     except Exception:  # noqa: BLE001
         return False
+    finally:
+        if state in {"submitted", "unconfirmed", "failed", "prepare_failed",
+                     "prepare_cancelled"}:
+            _release_first_ceremony(job_id)
 
 
 # ── Сериализатор автоматической подачи ──────────────────────────────────
@@ -999,7 +1035,8 @@ def _write_prepare_signal(job_id: str, action: str) -> None:
         print(f"prepare-signal: не записался — {e}")
 
 
-def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> None:
+def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set,
+                    ceremony_ids: set | None = None) -> None:
     """Пробный прогон с телефона: заполнить анкеты на ПК и НЕ отправлять.
 
     Ровно то же, что кнопка «Подготовить · без отправки» в приложении: окно
@@ -1008,6 +1045,7 @@ def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> No
     Каждый шаг уходит в облако (preparing → prepared/prepare_failed), чтобы в
     панели телефона было видно, что именно делает компьютер.
     """
+    ceremony_ids = {str(jid) for jid in (ceremony_ids or set())}
     blocked = 0
     blocked_ids = []
     ready_ids = []
@@ -1018,6 +1056,7 @@ def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> No
             blocked += 1
             blocked_ids.append(jid)
     opened = 0
+    ceremony_opened = 0
     errors = []
     for job in connector_jobs:
         # F27: открываем только то, что WexFlow сам показывал
@@ -1029,11 +1068,17 @@ def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> No
             _report_apply_result_safe(
                 job.id, "preparing", "Форма этой вакансии уже открывается на ПК.")
             continue
+        ceremony = str(job.id) in ceremony_ids
         _report_apply_result_safe(
-            job.id, "preparing", "Открываю анкету на компьютере — без отправки.")
+            job.id, "preparing",
+            ("Первая подача: заполняю анкету и готовлю снимок для твоего подтверждения."
+             if ceremony else
+             "Открываю анкету на компьютере — без отправки."))
         try:
             _launch_connector_filler(job.application_link or "", job.id, submit=False)
             opened += 1
+            if ceremony:
+                ceremony_opened += 1
             threading.Thread(
                 target=_watch_connector_prepare_for_phone,
                 args=(job.id,),
@@ -1049,10 +1094,16 @@ def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> No
     if ready_ids:
         for jid in ready_ids:
             _report_apply_result_safe(
-                jid, "preparing", "Открываю анкету на компьютере — без отправки.")
+                jid, "preparing",
+                ("Первая подача: заполняю анкету и готовлю снимок для твоего подтверждения."
+                 if str(jid) in ceremony_ids else
+                 "Открываю анкету на компьютере — без отправки."))
         try:
             _launch_salling_apply(ready_ids, submit=False, phone_confirm=True)
             opened += len(ready_ids)
+            ceremony_opened += len([
+                jid for jid in ready_ids if str(jid) in ceremony_ids
+            ])
         except Exception as exc:  # noqa: BLE001
             errors.append(str(exc)[:100])
             for jid in ready_ids:
@@ -1064,7 +1115,15 @@ def _run_tg_prepare(salling_ids: list, connector_jobs: list, allowed: set) -> No
             jid, "prepare_failed",
             "Этой вакансии нет в списке WexFlow — форму не открываю.")
 
-    if opened:
+    if ceremony_opened:
+        text = (
+            "🛡 <b>Первая подача с подтверждением</b>\n"
+            f"Заполняю на компьютере анкет: {ceremony_opened}. Сначала пришлю снимок "
+            "готовой анкеты сюда. Заявка уйдёт только после кнопки «Отправить» под снимком."
+        )
+        if opened > ceremony_opened:
+            text += f"\nЕщё пробных прогонов без отправки: {opened - ceremony_opened}."
+    elif opened:
         text = (
             "🧪 <b>Пробный прогон без отправки</b>\n"
             f"Открываю на компьютере анкет: {opened}. WexFlow заполнит поля и "
@@ -1086,6 +1145,7 @@ def _handle_tg_decisions(decisions: list) -> None:
     connector_jobs = []
     prepare_ids = []          # пробный прогон Salling: заполнить и не отправлять
     prepare_connectors = []   # то же для коннекторов (Lidl и др.)
+    ceremony_ids = set()      # первая подача: снимок + отдельная финальная кнопка
     for d in decisions or []:
         if not isinstance(d, dict):
             continue
@@ -1106,13 +1166,27 @@ def _handle_tg_decisions(decisions: list) -> None:
             # кнопка под скрином подготовленной анкеты: воркер держит её открытой
             # и ждёт этого сигнала. Отправку подтвердил ЧЕЛОВЕК, а не автопилот.
             _write_prepare_signal(jid, "submit" if action == "prepare_submit" else "cancel")
+            if action == "prepare_cancel":
+                _release_first_ceremony(jid)
             continue
+        if action == "submit":
+            source = str(getattr(job, "source", "") or d.get("source") or "salling")
+            if not trust.stats(source)["proven"]:
+                if not _claim_first_ceremony(source, jid):
+                    _report_apply_result_safe(
+                        jid, "prepare_failed",
+                        f"Первая подача на {trust.label(source)} уже готовится. "
+                        "Заверши её кнопкой под снимком.")
+                    continue
+                action = "prepare"
+                ceremony_ids.add(str(jid))
         if action == "prepare":
             # «Подготовить без отправки» с телефона — то же, что кнопка
             # «Подготовить» в приложении. Ничего не помечаем поданным.
             # Прогон — действие «здесь и сейчас»: если ПК спал полчаса и дольше,
             # он НЕ должен вдруг сам открыть браузер (человек уже не у экрана).
             if _tg_prepare_expired(d):
+                _release_first_ceremony(jid)
                 _report_apply_result_safe(
                     jid, "prepare_failed",
                     "Прогон устарел — ПК был офлайн. Нажми «Подготовить» ещё раз.")
@@ -1129,7 +1203,7 @@ def _handle_tg_decisions(decisions: list) -> None:
 
     allowed = applications.offered_ids() | applications.listed_ids()
     if prepare_ids or prepare_connectors:
-        _run_tg_prepare(prepare_ids, prepare_connectors, allowed)
+        _run_tg_prepare(prepare_ids, prepare_connectors, allowed, ceremony_ids=ceremony_ids)
     for job in connector_jobs:
         if job.id not in allowed:
             _report_apply_result_safe(
@@ -1385,8 +1459,10 @@ def _sync_jobs_to_cloud(force: bool = False) -> bool:
             ] if home else [])
         except Exception:  # noqa: BLE001
             pass
+        trust_rows = {row["source"]: row for row in trust.all_stats()}
         payload = [_tg_job_payload(j, is_match=m, home=home, translate_title=m, lean=True,
-                                   transit_cache=tcache)
+                                   transit_cache=tcache,
+                                   trust_row=trust_rows.get(str(j.source or "salling")))
                    for j, m in pairs]
         digest = _sync_digest(payload)
         if not force and digest and _cloud_sync_sent_hash.get("jobs") == digest:
@@ -1707,6 +1783,7 @@ def _sync_filters_to_cloud(force: bool = False) -> bool:
             },
             "profileName": str(prof.get("name") or "Набор 1"),
             "profilesTotal": len(profs),
+            "trust": _phone_trust_payload(),
             # версия WexFlow на ПК: в панели сразу видно, что компьютер старый —
             # иначе «кнопка не работает» выглядит как поломка облака
             "appVersion": _app_version(),
@@ -1902,7 +1979,7 @@ def _title_ru(title: str, cached_only: bool = False) -> str:
     return ru
 
 
-def _tg_card(job) -> str:
+def _tg_card(job, trust_row: dict | None = None) -> str:
     """Красивая карточка вакансии для Telegram (HTML)."""
     def e(s):
         return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -1944,6 +2021,16 @@ def _tg_card(job) -> str:
     elif fit_view["barrier"]:
         lines.append(f"⚠️ {e(fit_view['label'])}"
                      + (f" — {e(fit_view['reason'])}" if fit_view["reason"] else ""))
+    trust_view = _job_trust_payload(job, trust_row)
+    if trust_view["platformProven"]:
+        lines.append(
+            f"🛡 Площадка проверена: доказанных подач — {trust_view['platformProofs']}."
+        )
+    else:
+        lines.append(
+            f"🛡 Первая подача на {e(trust_view['platformLabel'])}: сначала покажу "
+            "заполненную анкету; отправка — отдельной кнопкой под снимком."
+        )
     if job.application_link:
         lines.append(f'🔗 <a href="{e(job.application_link)}">Открыть вакансию на сайте</a>')
     return ("🆕 <b>Новая подходящая вакансия</b>\n"
@@ -2014,6 +2101,37 @@ _SHORT_SOURCES = {
 }
 
 
+def _job_trust_payload(job, trust_row: dict | None = None) -> dict:
+    source = str(getattr(job, "source", "") or "salling")
+    row = trust_row if trust_row is not None else trust.stats(source)
+    proven = bool((row or {}).get("proven"))
+    return {
+        "platformProven": proven,
+        "firstSubmission": not proven,
+        "platformLabel": str((row or {}).get("label") or trust.label(source)),
+        "platformProofs": int((row or {}).get("proofs") or 0),
+    }
+
+
+def _phone_trust_payload(rows: list[dict] | None = None) -> dict:
+    rows = trust.all_stats() if rows is None else rows
+    platforms = []
+    for row in rows:
+        proven = bool(row.get("proven"))
+        platforms.append({
+            "source": str(row.get("source") or ""),
+            "label": str(row.get("label") or trust.label(row.get("source"))),
+            "proven": proven,
+            "firstSubmission": not proven,
+            "proofs": int(row.get("proofs") or 0),
+            "receipts": int(row.get("receipts") or 0),
+            "emails": int(row.get("emails") or 0),
+            "portal": int(row.get("portal") or 0),
+            "auto": bool(row.get("auto")),
+        })
+    return {"alwaysAsk": trust.always_ask(), "platforms": platforms}
+
+
 def _transit_fields(job, home: dict | None, cache: dict | None = None) -> dict:
     """Готовое время в пути из кэша (без сети). Пусто, если ещё не считали.
     cache — снимок кэша (transit.snapshot()); без него читаем сами."""
@@ -2040,7 +2158,8 @@ def _transit_fields(job, home: dict | None, cache: dict | None = None) -> dict:
 
 def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
                     translate_title: bool = True, lean: bool = False,
-                    transit_cache: dict | None = None) -> dict:
+                    transit_cache: dict | None = None,
+                    trust_row: dict | None = None) -> dict:
     """Структурные поля для Mini App-панели: фильтры не должны парсить только текст.
 
     Набор полей намеренно повторяет карточку главного экрана приложения (бренд с
@@ -2124,6 +2243,7 @@ def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
         # Панель показывает один и тот же полный список подходящих — без этой
         # пометки не видно, что появилось недавно, а что висит давно.
         "isNew": bool(job.first_seen and (utcnow() - job.first_seen).days < 3),
+        **_job_trust_payload(job, trust_row),
     }
     if lean:
         # Длинный список (сотни вакансий) — только то, что реально рисует панель.
@@ -2158,8 +2278,14 @@ def _tg_offer_jobs(jobs, panel: bool = False) -> dict:
     уходит, пока пользователь не нажмёт ✅ в Telegram."""
     sent = 0
     last_error = ""
+    trust_rows = {row["source"]: row for row in trust.all_stats()}
     for job in jobs:
-        r = cloud_auth.offer(_tg_card(job), job.id, job=_tg_job_payload(job), panel=panel)
+        source = str(getattr(job, "source", "") or "salling")
+        trust_row = trust_rows.get(source)
+        r = cloud_auth.offer(
+            _tg_card(job, trust_row), job.id,
+            job=_tg_job_payload(job, trust_row=trust_row), panel=panel,
+        )
         if r and r.get("ok"):
             autopilot.tg_pending_add(job.id, r.get("messageId"))
             if panel:
@@ -5517,6 +5643,55 @@ def applied_proof(name: str):
     return FileResponse(p, media_type="image/png")
 
 
+@app.get("/email-proof/{name}")
+def email_proof(name: str):
+    """Скачать исходное письмо-доказательство, никогда не исполняя его HTML."""
+    if not re.fullmatch(r"[\w.\-]+\.eml", name) or ".." in name:
+        raise HTTPException(status_code=404)
+    path = email_evidence.EMAIL_DIR / name
+    if not path.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(
+        path,
+        media_type="message/rfc822",
+        filename=path.name,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@app.post("/job/{job_id}/email-proof")
+def add_email_proof(
+    job_id: str,
+    request: Request,
+    email_file: UploadFile = File(...),
+):
+    """Принять только аутентифицированный .eml, связанный с этой вакансией."""
+    try:
+        evidence = email_evidence.import_upload(job_id, email_file)
+    except email_evidence.EvidenceError as exc:
+        return _redirect_back(request, "/audit", error=str(exc))
+    except Exception as exc:  # noqa: BLE001 — человеку нужна причина, журнал не падает
+        return _redirect_back(
+            request, "/audit",
+            error=f"Письмо не сохранилось: {str(exc)[:180]}",
+        )
+    threading.Thread(
+        target=_sync_application_views_to_cloud,
+        kwargs={"force": True}, daemon=True, name="email-evidence-applied-sync",
+    ).start()
+    threading.Thread(
+        target=_sync_filters_to_cloud,
+        kwargs={"force": True}, daemon=True, name="email-evidence-trust-sync",
+    ).start()
+    return _redirect_back(
+        request, "/audit",
+        notice=(
+            "Письмо работодателя проверено и сохранено локально. "
+            f"Подтверждение: {evidence.authentication.upper()}."
+        ),
+    )
+
+
 @app.get("/audit", response_class=HTMLResponse)
 def audit_log(request: Request):
     """Application center: sourced stages, silence, next actions and proofs."""
@@ -5531,6 +5706,7 @@ def audit_log(request: Request):
         rows = s.exec(
             select(Job).where(Job.applied_at.is_not(None)).order_by(Job.applied_at.desc())
         ).all()
+        email_map = email_evidence.existing_map(s, rows)
         entries = []
         for j in rows:
             tracker = application_tracker.view(j, now=now)
@@ -5540,6 +5716,7 @@ def audit_log(request: Request):
                 "confidence": j.applied_confidence or "",
                 "source": j.source, "activity": "submitted",
                 "proof": proofs.get(str(j.requisition_id or "")) or proofs.get(str(j.id)) or "",
+                "email": email_map.get((str(j.source or "salling"), str(j.id))) or {},
                 "tracker": tracker,
                 "portal": _portal_snapshot(j, portal_states),
             })
@@ -5563,6 +5740,7 @@ def audit_log(request: Request):
                 "source": application.source,
                 "activity": "preparing" if application.state == "submitting" else "incomplete",
                 "proof": "",
+                "email": {},
                 "portal": {},
                 "tracker": {
                     "label": "Анкета открыта" if application.state == "submitting" else "Не завершено",

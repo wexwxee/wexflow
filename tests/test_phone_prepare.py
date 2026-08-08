@@ -61,6 +61,64 @@ def test_prepare_from_phone_opens_connector_form_without_submitting():
     mark_submitting.assert_not_called()       # «подано» нигде не появляется
 
 
+def test_submit_on_unproven_platform_starts_first_submission_ceremony():
+    """Старая кнопка submit тоже не может обойти новый гейт на компьютере."""
+    job = Job(id="salling-first-1", source="salling", brand="Netto")
+    app._first_ceremonies.clear()
+    try:
+        with (
+            mock.patch.object(app, "get_session", side_effect=lambda: _session_for(job)),
+            mock.patch.object(app.trust, "stats", return_value={"proven": False}),
+            mock.patch.object(app.applications, "offered_ids", return_value={job.id}),
+            mock.patch.object(app.applications, "listed_ids", return_value=set()),
+            mock.patch.object(app, "_launch_salling_apply") as launch,
+            mock.patch.object(app.autopilot, "tg_submit_batch") as submit_batch,
+            mock.patch.object(app.cloud_auth, "send_digest") as digest,
+        ):
+            app._handle_tg_decisions([{"jobId": job.id, "action": "submit"}])
+
+        launch.assert_called_once_with([job.id], submit=False, phone_confirm=True)
+        submit_batch.assert_not_called()
+        assert "Первая подача с подтверждением" in digest.call_args.args[0]
+    finally:
+        app._first_ceremonies.clear()
+
+
+def test_only_one_first_submission_ceremony_runs_per_platform():
+    jobs = {
+        "first-a": Job(id="first-a", source="salling", brand="Netto"),
+        "first-b": Job(id="first-b", source="salling", brand="Bilka"),
+    }
+
+    @contextmanager
+    def session():
+        yield mock.Mock(get=mock.Mock(side_effect=lambda _model, jid: jobs.get(jid)))
+
+    app._first_ceremonies.clear()
+    try:
+        with (
+            mock.patch.object(app, "get_session", side_effect=session),
+            mock.patch.object(app.trust, "stats", return_value={"proven": False}),
+            mock.patch.object(app.applications, "offered_ids", return_value=set(jobs)),
+            mock.patch.object(app.applications, "listed_ids", return_value=set()),
+            mock.patch.object(app, "_launch_salling_apply") as launch,
+            mock.patch.object(app.autopilot, "tg_submit_batch") as submit_batch,
+            mock.patch.object(app.cloud_auth, "send_digest"),
+            mock.patch.object(app, "_report_apply_result_safe") as report,
+        ):
+            app._handle_tg_decisions([
+                {"jobId": "first-a", "action": "submit"},
+                {"jobId": "first-b", "action": "submit"},
+            ])
+
+        launch.assert_called_once_with(["first-a"], submit=False, phone_confirm=True)
+        submit_batch.assert_not_called()
+        assert any(call.args[0] == "first-b" and call.args[1] == "prepare_failed"
+                   for call in report.call_args_list)
+    finally:
+        app._first_ceremonies.clear()
+
+
 def test_prepare_respects_offered_gate():
     """F27: открываем без отправки только то, что WexFlow сам показывал."""
     job = Job(id="stranger-1", source="salling")

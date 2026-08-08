@@ -23,6 +23,7 @@ STATUS_SOURCES = {
     "manual": "изменено вручную",
     "lidl_portal": "получено из кабинета Lidl",
     "salling_portal": "получено из кабинета Salling",
+    "email": "подтверждено письмом работодателя",
     "automatic": "определено WexFlow",
     "recovered": "восстановлено из журнала",
 }
@@ -43,6 +44,7 @@ _STATUS_EMOJI = {
 CONFIRMATION_LABELS = {
     "portal": ("Подтверждено кабинетом", "official"),
     "receipt": ("Есть квитанция сайта", "strong"),
+    "email": ("Подтверждено письмом", "official"),
     "indirect": ("Подача не подтверждена", "warning"),
     "manual": ("Отмечено вручную", "neutral"),
 }

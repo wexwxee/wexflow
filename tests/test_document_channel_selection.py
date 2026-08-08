@@ -166,6 +166,7 @@ def test_telegram_lidl_decision_opens_assisted_pc_form_with_job_id():
         application_link="https://example.test/lidl-form",
     )
     with mock.patch.object(app, "get_session", side_effect=lambda: _session_for(job)), \
+            mock.patch.object(app.trust, "stats", return_value={"proven": True}), \
             mock.patch.object(app.applications, "offered_ids", return_value={job.id}), \
             mock.patch.object(app.applications, "listed_ids", return_value=set()), \
             mock.patch.object(app.applications, "state_of", return_value="offered"), \

@@ -96,14 +96,15 @@
         .tr-facts { flex:2 1 220px; font-size:12px; color:var(--muted); }
         .tr-row form { margin:0; }
       </style>
-      <p>Автомат включается не раньше, чем площадка доказала подачу: сайт показал
-      квитанцию И снимок экрана сохранён. Пока доказательства нет, WexFlow сам
-      ничего не отправляет — первая подача идёт с твоим подтверждением.</p>
+      <p>Автомат включается не раньше, чем площадка доказала подачу: квитанцией
+      со снимком, аутентифицированным письмом работодателя или записью в его
+      кабинете. Пока доказательства нет, первая подача готовится отдельно и ждёт
+      твоего финального подтверждения.</p>
       {% for p in trust.platforms %}
       <div class="tr-row">
         <span class="tr-name">{{ p.label }}</span>
         <span class="tr-facts">
-          {% if p.proven %}{{ ic.i('check', 11) }} доказано: {{ p.proofs }}{% if p.receipts %} (квитанция и снимок: {{ p.receipts }}){% endif %}{% if p.portal %} (кабинет работодателя: {{ p.portal }}){% endif %}{% else %}доказанных подач нет{% endif %}
+          {% if p.proven %}{{ ic.i('check', 11) }} доказано: {{ p.proofs }}{% if p.receipts %} (квитанция и снимок: {{ p.receipts }}){% endif %}{% if p.emails %} (письмо работодателя: {{ p.emails }}){% endif %}{% if p.portal %} (кабинет работодателя: {{ p.portal }}){% endif %}{% else %}доказанных подач нет{% endif %}
           · подач всего: {{ p.submitted }}{% if p.receipts_without_proof %} · квитанция без снимка: {{ p.receipts_without_proof }}{% endif %}{% if p.failed %} · не подтвердились: {{ p.failed }}{% endif %}
         </span>
         {% if p.proven %}

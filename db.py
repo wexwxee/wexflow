@@ -103,6 +103,30 @@ class Application(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class ApplicationEvidence(SQLModel, table=True):
+    """Локальное доказательство подачи, привязанное к строке реестра.
+
+    В отличие от счётчика доверия это сам проверяемый артефакт: для письма
+    сохраняются исходный ``.eml``, его отпечаток и безопасные заголовки. Файл
+    остаётся на компьютере и никогда не синхронизируется в облако.
+    """
+    __table_args__ = (
+        UniqueConstraint("fingerprint", name="uq_application_evidence_fingerprint"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source: str = Field(default="salling", index=True)
+    job_id: str = Field(index=True)
+    kind: str = Field(default="email", index=True)
+    path: str = ""                         # имя файла внутри logs/email
+    fingerprint: str = Field(index=True)    # sha256 исходного .eml
+    sender: str = ""                       # только адрес отправителя
+    subject: str = ""                      # короткий заголовок для журнала
+    authentication: str = ""               # dmarc/dkim/spf, прошедший проверку
+    occurred_at: Optional[datetime] = None  # Date из письма, приведённый к UTC
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class RoleVerdict(SQLModel, table=True):
     """Вердикт «подойдёт ли без датского» для РОЛИ, а не для вакансии.
 

@@ -110,7 +110,10 @@ def test_skipped_and_submitted_are_excluded():
 
 def test_payload_has_app_card_fields():
     job = _job("p1")
-    p = app._tg_job_payload(job, is_match=False, home=None)
+    p = app._tg_job_payload(
+        job, is_match=False, home=None,
+        trust_row={"proven": False, "label": "Salling Group", "proofs": 0},
+    )
     assert p["titleBase"] == "Salgsassistent p1"
     assert p["brandColor"] and p["brandFg"], "цвет бренда — как в карточке приложения"
     assert p["employment"] == "Частичная занятость"
@@ -122,6 +125,19 @@ def test_payload_has_app_card_fields():
     assert p["address"].startswith("Vej 1")
     assert p["isMatch"] is False
     assert p["status"] == "new"
+    assert p["firstSubmission"] is True
+    assert p["platformProven"] is False
+
+
+def test_payload_and_card_show_proven_platform_to_phone():
+    job = _job("trusted")
+    row = {"proven": True, "label": "Salling Group", "proofs": 2}
+    payload = app._tg_job_payload(job, home=None, trust_row=row)
+    card = app._tg_card(job, trust_row=row)
+    assert payload["platformProven"] is True
+    assert payload["firstSubmission"] is False
+    assert payload["platformProofs"] == 2
+    assert "Площадка проверена" in card
 
 
 def test_payload_age_group_uses_same_rule_as_pc_autopilot():

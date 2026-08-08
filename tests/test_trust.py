@@ -15,6 +15,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,7 +24,7 @@ from sqlmodel import SQLModel, Session, create_engine
 
 import settings_store
 import trust
-from db import Application, Job, utcnow
+from db import Application, ApplicationEvidence, Job, utcnow
 
 
 def _with_temp_settings(body):
@@ -101,6 +102,28 @@ def test_employer_portal_proves_without_our_screenshot():
         assert row["proven"] is True
         assert row["portal"] == 1 and row["receipts"] == 0
         assert row["receipts_without_proof"] == 0
+
+    _with_temp_settings(body)
+
+
+def test_authenticated_employer_email_is_an_independent_proof():
+    """Письмо не заменяет запись счётчиком: trust видит живой артефакт реестра."""
+    def body():
+        job = _applied("mail-1", confidence="email")
+        evidence = ApplicationEvidence(
+            source="salling", job_id=job.id, kind="email", path="mail.eml",
+            fingerprint="a" * 64, sender="jobs@sallinggroup.com",
+            authentication="dmarc", occurred_at=job.applied_at,
+        )
+        email_row = SimpleNamespace(
+            job_id=job.id, occurred_at=job.applied_at, created_at=job.applied_at,
+        )
+        with mock.patch.object(trust, "get_session", _db([job, evidence])), \
+                mock.patch.object(trust.email_evidence, "valid_rows", return_value=[email_row]), \
+                _proofs():
+            row = trust.stats("salling")
+        assert row["proven"] is True
+        assert row["emails"] == 1 and row["proofs"] == 1
 
     _with_temp_settings(body)
 

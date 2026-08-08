@@ -19,6 +19,8 @@
 - ``portal``  — заявка найдена в официальном кабинете работодателя. Это второй,
   независимый уровень из плана: подтверждает не WexFlow, а сам работодатель,
   поэтому снимок экрана здесь не требуется;
+- ``email``   — исходное письмо ``.eml`` прошло SPF/DKIM/DMARC и совпало с
+  выбранной вакансией. WexFlow не читает ящик и хранит файл только локально;
 - ``receipt`` — сайт показал квитанцию «ansøgning modtaget». Это НАШЕ
   утверждение о чужой странице, и засчитывается оно только вместе со снимком
   экрана: обещание «доказательство есть» без файла — это обещание, а не
@@ -36,6 +38,7 @@ from __future__ import annotations
 import re
 
 import config
+import email_evidence
 import settings_store
 from db import Application, Job, get_session, select
 
@@ -52,7 +55,7 @@ LABELS = {
     "manual_link": "По ссылке",
 }
 
-# Чем подтверждена подача. Доверие зарабатывают только эти два уровня:
+# Чем подтверждена подача. Письмо хранится отдельным артефактом в реестре:
 # «portal» — сам по себе, «receipt» — вместе со снимком экрана (см. stats).
 # «indirect» (форма исчезла) и «manual» (человек отметил сам) — не в счёт.
 PROVING_CONFIDENCE = ("receipt", "portal")
@@ -141,7 +144,7 @@ def set_auto(source: str, enabled: bool) -> tuple[bool, str]:
     source = str(source or "").strip()
     enabled = bool(enabled)
     if enabled and not stats(source)["proven"]:
-        return False, ("на этой площадке ещё не было подачи с квитанцией и снимком — "
+        return False, ("на этой площадке ещё не было доказанной подачи — "
                        "сначала одна подача с подтверждением")
 
     def _mutate(data):
@@ -211,7 +214,10 @@ def stats(source: str, proofs: dict[str, str] | None = None) -> dict:
         proven_title = ""
         receipts = 0          # квитанция сайта + наш снимок экрана
         portal = 0            # заявка видна в кабинете работодателя
+        emails = 0            # исходное письмо прошло аутентификацию и совпало с вакансией
         without_proof = 0     # квитанция была, а файла-снимка нет
+        proven_ids: set[str] = set()
+        jobs_by_id = {str(job.id): job for job in jobs}
         for job in jobs:
             confidence = str(job.applied_confidence or "")
             if confidence == "portal":
@@ -224,9 +230,23 @@ def stats(source: str, proofs: dict[str, str] | None = None) -> dict:
                     continue
             else:
                 continue
+            proven_ids.add(str(job.id))
             if proven_at is None or (job.applied_at and job.applied_at > proven_at):
                 proven_at = job.applied_at
                 proven_title = str(job.title or "")
+        email_rows = email_evidence.valid_rows(session, source)
+        email_ids: set[str] = set()
+        for evidence in email_rows:
+            job = jobs_by_id.get(str(evidence.job_id))
+            if job is None or str(evidence.job_id) in email_ids:
+                continue
+            email_ids.add(str(evidence.job_id))
+            proven_ids.add(str(evidence.job_id))
+            moment = evidence.occurred_at or evidence.created_at or job.applied_at
+            if proven_at is None or (moment and moment > proven_at):
+                proven_at = moment
+                proven_title = str(job.title or "")
+        emails = len(email_ids)
         last = jobs[0] if jobs else None
     return {
         "source": source,
@@ -234,10 +254,11 @@ def stats(source: str, proofs: dict[str, str] | None = None) -> dict:
         "submitted": submitted,
         "receipts": receipts,
         "portal": portal,
-        "proofs": receipts + portal,
+        "emails": emails,
+        "proofs": len(proven_ids),
         "receipts_without_proof": without_proof,
         "failed": len(failed),
-        "proven": (receipts + portal) > 0,
+        "proven": bool(proven_ids),
         "proven_at": proven_at,
         # какая именно вакансия доказала площадку — её и называем человеку,
         # а не последнюю поданную: это разные вакансии
@@ -264,7 +285,8 @@ def auto_allowed(source: str) -> tuple[bool, str]:
     if always_ask():
         return False, "включено «спрашивать всегда» — подтверждаю каждую отправку"
     if not stats(source)["proven"]:
-        return False, (f"{label(source)}: ещё не было подачи с квитанцией и снимком — "
+        return False, (f"{label(source)}: ещё не было подачи, доказанной квитанцией, "
+                       "письмом или кабинетом — "
                        "первая идёт с подтверждением")
     if not auto_enabled(source):
         return False, f"автомат для площадки «{label(source)}» не включён"
