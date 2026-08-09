@@ -48,6 +48,8 @@ QUESTIONNAIRE_FIELDS = (
     ("start_date", "Дата выхода"),
     ("two_year_goal", "Цель на два года"),
     ("retail_experience", "Опыт в рознице"),
+    ("warehouse_experience", "Опыт складской работы"),
+    ("english_work", "Английский для рабочего общения"),
     ("work_weekends", "Готовность работать каждые вторые выходные"),
     ("work_evenings", "Готовность к вечерним сменам"),
     ("work_early", "Готовность к ранним сменам"),
@@ -64,7 +66,8 @@ SENSITIVE_FIELDS = (
 )
 
 _YES_NO_FIELDS = {
-    "retail_experience", "work_weekends", "work_evenings", "work_early",
+    "retail_experience", "warehouse_experience", "english_work",
+    "work_weekends", "work_evenings", "work_early",
     "work_night", "has_drivers_license", "work_permit", "clean_criminal_record",
 }
 _VALUE_LABELS = {

@@ -37,6 +37,10 @@ _MAX_TEXT = 400
 _RU_EXACT: tuple[tuple[str, str], ...] = (
     (r"har du erfaring med.*(detail|butik|retail)",
      "Есть ли у тебя опыт работы в рознице (в магазине)?"),
+    (r"erfaring med lager|lagererfaring|erfaring fra lager",
+     "Есть ли у тебя опыт складской работы?"),
+    (r"kan du kommunikere p(å|a) engelsk|taler du engelsk|behersker du engelsk",
+     "Можешь ли ты общаться на английском по работе?"),
     (r"er du villig til at arbejde hver 2\.? weekend",
      "Готов(а) работать каждые вторые выходные?"),
     (r"er du villig til at arbejde hver weekend",
@@ -73,6 +77,8 @@ _RU_HINTS: tuple[tuple[str, str], ...] = (
     (r"aften", "Вопрос про вечерние смены"),
     (r"\bnat\b|nattevagt", "Вопрос про ночные смены"),
     (r"morgen|tidlig", "Вопрос про ранние утренние смены"),
+    (r"\blager\w*\b|warehouse", "Вопрос про опыт работы на складе"),
+    (r"engelsk|english", "Вопрос про английский язык"),
     (r"erfaring", "Вопрос про твой опыт"),
     (r"dansk", "Вопрос про датский язык"),
     (r"k(ø|o)rekort", "Вопрос про водительские права"),
@@ -91,7 +97,16 @@ PROFILE_RULES: tuple[tuple[str, str], ...] = (
     ("work_evenings", r"\baften\b|\b(?:19|20|21|22)[.:]\d{2}\b"),
     ("work_weekends", r"weekend|lørdag|søndag"),
     ("has_drivers_license", r"kørekort|driving licen[cs]e"),
+    # Склад проверяем ДО розницы: «erfaring med lagerarbejde i butik» — это
+    # вопрос про склад, хотя слово «butik» в нём тоже есть.
+    ("warehouse_experience",
+     r"\blager(?:arbejde|erfaring|medarbejder)?\b|warehouse"),
     ("retail_experience", r"erfaring.*(?:detail|butik|retail)|(?:detail|butik|retail).*erfaring"),
+    # Английский засчитываем только когда вопрос ИМЕННО про него. «Taler du
+    # dansk og engelsk?» — это другой вопрос, и ответ на него человек даёт сам:
+    # подставить сюда ответ про английский значило бы соврать про датский.
+    ("english_work",
+     r"^(?!.*\bdansk\b).*\bengelsk\b|^(?!.*\bdanish\b).*\benglish\b"),
     ("profile_visible", r"synlig.*profil|profil.*synlig|vise din profil"),
 )
 

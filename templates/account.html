@@ -884,6 +884,8 @@
           <input type="date" name="start_date" value="{{ profile.start_date or '' }}"></div>
         {% for key, human in [
             ('retail_experience', 'Есть опыт в рознице/магазине'),
+            ('warehouse_experience', 'Есть опыт складской работы (lager)'),
+            ('english_work', 'Могу общаться на английском по работе'),
             ('work_weekends', 'Готов работать каждые вторые выходные'),
             ('work_evenings', 'Готов на вечерние смены (до ~22:00)'),
             ('work_early', 'Готов выходить рано утром (с 06:00)'),
@@ -1347,6 +1349,8 @@
             <textarea name="two_year_goal" rows="2" class="auto-grow" data-auto-grow data-company-answer data-ai-writing data-recommended-language="da"></textarea></div>
           {% for key, human in [
               ('retail_experience', 'Есть опыт в рознице/магазине'),
+              ('warehouse_experience', 'Есть опыт складской работы (lager)'),
+              ('english_work', 'Могу общаться на английском по работе'),
               ('work_weekends', 'Готов работать каждые вторые выходные'),
               ('work_evenings', 'Готов на вечерние смены'),
               ('work_early', 'Готов выходить рано утром'),
@@ -1709,7 +1713,8 @@
     ['first_name','last_name','email','phone','address','zipcode','city','country','linkedin',
      'work_authorization','languages','experience_years','current_role','education',
      'available_from','date_of_birth','about',
-     'gender','start_date','two_year_goal','retail_experience','work_weekends','work_evenings',
+     'gender','start_date','two_year_goal','retail_experience','warehouse_experience',
+     'english_work','work_weekends','work_evenings',
      'work_early','work_night','has_drivers_license',
      'lidl_referral_name','lidl_current_employee','lidl_previous_employment',
      'lidl_discovery','citizenship','work_permit','clean_criminal_record',

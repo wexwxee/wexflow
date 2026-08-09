@@ -6571,7 +6571,8 @@ def account_save(
     date_of_birth: str = Form(""), about: str = Form(""),
     gender: str = Form(""), start_date: str = Form(""),
     two_year_goal: str = Form(""),
-    retail_experience: str = Form(""), work_weekends: str = Form(""),
+    retail_experience: str = Form(""), warehouse_experience: str = Form(""),
+    english_work: str = Form(""), work_weekends: str = Form(""),
     work_evenings: str = Form(""), work_early: str = Form(""),
     work_night: str = Form(""), has_drivers_license: str = Form(""),
     lidl_referral_name: str = Form(""), lidl_current_employee: str = Form(""),
@@ -6589,7 +6590,10 @@ def account_save(
     profile = profile_store.load_profile()
     answers_form = {
         "gender": gender, "start_date": start_date, "two_year_goal": two_year_goal,
-        "retail_experience": retail_experience, "work_weekends": work_weekends,
+        "retail_experience": retail_experience,
+        "warehouse_experience": warehouse_experience,
+        "english_work": english_work,
+        "work_weekends": work_weekends,
         "work_evenings": work_evenings, "work_early": work_early,
         "work_night": work_night, "has_drivers_license": has_drivers_license,
         "lidl_referral_name": lidl_referral_name,

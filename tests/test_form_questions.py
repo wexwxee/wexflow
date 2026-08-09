@@ -97,6 +97,39 @@ def test_danish_questions_get_a_russian_reading(bank):
     assert form_questions.translate_ru("Hvilken farve er din bil?") == ""
 
 
+def test_warehouse_question_is_not_answered_as_retail(bank):
+    """Склад и розница — разный опыт. Вопрос про lager не должен закрываться
+    ответом «есть опыт в магазине»: это был бы неправдивый ответ анкеты."""
+    assert form_questions.profile_key_for(
+        "Har du erfaring med lagerarbejde?") == "warehouse_experience"
+    assert form_questions.profile_key_for(
+        "Har du erfaring med detailhandel?") == "retail_experience"
+    # оба слова в одном вопросе — считаем его вопросом про склад
+    assert form_questions.profile_key_for(
+        "Har du erfaring med lagerarbejde i en butik?") == "warehouse_experience"
+
+
+def test_english_question_is_recognised(bank):
+    assert form_questions.profile_key_for(
+        "Kan du kommunikere på engelsk?") == "english_work"
+    assert form_questions.profile_key_for("Do you speak English?") == "english_work"
+
+
+def test_question_about_danish_and_english_stays_for_the_human(bank):
+    """«Говоришь по-датски и по-английски?» — не тот же вопрос, что про
+    английский. Ответить за человека тут значило бы соврать про датский,
+    поэтому вопрос остаётся ему."""
+    assert form_questions.profile_key_for("Taler du dansk og engelsk?") == ""
+    assert form_questions.profile_key_for("Do you speak Danish and English?") == ""
+
+
+def test_new_questions_get_a_russian_reading(bank):
+    assert form_questions.translate_ru("Har du erfaring med lagerarbejde?") == \
+        "Есть ли у тебя опыт складской работы?"
+    assert form_questions.translate_ru("Kan du kommunikere på engelsk?") == \
+        "Можешь ли ты общаться на английском по работе?"
+
+
 def test_cloud_payload_carries_translation_and_store(bank):
     form_questions.record([{"text": "Kan du møde kl 06.00 om morgenen?"}],
                           source="lidl", store_label="Lidl", role_kind="lead")

@@ -40,6 +40,7 @@ _PROFILE_WHITELIST = (
     "notice_period", "relocation", "about", "summary", "salary_expectation",
     "date_of_birth", "age",
     "gender", "start_date", "two_year_goal", "retail_experience",
+    "warehouse_experience", "english_work",
     "work_weekends", "work_evenings", "work_early", "work_night",
     "has_drivers_license", "lidl_referral_name", "lidl_current_employee",
     "lidl_previous_employment", "lidl_discovery", "citizenship",

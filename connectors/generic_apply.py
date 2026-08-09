@@ -36,6 +36,11 @@ ANSWER_TEXT_FIELDS = (
 ANSWER_CHOICE_FIELDS = (
     (["gender", "køn", "koen"], "gender"),
     (["retail experience", "detail branchen", "experience in retail"], "retail_experience"),
+    (["warehouse experience", "erfaring med lager", "lagerarbejde"], "warehouse_experience"),
+    # Только однозначно английские формулировки: голое слово «english» стоит и
+    # в «Danish and English», а туда наш ответ подставлять нельзя.
+    (["speak english", "english proficiency", "kommunikere på engelsk",
+      "taler du engelsk"], "english_work"),
     (["every second weekend", "hver 2. weekend", "weekend work"], "work_weekends"),
     (["work evenings", "arbejde om aftenen", "evening shifts"], "work_evenings"),
     (["early morning", "06.00 om morgenen", "morning shifts"], "work_early"),
