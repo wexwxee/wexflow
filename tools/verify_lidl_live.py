@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -17,27 +18,91 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from playwright.sync_api import sync_playwright
-from sqlmodel import select
 
 import document_rules
 import config
+import form_questions
 import profile_store
 import settings_store
 from connectors import lidl_apply
-from db import Job, get_session
+from db import Job
+
+
+def _required_control_diagnostics(page) -> list[dict]:
+    """Describe only empty required UI controls; values are intentionally omitted."""
+    try:
+        return page.evaluate(
+            r"""() => [...document.querySelectorAll('input, textarea, select')]
+                .filter(control => {
+                    if (control.type === 'file' || control.type === 'hidden'
+                            || control.disabled || (control.value || '').trim()) return false;
+                    const labels = control.labels ? [...control.labels] : [];
+                    return control.required
+                        || control.getAttribute('aria-required') === 'true'
+                        || !!control.closest('.sapMInputBaseRequired, .sapMTextAreaRequired')
+                        || labels.some(x => x.classList.contains('sapMLabelRequired'))
+                        || control.getAttribute('aria-invalid') === 'true'
+                        || !!control.closest(
+                            '.sapMInputBaseError, .sapMTextAreaError, .sapMInputBaseContentWrapperError'
+                        );
+                })
+                .slice(0, 12)
+                .map(control => {
+                    const labels = control.labels ? [...control.labels] : [];
+                    const labelled = (control.getAttribute('aria-labelledby') || '')
+                        .split(/\s+/).filter(Boolean)
+                        .map(id => (document.getElementById(id) || {}).textContent || '')
+                        .join(' ').trim();
+                    const wrapper = control.closest(
+                        '.sapMSlt, .sapMComboBoxBase, .sapMInputBase, .sapUiFormElement'
+                    );
+                    const visibleLabel = wrapper && wrapper.querySelector(
+                        '.sapMSltLabel, .sapMInputBaseInner, [role="combobox"]'
+                    );
+                    return {
+                        id: control.id || '',
+                        tag: control.tagName.toLowerCase(),
+                        type: control.type || '',
+                        name: control.name || '',
+                        label: labelled || labels.map(x => x.textContent || '').join(' ').trim(),
+                        control_class: control.className || '',
+                        wrapper_class: wrapper ? wrapper.className || '' : '',
+                        visible_text: visibleLabel
+                            ? (visibleLabel.textContent || visibleLabel.value || '').trim()
+                            : '',
+                    };
+                })"""
+        ) or []
+    except Exception:
+        return []
 
 
 def _job(job_id: str = "") -> Job:
-    with get_session() as session:
+    # The installed app can be one schema version behind the working tree.
+    # Read only the stable public vacancy fields instead of asking the current
+    # ORM model for every newer column (for example the AI-fit fields).
+    columns = (
+        "id", "source", "title", "brand", "city", "street", "zip",
+        "application_link", "status", "published",
+    )
+    connection = sqlite3.connect(str(config.DB_PATH), timeout=30)
+    connection.row_factory = sqlite3.Row
+    try:
         if job_id:
-            job = session.get(Job, job_id)
+            row = connection.execute(
+                f"SELECT {', '.join(columns)} FROM job WHERE id = ?",
+                (job_id,),
+            ).fetchone()
         else:
-            job = session.exec(
-                select(Job).where(
-                    Job.source == "lidl",
-                    Job.status.not_in(["closed", "hidden", "applied"]),
-                ).limit(1)
-            ).first()
+            row = connection.execute(
+                f"""SELECT {', '.join(columns)} FROM job
+                    WHERE source = ? AND status NOT IN (?, ?, ?)
+                    ORDER BY published DESC LIMIT 1""",
+                ("lidl", "closed", "hidden", "applied"),
+            ).fetchone()
+    finally:
+        connection.close()
+    job = Job(**dict(row)) if row is not None else None
     if job is None or not job.application_link:
         raise RuntimeError("Активная Lidl-вакансия для проверки не найдена.")
     return job
@@ -50,6 +115,7 @@ def run(
 ) -> dict:
     job = _job(job_id)
     profile = document_rules.resolve_profile(profile_store.load_profile(), job)
+    profile = profile_store.resolve_company_answers(profile, "lidl")
     selection = profile.get("_document_selection", {})
     cv = Path(str(profile.get("cv_path") or ""))
     cover = Path(str(profile.get("cover_letter_path") or ""))
@@ -76,14 +142,35 @@ def run(
                 }, true);
             }"""
         )
-        checkpoint = lidl_apply.prepare(
-            page,
-            job.application_link,
-            profile,
-            allow_submit=arm_submit,
-        )
+        # Живая проверка читает сохранённые ответы, но не должна менять банк
+        # вопросов реального пользователя. Обычный воркер продолжает записывать
+        # новые вопросы; запрет действует только внутри этого диагностического
+        # процесса.
+        original_record = form_questions.record
+        form_questions.record = lambda *args, **kwargs: 0
+        try:
+            checkpoint = lidl_apply.prepare(
+                page,
+                job.application_link,
+                profile,
+                allow_submit=arm_submit,
+            )
+        finally:
+            form_questions.record = original_record
         page.wait_for_timeout(1500)
-        body = page.locator("body").inner_text()
+        documents = checkpoint.get("documents") or {}
+        cv_uploaded = str(documents.get("cv") or "")
+        cover_uploaded = str(documents.get("cover") or "")
+        banner_text = str(page.evaluate(
+            """() => {
+                const host = document.getElementById('wexflow-banner');
+                return host && host.shadowRoot ? host.shadowRoot.textContent : '';
+            }"""
+        ) or "")
+        submission_blockers = lidl_apply.blockers(page, profile)
+        required_controls = (
+            _required_control_diagnostics(page) if submission_blockers else []
+        )
         observed_clicks = page.evaluate(
             "() => window.__wexflowObservedSubmitClicks || 0"
         )
@@ -92,8 +179,12 @@ def run(
             "brand": document_rules.brand_key(job),
             "cv": cv.name,
             "cover": cover.name,
-            "cv_visible": cv.name in body,
-            "cover_visible": cover.name in body,
+            "cv_uploaded": cv_uploaded,
+            "cover_uploaded": cover_uploaded,
+            "cv_visible": bool(cv_uploaded and cv_uploaded in banner_text),
+            "cover_visible": bool(cover_uploaded and cover_uploaded in banner_text),
+            "submission_blockers": submission_blockers,
+            "required_controls": required_controls,
             "reached_submit": bool(checkpoint.get("reached_submit")),
             "submit_armed": bool(checkpoint.get("submit_armed")),
             "submit_requested": bool(checkpoint.get("submit_requested")),
@@ -113,6 +204,13 @@ def run(
         raise RuntimeError("Безопасная проверка нажала финальную кнопку.")
     if not result["cv_visible"] or not result["cover_visible"]:
         raise RuntimeError("Lidl не показал оба выбранных документа в живой форме.")
+    if result["submission_blockers"]:
+        raise RuntimeError(
+            "Живая форма пока не готова к отправке: "
+            + "; ".join(result["submission_blockers"][:6])
+            + " | controls="
+            + json.dumps(result["required_controls"], ensure_ascii=False)
+        )
     return result
 
 
@@ -120,8 +218,13 @@ def _use_installed_primary_profile() -> None:
     appdata = Path(os.environ.get("APPDATA") or "")
     root = appdata / "WexFlow"
     data = root / "salling"
-    if not (data / "settings.json").is_file():
+    if not (data / "settings.json").is_file() or not (data / "jobs.db").is_file():
         raise RuntimeError("Данные установленного WexFlow не найдены.")
+    config.DATA_DIR = data
+    config.DB_PATH = data / "jobs.db"
+    config.PROFILE_PATH = data / "profile.json"
+    config.SHARED_DIR = root
+    config.LEGACY_SHARED_PROFILE_PATH = root / "profile.json"
     settings_store.PATH = data / "settings.json"
     config.SHARED_PROFILE_PATH = root / "profile.json"
     profile_store.UPLOAD_DIR = data / "uploads"

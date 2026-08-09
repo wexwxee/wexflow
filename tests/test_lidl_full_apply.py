@@ -281,6 +281,31 @@ def test_required_ui5_textarea_is_detected_and_can_be_reused_from_profile():
         playwright.stop()
 
 
+def test_required_left_reads_visible_ui5_select_instead_of_empty_pseudo_input():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <label id="gender-label" class="sapMLabel sapMLabelRequired"
+                 for="gender-hiddenInput">Køn</label>
+          <div class="sapMSlt">
+            <input id="gender-hiddenInput" type="text"
+                   class="sapUiPseudoInvisibleText" aria-labelledby="gender-label">
+            <span class="sapMSltLabel">Mand</span>
+          </div>
+          <label id="source-label" class="sapMLabel sapMLabelRequired"
+                 for="source-hiddenInput">Hvordan fandt du jobbet?</label>
+          <div class="sapMSlt">
+            <input id="source-hiddenInput" type="text"
+                   class="sapUiPseudoInvisibleText" aria-labelledby="source-label">
+            <span class="sapMSltLabel"></span>
+          </div>
+        """)
+        assert lidl_apply.required_left(page) == ["Hvordan fandt du jobbet?"]
+    finally:
+        browser.close()
+        playwright.stop()
+
+
 def test_validation_dialog_after_click_is_blocked_not_no_receipt():
     playwright, browser, page = _page()
     try:

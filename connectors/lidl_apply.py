@@ -246,19 +246,33 @@ def _set_switch_by_text(page, label_text: str | tuple[str, ...], enabled: bool) 
         return False
 
 
-def _upload(page, selector: str, path: str, role: str = "document") -> bool:
+def _upload(page, selector: str, path: str, role: str = "document") -> str:
+    """Attach a document and return the exact basename exposed to Lidl."""
     path = str(path or "").strip()
     if not path or not Path(path).is_file():
-        return False
+        return ""
     try:
         path = profile_store.safe_document_upload_path(path, role)
         control = page.locator(selector).first
         if control.count():
             control.set_input_files(path)
-            return True
+            return Path(path).name
     except Exception:
         pass
-    return False
+    return ""
+
+
+def selected_file_name(page, selector: str) -> str:
+    """Return the basename actually attached to a browser file input."""
+    try:
+        control = page.locator(selector).first
+        if not control.count():
+            return ""
+        return str(control.evaluate(
+            "node => node.files && node.files[0] ? node.files[0].name : ''"
+        ) or "").strip()
+    except Exception:
+        return ""
 
 
 def _wait_for_picker_to_close(page) -> None:
@@ -672,6 +686,14 @@ def required_left(page) -> list[str]:
                     const invalid = control.getAttribute('aria-invalid') === 'true'
                         || !!control.closest('.sapMInputBaseError, .sapMTextAreaError, .sapMInputBaseContentWrapperError');
                     if (!required && !invalid) return;
+                    // sap.m.Select keeps an empty pseudo input for accessibility.
+                    // Its value never changes; the real selected text lives in
+                    // .sapMSltLabel. Only an empty visible label is unfinished.
+                    if (control.classList.contains('sapUiPseudoInvisibleText')) {
+                        const select = control.closest('.sapMSlt');
+                        const visible = select && select.querySelector('.sapMSltLabel');
+                        if (((visible && visible.textContent) || '').trim()) return;
+                    }
                     if ((control.value || '').trim()) return;
                     left.push(labelFor(control).replace(/\\s*\\*\\s*$/, ''));
                 });
@@ -899,6 +921,14 @@ def arm_explicit_submit(page) -> bool:
         return False
 
 
+def set_submit_armed(page, checkpoint: dict, allow_submit: bool) -> None:
+    """Expose the WexFlow submit signal only after an explicit caller opt-in."""
+    if not checkpoint.get("reached_submit") or not allow_submit:
+        checkpoint["submit_armed"] = False
+        return
+    checkpoint["submit_armed"] = arm_explicit_submit(page)
+
+
 def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
     print(f"  открываю Lidl EasyApply: {url}")
     page.goto(url, wait_until="domcontentloaded", timeout=90_000)
@@ -941,12 +971,19 @@ def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
     if _select_ui5(page, "Land", profile.get("country") or ""):
         filled.append("country")
     _wait_for_picker_to_close(page)
-    if _upload(page, 'input[type="file"][name="EACVUploader"]',
-               profile.get("cv_path") or "", "cv"):
-        filled.append("CV")
-    if _upload(page, 'input[type="file"][name="EACoverLetterUploader"]',
-               profile.get("cover_letter_path") or "", "cover"):
-        filled.append("cover letter")
+    cv_selector = 'input[type="file"][name="EACVUploader"]'
+    cover_selector = 'input[type="file"][name="EACoverLetterUploader"]'
+    uploaded_documents: dict[str, str] = {}
+    cv_name = _upload(page, cv_selector, profile.get("cv_path") or "", "cv")
+    if cv_name:
+        uploaded_documents["cv"] = cv_name
+        filled.append(f"CV: {cv_name}")
+    cover_name = _upload(
+        page, cover_selector, profile.get("cover_letter_path") or "", "cover"
+    )
+    if cover_name:
+        uploaded_documents["cover"] = cover_name
+        filled.append(f"письмо: {cover_name}")
 
     # Ответы для анкеты — из сохранённых ответов человека, ничего не выдумывая
     answers_report = fill_answers(page, profile)
@@ -968,10 +1005,8 @@ def prepare(page, url: str, profile: dict, allow_submit: bool = False) -> dict:
     checkpoint["unanswered"] = answers_report["unanswered"]
     checkpoint["required_left"] = required_left(page)
     checkpoint["filled"] = filled
-    if checkpoint["reached_submit"]:
-        checkpoint["submit_armed"] = arm_explicit_submit(page)
-    else:
-        checkpoint["submit_armed"] = False
+    checkpoint["documents"] = uploaded_documents
+    set_submit_armed(page, checkpoint, allow_submit)
     print(f"  заполнено: {filled or '—'}")
     if checkpoint["reached_submit"]:
         print("  ДОШЁЛ ДО КНОПКИ ANSØG — подготовка её не нажимала.")

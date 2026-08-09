@@ -133,10 +133,10 @@ def test_identity_country_and_named_documents_are_filled_safely():
             assert lidl_apply._select_ui5(page, "Land", "Danmark")
             assert lidl_apply._upload(
                 page, 'input[name="EACVUploader"]', str(cv), "cv"
-            )
+            ) == "cv.pdf"
             assert lidl_apply._upload(
                 page, 'input[name="EACoverLetterUploader"]', str(cover), "cover"
-            )
+            ) == "cover.pdf"
             assert page.locator('input[name="EAOtherDocumentUploader"]').evaluate(
                 "e => e.files.length"
             ) == 0
@@ -219,6 +219,38 @@ def test_prepare_checkpoint_reaches_real_submit_without_clicking_it():
     finally:
         browser.close()
         playwright.stop()
+
+
+def test_selected_file_name_reports_the_file_attached_to_browser(tmp_path):
+    document = tmp_path / "cv_Lidl.pdf"
+    document.write_bytes(b"%PDF-1.4\n%%EOF")
+    playwright, browser, page = _page()
+    try:
+        page.set_content('<input type="file" name="EACVUploader">')
+        selector = 'input[type="file"][name="EACVUploader"]'
+        page.locator(selector).set_input_files(document)
+        assert lidl_apply.selected_file_name(page, selector) == "cv_Lidl.pdf"
+    finally:
+        browser.close()
+        playwright.stop()
+
+
+def test_submit_signal_is_armed_only_after_explicit_caller_opt_in(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        lidl_apply,
+        "arm_explicit_submit",
+        lambda page: calls.append(page) or True,
+    )
+    checkpoint = {"reached_submit": True}
+
+    lidl_apply.set_submit_armed("page", checkpoint, allow_submit=False)
+    assert checkpoint["submit_armed"] is False
+    assert calls == []
+
+    lidl_apply.set_submit_armed("page", checkpoint, allow_submit=True)
+    assert checkpoint["submit_armed"] is True
+    assert calls == ["page"]
 
 
 def test_review_button_is_consumed_then_worker_clicks_native_lidl_button_once():
