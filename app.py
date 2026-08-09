@@ -64,6 +64,22 @@ import ai_secrets
 import ai_usage
 from apscheduler.schedulers.background import BackgroundScheduler
 
+# Общий профиль: «имя поля формы» → «ключ профиля». Один список на оба входа
+# (полное сохранение и автосохранение). Ответы для анкет сюда НЕ переписываем:
+# они объявлены в profile_store.ANSWER_FIELDS и читаются оттуда.
+PROFILE_FORM_FIELDS: tuple[tuple[str, str], ...] = (
+    ("first_name", "first_name"), ("last_name", "last_name"), ("email", "email"),
+    ("phone", "phone"), ("address", "address"), ("zipcode", "zip"),
+    ("city", "city"), ("country", "country"), ("linkedin", "linkedin"),
+    ("cv_path", "cv_path"), ("cover_letter_path", "cover_letter_path"),
+    # необязательные поля для ИИ-дозаполнения (бета)
+    ("work_authorization", "work_authorization"), ("languages", "languages"),
+    ("experience_years", "experience_years"), ("current_role", "current_role"),
+    ("education", "education"), ("available_from", "available_from"),
+    ("date_of_birth", "date_of_birth"), ("about", "about"),
+    ("answer_reuse_consent", "answer_reuse_consent"),
+)
+
 PROFILE_REQUIRED = [
     ("first_name", "Имя"),
     ("last_name", "Фамилия"),
@@ -2979,6 +2995,9 @@ def api_health():
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(config.BASE_DIR / "templates"))
 templates.env.globals["brand_label"] = labels.brand
+# Вопросы «да/нет» для настроек рисуются циклом по этому списку: объявлен вопрос
+# в profile_store — он сам появился и в общем профиле, и в настройках компании.
+templates.env.globals["answer_ui_fields"] = profile_store.AUTO_UI_ANSWERS
 templates.env.globals["L"] = labels
 templates.env.globals["candidate_profiles_state"] = candidate_profiles.ui_state
 def _questions_pending_badge() -> int:
@@ -3043,6 +3062,19 @@ def _maps_url(job: Job, home: dict | None = None) -> str:
 
 def _profile_missing(profile: dict) -> list[str]:
     return [label for key, label in PROFILE_REQUIRED if not str(profile.get(key) or "").strip()]
+
+
+def _apply_profile_form(profile: dict, form) -> dict:
+    """Перенести присланную форму в профиль: личные поля как есть, ответы для
+    анкет — через нормализацию (да/нет/пусто). Чего в форме нет, то не трогаем:
+    отдельный экран сохраняет свою часть и не стирает чужую."""
+    for form_key, profile_key in PROFILE_FORM_FIELDS:
+        if form_key in form:
+            profile[profile_key] = str(form.get(form_key) or "").strip()
+    for key in profile_store.ANSWER_KEYS:
+        if key in form:
+            profile[key] = profile_store.clean_answer(key, form.get(key))
+    return profile
 
 
 def _profile_choices() -> tuple[list[str], list[str]]:
@@ -6561,70 +6593,15 @@ async def settings_ai_migrate_gemini(request: Request):
 
 @app.post("/account/save")
 @app.post("/settings/save")  # legacy-алиас: общий профиль теперь в «Общих настройках»
-def account_save(
-    first_name: str = Form(""), last_name: str = Form(""), email: str = Form(""),
-    phone: str = Form(""), address: str = Form(""), zipcode: str = Form(""),
-    city: str = Form(""), country: str = Form(""), linkedin: str = Form(""),
-    work_authorization: str = Form(""), languages: str = Form(""),
-    experience_years: str = Form(""), current_role: str = Form(""),
-    education: str = Form(""), available_from: str = Form(""),
-    date_of_birth: str = Form(""), about: str = Form(""),
-    gender: str = Form(""), start_date: str = Form(""),
-    two_year_goal: str = Form(""),
-    retail_experience: str = Form(""), warehouse_experience: str = Form(""),
-    english_work: str = Form(""), work_weekends: str = Form(""),
-    work_evenings: str = Form(""), work_early: str = Form(""),
-    work_night: str = Form(""), has_drivers_license: str = Form(""),
-    lidl_referral_name: str = Form(""), lidl_current_employee: str = Form(""),
-    lidl_previous_employment: str = Form(""), lidl_discovery: str = Form(""),
-    citizenship: str = Form(""), work_permit: str = Form(""),
-    clean_criminal_record: str = Form(""), relevant_health_condition: str = Form(""),
-    lidl_newsletter: str = Form(""), lidl_profile_scope: str = Form(""),
-    answer_reuse_consent: str = Form(""),
-    profile_visible: str = Form(""),
-):
+async def account_save(request: Request):
     """Общий профиль — только личные данные. Документы (CV/письмо) — в настройках фирмы.
-    Поля после linkedin — необязательные, их использует ИИ-дозаполнение форм (бета).
+    Необязательные поля после linkedin использует ИИ-дозаполнение форм (бета).
     Блок «Ответы для анкет» — те самые вопросы магазинов (пол, дата выхода,
-    выходные/вечера/раннее утро): заполняются один раз и подставляются как есть."""
-    profile = profile_store.load_profile()
-    answers_form = {
-        "gender": gender, "start_date": start_date, "two_year_goal": two_year_goal,
-        "retail_experience": retail_experience,
-        "warehouse_experience": warehouse_experience,
-        "english_work": english_work,
-        "work_weekends": work_weekends,
-        "work_evenings": work_evenings, "work_early": work_early,
-        "work_night": work_night, "has_drivers_license": has_drivers_license,
-        "lidl_referral_name": lidl_referral_name,
-        "lidl_current_employee": lidl_current_employee,
-        "lidl_previous_employment": lidl_previous_employment,
-        "lidl_discovery": lidl_discovery,
-        "citizenship": citizenship,
-        "work_permit": work_permit,
-        "clean_criminal_record": clean_criminal_record,
-        "relevant_health_condition": relevant_health_condition,
-        "lidl_newsletter": lidl_newsletter,
-        "lidl_profile_scope": lidl_profile_scope,
-        "profile_visible": profile_visible,
-    }
-    profile.update({
-        key: profile_store.clean_answer(key, value)
-        for key, value in answers_form.items()
-    })
-    profile.update({
-        "first_name": first_name.strip(), "last_name": last_name.strip(),
-        "email": email.strip(), "phone": phone.strip(), "address": address.strip(),
-        "zip": zipcode.strip(), "city": city.strip(), "country": country.strip(),
-        "linkedin": linkedin.strip(),
-        "work_authorization": work_authorization.strip(), "languages": languages.strip(),
-        "experience_years": experience_years.strip(), "current_role": current_role.strip(),
-        "education": education.strip(), "available_from": available_from.strip(),
-        "date_of_birth": date_of_birth.strip(), "about": about.strip(),
-        "answer_reuse_consent": (
-            answer_reuse_consent if answer_reuse_consent in {"yes", "no"} else ""
-        ),
-    })
+    выходные/вечера/раннее утро): заполняются один раз и подставляются как есть.
+    Поимённого списка полей здесь нет: форма читается целиком, а что из неё
+    принять, решают PROFILE_FORM_FIELDS и profile_store.ANSWER_KEYS."""
+    form = await request.form()
+    profile = _apply_profile_form(profile_store.load_profile(), form)
     missing = _profile_missing(profile)
     if missing:
         return RedirectResponse("/account?missing=" + quote_plus(",".join(missing)), status_code=303)
@@ -7559,25 +7536,7 @@ async def telegram_send_current(request: Request, panel: bool = False):
 @app.post("/settings/profile/autosave")
 async def settings_profile_autosave(request: Request):
     form = await request.form()
-    profile = profile_store.load_profile()
-    for form_key, profile_key in [
-        ("first_name", "first_name"), ("last_name", "last_name"), ("email", "email"),
-        ("phone", "phone"), ("address", "address"), ("zipcode", "zip"),
-        ("city", "city"), ("country", "country"), ("linkedin", "linkedin"),
-        ("cv_path", "cv_path"), ("cover_letter_path", "cover_letter_path"),
-        # необязательные поля для ИИ-дозаполнения (бета)
-        ("work_authorization", "work_authorization"), ("languages", "languages"),
-        ("experience_years", "experience_years"), ("current_role", "current_role"),
-        ("education", "education"), ("available_from", "available_from"),
-        ("date_of_birth", "date_of_birth"), ("about", "about"),
-        ("answer_reuse_consent", "answer_reuse_consent"),
-    ]:
-        if form_key in form:
-            profile[profile_key] = str(form.get(form_key) or "").strip()
-    # ответы для анкет магазинов сохраняем через нормализацию (да/нет/пусто)
-    for key in profile_store.ANSWER_KEYS:
-        if key in form:
-            profile[key] = profile_store.clean_answer(key, form.get(key))
+    profile = _apply_profile_form(profile_store.load_profile(), form)
     profile = profile_store.clean_profile(profile)
     profile_store.save_profile(profile)
     return JSONResponse({"ok": True, "missing": _profile_missing(profile), "profile": profile})

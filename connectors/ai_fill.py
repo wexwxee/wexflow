@@ -28,9 +28,13 @@ import httpx
 
 import ai_filters  # переиспуем api_key()/model перебор — не дублируем обвязку
 import ai_usage
+import profile_store  # единственный источник списка ответов для анкет
 from connectors.fill_common import show_ai_progress
 
 # Поля профиля, которые МОЖНО показывать ИИ. Пути к файлам и техполя не отдаём.
+# Ответы для анкет берём из profile_store: там они объявлены один раз, и новый
+# вопрос попадает сюда сам — раньше его приходилось дописывать и в этот список.
+# Устаревшие поля (scope=LEGACY) живут только ради миграции и модели не нужны.
 _PROFILE_WHITELIST = (
     "first_name", "last_name", "email", "phone", "address", "zip", "city",
     "country", "linkedin",
@@ -39,13 +43,8 @@ _PROFILE_WHITELIST = (
     "experience_years", "current_role", "education", "available_from",
     "notice_period", "relocation", "about", "summary", "salary_expectation",
     "date_of_birth", "age",
-    "gender", "start_date", "two_year_goal", "retail_experience",
-    "warehouse_experience", "english_work",
-    "work_weekends", "work_evenings", "work_early", "work_night",
-    "has_drivers_license", "lidl_referral_name", "lidl_current_employee",
-    "lidl_previous_employment", "lidl_discovery", "citizenship",
-    "work_permit", "clean_criminal_record", "relevant_health_condition",
-    "lidl_newsletter", "lidl_profile_scope",
+) + profile_store.answer_keys(
+    profile_store.SHARED, profile_store.COMPANY, profile_store.CONSENT,
 )
 
 _MAX_FIELDS = 15          # за один заход не больше — и по стоимости, и по осторожности

@@ -8,6 +8,7 @@ import threading
 import time
 import unicodedata
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import config
@@ -103,45 +104,162 @@ COUNTRY_FIXES = {
 # и подача не могла завершиться сама. Теперь ответы хранятся ОДИН раз здесь и
 # подставляются как есть. Правило прежнее: чего человек не ответил, то WexFlow
 # не выдумывает — вопрос остаётся пустым, а автоподача просто не жмёт кнопку.
-ANSWER_FIELDS: tuple[tuple[str, str, str], ...] = (
-    (
+#
+# ЕДИНСТВЕННОЕ МЕСТО, где объявляется вопрос анкеты. Одна строка ANSWER_FIELDS
+# описывает про поле всё: имя, подпись, что в нём можно хранить, наследуется ли
+# ответ между компаниями, рисуется ли поле в настройках автоматически и попадает
+# ли оно в паспорт кандидата. Отсюда читают настройки (шаблон и автосохранение),
+# сохранение профиля, паспорт и ИИ-дозаполнение — руками их дублировать больше
+# не нужно. Раньше список был переписан в семи местах, и забытое место ломалось
+# молча: поле рисовалось, но не сохранялось.
+
+# Куда попадает ответ. Это не косметика: от scope зависит, увидит ли ответ
+# ДРУГОЙ работодатель.
+SHARED = "shared"    # общий факт — переносится в другие компании с разрешения
+COMPANY = "company"  # ответ конкретной формы, между компаниями не ходит
+CONSENT = "consent"  # согласие работодателю, не наследуется никогда
+LEGACY = "legacy"    # старое поле, оставлено только ради миграции данных
+
+
+@dataclass(frozen=True)
+class AnswerField:
+    """Один вопрос анкеты со всем, что о нём нужно знать программе."""
+
+    key: str
+    human: str          # подпись в настройках и в отчёте «не отвечено»
+    kind: str           # yesno | text | date | choice:вариант,вариант
+    scope: str = SHARED
+    auto_ui: bool = False   # рисуется общим циклом «да/нет» в настройках
+    export: str = ""        # раздел паспорта: questionnaire | sensitive | «» — не выгружать
+    export_human: str = ""  # подпись в паспорте, если короче настроечной
+
+    @property
+    def passport_human(self) -> str:
+        return self.export_human or self.human
+
+
+ANSWER_FIELDS: tuple[AnswerField, ...] = (
+    AnswerField(
         "gender",
         "Пол (магазины иногда спрашивают в анкете)",
         "choice:male,female,other,prefer_not_say",
+        export="sensitive", export_human="Пол / вариант ответа",
     ),
-    ("start_date", "С какой даты можешь выйти", "date"),
-    ("two_year_goal", "Где видишь себя через два года", "text"),
-    ("retail_experience", "Есть опыт работы в рознице/магазине", "yesno"),
-    ("warehouse_experience", "Есть опыт складской работы (lager)", "yesno"),
-    ("english_work", "Можешь общаться на английском по работе", "yesno"),
-    ("work_weekends", "Готов(а) работать каждые вторые выходные", "yesno"),
-    ("work_evenings", "Готов(а) на вечерние смены (примерно до 22:00)", "yesno"),
-    ("work_early", "Готов(а) выходить рано утром (с 06:00)", "yesno"),
-    ("work_night", "Готов(а) на ночные смены", "yesno"),
-    ("has_drivers_license", "Есть водительские права", "yesno"),
-    ("lidl_referral_name", "Lidl: имя сотрудника, который порекомендовал", "text"),
-    ("lidl_current_employee", "Lidl: уже работаешь в Lidl", "yesno"),
-    ("lidl_previous_employment", "Lidl: где и когда раньше работал(а) в Lidl", "text"),
-    (
+    AnswerField(
+        "start_date", "С какой даты можешь выйти", "date",
+        export="questionnaire", export_human="Дата выхода",
+    ),
+    AnswerField(
+        "two_year_goal", "Где видишь себя через два года", "text",
+        export="questionnaire", export_human="Цель на два года",
+    ),
+    AnswerField(
+        "retail_experience", "Есть опыт работы в рознице/магазине", "yesno",
+        auto_ui=True, export="questionnaire", export_human="Опыт в рознице",
+    ),
+    AnswerField(
+        "warehouse_experience", "Есть опыт складской работы (lager)", "yesno",
+        auto_ui=True, export="questionnaire", export_human="Опыт складской работы",
+    ),
+    AnswerField(
+        "english_work", "Можешь общаться на английском по работе", "yesno",
+        auto_ui=True, export="questionnaire",
+        export_human="Английский для рабочего общения",
+    ),
+    AnswerField(
+        "work_weekends", "Готов(а) работать каждые вторые выходные", "yesno",
+        auto_ui=True, export="questionnaire",
+        export_human="Готовность работать каждые вторые выходные",
+    ),
+    AnswerField(
+        "work_evenings", "Готов(а) на вечерние смены (примерно до 22:00)", "yesno",
+        auto_ui=True, export="questionnaire",
+        export_human="Готовность к вечерним сменам",
+    ),
+    AnswerField(
+        "work_early", "Готов(а) выходить рано утром (с 06:00)", "yesno",
+        auto_ui=True, export="questionnaire", export_human="Готовность к ранним сменам",
+    ),
+    AnswerField(
+        "work_night", "Готов(а) на ночные смены", "yesno",
+        auto_ui=True, export="questionnaire", export_human="Готовность к ночным сменам",
+    ),
+    AnswerField(
+        "has_drivers_license", "Есть водительские права", "yesno",
+        auto_ui=True, export="questionnaire", export_human="Водительские права",
+    ),
+    AnswerField(
+        "lidl_referral_name", "Lidl: имя сотрудника, который порекомендовал", "text",
+    ),
+    AnswerField("lidl_current_employee", "Lidl: уже работаешь в Lidl", "yesno"),
+    AnswerField(
+        "lidl_previous_employment", "Lidl: где и когда раньше работал(а) в Lidl", "text",
+    ),
+    AnswerField(
         "lidl_part_time_availability",
         "Lidl: как тебе подходит указанный неполный график",
-        "text",
+        "text", scope=COMPANY,
     ),
-    ("lidl_discovery", "Lidl: как узнал(а) о вакансии", "text"),
-    ("citizenship", "Lidl: гражданство", "text"),
-    ("work_permit", "Lidl: есть действующее разрешение на проживание/работу", "yesno"),
-    ("clean_criminal_record", "Lidl: можешь предоставить чистую справку о несудимости", "yesno"),
-    ("relevant_health_condition", "Lidl: заболевания, существенно влияющие на работу", "text"),
-    ("lidl_newsletter", "Lidl: получать новости о вакансиях", "yesno"),
-    (
+    AnswerField("lidl_discovery", "Lidl: как узнал(а) о вакансии", "text", scope=COMPANY),
+    AnswerField(
+        "citizenship", "Lidl: гражданство", "text",
+        export="sensitive", export_human="Гражданство",
+    ),
+    AnswerField(
+        "work_permit", "Lidl: есть действующее разрешение на проживание/работу", "yesno",
+        export="sensitive", export_human="Разрешение на проживание или работу",
+    ),
+    AnswerField(
+        "clean_criminal_record",
+        "Lidl: можешь предоставить чистую справку о несудимости", "yesno",
+        export="sensitive",
+        export_human="Возможность предоставить чистую справку о несудимости",
+    ),
+    AnswerField(
+        "relevant_health_condition",
+        "Lidl: заболевания, существенно влияющие на работу", "text",
+    ),
+    AnswerField(
+        "lidl_newsletter", "Lidl: получать новости о вакансиях", "yesno", scope=CONSENT,
+    ),
+    AnswerField(
         "lidl_profile_scope",
         "Lidl: для каких вакансий разрешено учитывать профиль",
-        "choice:international,country,applied_only",
+        "choice:international,country,applied_only", scope=CONSENT,
     ),
-    ("profile_visible", "Разрешаю показывать анкету другим магазинам этой сети", "yesno"),
+    AnswerField(
+        "profile_visible",
+        "Разрешаю показывать анкету другим магазинам этой сети", "yesno",
+        scope=LEGACY,
+    ),
 )
 
-ANSWER_KEYS = tuple(key for key, _human, _kind in ANSWER_FIELDS)
+ANSWER_BY_KEY: dict[str, AnswerField] = {field.key: field for field in ANSWER_FIELDS}
+ANSWER_KEYS = tuple(ANSWER_BY_KEY)
+ANSWER_HUMANS = {field.key: field.human for field in ANSWER_FIELDS}
+
+
+def answer_keys(*scopes: str) -> tuple[str, ...]:
+    """Ключи ответов с нужной областью видимости, в порядке объявления."""
+    return tuple(field.key for field in ANSWER_FIELDS if field.scope in scopes)
+
+
+def export_fields(section: str) -> tuple[tuple[str, str], ...]:
+    """Пары (ключ, подпись) для раздела паспорта кандидата."""
+    return tuple(
+        (field.key, field.passport_human)
+        for field in ANSWER_FIELDS
+        if field.export == section
+    )
+
+
+# Поля, которые настройки рисуют одинаковым циклом «Да / Нет / не отвечать».
+# Новый такой вопрос достаточно объявить выше с auto_ui=True.
+AUTO_UI_ANSWERS = tuple(
+    (field.key, field.human) for field in ANSWER_FIELDS if field.auto_ui
+)
+
+YESNO_ANSWER_KEYS = tuple(field.key for field in ANSWER_FIELDS if field.kind == "yesno")
 
 _YESNO = {"yes", "no"}
 
@@ -165,44 +283,22 @@ LIDL_DISCOVERY_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Ungarbejder.dk", "Ungarbejder.dk"),
 )
 
+# Ниже — та же таблица ANSWER_FIELDS, разложенная по областям видимости.
+# Списки вычисляются, а не переписываются руками: разъехаться они уже не могут.
+
 # Факты, которые человек может один раз разрешить использовать во всех анкетах.
 # Контактные данные живут отдельно в основном профиле, документы — в правилах
 # документов. Здесь только ответы на вопросы работодателя.
-REUSABLE_ANSWER_KEYS: tuple[str, ...] = (
-    "gender",
-    "start_date",
-    "two_year_goal",
-    "retail_experience",
-    "warehouse_experience",
-    "english_work",
-    "work_weekends",
-    "work_evenings",
-    "work_early",
-    "work_night",
-    "has_drivers_license",
-    "lidl_referral_name",
-    "lidl_current_employee",
-    "lidl_previous_employment",
-    "citizenship",
-    "work_permit",
-    "clean_criminal_record",
-    "relevant_health_condition",
-)
+REUSABLE_ANSWER_KEYS: tuple[str, ...] = answer_keys(SHARED)
 
 # Эти значения — не общие факты, а отдельное согласие конкретному работодателю.
 # Они никогда не наследуются между компаниями, даже если повторное использование
 # общих ответов включено.
-COMPANY_CONSENT_KEYS: tuple[str, ...] = (
-    "lidl_newsletter",
-    "lidl_profile_scope",
-)
+COMPANY_CONSENT_KEYS: tuple[str, ...] = answer_keys(CONSENT)
 
 # Значение является вариантом конкретной формы Lidl, а не свободным общим
 # ответом для других работодателей.
-COMPANY_LOCAL_KEYS: tuple[str, ...] = (
-    "lidl_discovery",
-    "lidl_part_time_availability",
-) + COMPANY_CONSENT_KEYS
+COMPANY_LOCAL_KEYS: tuple[str, ...] = answer_keys(COMPANY, CONSENT)
 
 COMPANY_OVERRIDE_KEYS = REUSABLE_ANSWER_KEYS + COMPANY_LOCAL_KEYS
 
@@ -284,7 +380,8 @@ def clean_answer(key: str, value) -> str:
     raw = str(value or "").strip().lower()
     if not raw:
         return ""
-    kind = dict((k, t) for k, _h, t in ANSWER_FIELDS).get(key, "")
+    field = ANSWER_BY_KEY.get(key)
+    kind = field.kind if field else ""
     if kind == "yesno":
         if raw in {"yes", "да", "ja", "1", "true", "on"}:
             return "yes"
@@ -396,8 +493,7 @@ def missing_answers(profile: dict | None = None, keys=None) -> list[str]:
     """Человеческие названия неотвеченных вопросов (для честного стопа подачи)."""
     ready = answers(profile)
     wanted = list(keys or ANSWER_KEYS)
-    humans = dict((k, h) for k, h, _t in ANSWER_FIELDS)
-    return [humans.get(key, key) for key in wanted if not ready.get(key)]
+    return [ANSWER_HUMANS.get(key, key) for key in wanted if not ready.get(key)]
 
 
 def clean_profile(data: dict) -> dict:

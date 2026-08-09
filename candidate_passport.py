@@ -44,32 +44,18 @@ PROFESSIONAL_FIELDS = (
     ("available_from", "Когда может начать"),
     ("about", "О кандидате"),
 )
-QUESTIONNAIRE_FIELDS = (
-    ("start_date", "Дата выхода"),
-    ("two_year_goal", "Цель на два года"),
-    ("retail_experience", "Опыт в рознице"),
-    ("warehouse_experience", "Опыт складской работы"),
-    ("english_work", "Английский для рабочего общения"),
-    ("work_weekends", "Готовность работать каждые вторые выходные"),
-    ("work_evenings", "Готовность к вечерним сменам"),
-    ("work_early", "Готовность к ранним сменам"),
-    ("work_night", "Готовность к ночным сменам"),
-    ("has_drivers_license", "Водительские права"),
-)
-SENSITIVE_FIELDS = (
+# Что из ответов анкет попадает в паспорт, решает сам вопрос: в profile_store
+# у него стоит export="questionnaire" или export="sensitive". Список здесь не
+# дублируется — иначе новый вопрос молча оставался бы за бортом выгрузки.
+QUESTIONNAIRE_FIELDS = profile_store.export_fields("questionnaire")
+# Чувствительное из обычного профиля (не ответы анкет) — только эти два поля.
+_SENSITIVE_PROFILE_FIELDS = (
     ("date_of_birth", "Дата рождения"),
-    ("gender", "Пол / вариант ответа"),
-    ("citizenship", "Гражданство"),
     ("work_authorization", "Право на работу"),
-    ("work_permit", "Разрешение на проживание или работу"),
-    ("clean_criminal_record", "Возможность предоставить чистую справку о несудимости"),
 )
+SENSITIVE_FIELDS = _SENSITIVE_PROFILE_FIELDS + profile_store.export_fields("sensitive")
 
-_YES_NO_FIELDS = {
-    "retail_experience", "warehouse_experience", "english_work",
-    "work_weekends", "work_evenings", "work_early",
-    "work_night", "has_drivers_license", "work_permit", "clean_criminal_record",
-}
+_YES_NO_FIELDS = frozenset(profile_store.YESNO_ANSWER_KEYS)
 _VALUE_LABELS = {
     "yes": "Да",
     "no": "Нет",
