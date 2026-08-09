@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 
 import config
+import paths
 import profile_store
 import settings_store
 from db import Job
@@ -93,10 +94,15 @@ def test_installed_mode_rebinds_database_profile_settings_and_answer_bank(
         (config, "DB_PATH"),
         (config, "PROFILE_PATH"),
         (config, "SHARED_DIR"),
+        (config, "LICENSE_PATH"),
+        (config, "BROWSER_PROFILE_DIR"),
+        (config, "SECRETS_PATH"),
         (config, "LEGACY_SHARED_PROFILE_PATH"),
         (config, "SHARED_PROFILE_PATH"),
         (settings_store, "PATH"),
         (profile_store, "UPLOAD_DIR"),
+        (paths, "DATA_DIR"),
+        (paths, "SHARED_DIR"),
     ):
         monkeypatch.setattr(module, name, getattr(module, name))
 
@@ -108,3 +114,68 @@ def test_installed_mode_rebinds_database_profile_settings_and_answer_bank(
     assert config.SHARED_PROFILE_PATH == root / "profile.json"
     assert settings_store.PATH == data / "settings.json"
     assert profile_store.UPLOAD_DIR == data / "uploads"
+    assert paths.DATA_DIR == data
+    assert paths.SHARED_DIR == root
+
+
+def test_real_submit_requires_separate_arm_flag():
+    try:
+        verify_lidl_live.run(job_id="lidl:one", submit=True)
+    except RuntimeError as exc:
+        assert "--arm-submit" in str(exc)
+    else:
+        raise AssertionError("submit without a separate arm flag was accepted")
+
+
+def test_receipt_is_recorded_in_legacy_installed_schema(tmp_path, monkeypatch):
+    database = tmp_path / "legacy.db"
+    connection = sqlite3.connect(database)
+    try:
+        connection.executescript("""
+            CREATE TABLE job (
+                id TEXT PRIMARY KEY,
+                source TEXT,
+                status TEXT,
+                applied_at TEXT,
+                applied_confidence TEXT,
+                application_status_updated_at TEXT,
+                application_status_source TEXT
+            );
+            CREATE TABLE application (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT,
+                job_id TEXT,
+                state TEXT,
+                origin TEXT,
+                confidence TEXT,
+                offered_at TEXT,
+                submitted_at TEXT,
+                updated_at TEXT
+            );
+            INSERT INTO job (id, source, status) VALUES ('lidl:one', 'lidl', 'new');
+            INSERT INTO application (source, job_id, state, origin)
+                VALUES ('lidl', 'lidl:one', 'submitting', 'assisted');
+        """)
+        connection.commit()
+    finally:
+        connection.close()
+    monkeypatch.setattr(config, "DB_PATH", database)
+
+    assert verify_lidl_live._record_receipt("lidl:one") is True
+
+    connection = sqlite3.connect(database)
+    try:
+        job = connection.execute(
+            """SELECT status, applied_confidence, application_status_source,
+               applied_at FROM job WHERE id = 'lidl:one'"""
+        ).fetchone()
+        application = connection.execute(
+            """SELECT state, origin, confidence, submitted_at
+               FROM application WHERE job_id = 'lidl:one'"""
+        ).fetchone()
+    finally:
+        connection.close()
+    assert job[:3] == ("applied", "receipt", "submission")
+    assert job[3]
+    assert application[:3] == ("submitted", "assisted", "receipt")
+    assert application[3]

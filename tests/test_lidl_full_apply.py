@@ -306,6 +306,29 @@ def test_required_left_reads_visible_ui5_select_instead_of_empty_pseudo_input():
         playwright.stop()
 
 
+def test_required_left_catches_unanswered_vacancy_specific_ui5_select():
+    playwright, browser, page = _page()
+    try:
+        page.set_content("""
+          <div class="sapUiRespGridSpanL12">
+            <label class="sapMLabel question-label--required" for="__select7">
+              Stillingen kræver, at du taler og skriver dansk. Vælg dit niveau for dansk.
+            </label>
+            <div id="__select7" class="sapMSlt eaQuestionField">
+              <input id="__select7-hiddenInput" type="text"
+                     class="sapUiPseudoInvisibleText">
+              <span class="sapMSltLabel"></span>
+            </div>
+          </div>
+        """)
+        left = lidl_apply.required_left(page)
+        assert len(left) == 1
+        assert "niveau for dansk" in left[0]
+    finally:
+        browser.close()
+        playwright.stop()
+
+
 def test_validation_dialog_after_click_is_blocked_not_no_receipt():
     playwright, browser, page = _page()
     try:

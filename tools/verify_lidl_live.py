@@ -1,11 +1,15 @@
-"""Safe live Lidl checkpoint: fill one current form, never arm or click Ansøg."""
+"""Live Lidl checkpoint; submission requires three explicit command-line gates."""
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,10 +26,118 @@ from playwright.sync_api import sync_playwright
 import document_rules
 import config
 import form_questions
+import paths
 import profile_store
 import settings_store
 from connectors import lidl_apply
 from db import Job
+
+
+def _validate_prepared(result: dict, arm_submit: bool) -> None:
+    if result["brand"] != "lidl":
+        raise RuntimeError(f"Ожидался бренд lidl, получен {result['brand']!r}.")
+    if not result["reached_submit"]:
+        raise RuntimeError("Живая форма не дошла до финальной кнопки Ansøg.")
+    if result["submit_armed"] != arm_submit:
+        raise RuntimeError("Режим финальной отправки не совпал с запрошенным.")
+    if result["submit_requested"]:
+        raise RuntimeError("Проверка неожиданно запросила реальную отправку.")
+    if result["observed_submit_clicks"] != 0:
+        raise RuntimeError("Безопасная подготовка нажала финальную кнопку.")
+    if not result["cv_visible"] or not result["cover_visible"]:
+        raise RuntimeError("Lidl не показал оба выбранных документа в живой форме.")
+    if result["submission_blockers"]:
+        raise RuntimeError(
+            "Живая форма пока не готова к отправке: "
+            + "; ".join(result["submission_blockers"][:6])
+            + " | controls="
+            + json.dumps(result["required_controls"], ensure_ascii=False)
+        )
+
+
+def _save_proof(page, job_id: str, confirmed: bool) -> Path:
+    folder = "applied" if confirmed else "unconfirmed"
+    out = config.DATA_DIR / "logs" / folder
+    out.mkdir(parents=True, exist_ok=True)
+    safe_job_id = re.sub(r"[^0-9A-Za-zА-Яа-я._-]+", "_", job_id)
+    path = out / f"{datetime.now():%Y%m%d_%H%M%S}_{safe_job_id}.png"
+    page.screenshot(path=str(path), full_page=True)
+    return path
+
+
+def _record_receipt(job_id: str) -> bool:
+    """Record a confirmed receipt against both legacy and current databases."""
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(sep=" ")
+    connection = sqlite3.connect(str(config.DB_PATH), timeout=30)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        updated = connection.execute(
+            """UPDATE job SET status = ?, applied_at = ?, applied_confidence = ?,
+               application_status_updated_at = ?, application_status_source = ?
+               WHERE id = ? AND source = ?""",
+            ("applied", now, "receipt", now, "submission", job_id, "lidl"),
+        ).rowcount
+        if updated != 1:
+            connection.rollback()
+            return False
+        existing = connection.execute(
+            "SELECT id FROM application WHERE source = ? AND job_id = ? ORDER BY id",
+            ("lidl", job_id),
+        ).fetchall()
+        if existing:
+            ids = [int(row[0]) for row in existing]
+            connection.executemany(
+                """UPDATE application SET state = ?, origin = ?, confidence = ?,
+                   submitted_at = ?, updated_at = ? WHERE id = ?""",
+                [("submitted", "assisted", "receipt", now, now, row_id)
+                 for row_id in ids],
+            )
+        else:
+            connection.execute(
+                """INSERT INTO application
+                   (source, job_id, state, origin, confidence, submitted_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                ("lidl", job_id, "submitted", "assisted", "receipt", now, now),
+            )
+        connection.commit()
+        return True
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def _send_proof_to_phone(path: Path, job: Job) -> bool:
+    try:
+        import cloud_auth
+
+        photo = base64.b64encode(path.read_bytes()).decode("ascii")
+        title = " · ".join(x for x in (job.title, job.brand, job.city) if x)
+        caption = (
+            "✅ <b>Заявка отправлена</b>\n"
+            + (title or job.id)
+            + "\nСайт Lidl показал квитанцию — снимок страницы приложен."
+        )
+        return bool(cloud_auth.report_apply_proof(job.id, photo, caption))
+    except Exception as exc:
+        print("  снимок сохранён локально, но не ушёл в телефон:", str(exc)[:120])
+        return False
+
+
+def _write_status(job_id: str, state: str, message: str, phone_reported: bool) -> None:
+    token = hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:16]
+    target = paths.DATA_DIR / f"connector_apply_status_{token}.json"
+    payload = {
+        "job_id": job_id,
+        "state": state,
+        "message": message[:500],
+        "updated_at": datetime.now(timezone.utc).timestamp(),
+        "phone_reported": bool(phone_reported),
+    }
+    temporary = target.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.replace(temporary, target)
 
 
 def _required_control_diagnostics(page) -> list[dict]:
@@ -77,6 +189,44 @@ def _required_control_diagnostics(page) -> list[dict]:
         return []
 
 
+def _empty_select_diagnostics(page) -> list[dict]:
+    """Describe empty visible SAP selects without exposing candidate values."""
+    try:
+        return page.evaluate(
+            r"""() => [...document.querySelectorAll('.sapMSlt')]
+                .filter(wrapper => {
+                    const label = wrapper.querySelector('.sapMSltLabel');
+                    return wrapper.getClientRects().length
+                        && !((label && label.textContent) || '').trim();
+                })
+                .slice(0, 12)
+                .map(wrapper => {
+                    const ids = [wrapper.id, wrapper.id + '-hiddenInput',
+                        wrapper.id + '-hiddenSelect'].filter(Boolean);
+                    let label = [...document.querySelectorAll('label')].find(node =>
+                        ids.includes(node.getAttribute('for') || '')
+                    );
+                    if (!label) {
+                        const form = wrapper.closest('.sapUiFormElement, .sapUiRespGridSpanL12');
+                        label = form && form.querySelector('label, .sapMLabel');
+                    }
+                    const native = wrapper.querySelector('select');
+                    return {
+                        id: wrapper.id || '',
+                        wrapper_class: wrapper.className || '',
+                        label: label ? (label.textContent || '').trim() : '',
+                        label_class: label ? label.className || '' : '',
+                        options: native
+                            ? [...native.options].map(option => (option.textContent || '').trim())
+                                .filter(Boolean).slice(0, 12)
+                            : [],
+                    };
+                })"""
+        ) or []
+    except Exception:
+        return []
+
+
 def _job(job_id: str = "") -> Job:
     # The installed app can be one schema version behind the working tree.
     # Read only the stable public vacancy fields instead of asking the current
@@ -112,7 +262,10 @@ def run(
     job_id: str = "",
     headless: bool = True,
     arm_submit: bool = False,
+    submit: bool = False,
 ) -> dict:
+    if submit and not arm_submit:
+        raise RuntimeError("Реальная отправка требует отдельный флаг --arm-submit.")
     job = _job(job_id)
     profile = document_rules.resolve_profile(profile_store.load_profile(), job)
     profile = profile_store.resolve_company_answers(profile, "lidl")
@@ -171,6 +324,7 @@ def run(
         required_controls = (
             _required_control_diagnostics(page) if submission_blockers else []
         )
+        empty_selects = _empty_select_diagnostics(page)
         observed_clicks = page.evaluate(
             "() => window.__wexflowObservedSubmitClicks || 0"
         )
@@ -185,31 +339,52 @@ def run(
             "cover_visible": bool(cover_uploaded and cover_uploaded in banner_text),
             "submission_blockers": submission_blockers,
             "required_controls": required_controls,
+            "empty_selects": empty_selects,
             "reached_submit": bool(checkpoint.get("reached_submit")),
             "submit_armed": bool(checkpoint.get("submit_armed")),
             "submit_requested": bool(checkpoint.get("submit_requested")),
             "observed_submit_clicks": int(observed_clicks),
         }
+        _validate_prepared(result, arm_submit)
+
+        if submit:
+            final = lidl_apply.submit(page, profile)
+            result["final_state"] = str(final.get("state") or "")
+            result["final_message"] = str(final.get("message") or "")
+            result["observed_submit_clicks_after"] = int(page.evaluate(
+                "() => window.__wexflowObservedSubmitClicks || 0"
+            ))
+            confirmed = result["final_state"] == "submitted"
+            proof = _save_proof(page, job.id, confirmed=confirmed)
+            result["proof"] = str(proof)
+            if confirmed:
+                result["registry_recorded"] = _record_receipt(job.id)
+                result["phone_reported"] = _send_proof_to_phone(proof, job)
+                _write_status(
+                    job.id,
+                    "submitted",
+                    result["final_message"],
+                    result["phone_reported"],
+                )
+            else:
+                result["registry_recorded"] = False
+                result["phone_reported"] = False
+                _write_status(
+                    job.id,
+                    result["final_state"] or "error",
+                    result["final_message"],
+                    False,
+                )
         browser.close()
 
-    if result["brand"] != "lidl":
-        raise RuntimeError(f"Ожидался бренд lidl, получен {result['brand']!r}.")
-    if not result["reached_submit"]:
-        raise RuntimeError("Живая форма не дошла до финальной кнопки Ansøg.")
-    if result["submit_armed"] != arm_submit:
-        raise RuntimeError("Режим финальной отправки не совпал с запрошенным.")
-    if result["submit_requested"]:
-        raise RuntimeError("Проверка неожиданно запросила реальную отправку.")
-    if result["observed_submit_clicks"] != 0:
-        raise RuntimeError("Безопасная проверка нажала финальную кнопку.")
-    if not result["cv_visible"] or not result["cover_visible"]:
-        raise RuntimeError("Lidl не показал оба выбранных документа в живой форме.")
-    if result["submission_blockers"]:
+    if submit and result.get("final_state") != "submitted":
         raise RuntimeError(
-            "Живая форма пока не готова к отправке: "
-            + "; ".join(result["submission_blockers"][:6])
-            + " | controls="
-            + json.dumps(result["required_controls"], ensure_ascii=False)
+            "Lidl не показал квитанцию; повторная отправка запрещена: "
+            + str(result.get("final_message") or "результат неясен")
+        )
+    if submit and not result.get("registry_recorded"):
+        raise RuntimeError(
+            "Квитанция получена и снимок сохранён, но реестр не обновился."
         )
     return result
 
@@ -224,10 +399,15 @@ def _use_installed_primary_profile() -> None:
     config.DB_PATH = data / "jobs.db"
     config.PROFILE_PATH = data / "profile.json"
     config.SHARED_DIR = root
+    config.LICENSE_PATH = root / "license.json"
+    config.BROWSER_PROFILE_DIR = data / "browser_profile"
+    config.SECRETS_PATH = data / "secrets.json"
     config.LEGACY_SHARED_PROFILE_PATH = root / "profile.json"
     settings_store.PATH = data / "settings.json"
     config.SHARED_PROFILE_PATH = root / "profile.json"
     profile_store.UPLOAD_DIR = data / "uploads"
+    paths.DATA_DIR = data
+    paths.SHARED_DIR = root
 
 
 def main() -> int:
@@ -236,7 +416,14 @@ def main() -> int:
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--installed", action="store_true")
     parser.add_argument("--arm-submit", action="store_true")
+    parser.add_argument("--submit", action="store_true")
     args = parser.parse_args()
+    if args.submit and not args.installed:
+        parser.error("--submit разрешён только вместе с --installed")
+    if args.submit and not args.job_id:
+        parser.error("--submit требует точный --job-id")
+    if args.submit and not args.arm_submit:
+        parser.error("--submit требует отдельный --arm-submit")
     if args.installed:
         _use_installed_primary_profile()
     print(json.dumps(
@@ -244,6 +431,7 @@ def main() -> int:
             args.job_id,
             headless=not args.headed,
             arm_submit=args.arm_submit,
+            submit=args.submit,
         ),
         ensure_ascii=False,
         indent=2,

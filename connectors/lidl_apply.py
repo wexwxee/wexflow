@@ -697,6 +697,32 @@ def required_left(page) -> list[str]:
                     if ((control.value || '').trim()) return;
                     left.push(labelFor(control).replace(/\\s*\\*\\s*$/, ''));
                 });
+                // Vacancy-specific SAP selects (class eaQuestionField) do not
+                // expose `required` before the first submit click. Their label
+                // carries the real contract instead. Catch an empty required
+                // question here so WexFlow never learns about it by clicking.
+                document.querySelectorAll('.sapMSlt.eaQuestionField').forEach(select => {
+                    if (!select.getClientRects().length) return;
+                    const visible = select.querySelector('.sapMSltLabel');
+                    if (((visible && visible.textContent) || '').trim()) return;
+                    const ids = [select.id, select.id + '-hiddenInput',
+                        select.id + '-hiddenSelect'].filter(Boolean);
+                    let label = [...document.querySelectorAll('label')].find(node =>
+                        ids.includes(node.getAttribute('for') || '')
+                    );
+                    if (!label) {
+                        const form = select.closest('.sapUiFormElement, .sapUiRespGridSpanL12');
+                        label = form && form.querySelector('label, .sapMLabel');
+                    }
+                    const required = label && (
+                        label.classList.contains('sapMLabelRequired')
+                        || label.classList.contains('question-label--required')
+                        || /\\*\\s*$/.test(label.textContent || '')
+                    );
+                    if (required) {
+                        left.push((label.textContent || 'обязательный вопрос').trim());
+                    }
+                });
                 return [...new Set(left)].slice(0, 12);
             }"""
         ) or []
