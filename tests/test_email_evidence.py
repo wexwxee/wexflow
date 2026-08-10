@@ -100,8 +100,9 @@ def test_import_stores_local_artifact_and_repairs_registry(tmp_path):
 
 
 if __name__ == "__main__":
-    tests = [value for name, value in sorted(globals().items())
-             if name.startswith("test_") and callable(value)]
-    for test in tests:
-        test()
-    print("ok")
+    # Часть тестов здесь просит фикстуру tmp_path, а вручную её не создать:
+    # прямой вызов функций падал с TypeError и останавливал сборку. Отдаём файл
+    # pytest — он раздаст фикстуры сам.
+    import pytest
+
+    raise SystemExit(pytest.main([__file__, "-q"]))
