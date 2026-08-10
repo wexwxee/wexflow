@@ -84,6 +84,46 @@
       </div>
     </div>
 
+    <div class="st-card" id="sources">
+      <h2>{{ ic.i('briefcase', 17) }} Источники вакансий</h2>
+      <p>Вакансии приходят из чужих API. Если такой источник перестаёт отвечать,
+      в базе остаются вчерашние вакансии — подашься на то, чего уже нет. WexFlow
+      следит за каждым отдельно: молчит несколько попыток — предупреждение,
+      молчит дольше суток — его вакансии убираются из ленты (из базы ничего не
+      удаляется, вернутся сами).</p>
+      {% if sources %}
+        <div class="st-meta">
+          {% set down = sources | selectattr('state', 'equalto', 'broken') | list %}
+          {% set slow = sources | selectattr('state', 'equalto', 'quiet') | list %}
+          {% if down %}
+            <span class="st-pill warn">{{ ic.i('alert', 12) }} не отвечают: {{ down|length }}</span>
+          {% elif slow %}
+            <span class="st-pill warn">{{ ic.i('clock', 12) }} молчат: {{ slow|length }}</span>
+          {% else %}
+            <span class="st-pill ok">{{ ic.i('check', 12) }} все отвечают</span>
+          {% endif %}
+        </div>
+        {% for row in sources %}
+        <div class="tr-row">
+          <span class="tr-name">{{ row.label }}</span>
+          <span class="tr-facts">
+            {% if row.state == 'broken' %}
+              {{ ic.i('alert', 11) }} не отвечает {{ row.silent_label }}{% if row.hidden %} · скрыто вакансий: {{ row.hidden }}{% endif %}
+            {% elif row.state == 'quiet' %}
+              {{ ic.i('clock', 11) }} молчит {{ row.silent_label }} · лента пока не меняется
+            {% else %}
+              {{ ic.i('check', 11) }} отвечает{% if row.hits is not none %} · вакансий в последний раз: {{ row.hits }}{% endif %}
+            {% endif %}
+          </span>
+        </div>
+        {% if row.error %}<div class="st-err">{{ row.label }}: {{ row.error }}</div>{% endif %}
+        {% endfor %}
+      {% else %}
+        <p class="sub">Пока нечего показать: WexFlow ещё ни разу не обновлял вакансии
+        в этом запуске. Нажми «Обновить сейчас» в карточке выше.</p>
+      {% endif %}
+    </div>
+
     <div class="st-card" id="trust">
       <h2>{{ ic.i('lock', 17) }} Доверие площадкам</h2>
       <style>

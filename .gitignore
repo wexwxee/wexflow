@@ -65,3 +65,5 @@ restore_apply.txt
 ПРИМЕНИТЬ_возврат_подач.bat
 _dbrescue/
 transit_cache.json.imported
+
+source_health.json

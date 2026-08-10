@@ -39,21 +39,17 @@ import re
 
 import config
 import email_evidence
+import labels as labels_mod
 import settings_store
 from db import Application, Job, get_session, select
 
 SETTINGS_KEY = "trust"
 
 # Площадки, у которых доверие считается отдельно. Порядок — как в интерфейсе.
-SOURCES = ("salling", "lidl", "teamtailor", "greenhouse", "ashby", "manual_link")
-LABELS = {
-    "salling": "Salling Group",
-    "lidl": "Lidl Danmark",
-    "teamtailor": "Teamtailor",
-    "greenhouse": "Greenhouse",
-    "ashby": "Ashby",
-    "manual_link": "По ссылке",
-}
+# Подписи общие для всего приложения (labels.SOURCES): доверие и сторож
+# источников должны называть площадку одинаково.
+SOURCES = tuple(labels_mod.SOURCES)
+LABELS = dict(labels_mod.SOURCES)
 
 # Чем подтверждена подача. Письмо хранится отдельным артефактом в реестре:
 # «portal» — сам по себе, «receipt» — вместе со снимком экрана (см. stats).

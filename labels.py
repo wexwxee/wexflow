@@ -27,6 +27,18 @@ BRAND_COLORS = {
     "matinique": ("#3a3a3a", "#ffffff"),
 }
 
+# Площадки, откуда берутся вакансии (Job.source). Один список на всё
+# приложение: доверие площадкам (trust.py), сторож источников
+# (source_health.py) и страница «Состояние» берут подпись отсюда.
+SOURCES = {
+    "salling": "Salling Group",
+    "lidl": "Lidl Danmark",
+    "teamtailor": "Teamtailor",
+    "greenhouse": "Greenhouse",
+    "ashby": "Ashby",
+    "manual_link": "По ссылке",
+}
+
 EMPLOYMENT = {
     "fullTime": "Полная занятость",
     "partTime": "Частичная занятость",
@@ -359,6 +371,12 @@ def bi(mapping: dict, key: str) -> str:
 
 def brand(key: str) -> str:
     return BRANDS.get(key, key.title())
+
+
+def source(key: str) -> str:
+    """Подпись площадки-источника. Незнакомую показываем как есть."""
+    clean = str(key or "").strip()
+    return SOURCES.get(clean.lower()) or BRANDS.get(clean.lower()) or clean.title()
 
 
 def human(mapping: dict, key: str) -> str:

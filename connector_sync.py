@@ -11,6 +11,7 @@ from typing import Iterable
 import connectors
 import feed
 import geo
+import source_health
 from connectors.base import JobItem, is_denmark
 from db import Job, get_session, init_db, select, utcnow
 
@@ -190,6 +191,14 @@ def _enabled_companies(conn) -> int:
         return 0
 
 
+def _note_health(source: str, hits=None, error: str = "") -> None:
+    """Отдать итог попытки сторожу источников. Сторож не имеет права ломать синк."""
+    try:
+        source_health.report(source, hits=hits, error=error)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  {source}: сторож источников не записал итог — {exc}")
+
+
 def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
     init_db()
     reports, errors, warnings = [], [], []
@@ -197,11 +206,16 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
         conn = connectors.get(source)
         if conn is None:
             errors.append(f"{source}: connector not registered")
+            _note_health(source, error="connector not registered")
             continue
         try:
             items = conn.search()
             company_errors = list(getattr(conn, "last_errors", []) or [])
             report = sync_items(source, items)
+            # Сторож источников (шаг 6): пустой ответ — такое же молчание, как
+            # ошибка. Ни один наш каталог не бывает пустым в норме.
+            _note_health(source, hits=report["hits"],
+                         error=str(company_errors[0])[:180] if not report["hits"] and company_errors else "")
             if company_errors:
                 report["company_errors"] = company_errors[:20]
                 total = _enabled_companies(conn)
@@ -225,6 +239,7 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
             reports.append(report)
         except Exception as exc:  # one ATS must not break the working Salling feed
             errors.append(f"{source}: {str(exc)[:180]}")
+            _note_health(source, error=str(exc)[:180])
     return {
         "hits": sum(row["hits"] for row in reports),
         "created": sum(row["created"] for row in reports),

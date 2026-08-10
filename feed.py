@@ -10,10 +10,18 @@
   лежит в settings.json. Заложено сразу, чтобы выход за пределы DK стоил
   галочки, а не переписывания запросов.
 
+- **Сломанный источник не показывает вакансии** (шаг 6). Если чужой API молчит
+  дольше суток, его вакансии в базе — вчерашние: подать на них скорее всего
+  уже нельзя. Решение принимает `source_health.py`, лента только исполняет.
+  Из базы при этом ничего не удаляется: источник ожил — вакансии вернулись.
+
 Вакансию без указанной страны лента показывает всегда. Это сознательно:
 страну не пишут вакансии, добавленные по ссылке вручную, и молчание источника
 о стране не должно молча опустошать ленту. Отсекаем только то, про что точно
 известно, что оно в чужой стране.
+
+Поданные заявки не прячет ни одно правило этого модуля: «подано» — история
+человека, она не исчезает ни от настройки, ни от чужой поломки.
 """
 from __future__ import annotations
 
@@ -230,6 +238,28 @@ def barrier_clause():
     return Job.fit.is_(None) | Job.fit.not_in(list(relevance.BARRIER))
 
 
+# ── Сломанный источник (шаг 6): решение принимает source_health ───────────
+def broken_sources() -> tuple[str, ...]:
+    """Источники, которые молчат так долго, что их вакансиям верить нельзя."""
+    import source_health
+    try:
+        return source_health.broken()
+    except Exception:  # noqa: BLE001 — сторож не имеет права ронять ленту
+        return ()
+
+
+def source_clause():
+    """Условие SQL «вакансия не из сломанного источника» (или None).
+
+    Поданная заявка проходит всегда: она уже история человека, а не
+    предложение подать. Тот же принцип, что и у фильтра стран.
+    """
+    sources = broken_sources()
+    if not sources:
+        return None
+    return (Job.status == "applied") | Job.source.not_in(list(sources))
+
+
 def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
     """Условия ленты для `select(Job).where(*feed.visible_clauses())`.
 
@@ -242,6 +272,9 @@ def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
     country = country_clause()
     if country is not None:
         clauses.append(country)
+    broken = source_clause()
+    if broken is not None:
+        clauses.append(broken)
     if fit:
         barrier = barrier_clause()
         if barrier is not None:
@@ -255,6 +288,8 @@ def visible(job, exclude_applied: bool = False, fit: bool = True) -> bool:
     if status in CLOSED_STATUSES or (exclude_applied and status == "applied"):
         return False
     if not allows(getattr(job, "country", None)):
+        return False
+    if status != "applied" and str(getattr(job, "source", "") or "") in broken_sources():
         return False
     if fit and hide_barrier():
         import relevance

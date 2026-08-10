@@ -50,6 +50,7 @@ import cloud_auth
 import transit
 import feed
 import relevance
+import source_health
 import trust
 from db import Application, Job, init_db, get_session, select, utcnow
 import db as db_mod
@@ -280,6 +281,14 @@ def _reschedule_autopilot_scan() -> None:
         print(f"автопилот: не удалось перенастроить интервал скана — {e}")
 
 
+def _note_source_health(source: str, hits=None, error: str = "") -> None:
+    """Итог попытки — сторожу источников (шаг 6). Сторож не роняет обновление."""
+    try:
+        source_health.report(source, hits=hits, error=error)
+    except Exception as exc:  # noqa: BLE001
+        print(f"сторож источников: не записал итог {source} — {exc}")
+
+
 def _sync_jobs(force_connectors: bool = False):
     """Обновляет базу вакансий. Не запускается параллельно сам с собой."""
     if not _sync_lock.acquire(blocking=False):
@@ -291,8 +300,10 @@ def _sync_jobs(force_connectors: bool = False):
             info = scraper.sync() or {}
             _sync_state["last_hits"] = int(info.get("hits") or 0)
             _sync_state["sync_failed"] = False
-        except Exception:
+            _note_source_health("salling", hits=_sync_state["last_hits"])
+        except Exception as exc:
             _sync_state["sync_failed"] = True  # источник не ответил — сторож заметит
+            _note_source_health("salling", error=str(exc)[:180])
             raise
         # ATS-каталоги тяжелее одного Algolia-запроса, поэтому обновляем их не
         # чаще раза в 30 минут. Ошибка Teamtailor не ломает рабочий Salling.
@@ -2918,7 +2929,7 @@ def api_apply_progress():
 def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
                      cloud_fail_streak: int = 0, connector_errors=None,
                      cloud_error: str = "", db_repair: str = "",
-                     db_journal: str = "") -> list:
+                     db_journal: str = "", broken_sources=None) -> list:
     """Сторожа деградации (шаг 7): приложение стоит на чужих недокументированных
     опорах (лента вакансий Salling, их форма подачи) — падение опоры надо хотя бы
     ЗАМЕЧАТЬ и говорить о нём пользователю, а не молча показывать пустой список.
@@ -2973,6 +2984,18 @@ def _health_warnings(last_hits, sync_failed: bool, fail_streak: int,
                     "продолжают работать, а старые вакансии других компаний сохранены. "
                     "WexFlow повторит попытку автоматически.",
         })
+    if broken_sources:
+        # Сторож источников (шаг 6): молчащий источник назван вслух, а не
+        # спрятан за «в ленте почему-то мало вакансий».
+        names = ", ".join(labels.source(key) for key in broken_sources)
+        warns.append({
+            "id": "source-broken",
+            "text": f"Источник не отвечает больше суток: {names}. Его вакансии убраны "
+                    "из ленты — они уже вчерашние, и подача по ним всё равно "
+                    "не прошла бы. Поданные заявки на месте; вакансии вернутся "
+                    "сами, как только источник снова ответит. Подробности — на "
+                    "странице «Состояние».",
+        })
     return warns
 
 
@@ -2989,7 +3012,8 @@ def api_health():
         int(_tg_poll_state.get("fail_streak") or 0),
         _sync_state.get("connector_errors") or [],
         str(_tg_poll_state.get("last_error") or ""),
-        str(db_mod.last_repair or ""), str(db_mod.journal_mode_warning or ""))}
+        str(db_mod.last_repair or ""), str(db_mod.journal_mode_warning or ""),
+        feed.broken_sources())}
 
 
 app.mount("/static", StaticFiles(directory=str(config.BASE_DIR / "static")), name="static")
@@ -3423,6 +3447,8 @@ def system_status(request: Request):
             "running": bool(_relevance_state["running"]),
             "error": str(_relevance_state["last_error"] or ""),
         },
+        # сторож источников (шаг 6): кто молчит и что из-за этого скрыто
+        "sources": source_health.view(),
         # доверие площадкам: где подача уже доказана квитанцией и снимком
         "trust": {
             "always_ask": trust.always_ask(),
