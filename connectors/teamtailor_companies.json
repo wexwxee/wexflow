@@ -266,6 +266,26 @@
       "slug": "sofigategroupoy",
       "name": "sofigategroupoy",
       "enabled": true
+    },
+    {
+      "domain": "career.jemogfix.dk",
+      "name": "jem & fix",
+      "enabled": true
+    },
+    {
+      "slug": "jks",
+      "name": "JKS (вакансии агентства)",
+      "enabled": true
+    },
+    {
+      "slug": "lufthavnsvikar",
+      "name": "Lufthavnsvikar",
+      "enabled": true
+    },
+    {
+      "slug": "cofoco",
+      "name": "Cofoco (рестораны)",
+      "enabled": true
     }
   ]
 }
