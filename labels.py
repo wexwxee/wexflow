@@ -8,6 +8,13 @@ BRANDS = {
     "lidl": "Lidl",
     "salling": "Salling", "carlsjr": "Carl's Jr", "starbucks": "Starbucks",
     "sallinggroup": "Salling Group", "hugoboss": "Hugo Boss", "matinique": "Matinique",
+    # Фирмы из каталога коннекторов: нужны, чтобы поиск называл их
+    # по-человечески («jem & fix», а не «Jem»). В фильтре брендов они
+    # появляются, только если такие вакансии реально есть в базе.
+    "jem": "jem & fix", "jks": "JKS", "lufthavnsvikar": "Lufthavnsvikar",
+    "cofoco": "Cofoco", "power": "Power", "matas": "Matas",
+    "biltema": "Biltema", "normal": "Normal", "hobbii": "Hobbii",
+    "panduro": "Panduro",
 }
 
 # Фирменные цвета брендов (фон, текст) для бейджа на карточке вакансии.

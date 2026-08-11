@@ -49,6 +49,7 @@ import account as account_mod
 import cloud_auth
 import transit
 import feed
+import query_parse
 import relevance
 import source_health
 import trust
@@ -108,7 +109,7 @@ JOB_FILTER_KEYS = (
     "q", "source", "city", "brand", "region", "category",
     "employment_type", "job_level", "status", "sort", "radius",
     "max_commute", "max_transfers", "revisit", "group", "show_applied", "period",
-    "fit",
+    "fit", "exact",
 )
 
 DEFAULT_REVISIT_DAYS = 60
@@ -156,6 +157,8 @@ def _clean_filter_query(raw_query: str) -> str:
         elif key == "period" and value not in {"today", "3d", "all"}:
             value = ""
         elif key == "fit" and value != "all":
+            value = ""
+        elif key == "exact" and value not in {"1"}:
             value = ""
         if value:
             values[key] = value
@@ -4079,6 +4082,7 @@ def index(
     show_applied: str = "",
     period: str = "all",
     fit: str = "",
+    exact: str = "",
     profile: str = "",
     page: str = "1",
     geoerror: str = "",
@@ -4209,38 +4213,15 @@ def index(
                 | Job.categories.like(f"%,{category_code},%")
                 | Job.categories.like(f"%,{category_code}")
             )
-        if q:  # умный поиск: русский запрос расширяем датскими синонимами
-            import ru_search
-            # Сначала вынимаем название магазина: «Netto», «нетто», «Netto
-            # Herlev». Человек ищет так, когда место ему посоветовали, и ждёт
-            # именно этот магазин, а не слово «netto» внутри чужой вакансии.
-            query_brands, q_rest = labels.split_brand_query(q)
-            if query_brands:
-                brand_cond = None
-                for term in query_brands:
-                    c = Job.brand.ilike(f"%{term}%")
-                    brand_cond = c if brand_cond is None else (brand_cond | c)
-                stmt = stmt.where(brand_cond)
-            # Остаток запроса ищем как раньше. Если магазин назван и больше
-            # ничего не сказано, остатка нет — фильтруем только по магазину.
-            q_text = q_rest if query_brands else q
-            if q_text:
-                terms = ru_search.expand(q_text)
-                city_term = labels.city_query(q_text)
-                if city_term and city_term != q_text.strip():
-                    terms.append(city_term)
-                cond = None
-                for t in terms:
-                    like = f"%{t}%"
-                    c = (
-                        Job.title.ilike(like)
-                        | Job.description.ilike(like)
-                        | Job.city.ilike(like)
-                        | Job.street.ilike(like)
-                    )
-                    cond = c if cond is None else (cond | c)
-                if cond is not None:
-                    stmt = stmt.where(cond)
+        # Умный поиск: фраза разбирается на магазин, город, часы, возраст и
+        # свободные слова (query_parse). Что именно понято — показываем строкой
+        # «Понял так», а `?exact=1` возвращает буквальный поиск по фразе.
+        known_city_names = _distinct(s, Job.city)
+        parsed_query = query_parse.parse(
+            q, exact=bool(exact), known_cities=known_city_names,
+        )
+        for condition in query_parse.clauses(parsed_query):
+            stmt = stmt.where(condition)
 
         if sort == "title":
             stmt = stmt.order_by(Job.title)
@@ -4250,6 +4231,11 @@ def index(
             stmt = stmt.order_by(Job.published.desc())
 
         jobs = list(s.exec(stmt).all())
+
+        # Часы и возраст из запроса в SQL не проверить: часы лежат строкой
+        # («15-20», «37,5 t/uge»), возраст — словами в названии. Считаем в
+        # Python и запоминаем, сколько чем отсеяли, чтобы сказать это вслух.
+        jobs, query_dropped = query_parse.python_filter(parsed_query, jobs)
 
         # job_level из данных Salling недостоверен: руководящие должности
         # (Souschef, Serviceleder, Teamkoordinator …) часто приходят с
@@ -4268,7 +4254,7 @@ def index(
             if barrier_hidden:
                 jobs = [j for j in jobs if not relevance.is_barrier(j)]
 
-        cities = _distinct(s, Job.city)
+        cities = known_city_names
         sources = _distinct(s, Job.source)
         brands = _distinct(s, Job.brand)
         regions = _distinct(s, Job.region)
@@ -4473,6 +4459,7 @@ def index(
         "show_applied": show_applied,
         "period": period,
         "fit": fit,
+        "exact": exact,
     }
     _current_filter_query = _filter_query(_f)
     _preset_views = []
@@ -4611,6 +4598,13 @@ def index(
         "barrier_on": bool(feed.hide_barrier()),
         "barrier_show_url": "/?" + _filter_query({**_f, "fit": "all"}),
         "barrier_hide_url": "/?" + _filter_query({**_f, "fit": ""}),
+        # разбор поискового запроса: что поняли и чем отсеяли (этап 1)
+        "query_understood": query_parse.describe(parsed_query),
+        "query_structured": parsed_query.structured,
+        "query_dropped": query_dropped,
+        "query_exact": bool(exact),
+        "query_exact_url": "/?" + _filter_query({**_f, "exact": "1"}),
+        "query_smart_url": "/?" + _filter_query({**_f, "exact": ""}),
         "fit_labels": relevance.LABELS,
         "fit_views": {j.id: relevance.describe(j) for j in jobs},
         "autopilot": _ap_rule,
