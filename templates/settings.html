@@ -668,6 +668,8 @@
     var GROQ_PRIVACY_URL = {{ ai_groq_privacy_url | tojson }};
     var GEMINI_KEYS_URL = {{ ai_gemini_keys_url | tojson }};
     var GEMINI_PRIVACY_URL = {{ ai_gemini_privacy_url | tojson }};
+    var ANTHROPIC_KEYS_URL = {{ ai_anthropic_keys_url | tojson }};
+    var ANTHROPIC_PRIVACY_URL = {{ ai_anthropic_privacy_url | tojson }};
     var HAS_LEGACY_GEMINI = {{ 'true' if ai_legacy_gemini else 'false' }};
 
     var grid = document.getElementById("aiProvGrid");
@@ -718,6 +720,25 @@
           ["Скопируй ключ целиком", "Он начинается с <b>AIza…</b>"],
           ["Вернись в WexFlow и вставь ключ", ""]
         ]
+      },
+      anthropic: {
+        label: "Claude",
+        model: "Claude Sonnet 5",
+        pitch: "Самая сильная модель из трёх. Платная: у Claude нет бесплатной квоты.",
+        keysUrl: ANTHROPIC_KEYS_URL,
+        privacyUrl: ANTHROPIC_PRIVACY_URL,
+        intro: "Claude — модель Anthropic, самая сильная из подключаемых. Важно понимать заранее: " +
+               "бесплатного тарифа у неё НЕТ — нужно пополнить баланс в консоли, и дальше ты платишь " +
+               "за токены. Gemini и Groq остаются бесплатным резервом: если Claude недоступен или " +
+               "исчерпан, WexFlow сам перейдёт на них.",
+        ownAccount: "Ключ должен быть твой: расход считается на аккаунт, и чужой ключ потратит чужие деньги.",
+        steps: [
+          ["Открой console.anthropic.com и войди", "Ссылка выше ведёт на страницу ключей."],
+          ["Пополни баланс в разделе <b>Billing</b>", "Без баланса ключ выдадут, но запросы будут отклоняться."],
+          ["Нажми <b>Create Key</b>", "Название любое, например WexFlow."],
+          ["Скопируй ключ целиком", "Он начинается с <b>sk-ant-…</b> и показывается один раз."],
+          ["Вернись в WexFlow и вставь ключ", "Проверка потратит один самый дешёвый запрос."]
+        ]
       }
     };
 
@@ -728,6 +749,7 @@
       if(m.indexOf("qwen")>=0) return "Qwen 3.6";
       if(m.indexOf("gpt-oss")>=0) return "GPT-OSS 120B";
       if(m.indexOf("gemini")>=0) return "Gemini " + (m.indexOf("lite")>=0 ? "2.5 Flash Lite" : "2.5 Flash");
+      if(m.indexOf("claude")>=0) return m.indexOf("haiku")>=0 ? "Claude Haiku 4.5" : "Claude Sonnet 5";
       return m;
     }
     function safeErr(c){
@@ -813,17 +835,25 @@
 
     function render(ai){
       var providers = (ai && ai.providers) || {};
-      grid.innerHTML = cardHtml("groq", providers.groq) + cardHtml("gemini", providers.gemini);
+      // Порядок карточек — из META: новый провайдер появляется сам.
+      var names = Object.keys(META).filter(function(n){ return providers[n] !== undefined; });
+      grid.innerHTML = names.map(function(n){ return cardHtml(n, providers[n]); }).join("");
 
       var lines = [];
-      ["groq","gemini"].forEach(function(n){
+      names.forEach(function(n){
         var c = providers[n];
         if(!c || !c.connected || !c.usage) return;
         var u = c.usage, req = u.requests || {};
         var s = "<div style='margin-bottom:10px'><span class='k'>" + META[n].label + " · " +
-          esc(modelShort(c.model) || META[n].model) + "</span> — осталось " + (u.percent_remaining|0) + "%";
-        s += req.precise ? (" · запросы " + req.remaining + "/" + req.limit + " (точно)")
-                         : (" · использовано запросов " + (req.used|0) + " (лимит уточняется)");
+          esc(modelShort(c.model) || META[n].model) + "</span>";
+        if (u.no_daily_cap) {
+          // Платный ключ: дневного лимита нет, проценты тут были бы выдумкой.
+          s += " — дневного лимита нет, платишь за токены · запросов сегодня " + (req.used|0);
+        } else {
+          s += " — осталось " + (u.percent_remaining|0) + "%";
+          s += req.precise ? (" · запросы " + req.remaining + "/" + req.limit + " (точно)")
+                           : (" · использовано запросов " + (req.used|0) + " (лимит уточняется)");
+        }
         if(u.tokens_minute) s += " · токены/мин " + u.tokens_minute.remaining + "/" + u.tokens_minute.limit;
         var tl = u.tokens_day_local || {};
         if(tl.total) s += " · токены за день ~" + tl.total + " (оценка)";

@@ -232,6 +232,7 @@
   function providerLabel(p) {
     if (p === "groq") return "Groq";
     if (p === "gemini") return "Gemini";
+    if (p === "anthropic") return "Claude";
     return "ИИ";
   }
   function modelShort(m) {
@@ -239,11 +240,16 @@
     if (m.indexOf("qwen") >= 0) return "Qwen 3.6";
     if (m.indexOf("gpt-oss") >= 0) return "GPT-OSS 120B";
     if (m.indexOf("gemini") >= 0) return "Gemini " + (m.indexOf("lite") >= 0 ? "2.5 Flash Lite" : "2.5 Flash");
+    if (m.indexOf("claude") >= 0) return m.indexOf("haiku") >= 0 ? "Claude Haiku 4.5" : "Claude Sonnet 5";
     return m;
   }
   // Модель по умолчанию для НЕподключённого провайдера — чтобы человек сразу видел,
   // что Qwen не отдельный провайдер, а модель внутри Groq.
-  function defaultModel(p) { return p === "groq" ? "Qwen 3.6" : "Gemini 2.5 Flash"; }
+  function defaultModel(p) {
+    if (p === "groq") return "Qwen 3.6";
+    if (p === "anthropic") return "Claude Sonnet 5";
+    return "Gemini 2.5 Flash";
+  }
 
   function renderChip() {
     var ai = (state.data && state.data.ai) || {};
@@ -269,7 +275,9 @@
       ringFg.style.strokeDashoffset = String(56.5 * (1 - pct / 100));
     }
     var est = c.estimate ? " (оценка)" : "";
-    chip.title = providerLabel(c.provider) + " · " + modelShort(c.model) + " — осталось " + pct + "%" + est;
+    chip.title = providerLabel(c.provider) + " · " + modelShort(c.model)
+      + (c.no_daily_cap ? " — дневного лимита нет, платишь за токены"
+                        : " — осталось " + pct + "%" + est);
     chip.setAttribute("aria-label", "Ресурс ИИ: " + providerLabel(c.provider) + ", осталось " + pct + " процентов");
   }
 
@@ -328,7 +336,9 @@
       var c = ai.compact || {};
       dot = '<span class="wf-ai-dot" style="background:' + (COLORS[c.color] || COLORS.green) + '"></span>';
       head = providerLabel(ai.active.provider) + " · " + modelShort(ai.active.model);
-      sub = (active === "gemini"
+      sub = (active === "anthropic"
+        ? "Сейчас отвечает Claude — платный ключ. Gemini и Groq остаются бесплатным резервом на случай сбоя."
+        : active === "gemini"
         ? "Сейчас отвечает Gemini. Groq подключён резервом — включится только при исчерпании дневного лимита или сбое."
         : "Сейчас отвечает Groq на модели " + modelShort(ai.active.model) + ".");
     } else {
@@ -337,8 +347,10 @@
     }
     var html = '<div class="wf-ai-head"><h4>' + dot + head + '</h4>' +
                '<div class="wf-ai-sub">' + sub + '</div></div><div class="wf-ai-body">';
-    html += cardHtml("groq", providers.groq, active);
-    html += cardHtml("gemini", providers.gemini, active);
+    // Карточки строим по тому, что прислал сервер: новый провайдер появится сам.
+    Object.keys(providers).forEach(function (name) {
+      html += cardHtml(name, providers[name], active);
+    });
     html += '<div class="wf-ai-actions">' +
       '<a class="primary" href="' + SETTINGS_URL + '">' + (ai.connected ? "Настроить ИИ" : "Подключить ИИ") + '</a>' +
       '<a href="' + SETTINGS_URL + '#stats">Статистика</a>' +

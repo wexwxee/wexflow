@@ -5364,7 +5364,7 @@ async def api_ai_validate(request: Request):
     except Exception:  # noqa: BLE001
         body = {}
     provider = str(body.get("provider") or "").strip()
-    if provider not in ("gemini", "groq"):
+    if provider not in ai_secrets.PROVIDERS:
         return JSONResponse({"ok": False, "error": "Неизвестный провайдер."}, status_code=400)
     res = ai_gateway.validate_key(provider, use_generation=bool(body.get("use_generation")))
     out = _ai_public(res)
@@ -5380,7 +5380,7 @@ async def api_ai_disconnect(request: Request):
     except Exception:  # noqa: BLE001
         body = {}
     provider = str(body.get("provider") or "").strip()
-    if provider not in ("gemini", "groq"):
+    if provider not in ai_secrets.PROVIDERS:
         return JSONResponse({"ok": False, "error": "Неизвестный провайдер."}, status_code=400)
     removed = ai_gateway.disconnect(provider)
     return JSONResponse({"ok": True, "removed": removed, "usage": ai_gateway.usage_payload()})
@@ -5394,7 +5394,7 @@ async def api_ai_consent(request: Request):
     except Exception:  # noqa: BLE001
         body = {}
     provider = str(body.get("provider") or "").strip()
-    if provider not in ("gemini", "groq"):
+    if provider not in ai_secrets.PROVIDERS:
         return JSONResponse({"ok": False, "error": "Неизвестный провайдер."}, status_code=400)
     ai_secrets.set_consent(provider, value=bool(body.get("value", True)))
     return JSONResponse({"ok": True, "usage": ai_gateway.usage_payload()})
@@ -6480,6 +6480,8 @@ def _settings_context(
         "ai_groq_privacy_url": "https://console.groq.com/docs/your-data",
         "ai_gemini_keys_url": "https://aistudio.google.com/apikey",
         "ai_gemini_privacy_url": "https://ai.google.dev/gemini-api/terms",
+        "ai_anthropic_keys_url": "https://console.anthropic.com/settings/keys",
+        "ai_anthropic_privacy_url": "https://www.anthropic.com/legal/privacy",
         "ai_legacy_gemini": bool(ai_secrets.legacy_gemini_key()) and not ai_secrets.info("gemini")["connected"],
         "autopilot_profiles": ap_profiles, "autopilot_profile": sel_profile,
         "autopilot_profile_count": autopilot.profile_match_count(sel_profile),

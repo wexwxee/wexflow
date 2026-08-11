@@ -18,6 +18,7 @@ import time
 import ai_secrets
 import ai_usage
 from ai_providers import base
+from ai_providers.anthropic import AnthropicProvider
 from ai_providers.base import AIResult
 from ai_providers.gemini import GeminiProvider
 from ai_providers.groq import GroqProvider
@@ -44,15 +45,35 @@ def _consent_ok(name: str, account_id: str) -> bool:
     return bool(ai_secrets.info("groq", account_id).get("consent"))
 
 
+# Реестр провайдеров и порядок выбора. Подключённый платный идёт первым: его
+# ключ человек завёл сам и ради качества. Бесплатные Gemini и Groq остаются
+# резервом, и переход на них разрешён только по _FALLBACK_ON (дневной лимит,
+# таймаут, недоступность), а не «когда захочется».
+# Держим ИМЕНА классов, а не сами классы: класс ищется в момент вызова. Так
+# подмена ai_gateway.GeminiProvider (тесты, отладка) продолжает работать —
+# замороженная в словаре ссылка её бы игнорировала.
+_REGISTRY: dict = {
+    "anthropic": "AnthropicProvider",
+    "gemini": "GeminiProvider",
+    "groq": "GroqProvider",
+}
+ORDER = ("anthropic", "gemini", "groq")
+
+
+def _provider_class(name: str):
+    return globals().get(_REGISTRY.get(str(name or ""), ""))
+
+
 def _usable_providers(account_id: str) -> list[tuple[str, base.BaseProvider]]:
-    """Список пригодных провайдеров в порядке приоритета (Gemini -> Groq)."""
+    """Пригодные провайдеры в порядке приоритета."""
     out: list[tuple[str, base.BaseProvider]] = []
-    gem = GeminiProvider(account_id)
-    if gem.available():
-        out.append(("gemini", gem))
-    groq = GroqProvider(account_id)
-    if groq.available() and _consent_ok("groq", account_id):
-        out.append(("groq", groq))
+    for name in ORDER:
+        factory = _provider_class(name)
+        if factory is None:
+            continue
+        provider = factory(account_id)
+        if provider.available() and _consent_ok(name, account_id):
+            out.append((name, provider))
     return out
 
 
@@ -152,8 +173,8 @@ def chat(messages: list[dict], *, account_id: str | None = None, system: str | N
 def validate_key(provider: str, *, account_id: str | None = None,
                 use_generation: bool = False) -> AIResult:
     account_id = _account(account_id)
-    prov = GroqProvider(account_id) if provider == "groq" else GeminiProvider(account_id)
-    res = prov.validate_key(use_generation=use_generation)
+    factory = _provider_class(provider) or GeminiProvider
+    res = factory(account_id).validate_key(use_generation=use_generation)
     try:
         ai_secrets.set_last_check(provider, res.ok if res.error_code != base.NOT_CONNECTED else None, account_id)
     except Exception:  # noqa: BLE001
@@ -163,7 +184,7 @@ def validate_key(provider: str, *, account_id: str | None = None,
 
 def validate_supplied_key(provider: str, key: str, *, use_generation: bool = False) -> AIResult:
     """Проверить ПЕРЕДАННЫЙ ключ, ничего не сохраняя (мастер подключения)."""
-    cls = GroqProvider if provider == "groq" else GeminiProvider
+    cls = _provider_class(provider) or GeminiProvider
     return cls.with_key(key).validate_key(use_generation=use_generation)
 
 
@@ -173,7 +194,7 @@ def connect(provider: str, key: str, *, account_id: str | None = None,
     """Подключить провайдера: сперва проверка ключа, СОХРАНЕНИЕ только при успехе."""
     account_id = _account(account_id)
     key = (key or "").strip()
-    if provider not in ("gemini", "groq"):
+    if provider not in ai_secrets.PROVIDERS:
         return AIResult(ok=False, provider=provider, error_code=base.INVALID_REQUEST,
                         error_message="Неизвестный провайдер.")
     if not key:
@@ -199,8 +220,8 @@ def disconnect(provider: str, *, account_id: str | None = None) -> bool:
 #  Статус для UI (только текущий аккаунт; ничего идентифицирующего наружу)
 # --------------------------------------------------------------------------- #
 def _model_for(name: str, account_id: str) -> str:
-    prov = GroqProvider(account_id) if name == "groq" else GeminiProvider(account_id)
-    return prov.model_name
+    factory = _provider_class(name) or GeminiProvider
+    return factory(account_id).model_name
 
 
 def _provider_card(account_id: str, name: str, active: str) -> dict:
@@ -233,13 +254,14 @@ def usage_payload(account_id: str | None = None) -> dict:
     """Данные для sidebar-индикатора и раздела «ИИ и лимиты» (текущий аккаунт)."""
     account_id = _account(account_id)
     active = active_provider(account_id)
-    gemini = _provider_card(account_id, "gemini", active)
-    groq = _provider_card(account_id, "groq", active)
-    connected = gemini["connected"] or groq["connected"]
+    # Карточки строим циклом по реестру: новый провайдер появляется в интерфейсе
+    # сам, без правки этой функции.
+    cards = {name: _provider_card(account_id, name, active) for name in ai_secrets.PROVIDERS}
+    connected = any(card["connected"] for card in cards.values())
 
     compact = None
     if active:
-        card = gemini if active == "gemini" else groq
+        card = cards.get(active) or {}
         usage = card.get("usage") or {}
         compact = {
             "provider": active,
@@ -248,6 +270,9 @@ def usage_payload(account_id: str | None = None) -> dict:
             "color": usage.get("color", "green"),
             "limiting": usage.get("limiting", "requests"),
             "estimate": usage.get("estimate", True),
+            # у платного ключа дневного лимита нет — индикатор не должен
+            # показывать «осталось N%», которых не существует
+            "no_daily_cap": bool(usage.get("no_daily_cap")),
             "role": "primary",
         }
 
@@ -256,6 +281,6 @@ def usage_payload(account_id: str | None = None) -> dict:
         "primary": active,
         "active": ({"provider": active, "model": compact["model"]} if compact else None),
         "compact": compact,
-        "providers": {"gemini": gemini, "groq": groq},
+        "providers": cards,
         "legacy": None,  # заполняется в app.py для обратной совместимости хаба
     }

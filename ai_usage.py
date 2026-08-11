@@ -234,6 +234,11 @@ def status(now: dt.datetime | None = None) -> dict:
 # После первого ответа приоритет у фактических заголовков аккаунта.
 GROQ_PUBLISHED_RPD = 1000
 
+# Провайдеры, у которых дневного лимита запросов НЕТ вообще: человек платит за
+# токены. Рисовать им «осталось N% на сегодня» — врать: никакого дневного
+# бюджета там не существует. Показываем минутный запас и локальную оценку.
+NO_DAILY_CAP_PROVIDERS = ("anthropic",)
+
 
 def _utc_day() -> tuple[str, float]:
     now = dt.datetime.now(dt.timezone.utc)
@@ -399,7 +404,15 @@ def provider_status(provider: str, account_id: str, fingerprint: str = "",
 
     # --- запросы за день (RPD): точные заголовки > локальная оценка ---------- #
     req_precise = False
-    if rl.get("requests_limit") and rl.get("requests_remaining") is not None:
+    no_daily_cap = provider in NO_DAILY_CAP_PROVIDERS
+    minute_window = str(rl.get("window") or "") == "minute"
+    if no_daily_cap:
+        # Дневного потолка нет — считаем только сделанные запросы, а «остаток»
+        # не выдумываем: 100% здесь означает «дневной лимит не мешает».
+        req_limit = max(1, used)
+        req_remaining = req_limit
+    elif (rl.get("requests_limit") and rl.get("requests_remaining") is not None
+            and not minute_window):
         req_limit = int(rl["requests_limit"])
         req_remaining = max(0, int(rl["requests_remaining"]))
         req_precise = True
@@ -449,6 +462,8 @@ def provider_status(provider: str, account_id: str, fingerprint: str = "",
             "precise": req_precise,
         },
         "tokens_minute": tokens_minute,
+        # «нет дневного лимита» — не то же самое, что «лимит не измерен»
+        "no_daily_cap": no_daily_cap,
         "tokens_day_local": {
             "prompt": max(0, int(day.get("prompt_tokens") or 0)),
             "output": max(0, int(day.get("output_tokens") or 0)),
