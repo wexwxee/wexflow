@@ -406,6 +406,75 @@ def plural(value: int | str | None, one: str, few: str, many: str) -> str:
     return many
 
 
+# Как человек называет магазин, когда ищет его в поиске. Слева — то, что он
+# напечатает (по-русски, по-датски, с ошибкой), справа — кусок значения
+# `Job.brand` в базе. Сравнение идёт подстрокой, поэтому «netto» находит и код
+# «netto», и человеческое «Lidl Danmark» по слову «lidl».
+#
+# Зачем отдельный список. Поиск раньше смотрел только в название, описание,
+# город и улицу вакансии — про поле «магазин» он не знал вообще. Из-за этого
+# «нетто» не находило НИЧЕГО, хотя в базе 785 открытых датских вакансий Netto.
+# А именно так человек и ищет: «друг работает в Netto, посмотрю, что там есть».
+BRAND_ALIASES = {
+    "netto": "netto", "нетто": "netto", "нето": "netto",
+    "foetex": "foetex", "føtex": "foetex", "fotex": "foetex",
+    "фётекс": "foetex", "фетекс": "foetex", "фьотекс": "foetex",
+    "bilka": "bilka", "билка": "bilka",
+    "salling": "salling", "саллинг": "salling", "салинг": "salling",
+    "lidl": "lidl", "лидл": "lidl", "лидль": "lidl",
+    "br": "br", "бр": "br",
+    "carlsjr": "carlsjr", "carl's jr": "carlsjr", "карлс": "carlsjr",
+    "starbucks": "starbucks", "старбакс": "starbucks",
+    "power": "power", "пауэр": "power",
+    "matas": "matas", "матас": "matas",
+    "biltema": "biltema", "билтема": "biltema",
+    "jem": "jem", "jem og fix": "jem", "jem & fix": "jem",
+    "джем": "jem", "джем энд фикс": "jem",
+    "jks": "jks", "йкс": "jks",
+    "lufthavnsvikar": "lufthavnsvikar", "аэропорт": "lufthavnsvikar",
+    "cofoco": "cofoco", "кофоко": "cofoco",
+    "normal": "normal", "нормал": "normal",
+    "hobbii": "hobbii", "хобби": "hobbii",
+    "panduro": "panduro", "пандуро": "panduro",
+}
+
+
+def brand_terms(text: str) -> list[str]:
+    """Куски `Job.brand`, если человек назвал магазин. Иначе пусто.
+
+    Возвращаем список, а не одно значение: в базе один и тот же магазин
+    записан и кодом («netto»), и человеческим названием («Lidl Danmark»).
+    """
+    key = _fold(text)
+    if not key:
+        return []
+    found = BRAND_ALIASES.get(key)
+    return [found] if found else []
+
+
+def split_brand_query(text: str) -> tuple[list[str], str]:
+    """Разобрать поисковый запрос на «магазин» и всё остальное.
+
+    «Netto Herlev» → (['netto'], 'Herlev'): человек имеет в виду конкретный
+    магазин в конкретном городе, а не текст «Netto Herlev» внутри вакансии.
+    «кассир» → ([], 'кассир') — обычный поиск, ничего не меняется.
+    """
+    raw = " ".join(str(text or "").split())
+    if not raw:
+        return [], ""
+    whole = brand_terms(raw)          # «jem og fix» — название из нескольких слов
+    if whole:
+        return whole, ""
+    brands, rest = [], []
+    for word in raw.split(" "):
+        term = brand_terms(word)
+        if term and term[0] not in brands:
+            brands.extend(term)
+        elif not term:
+            rest.append(word)
+    return brands, " ".join(rest)
+
+
 def resolve(mapping: dict, text: str) -> str:
     """Превращает введённый пользователем текст (код / рус. название / часть) в код.
     Пусто — если ничего не подошло (фильтр тогда не применяется)."""

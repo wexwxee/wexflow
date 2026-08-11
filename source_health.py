@@ -35,8 +35,10 @@
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
+from pathlib import Path
 
 import config
 import json_store
@@ -64,15 +66,30 @@ def path():
     return _DEFAULT_PATH
 
 
+def _under_test() -> bool:
+    """Идёт ли прогон тестов — в любом виде, а не только через pytest.
+
+    Проверяем три признака, потому что первой версии хватило только на pytest:
+    тестовые файлы этого проекта умеют запускаться и как обычные скрипты
+    (``python tests/test_connector_sync.py``), и тогда PYTEST_CURRENT_TEST не
+    выставлен. Именно так тест с подставным коннектором и записал в настоящее
+    состояние «teamtailor не отвечает».
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:
+        return True
+    entry = Path(sys.argv[0]).resolve() if sys.argv and sys.argv[0] else None
+    return bool(entry and entry.parent.name == "tests")
+
+
 def _muted() -> bool:
     """Под тестами в НАСТОЯЩЕЕ состояние не пишем.
 
-    Тест синка с подставным коннектором — это не молчание источника. Один такой
+    Тест синка с подставным коннектором — это не молчание источника. Такой
     прогон уже оставил teamtailor с четырьмя неудачами подряд, и через сутки
     dev-лента спрятала бы его вакансии из-за теста. Тест, которому сторож нужен
     по делу, подменяет path() на временный файл — тогда запись разрешена.
     """
-    return bool(os.environ.get("PYTEST_CURRENT_TEST")) and path() == _DEFAULT_PATH
+    return _under_test() and path() == _DEFAULT_PATH
 
 
 def _now(now: float | None = None) -> float:

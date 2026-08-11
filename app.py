@@ -4211,22 +4211,36 @@ def index(
             )
         if q:  # умный поиск: русский запрос расширяем датскими синонимами
             import ru_search
-            terms = ru_search.expand(q)
-            city_term = labels.city_query(q)
-            if city_term and city_term != q.strip():
-                terms.append(city_term)
-            cond = None
-            for t in terms:
-                like = f"%{t}%"
-                c = (
-                    Job.title.ilike(like)
-                    | Job.description.ilike(like)
-                    | Job.city.ilike(like)
-                    | Job.street.ilike(like)
-                )
-                cond = c if cond is None else (cond | c)
-            if cond is not None:
-                stmt = stmt.where(cond)
+            # Сначала вынимаем название магазина: «Netto», «нетто», «Netto
+            # Herlev». Человек ищет так, когда место ему посоветовали, и ждёт
+            # именно этот магазин, а не слово «netto» внутри чужой вакансии.
+            query_brands, q_rest = labels.split_brand_query(q)
+            if query_brands:
+                brand_cond = None
+                for term in query_brands:
+                    c = Job.brand.ilike(f"%{term}%")
+                    brand_cond = c if brand_cond is None else (brand_cond | c)
+                stmt = stmt.where(brand_cond)
+            # Остаток запроса ищем как раньше. Если магазин назван и больше
+            # ничего не сказано, остатка нет — фильтруем только по магазину.
+            q_text = q_rest if query_brands else q
+            if q_text:
+                terms = ru_search.expand(q_text)
+                city_term = labels.city_query(q_text)
+                if city_term and city_term != q_text.strip():
+                    terms.append(city_term)
+                cond = None
+                for t in terms:
+                    like = f"%{t}%"
+                    c = (
+                        Job.title.ilike(like)
+                        | Job.description.ilike(like)
+                        | Job.city.ilike(like)
+                        | Job.street.ilike(like)
+                    )
+                    cond = c if cond is None else (cond | c)
+                if cond is not None:
+                    stmt = stmt.where(cond)
 
         if sort == "title":
             stmt = stmt.order_by(Job.title)
