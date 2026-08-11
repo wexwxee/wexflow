@@ -51,6 +51,7 @@ import transit
 import feed
 import nearby
 import query_parse
+import recommend
 import relevance
 import source_health
 import trust
@@ -140,7 +141,7 @@ def _clean_filter_query(raw_query: str) -> str:
         # поиска не должен таскать за собой мёртвый фильтр.
         elif key == "status" and value not in (SAFE_JOB_STATUSES - {"closed"}) | {"active"}:
             value = ""
-        elif key == "sort" and value not in {"published", "distance", "commute", "title", "city"}:
+        elif key == "sort" and value not in {"published", "distance", "commute", "title", "city", "fit"}:
             value = ""
         elif key == "radius":
             try:
@@ -4126,7 +4127,9 @@ def index(
     # они засоряют. Сюда же попадает старая кука фильтров со status=closed.
     if status == "closed":
         status = "active"
-    sort = sort if sort in {"published", "distance", "commute", "title", "city"} else ""
+    # «fit» — сортировка рекомендаций (этап 3). Её нужно пропускать и здесь, и в
+    # _clean_filter_query, иначе кука фильтров и профили поиска её выбросят.
+    sort = sort if sort in {"published", "distance", "commute", "title", "city", "fit"} else ""
     revisit = revisit if revisit in REVISIT_OPTIONS else str(DEFAULT_REVISIT_DAYS)
     revisit_days = REVISIT_OPTIONS[revisit]
     try:
@@ -4383,6 +4386,15 @@ def index(
                 distances.get(j.id, float("inf")),
             ))
 
+    # Рекомендации (этап 3). Только сортировка и только по желанию человека:
+    # ни одна вакансия отсюда не исчезает. Причину видно под карточкой.
+    recommend_reasons = {}
+    if sort == "fit" and recommend.enabled():
+        ranked = recommend.rank(jobs, recommend.build_context(home=home),
+                                distances=distances, trips=trips)
+        jobs = [row[0] for row in ranked]
+        recommend_reasons = {row[0].id: row[2] for row in ranked if row[2]}
+
     revisited_applied = {}
     if status == "active" and revisit_cutoff is not None:
         for j in jobs:
@@ -4612,6 +4624,9 @@ def index(
         "barrier_hide_url": "/?" + _filter_query({**_f, "fit": ""}),
         # «здесь нет — есть рядом» (этап 2)
         "nearby": nearby_view,
+        # рекомендации (этап 3): включены ли и почему карточка наверху
+        "recommend_on": recommend.enabled(),
+        "recommend_reasons": recommend_reasons,
         # разбор поискового запроса: что поняли и чем отсеяли (этап 1)
         "query_understood": query_parse.describe(parsed_query),
         "query_structured": parsed_query.structured,
@@ -5055,6 +5070,20 @@ async def settings_trust_dismiss(request: Request):
     if source in trust.SOURCES:
         trust.dismiss_offer(source)
     return _redirect_back(request, "/", notice="Хорошо, автомат остаётся выключенным.")
+
+
+@app.post("/settings/recommend")
+async def settings_recommend(request: Request):
+    """Ставить ли наверх ленты то, что подходит именно этому человеку."""
+    form = await request.form()
+    on = str(form.get("on") or "").strip().lower() in ("1", "true", "on", "yes")
+    recommend.set_enabled(on)
+    notice = (
+        "Рекомендации включены — в сортировке появился пункт «сначала подходящие мне»."
+        if on else
+        "Рекомендации выключены. Порядок ленты — как раньше."
+    )
+    return _redirect_back(request, "/profile#recommend", notice=notice)
 
 
 @app.post("/settings/language-barrier")
@@ -6047,6 +6076,8 @@ def _render_account(request: Request, mode: str = "account", saved: str = "",
         "hide_barrier": feed.hide_barrier(),
         "fit_stats": relevance.stats(),
         "fit_ai_available": bool(ai_filters.available() or ai_filters.gemini_available()),
+        # рекомендации: тумблер (по умолчанию выключено)
+        "recommend_on": recommend.enabled(),
         "file_info": _profile_file_info(profile),
         "saved": saved, "missing_fields": missing_fields,
         "deleted": deleted, "delete_error": delete_error,

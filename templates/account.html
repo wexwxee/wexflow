@@ -1084,6 +1084,19 @@
     {% endif %}
     <div class="actions"><button class="secondary" type="submit">Сохранить</button></div>
   </form>
+
+  <!-- Рекомендации: приложение может ставить наверх подходящее лично тебе.
+       Это только порядок — ни одна вакансия не прячется. -->
+  <form id="recommend" class="panel" method="post" action="/settings/recommend">
+    <h2>{{ ic.i('star', 17) }} Рекомендации</h2>
+    <p class="hint">WexFlow может ставить наверх ленты то, что подходит именно тебе: ближе к дому, с подходящими часами, где возьмут без датского, и похожее на то, куда ты уже подавался. Под каждой такой карточкой написано, <b>почему</b> она наверху — «рядом с домом (2.4 км) · 15 ч/нед · без датского».</p>
+    <label class="fb-toggle">
+      <input type="checkbox" name="on" value="1" {{ 'checked' if recommend_on else '' }}>
+      <span>Включить рекомендации — в сортировке появится «сначала подходящие мне»</span>
+    </label>
+    <p class="hint">Это <b>только порядок</b>: ни одна вакансия не скрывается и не удаляется. Приложение не учится на твоих данных и ничего не отправляет наружу — считает по тому, что уже лежит в базе. Чтобы не запереть тебя в одной сети, в верхушке всегда остаются места для того, где ты ещё не пробовал.</p>
+    <div class="actions"><button class="secondary" type="submit">Сохранить</button></div>
+  </form>
   <script>
     (function () {
       var field = document.querySelector("[data-address-suggest]");

@@ -480,6 +480,10 @@
   .role-summary { display:inline-flex; align-items:center; gap:5px; margin-top:1px; font-size:12.5px;
     font-weight:700; color:var(--info-txt); letter-spacing:.005em; }
   .role-summary.lead { color:var(--warn-txt); }
+  /* Причина, по которой карточка стоит наверху. Без неё рекомендация была бы
+     непонятным «нам виднее». */
+  .rec-why { display:flex; align-items:center; gap:5px; margin-top:3px;
+    font-size:12px; font-weight:600; color:var(--ok-txt); }
   .row { display:flex; gap:7px; margin-top:12px; flex-wrap:wrap; align-items:center; }
   .row a { display:inline-flex; }
   .row button { white-space:nowrap; padding:8px 12px; font-size:12.5px; }
@@ -1022,7 +1026,10 @@
   {% if active_preset %}<input type="hidden" name="profile" value="{{ active_preset.id }}">{% endif %}
   {# «Закрытые» из выбора убраны: закрытая вакансия в ленту не попадает — подать на неё нельзя. #}
   {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Все поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа','hidden':'Скрытые'} %}
+  {# «сначала подходящие мне» появляется только когда рекомендации включены:
+     пункт, который ничего не делает, хуже отсутствующего. #}
   {% set sorts = {'published':'↓ по дате','distance':'ближе по прямой','commute':'быстрее добраться','title':'по названию','city':'по городу'} %}
+  {% if recommend_on %}{% set _ = sorts.update({'fit':'сначала подходящие мне'}) %}{% endif %}
   <div class="filter-quick-grid">
     <div class="field">
       <label>Поиск {{ tip('Умный поиск', 'Понимает фразу целиком: магазин, город, часы и возраст. «нетто херлев 15 часов до 18» — и всё это станет фильтрами. Работает по-русски (кассир, склад, пекарь) и прощает опечатки. Под полем всегда написано, как именно понят запрос, и есть ссылка «искать фразу буквально».') }}</label>
@@ -1255,6 +1262,8 @@
     <h3>{{ j.title }}</h3>
     {% set role_ru = L.role_summary(j.title, j.categories, j.job_level) %}
     {% if role_ru %}<div class="role-summary{% if L.is_leadership(j.title) %} lead{% endif %}" data-tip-title="Коротко по-русски" data-tip-body="Краткое объяснение должности. Оригинальное название вакансии показано строкой выше.">{{ ic.i('user', 12) }} {{ role_ru }}</div>{% endif %}
+    {% set why = recommend_reasons.get(j.id) if recommend_reasons else none %}
+    {% if why %}<div class="rec-why" data-tip-title="Почему это наверху" data-tip-body="Порядок считает само приложение по фактам из базы: расстояние от дома, время в пути, вердикт о языке, часы, свежесть и твоя история подач. Ничего не скрывается — меняется только порядок.">{{ ic.i('star', 12) }} {{ why | join(' · ') }}</div>{% endif %}
     <div class="meta">
       <div class="meta-line">{{ ic.i('pin', 13) }}<span>{% if j.street %}{{ j.street }}{% endif %}{% if j.zip or j.city %}{{ ', ' if j.street }}{{ j.zip or '' }} {{ j.city or '' }}{% endif %}{% if j.country %}, {{ j.country }}{% endif %}</span></div>
       {% if j.hours or j.employment_type or j.start_date %}<div class="meta-line">{{ ic.i('clock', 13) }}<span>{% if j.hours %}{{ j.hours }} ч/нед{% endif %}{% if j.employment_type %}{{ ' · ' if j.hours }}{{ L.EMPLOYMENT.get(j.employment_type, j.employment_type) }}{% endif %}{% if j.start_date %} · старт {{ j.start_date }}{% endif %}</span></div>{% endif %}
