@@ -1,0 +1,75 @@
+/* Панель-помощник. Живёт в штатном оверлее (#wf-overlay-root), поэтому не
+   ломает раскладку страницы: .wex-main получает отступ только когда панель
+   открыта и экран достаточно широкий. */
+#wfAskBtn {
+  position: fixed; right: 16px; bottom: 16px; z-index: 941;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 16px; border-radius: 999px; cursor: pointer;
+  font-size: 13.5px; font-weight: 700; font-family: inherit;
+  color: var(--txt-strong); background: var(--card);
+  border: 1px solid var(--line-strong); box-shadow: 0 6px 20px rgba(0,0,0,.28);
+}
+#wfAskBtn:hover { border-color: var(--hover-line); }
+#wfAskBtn[hidden] { display: none; }
+
+#wfAskPanel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 100vw;
+  z-index: 942; display: flex; flex-direction: column;
+  background: var(--card); border-left: 1px solid var(--glass-line);
+  box-shadow: -12px 0 30px rgba(0,0,0,.30);
+}
+#wfAskPanel[hidden] { display: none; }
+.wf-ask-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--glass-line);
+}
+.wf-ask-head b { font-size: 15px; color: var(--txt-strong); }
+.wf-ask-head .wf-ask-sub { font-size: 11.5px; color: var(--muted); display: block; }
+.wf-ask-close {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 6px;
+}
+.wf-ask-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex;
+  flex-direction: column; gap: 10px; }
+.wf-ask-foot { padding: 12px 16px; border-top: 1px solid var(--glass-line); }
+.wf-ask-foot form { display: flex; gap: 8px; }
+.wf-ask-foot input {
+  flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--glass-line); background: var(--input, var(--glass));
+  color: var(--txt); font-size: 13.5px; font-family: inherit;
+}
+.wf-ask-foot button {
+  padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 700;
+  border: 1px solid var(--line-strong); background: var(--chip-bg);
+  color: var(--txt-strong); font-family: inherit; font-size: 13.5px;
+}
+
+.wf-ask-msg { font-size: 13.5px; line-height: 1.45; }
+.wf-ask-msg.me { align-self: flex-end; max-width: 85%; padding: 8px 12px;
+  border-radius: 12px 12px 2px 12px; background: var(--chip-bg); color: var(--txt-strong); }
+.wf-ask-msg.bot { color: var(--txt); }
+.wf-ask-tool { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.wf-ask-card {
+  display: block; padding: 10px 12px; border-radius: 11px; text-decoration: none;
+  border: 1px solid var(--glass-line); background: var(--bg-soft); color: var(--txt-strong);
+}
+.wf-ask-card:hover { border-color: var(--hover-line); }
+.wf-ask-card b { display: block; font-size: 13px; }
+.wf-ask-card span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.wf-ask-card .wf-ask-why { color: var(--ok-txt); }
+.wf-ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wf-ask-chip {
+  padding: 6px 10px; border-radius: 999px; cursor: pointer; font-size: 12px;
+  border: 1px solid var(--glass-line); background: var(--chip-bg);
+  color: var(--txt-strong); font-family: inherit;
+}
+.wf-ask-chip:hover { border-color: var(--hover-line); }
+
+html.wf-ask-open .wf-ask-shift { }
+@media (min-width: 1200px) {
+  html.wf-ask-open .wex-main { margin-right: 380px; }
+  html.wf-ask-open .batchbar { right: 396px; }
+}
+@media (max-width: 900px) {
+  #wfAskPanel { width: 100vw; }
+}

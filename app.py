@@ -48,6 +48,7 @@ import subscription
 import account as account_mod
 import cloud_auth
 import transit
+import assistant
 import feed
 import nearby
 import query_parse
@@ -5070,6 +5071,50 @@ async def settings_trust_dismiss(request: Request):
     if source in trust.SOURCES:
         trust.dismiss_offer(source)
     return _redirect_back(request, "/", notice="Хорошо, автомат остаётся выключенным.")
+
+
+@app.get("/api/assistant/state")
+def api_assistant_state():
+    """Что помощник умеет прямо сейчас — панель рисует подсказки по этому."""
+    return {
+        "ok": True,
+        "ai": bool(ai_gateway.available()),
+        "recommend": recommend.enabled(),
+        "home": bool(settings_store.get_home()),
+        "tools": assistant.catalog(),
+        "hints": [
+            "нетто херлев 15 часов",
+            "что есть рядом",
+            "что мне подходит",
+            "чего не хватает для подачи",
+        ],
+    }
+
+
+@app.post("/api/assistant/ask")
+async def api_assistant_ask(request: Request):
+    """Просьба человека словами. Пока без ИИ: разбор словарями + инструменты."""
+    if not _allowed_local_write(request):
+        raise HTTPException(status_code=403, detail="cross-site write blocked")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    text = str(body.get("text") or "")[:400]
+    job_id = str(body.get("job_id") or "")[:220]
+    return JSONResponse(assistant.ask(text, job_id=job_id))
+
+
+@app.post("/api/assistant/tool")
+async def api_assistant_tool(request: Request):
+    """Прямой вызов умения кнопкой из панели (без разбора текста)."""
+    if not _allowed_local_write(request):
+        raise HTTPException(status_code=403, detail="cross-site write blocked")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    return JSONResponse(assistant.run(str(body.get("tool") or ""), body.get("args") or {}))
 
 
 @app.post("/settings/recommend")
