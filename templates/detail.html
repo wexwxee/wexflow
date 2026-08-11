@@ -373,6 +373,54 @@
         {% endfor %}
       </div>
     {% endif %}
+    {% if nearby and nearby.total %}
+      {# Ни одной страницы вакансии без ответа на вопрос «а что ещё рядом».
+         Раньше человек упирался в одну вакансию и уходил искать руками. #}
+      <h2 class="section-title">В этом магазине и рядом</h2>
+      <style>
+        .nearby-list { display:flex; flex-direction:column; gap:8px; margin:6px 0 4px; }
+        .nearby-item {
+          display:flex; flex-direction:column; gap:2px; padding:10px 13px;
+          border:1px solid var(--glass-line); border-radius:11px;
+          background:var(--bg-soft); color:var(--txt-strong); text-decoration:none;
+        }
+        .nearby-item:hover { border-color:var(--hover-line); }
+        .nearby-item .hint { font-size:12px; }
+      </style>
+      {% if nearby.same_brand %}
+      <p class="meta">Та же сеть{% if nearby.widened %} (в радиусе {{ nearby.radius_km|int }} км){% endif %} — {{ nearby.same_brand_count }} {{ L.plural(nearby.same_brand_count, 'вакансия', 'вакансии', 'вакансий') }}:</p>
+      <div class="nearby-list">
+        {% for g in nearby.same_brand %}
+        <a class="nearby-item" href="/?q={{ (L.brand(g.brand) ~ ' ' ~ (g.city or '')) | trim | urlencode }}">
+          <b>{{ L.brand(g.brand) }}{% if g.city %} · {{ g.city }}{% endif %}</b>
+          <span class="hint">{% if g.street %}{{ g.street }}{% endif %}{% if g.dist is not none %} · {{ g.dist }} км{% endif %} · {{ g.jobs|length }} {{ L.plural(g.jobs|length, 'вакансия', 'вакансии', 'вакансий') }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if nearby.same_role %}
+      <p class="meta">Такая же работа неподалёку:</p>
+      <div class="nearby-list">
+        {% for j in nearby.same_role %}
+        <a class="nearby-item" href="/job/{{ j.id }}">
+          <b>{{ j.title|truncate(60) }}</b>
+          <span class="hint">{{ L.brand(j.brand) if j.brand else '' }}{% if j.city %} · {{ j.city }}{% endif %}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if nearby.same_city %}
+      <p class="meta">Другие работодатели в этом городе:</p>
+      <div class="nearby-list">
+        {% for j in nearby.same_city %}
+        <a class="nearby-item" href="/job/{{ j.id }}">
+          <b>{{ j.title|truncate(60) }}</b>
+          <span class="hint">{{ L.brand(j.brand) if j.brand else '' }}{% if j.city %} · {{ j.city }}{% endif %}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endif %}
     <h2 class="section-title">Русский перевод</h2>
     {% if trerror %}<div class="notice warn" style="margin-bottom:10px;">Перевод сейчас недоступен. Попробуй ещё раз чуть позже.</div>{% endif %}
     {% if job.description_ru %}

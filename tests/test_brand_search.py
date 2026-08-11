@@ -64,9 +64,15 @@ def feed_with_shops():
 
 
 def _shown(client, query: str) -> set[str]:
+    """Что реально в списке результатов.
+
+    Считаем только карточки: ниже на странице живёт блок подсказок «рядом», и
+    его ссылки — не результат поиска, а предложение посмотреть соседей.
+    """
     page = client.get(f"/?q={query}")
     assert page.status_code == 200, page.text[:400]
-    return set(re.findall(r'href="/job/([a-z0-9]+)[/"]', page.text))
+    body = page.text.split('class="nearby-box"')[0]
+    return set(re.findall(r'href="/job/([a-z0-9]+)[/"]', body))
 
 
 def test_shop_name_finds_the_shop(feed_with_shops):

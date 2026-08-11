@@ -49,6 +49,7 @@ import account as account_mod
 import cloud_auth
 import transit
 import feed
+import nearby
 import query_parse
 import relevance
 import source_health
@@ -111,6 +112,10 @@ JOB_FILTER_KEYS = (
     "max_commute", "max_transfers", "revisit", "group", "show_applied", "period",
     "fit", "exact",
 )
+
+# Ниже скольких карточек результат считается «тонким» и стоит подсказать,
+# что есть рядом. Пять — это меньше одного экрана: человек уже видит пустоту.
+NEARBY_THIN_RESULT = 5
 
 DEFAULT_REVISIT_DAYS = 60
 REVISIT_OPTIONS = {"off": 0, "30": 30, "60": 60, "90": 90}
@@ -4254,6 +4259,28 @@ def index(
             if barrier_hidden:
                 jobs = [j for j in jobs if not relevance.is_barrier(j)]
 
+        # Подсказки «здесь ничего нет — зато рядом есть» (этап 2). Считаем
+        # только когда человек назвал место И результат вышел тонким: лишний
+        # запрос к базе на каждый рендер ленты никому не нужен.
+        nearby_view = {}
+        if (parsed_query.brands or parsed_query.cities) and len(jobs) < NEARBY_THIN_RESULT:
+            scope = None
+            for term in parsed_query.brands:
+                part = Job.brand.ilike(f"%{term}%")
+                scope = part if scope is None else (scope | part)
+            for city_name in parsed_query.cities:
+                for term in labels.city_terms(city_name) or [city_name]:
+                    part = Job.city.ilike(f"%{term.strip()}%")
+                    scope = part if scope is None else (scope | part)
+            if scope is not None:
+                pool = list(s.exec(
+                    select(Job).where(*feed.visible_clauses(fit=False), scope)
+                ).all())
+                nearby_view = nearby.suggestions(
+                    pool, parsed=parsed_query, home=home,
+                    exclude_ids={j.id for j in jobs},
+                )
+
         cities = known_city_names
         sources = _distinct(s, Job.source)
         brands = _distinct(s, Job.brand)
@@ -4374,26 +4401,11 @@ def index(
     revisited_preview = [j for j in jobs if j.id in revisited_applied][:3]
 
     # --- группировка по магазину (адрес) ---
-    groups = []
-    if group:
-        bucket, order = {}, []
-        for j in jobs:
-            key = (j.brand, j.street, j.zip, j.city)
-            if key not in bucket:
-                bucket[key] = {
-                    "brand": j.brand, "street": j.street, "zip": j.zip, "city": j.city,
-                    "region": j.region, "country": j.country, "dist": distances.get(j.id),
-                    "trip": trips.get(j.id), "first": j, "jobs": [], "revisited_count": 0,
-                }
-                order.append(key)
-            g = bucket[key]
-            g["jobs"].append(j)
-            if j.id in revisited_applied:
-                g["revisited_count"] += 1
-            d = distances.get(j.id)
-            if d is not None and (g["dist"] is None or d < g["dist"]):
-                g["dist"] = d
-        groups = [bucket[k] for k in order]
+    # Правило живёт в nearby.stores: оттуда же его берут подсказки «рядом»,
+    # иначе «магазин» в ленте и «магазин» в подсказке однажды разъедутся.
+    groups = nearby.stores(
+        jobs, distances=distances, trips=trips, revisited=revisited_applied,
+    ) if group else []
 
     # --- пагинация ---
     PER_PAGE = 24 if group else 60
@@ -4598,6 +4610,8 @@ def index(
         "barrier_on": bool(feed.hide_barrier()),
         "barrier_show_url": "/?" + _filter_query({**_f, "fit": "all"}),
         "barrier_hide_url": "/?" + _filter_query({**_f, "fit": ""}),
+        # «здесь нет — есть рядом» (этап 2)
+        "nearby": nearby_view,
         # разбор поискового запроса: что поняли и чем отсеяли (этап 1)
         "query_understood": query_parse.describe(parsed_query),
         "query_structured": parsed_query.structured,
@@ -7617,6 +7631,7 @@ def settings_document_rule_file(rule_id: str, kind: str):
 
 @app.get("/job/{job_id}", response_class=HTMLResponse)
 def detail(request: Request, job_id: str, trerror: str = ""):
+    nearby_view = {}
     with get_session() as s:
         job = s.get(Job, job_id)
         if job and job.status == "new":
@@ -7624,6 +7639,23 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             s.add(job)
             s.commit()
             s.refresh(job)
+        if job:
+            # «В этом магазине и рядом»: берём только свою сеть и свой город,
+            # а не всю базу — страница вакансии не должна тянуть тысячи строк.
+            scope = None
+            if job.brand:
+                scope = Job.brand.ilike(f"%{job.brand}%")
+            for term in (labels.city_terms(job.city or "") or ([job.city] if job.city else [])):
+                part = Job.city.ilike(f"%{str(term).strip()}%")
+                scope = part if scope is None else (scope | part)
+            if scope is not None:
+                pool = list(s.exec(
+                    select(Job).where(*feed.visible_clauses(fit=False), scope)
+                ).all())
+                nearby_view = nearby.suggestions(
+                    pool, job=job, home=settings_store.get_home(),
+                    exclude_ids={job.id},
+                )
     distance = None
     home = settings_store.get_home()
     if job and home and job.lat is not None and job.lon is not None:
@@ -7693,6 +7725,8 @@ def detail(request: Request, job_id: str, trerror: str = ""):
                 if job and job.source != "salling" else ""
             ),
             "selected_documents": selected_documents,
+            # «в этом магазине и рядом» — этап 2
+            "nearby": nearby_view,
             "lidl_post_apply": lidl_post_apply,
             "application_tracking": (
                 application_tracker.view(job) if job and job.applied_at else None

@@ -187,7 +187,9 @@ def test_page_says_what_it_removed(feed_client):
     page = feed_client.get("/?q=до 20 часов")
     assert "Убрано по твоему запросу" in page.text
     assert "не подошли по часам" in page.text
-    shown = set(re.findall(r'href="/job/([a-z0-9]+)[/"]', page.text))
+    # только карточки списка: ниже живёт блок подсказок «рядом» со своими ссылками
+    body = page.text.split('class="nearby-box"')[0]
+    shown = set(re.findall(r'href="/job/([a-z0-9]+)[/"]', body))
     assert shown == {"n1"}
 
 

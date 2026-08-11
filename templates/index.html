@@ -4,9 +4,58 @@
 
 {% block title %}WexFlow · Вакансии{% endblock %}
 
+{# Карточка магазина в подсказке «рядом»: адрес, расстояние и сколько там вакансий. #}
+{% macro nearby_store(g) %}
+<a class="empty-btn nearby-store" href="/?q={{ (brand_label(g.brand) ~ ' ' ~ (g.city or '')) | trim | urlencode }}">
+  <b>{{ brand_label(g.brand) }}{% if g.city %} · {{ g.city }}{% endif %}</b>
+  <span class="hint">{% if g.street %}{{ g.street }}{% endif %}{% if g.dist is not none %} · {{ g.dist }} км{% endif %} · {{ g.jobs|length }} {{ L.plural(g.jobs|length, 'вакансия', 'вакансии', 'вакансий') }}</span>
+</a>
+{% endmacro %}
+
+{# «Здесь ничего нет — зато рядом есть». Один текст на пустой экран и на
+   короткий список: правда одна, меняется только заголовок. #}
+{% macro nearby_block(title) %}
+{% if nearby and nearby.total %}
+<div class="nearby-box">
+  <h3>{{ ic.i('pin', 15) }} {{ title }}</h3>
+  {% if nearby.anchor_count and nearby.anchor_rejected %}
+  <p>В <b>{{ nearby.anchor_label }}</b> сейчас {{ nearby.anchor_count }} {{ L.plural(nearby.anchor_count, 'вакансия', 'вакансии', 'вакансий') }}, но подходящих нет:
+    {% set r = nearby.anchor_rejected %}
+    {% set parts = [] %}
+    {% if r.under18 %}{% set _ = parts.append(r.under18 ~ ' только для тех, кому нет 18') %}{% endif %}
+    {% if r.leadership %}{% set _ = parts.append(r.leadership ~ ' руководящих') %}{% endif %}
+    {% if r.language %}{% set _ = parts.append(r.language ~ ' с требованием датского') %}{% endif %}
+    {{ parts | join(', ') }}.</p>
+  {% endif %}
+  {% if nearby.same_brand %}
+  <p>Зато рядом{% if nearby.widened %} (пришлось расширить поиск до {{ nearby.radius_km|int }} км){% endif %} —
+    <b>{{ nearby.same_brand_count }}</b> {{ L.plural(nearby.same_brand_count, 'вакансия', 'вакансии', 'вакансий') }} в той же сети:</p>
+  <div class="empty-actions">{% for g in nearby.same_brand %}{{ nearby_store(g) }}{% endfor %}</div>
+  {% endif %}
+  {% if nearby.same_city %}
+  <p>Другие работодатели в том же городе:</p>
+  <div class="empty-actions">{% for j in nearby.same_city %}<a class="empty-btn" href="/job/{{ j.id }}">{{ j.title|truncate(46) }}{% if j.city %} · {{ j.city }}{% endif %}</a>{% endfor %}</div>
+  {% endif %}
+  {% if nearby.same_role %}
+  <p>Такая же работа неподалёку:</p>
+  <div class="empty-actions">{% for j in nearby.same_role %}<a class="empty-btn" href="/job/{{ j.id }}">{{ j.title|truncate(46) }}{% if j.city %} · {{ j.city }}{% endif %}</a>{% endfor %}</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
 {% macro empty_state() %}
 <div class="empty-state">
-  {% if sync_running %}
+  {% if nearby and nearby.total %}
+    {# Место названо, а подходящего в нём нет. Пустой экран тут читался бы как
+       «работы нет», хотя рядом она есть — поэтому сначала подсказка. #}
+    <div class="empty-ic">{{ ic.i('pin', 24) }}</div>
+    <h3>Здесь подходящего нет — зато есть рядом</h3>
+    {{ nearby_block('Ближайшие варианты') }}
+    <div class="empty-actions">
+      <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
+    </div>
+  {% elif sync_running %}
     <div class="empty-spin"></div>
     <h3>Загружаю вакансии из подключённых источников…</h3>
     <p>Это первый запуск — база наполняется. Обычно занимает до минуты. Можно подождать или нажать «Обновить».</p>
@@ -119,6 +168,17 @@
   }
   .empty-btn:hover { border-color: var(--hover-line); background: var(--menu-bg); }
   .empty-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  /* «Здесь нет — зато рядом есть»: тот же блок и на пустом экране, и под коротким списком */
+  .nearby-box {
+    margin: 14px auto 0; max-width: 760px; text-align: left;
+    border: 1px solid var(--glass-line); border-radius: 14px;
+    background: var(--bg-soft); padding: 14px 16px;
+  }
+  .nearby-box h3 { margin: 0 0 8px; font-size: 15px; display: flex; align-items: center; gap: 7px; }
+  .nearby-box p { margin: 8px 0; font-size: 13.5px; color: var(--muted); }
+  .nearby-box .empty-actions { justify-content: flex-start; }
+  .nearby-store { flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; }
+  .nearby-store .hint { font-size: 12px; font-weight: 500; }
   .empty-spin {
     width: 34px; height: 34px; border-radius: 50%;
     border: 3px solid var(--glass-line); border-top-color: var(--accent);
@@ -1249,6 +1309,11 @@
   {% endfor %}
   {% endif %}
 </div>
+
+{# Список короткий, но не пустой — подсказка идёт под ним, а не вместо него. #}
+{% if jobs and nearby and nearby.total %}
+<div style="padding:0 22px 6px;">{{ nearby_block('Ещё рядом') }}</div>
+{% endif %}
 
 {% if pages > 1 %}
 {% set pparts = [] %}
