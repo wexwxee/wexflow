@@ -114,9 +114,11 @@
     </div>
     {# Языковой барьер: вердикт всегда с причиной, которую можно проверить. #}
     {% if fit and fit.verdict != 'unclear' %}
-    <div class="notice-line" style="margin-top:10px;{% if fit.barrier %}color:var(--warn-txt);background:var(--warn-bg);{% else %}color:var(--ok-txt);background:var(--ok-bg);{% endif %}">
-      {{ ic.i('alert' if fit.barrier else 'check', 13) }} <b>{{ fit.label|capitalize }}</b>{% if fit.reason %} — {{ fit.reason }}{% endif %}
-      {% if fit.by_ai %}<span class="hint" style="display:block;margin-top:4px;">Это мнение ИИ о такой должности, а не решение работодателя. Подать можно всё равно.</span>{% else %}<span class="hint" style="display:block;margin-top:4px;">Найдено прямо в тексте вакансии.</span>{% endif %}
+    <div class="notice-line" style="margin-top:10px;{% if fit.barrier %}color:var(--warn-txt);background:var(--warn-bg);{% elif fit.soft %}color:var(--muted);background:var(--bg-soft);{% else %}color:var(--ok-txt);background:var(--ok-bg);{% endif %}">
+      {{ ic.i('alert' if (fit.barrier or fit.soft) else 'check', 13) }} <b>{{ fit.label|capitalize }}</b>{% if fit.reason %} — {{ fit.reason }}{% endif %}
+      {% if fit.soft %}<span class="hint" style="display:block;margin-top:4px;">Так решил ИИ по названию должности — в самом объявлении требования датского нет. Поэтому вакансия и осталась в ленте: решаешь ты, а не модель.</span>
+      {% elif fit.by_ai %}<span class="hint" style="display:block;margin-top:4px;">Это мнение ИИ о такой должности, а не решение работодателя. Подать можно всё равно.</span>
+      {% else %}<span class="hint" style="display:block;margin-top:4px;">Найдено прямо в тексте вакансии.</span>{% endif %}
     </div>
     {% endif %}
     <div class="status-row">

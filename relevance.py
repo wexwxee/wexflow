@@ -411,9 +411,42 @@ def stats() -> dict:
 
 
 def is_barrier(job) -> bool:
-    """Уверенное «не подойдёт»: нужен датский или местный диплом.
-    «Не ясно» и неоценённое сюда НЕ попадают — молчание не повод прятать."""
-    return str(getattr(job, "fit", "") or "") in BARRIER
+    """Прятать ли вакансию из-за языка. Прячем ТОЛЬКО доказанное.
+
+    Пересмотр 11.08.2026. Раньше пряталось всё, что помечено `danish` или
+    `diploma`, и лента схлопнулась: из 2549 открытых датских вакансий пропали
+    2255. Разбор показал, откуда эти вердикты: 78 — по цитате из объявления,
+    470 — руководящие, и **1707 — просто догадка ИИ о рядовой работе**
+    («требует общения с покупателями»), хотя в самой вакансии этого не
+    написано. Под нож ушли ровно те роли, ради которых существует WexFlow:
+    Butiksassistent under 18 år — 247, Servicemedarbejder — 160,
+    Kasseassistent — 84. Живой контрпример: в Netto берут без датского, и
+    человек туда уже подавался с квитанцией.
+
+    Поэтому прячем два случая, каждый из которых можно предъявить:
+      1. правила нашли прямую фразу в тексте («dansk i tale og skrift») —
+         это цитата, а не мнение;
+      2. должность руководящая — там датский нужен по существу работы.
+
+    Догадка ИИ о рядовой работе вакансию больше не прячет: она остаётся в
+    ленте с пометкой (см. `soft_barrier`). Решает человек — про своё будущее
+    место он знает больше, чем модель.
+    """
+    if str(getattr(job, "fit", "") or "") not in BARRIER:
+        return False
+    if str(getattr(job, "fit_engine", "") or "").startswith("ai"):
+        import labels  # локально: relevance грузится раньше в цепочке импортов
+        return labels.is_leadership(str(getattr(job, "title", "") or ""))
+    return True
+
+
+def soft_barrier(job) -> bool:
+    """Догадка ИИ «нужен датский», которой НЕ хватило на сокрытие.
+
+    Вакансия остаётся в ленте, но помечена честно: человек видит и мнение
+    модели, и то, что это именно мнение, а не цитата из объявления.
+    """
+    return str(getattr(job, "fit", "") or "") in BARRIER and not is_barrier(job)
 
 
 def describe(job) -> dict:
@@ -422,11 +455,14 @@ def describe(job) -> dict:
     if verdict not in VERDICTS:
         verdict = UNCLEAR
     engine = str(getattr(job, "fit_engine", "") or "")
+    soft = soft_barrier(job)
     return {
         "verdict": verdict,
-        "label": LABELS[verdict],
+        "label": "возможно, нужен датский" if soft else LABELS[verdict],
         "reason": str(getattr(job, "fit_reason", "") or ""),
         "by_ai": engine.startswith("ai"),
         "engine": engine,
-        "barrier": verdict in BARRIER,
+        # barrier — «спрятана из ленты», soft — «показана, но с пометкой»
+        "barrier": is_barrier(job),
+        "soft": soft,
     }

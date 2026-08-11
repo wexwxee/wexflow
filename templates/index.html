@@ -33,7 +33,7 @@
     {# Всё, что нашлось по запросу, требует датского — это факт, а не пустая база. #}
     <div class="empty-ic">{{ ic.i('eyeoff', 24) }}</div>
     <h3>Все найденные вакансии требуют датского</h3>
-    <p>По этому запросу нашлось <b>{{ barrier_hidden }}</b>, и во всех нужен датский язык или местный диплом. Их можно посмотреть — подать никто не запрещает.</p>
+    <p>По этому запросу нашлось <b>{{ barrier_hidden }}</b>, и в каждой датский требуется прямо в тексте объявления либо это руководящая должность. Их можно посмотреть — подать никто не запрещает.</p>
     <div class="empty-actions">
       <a class="empty-btn" href="{{ barrier_show_url }}">{{ ic.i('eye', 14) }} Показать их</a>
       <a class="empty-btn" href="/?reset=1">{{ ic.i('broom', 14) }} Сбросить фильтры</a>
@@ -866,7 +866,7 @@
 </div>
 {% endif %}
 {# Языковой барьер: скрытое всегда посчитано и одним кликом возвращается. #}
-{% if barrier_hidden %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('eyeoff', 13) }} Скрыто вакансий, где нужен датский или местный диплом: <b>{{ barrier_hidden }}</b>. <a href="{{ barrier_show_url }}">показать их</a> · <a href="/profile#language">настроить</a></div>{% endif %}
+{% if barrier_hidden %}<div class="notice-line" style="color:var(--muted);background:var(--bg-soft);">{{ ic.i('eyeoff', 13) }} Скрыто вакансий: <b>{{ barrier_hidden }}</b> — там датский требуется прямо в объявлении или это руководящая должность. Догадки ИИ ничего не прячут: такие вакансии остались в ленте с пометкой. <a href="{{ barrier_show_url }}">показать скрытые</a> · <a href="/profile#language">настроить</a></div>{% endif %}
 {% if f.fit == 'all' and barrier_total %}<div class="notice-line" style="color:var(--info-txt);background:var(--info-bg);">{{ ic.i('eye', 13) }} Показаны и те вакансии, где нужен датский или местный диплом: <b>{{ barrier_total }}</b>. <a href="{{ barrier_hide_url }}">снова скрыть</a></div>{% endif %}
 {% if batch %}<div class="notice-line" style="color:var(--ok-txt);background:var(--ok-bg);">{{ ic.i('send', 13) }} Запущена пакетная подача на {{ batch }} вакансий ({{ 'с отправкой' if batch_mode=='submit' else 'прогон без отправки' }}) — подаётся по одной, прогресс ниже.</div>{% endif %}
 {% if skipped %}<div class="notice-line" style="color:var(--warn-txt,#b06b00);background:var(--warn-bg,rgba(255,180,0,.12));">{{ ic.i('alert', 13) }} Руководящие вакансии пропущены: {{ skipped }} — пакетная подача для них отключена ради безопасности. При необходимости открой вакансию и подай с её страницы.</div>{% endif %}
@@ -1187,7 +1187,8 @@
       {# Языковой барьер. «Не ясно» не показываем — это не факт, а молчание. #}
       {% set fitv = fit_views.get(j.id) %}
       {% if fitv and fitv.verdict == 'ok' %}<span class="badge" style="color:var(--ok-txt);border-color:var(--ok-line,var(--ok-txt));background:var(--ok-bg);" data-tip-title="Похоже, возьмут без датского" data-tip-body="{{ fitv.reason or 'Оценка по роли.' }}{{ ' Это мнение ИИ по названию должности, а не обещание работодателя.' if fitv.by_ai else '' }}">{{ ic.i('check', 11) }} без датского</span>
-      {% elif fitv and fitv.barrier %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);background:var(--warn-bg);" data-tip-title="{{ fitv.label|capitalize }}" data-tip-body="{{ fitv.reason or 'Оценка по роли.' }}{{ ' Это мнение ИИ по названию должности, а не отказ работодателя — подать всё равно можно.' if fitv.by_ai else '' }}">{{ ic.i('alert', 11) }} {{ fitv.label }}</span>{% endif %}
+      {% elif fitv and fitv.barrier %}<span class="badge" style="color:var(--warn-txt);border-color:var(--warn-line);background:var(--warn-bg);" data-tip-title="{{ fitv.label|capitalize }}" data-tip-body="{{ fitv.reason or 'Оценка по роли.' }}{{ ' Это мнение ИИ по названию должности, а не отказ работодателя — подать всё равно можно.' if fitv.by_ai else '' }}">{{ ic.i('alert', 11) }} {{ fitv.label }}</span>
+      {% elif fitv and fitv.soft %}<span class="badge" data-tip-title="Возможно, нужен датский" data-tip-body="{{ fitv.reason or 'Оценка по роли.' }} Так решил ИИ по названию должности — в самом объявлении требования датского нет. Поэтому вакансию не прячем: работодатель может взять и без языка, а знакомые на месте знают об этом больше модели.">{{ ic.i('alert', 11) }} возможно, нужен датский</span>{% endif %}
     </div>
     <h3>{{ j.title }}</h3>
     {% set role_ru = L.role_summary(j.title, j.categories, j.job_level) %}

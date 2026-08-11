@@ -41,10 +41,12 @@ def feed_with_shops():
         session.add(Job(id="n1", source="salling", brand="netto", country="DK",
                         title="Kasseassistent", city="Herlev", street="Herlev Hovedgade 1",
                         status="new"))
+        # fit_engine="rules" — датский требуется прямо в тексте объявления,
+        # только такое (и руководящие) лента прячет с 11.08.2026
         session.add(Job(id="n2", source="salling", brand="netto", country="DK",
                         title="Butiksassistent under 18 år", city="Vejle",
-                        status="new", fit="danish",
-                        fit_reason="Требует общения с покупателями на датском"))
+                        status="new", fit="danish", fit_engine="rules",
+                        fit_reason="в тексте: «dansk i tale og skrift»"))
         session.add(Job(id="f1", source="salling", brand="foetex", country="DK",
                         title="Slagter", city="Herlev", status="new"))
         session.add(Job(id="l1", source="lidl", brand="Lidl Danmark", country="DK",
@@ -101,7 +103,8 @@ def test_hidden_by_language_is_explained_not_swallowed(feed_with_shops):
 def test_shop_search_counts_hidden_above_the_list(feed_with_shops):
     """Когда что-то нашлось, число скрытого видно строкой над списком."""
     page = feed_with_shops.get("/?q=нетто")
-    assert "Скрыто вакансий, где нужен датский или местный диплом: <b>1</b>" in page.text
+    assert "Скрыто вакансий: <b>1</b>" in page.text
+    assert "прямо в объявлении" in page.text
 
 
 def test_query_is_split_into_shop_and_the_rest():

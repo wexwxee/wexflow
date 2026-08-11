@@ -281,7 +281,12 @@ def test_describe_marks_ai_opinion():
                      fit_reason="в тексте: «flydende dansk»")
     assert relevance.describe(ai_job)["by_ai"] is True
     assert relevance.describe(rules_job)["by_ai"] is False
-    assert relevance.describe(ai_job)["barrier"] is True
+    # Пересмотр 11.08.2026: догадка ИИ о РЯДОВОЙ работе вакансию больше не
+    # прячет, а только помечает. Прячут цитата из объявления (rules) и
+    # руководящая должность. Почему — в relevance.is_barrier.
+    assert relevance.describe(ai_job)["barrier"] is False
+    assert relevance.describe(ai_job)["soft"] is True
+    assert relevance.describe(rules_job)["barrier"] is True
     assert relevance.describe(_job("c", "X"))["verdict"] == relevance.UNCLEAR
 
 
