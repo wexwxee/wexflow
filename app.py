@@ -1399,7 +1399,7 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
                 "brandFg": brand_fg,
                 "city": job.city or "",
                 "address": _job_address(job),
-                "hours": f"{job.hours} ч/нед" if job.hours else "",
+                "hours": labels.hours_label(job.hours),
                 "employment": labels.EMPLOYMENT.get(job.employment_type or "", job.employment_type or ""),
                 "source": job.source or "salling",
                 "sourceLabel": "" if (job.source or "salling") == "salling"
@@ -2061,8 +2061,9 @@ def _tg_card(job, trust_row: dict | None = None) -> str:
         lines.append(f'🗺 <a href="{e(_maps_url(job, home))}">Открыть адрес в картах</a>')
     elif job.lat is not None and job.lon is not None:
         lines.append(f'🗺 <a href="{e(_maps_url(job, home))}">Открыть точку в картах</a>')
-    if job.hours:
-        lines.append(f"🕒 {e(job.hours)} ч/нед")
+    hours_text = labels.hours_label(job.hours)
+    if hours_text:
+        lines.append(f"🕒 {e(hours_text)}")
     # Языковой барьер: тот же вердикт, что в приложении. «Не ясно» не пишем —
     # молчание оценщика не факт и место в карточке занимать не должно.
     fit_view = relevance.describe(job)
@@ -2104,8 +2105,8 @@ def _job_short_id(job) -> str:
 
 def _job_detail_bits(job) -> list[str]:
     bits = []
-    if job.hours:
-        bits.append(f"{job.hours} ч/нед")
+    if labels.hours_label(job.hours):
+        bits.append(labels.hours_label(job.hours))
     address = _job_address(job)
     if address:
         short_address = address.replace(", DK", "").replace(", Denmark", "")
@@ -2121,8 +2122,8 @@ def _job_summary_line(job, loc: str = "", address: str = "") -> str:
         bits.append(labels.brand(job.brand))
     if loc:
         bits.append(loc)
-    if job.hours:
-        bits.append(f"{job.hours} ч/нед")
+    if labels.hours_label(job.hours):
+        bits.append(labels.hours_label(job.hours))
     if address:
         bits.append(address)
     return " · ".join(b for b in bits if b)
@@ -2259,7 +2260,7 @@ def _tg_job_payload(job, is_match: bool | None = None, home: dict | None = None,
         "address": address,
         "region": labels.label_or_pretty(labels.REGION, job.region) if job.region else "",
         "regionCode": job.region or "",
-        "hoursLabel": f"{job.hours} ч/нед" if job.hours else "",
+        "hoursLabel": labels.hours_label(job.hours),
         "hoursRaw": job.hours or "",
         "employment": labels.EMPLOYMENT.get(job.employment_type or "", job.employment_type or ""),
         "employmentType": job.employment_type or "",
@@ -3192,8 +3193,9 @@ def _job_facts(job: Job, distance: float | None) -> list[dict]:
         facts.append({"label": "Регион", "value": labels.label_or_pretty(labels.REGION, job.region), "kind": ""})
     if distance is not None:
         facts.append({"label": "От дома", "value": f"≈ {distance} км по прямой", "kind": "distance"})
-    if job.hours:
-        facts.append({"label": "Часы", "value": f"{job.hours} ч/нед", "kind": "time"})
+    if labels.hours_label(job.hours):
+        facts.append({"label": "Часы", "value": labels.hours_label(job.hours),
+                      "kind": "time"})
     if job.employment_type:
         facts.append({
             "label": "Занятость",

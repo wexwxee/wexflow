@@ -398,6 +398,30 @@ def with_count(label: str, count: int | None = None) -> str:
     return f"{label} — {count}"
 
 
+def hours_label(value) -> str:
+    """«15» → «15 ч/нед»; ноль и пустота → «» (подпись просто не рисуем).
+
+    Salling иногда присылает ``hours = "0"`` — так помечают ставки без
+    фиксированных часов (по вызову). Строка «0» правдива для базы, но на
+    карточке «0 ч/нед» читается как поломка: человек видит вакансию, где
+    якобы не надо работать. Молчание честнее выдуманного нуля.
+
+    Готовые формулировки источника («Fuldtid», «30 timer») оставляем как есть:
+    иначе выйдет «30 timer ч/нед».
+    """
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    if re.fullmatch(r"[\d.,\s–—-]+", text):
+        try:
+            if float(text.replace(",", ".").strip(" –—-")) == 0:
+                return ""
+        except ValueError:
+            pass
+        return f"{text} ч/нед"
+    return text
+
+
 def plural(value: int | str | None, one: str, few: str, many: str) -> str:
     """Возвращает русскую форму слова для числа: 1, 2–4 или остальные."""
     try:

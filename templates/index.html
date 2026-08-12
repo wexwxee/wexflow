@@ -586,6 +586,23 @@
   .batch-ai-meta-line b { color:var(--txt); font-weight:750; }
   .batch-ai-meta-note { display:block; margin-top:3px; color:var(--muted-2); }
   .batch-ai-meta a { color:var(--accent); text-decoration:none; font-weight:700; }
+  /* Раскрывающиеся подробности: панель выбора должна быть маленькой, а всё
+     длинное — доступным по клику, а не занимать половину экрана каждый раз. */
+  .batch-more { border-top:1px solid var(--glass-line); padding-top:8px; }
+  .batch-more > summary {
+    cursor:pointer; color:var(--muted); font-size:10.5px; font-weight:700;
+    list-style:none; display:inline-flex; align-items:center; gap:5px;
+  }
+  .batch-more > summary::-webkit-details-marker { display:none; }
+  .batch-more > summary::before { content:"›"; display:inline-block; transition:transform .12s ease; }
+  .batch-more[open] > summary::before { transform:rotate(90deg); }
+  .batch-more > summary:hover { color:var(--txt); }
+  .batch-more-body { margin-top:6px; color:var(--muted); font-size:10.5px; line-height:1.42; }
+  .batch-more-body p { margin:0 0 5px; }
+  .batch-more-body p:last-child { margin-bottom:0; }
+  .batch-more-body b { color:var(--txt); font-weight:750; }
+  .batch-more-body a { color:var(--accent); text-decoration:none; font-weight:700; }
+  .batch-more-body a:hover { text-decoration:underline; }
   .batch-ai-badge { display:inline-flex; align-items:center; margin-left:5px; padding:1px 5px; border-radius:999px;
     color:#a99fff; border:1px solid color-mix(in srgb, #8b7bff 45%, var(--glass-line));
     background:color-mix(in srgb, #8b7bff 12%, transparent); font-size:9px; font-weight:800; text-transform:uppercase; }
@@ -1346,8 +1363,7 @@
         <span class="batch-count" id="selcount">0</span>
         <span>Вакансии выбраны</span>
       </div>
-      <div class="batch-subtitle">WexFlow обработает их по одной — следующая форма откроется после завершения предыдущей.
-        Salling и Lidl идут своими окнами, по очереди: Lidl начнётся, когда закончится пачка Salling.</div>
+      <div class="batch-subtitle">Обработаю по одной: следующая форма откроется, когда закроешь предыдущую.</div>
     </div>
     <div class="batch-head-actions" style="display:flex;gap:7px;flex:0 0 auto;">
       <button type="button" id="selcollapse" class="batch-clear batch-collapse"
@@ -1358,12 +1374,6 @@
     </div>
   </div>
 
-  <div class="batch-doc-note">
-    Для каждой вакансии WexFlow автоматически выберет комплект магазина, затем бренда, затем общий. Lidl получит документы Lidl, Netto — документы Netto.
-    {% if document_rule_count %}Персональных комплектов: {{ document_rule_count }}.{% endif %}
-    <a href="/settings/documents">Все документы и загрузка →</a>
-  </div>
-
   <label class="batch-ai {{ 'disabled' if not batch_ai_available else '' }}">
     <input type="checkbox" name="ai_fill" value="1"
            {{ 'checked' if batch_ai_on and batch_ai_available else '' }}
@@ -1371,16 +1381,29 @@
     <span class="batch-ai-copy">
       <span class="batch-ai-title">{{ ic.i('sparkles', 13) }} Дозаполнить нестандартные поля с ИИ <span class="batch-ai-badge">бета</span></span>
       <span class="batch-ai-meta">
-        <span class="batch-ai-meta-line"><b>Без ИИ:</b> WexFlow заполнит знакомые поля — имя, контакты — и прикрепит выбранные для магазина CV и письмо. Нестандартные поля и списки могут остаться пустыми.</span>
-        <span class="batch-ai-meta-line"><b>С ИИ:</b> после обычного заполнения подключённый ИИ проверит оставшиеся короткие поля и списки и подставит только факты, уже сохранённые в профиле. Если подходящего факта нет — поле останется пустым.</span>
-        <span class="batch-ai-meta-note">На простой анкете разницы не будет: WexFlow и без ИИ уже заполнил всё знакомое. ИИ не придумывает опыт, гражданство или зарплату, не меняет выбранные документы и сам не нажимает «Отправить».</span>
-        {% if batch_ai_motivation_on %}<span class="batch-ai-meta-note">Отдельная функция черновиков мотивации включена: короткие ответы нужно проверить перед отправкой.</span>{% else %}<span class="batch-ai-meta-note">Черновики мотивационных ответов выключены.</span>{% endif %}
-        <span class="batch-ai-meta-note">К анкетам Lidl это не относится: там WexFlow отвечает только сохранёнными ответами из «Вопросов анкет», а если ответа нет — останавливается и оставляет вопрос тебе.</span>
-        {% if not batch_ai_available %}<b>Сначала подключи Gemini или Groq.</b>{% endif %}
-        <a href="/settings/forms">Настройки ИИ →</a>
+        <span class="batch-ai-meta-line">Подставит только факты из твоего профиля. Ничего не придумывает и «Отправить» не нажимает.{% if not batch_ai_available %} <b>Сначала подключи Gemini или Groq.</b>{% endif %}</span>
       </span>
     </span>
   </label>
+
+  {# Длинные объяснения нужны один раз, а окно с ними закрывает половину экрана
+     при каждом выборе. Прячем под раскрывающийся блок: рядом с кнопкой
+     «Подать» должно оставаться только то, что влияет на решение. #}
+  <details class="batch-more">
+    <summary>Как это работает и какие документы уйдут</summary>
+    <div class="batch-more-body">
+      <p>Salling и Lidl идут своими окнами, по очереди: Lidl начнётся, когда закончится пачка Salling.</p>
+      <p>Для каждой вакансии WexFlow автоматически выберет комплект магазина, затем бренда, затем общий. Lidl получит документы Lidl, Netto — документы Netto.
+        {% if document_rule_count %}Персональных комплектов: {{ document_rule_count }}.{% endif %}
+        <a href="/settings/documents">Все документы и загрузка →</a></p>
+      <p><b>Без ИИ:</b> WexFlow заполнит знакомые поля — имя, контакты — и прикрепит выбранные для магазина CV и письмо. Нестандартные поля и списки могут остаться пустыми.</p>
+      <p><b>С ИИ:</b> после обычного заполнения подключённый ИИ проверит оставшиеся короткие поля и списки и подставит только факты, уже сохранённые в профиле. Если подходящего факта нет — поле останется пустым. На простой анкете разницы не будет: WexFlow и без ИИ уже заполнил всё знакомое.</p>
+      <p>ИИ не придумывает опыт, гражданство или зарплату, не меняет выбранные документы и сам не нажимает «Отправить».</p>
+      <p>{% if batch_ai_motivation_on %}Черновики мотивации включены: короткие ответы нужно проверить перед отправкой.{% else %}Черновики мотивационных ответов выключены.{% endif %}
+        К анкетам Lidl это не относится: там WexFlow отвечает только сохранёнными ответами из «Вопросов анкет», а если ответа нет — останавливается и оставляет вопрос тебе.
+        <a href="/settings/forms">Настройки ИИ →</a></p>
+    </div>
+  </details>
 
   <div class="bactions">
     <button class="preparebtn" type="submit" name="mode" value="dry"

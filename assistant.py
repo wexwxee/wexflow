@@ -104,14 +104,8 @@ def _clean_args(tool: "Tool", args: dict) -> dict:
 # ── карточки для интерфейса ────────────────────────────────────────────────
 
 def _hours_label(job) -> str:
-    """«15» → «15 ч/нед», но «7 timer» оставляем как есть — иначе выйдет
-    «7 timer ч/нед»: источники пишут часы по-разному."""
-    import re
-
-    hours = str(getattr(job, "hours", "") or "").strip()
-    if not hours:
-        return ""
-    return f"{hours} ч/нед" if re.fullmatch(r"[\d.,\s–—-]+", hours) else hours
+    """Часы карточки — одной формулой со всем приложением (labels)."""
+    return labels.hours_label(getattr(job, "hours", ""))
 
 
 def job_card(job, *, why=None, distance=None) -> dict:
@@ -317,7 +311,7 @@ def _tool_job_facts(args: dict) -> dict:
     bits = [b for b in (
         labels.brand(job.brand) if job.brand else "",
         f"{job.street or ''} {job.zip or ''} {job.city or ''}".strip(),
-        f"{job.hours} ч/нед" if job.hours else "",
+        labels.hours_label(job.hours),
         str(job.employment_type and labels.EMPLOYMENT.get(job.employment_type, "") or ""),
     ) if b]
     return {"ok": True, "kind": "text", "reply": " · ".join(bits) or "Подробностей нет.",
