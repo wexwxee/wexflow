@@ -4244,17 +4244,20 @@ def index(
             stmt = stmt.where(Job.brand == brand_code)
         region_code = labels.resolve(labels.REGION, region)
         if region_code:
-            stmt = stmt.where(Job.region == region_code)
+            stmt = stmt.where(_unset(Job.region) | (Job.region == region_code))
         employment_code = labels.resolve(labels.EMPLOYMENT, employment_type)
         if employment_code:
-            stmt = stmt.where(Job.employment_type == employment_code)
+            stmt = stmt.where(
+                _unset(Job.employment_type) | (Job.employment_type == employment_code)
+            )
         level_code = labels.resolve(labels.LEVEL, job_level)
         if level_code:
-            stmt = stmt.where(Job.job_level == level_code)
+            stmt = stmt.where(_unset(Job.job_level) | (Job.job_level == level_code))
         category_code = labels.resolve(labels.CATEGORY, category)
         if category_code:
             stmt = stmt.where(
-                (Job.categories == category_code)
+                _unset(Job.categories)
+                | (Job.categories == category_code)
                 | Job.categories.like(f"{category_code},%")
                 | Job.categories.like(f"%,{category_code},%")
                 | Job.categories.like(f"%,{category_code}")
@@ -4321,6 +4324,22 @@ def index(
                     pool, parsed=parsed_query, home=home,
                     exclude_ids={j.id for j in jobs},
                 )
+
+        # Сколько показанных вакансий прошло фильтр только потому, что источник
+        # это поле не заполняет. Молчать об этом нельзя: иначе «Уровень:
+        # Сотрудник» с вакансиями Teamtailor выглядит как ошибка фильтра.
+        unset_kept = {}
+        for name, code, column in (
+            ("регион", region_code, Job.region),
+            ("уровень", level_code, Job.job_level),
+            ("занятость", employment_code, Job.employment_type),
+            ("категория", category_code, Job.categories),
+        ):
+            if not code:
+                continue
+            number = sum(1 for job in jobs if not str(getattr(job, column.key, "") or "").strip())
+            if number:
+                unset_kept[name] = number
 
         cities = known_city_names
         sources = _distinct(s, Job.source)
@@ -4658,6 +4677,9 @@ def index(
         # площадка доказала подачу — предлагаем включить автомат (один раз)
         "trust_offer": trust.pending_offer(),
         "trust_always_ask": trust.always_ask(),
+        # поля, которые заполняет не каждый источник: сколько вакансий осталось
+        # в выдаче именно потому, что источник промолчал
+        "unset_kept": unset_kept,
         # языковой барьер: сколько скрыто этим запросом и куда нажать, чтобы увидеть
         "barrier_hidden": barrier_hidden,
         "barrier_total": barrier_total,
@@ -5192,6 +5214,30 @@ async def settings_recommend(request: Request):
         "Рекомендации выключены. Порядок ленты — как раньше."
     )
     return _redirect_back(request, "/profile#recommend", notice=notice)
+
+
+def _unset(column):
+    """«Источник не сказал» — условие для полей, которые заполняют не все.
+
+    Регион, уровень, занятость и категорию присылает Salling (регион — только
+    он). У Teamtailor, Ashby и Greenhouse эти поля пусты ВСЕГДА, а у Lidl нет
+    региона. Строгое сравнение поэтому молча вычёркивало из ленты целые
+    компании: на базе Ивана фильтр «Уровень» прятал 515 вакансий из 1648, а
+    «Регион» — все 618 не-Salling. Молчание источника не ответ: неизвестное
+    значение остаётся видимым, ровно как у страны в feed.py и у часов в
+    query_parse.
+    """
+    return column.is_(None) | (func.trim(func.coalesce(column, "")) == "")
+
+
+def _unset_count(session, clauses, column) -> int:
+    """Сколько показанных вакансий попало сюда только потому, что поле пустое."""
+    try:
+        return int(session.exec(select(func.count(Job.id)).where(
+            *clauses, _unset(column)
+        )).one() or 0)
+    except Exception:  # noqa: BLE001 — подпись не имеет права ронять ленту
+        return 0
 
 
 def _underage_feed_count() -> int:
