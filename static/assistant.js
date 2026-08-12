@@ -74,7 +74,10 @@
     if (data.reply) { say(data.reply, "bot"); remember("bot", data.reply); }
     var list = data.results || [];
     list.forEach(function (item) { body.appendChild(card(item)); });
-    if (!list.length && data.kind === "jobs" && data.empty_hint) {
+    // Подсказку «ничего не нашлось» показываем только когда текст ответа
+    // написало приложение. Если формулировал ИИ, он уже сказал то же самое
+    // своими словами, и вторая строка выглядела как заедание.
+    if (!list.length && data.kind === "jobs" && data.empty_hint && !data.ai_wording) {
       say(data.empty_hint, "bot");
     }
     if (data.kind === "confirm" || (data.href && data.button)) {

@@ -457,6 +457,51 @@ def _tool_undo_profile(_args: dict) -> dict:
             "reply": f"Вернул: «{human}» снова {was}."}
 
 
+# Разделы приложения, которые помощник вправе открыть. Белый список, как и всё
+# остальное: адрес приходит отсюда, а не из текста модели.
+PAGES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("/", "Вакансии", ("вакансии", "лента", "ленту", "список", "работу", "поиск")),
+    ("/audit", "Журнал заявок", ("журнал", "мои заявки", "мои отклики", "аудит",
+                                 "историю", "история")),
+    ("/profile", "Профиль кандидата", ("профиль", "анкету", "анкета", "о себе",
+                                       "мои данные")),
+    ("/settings", "Настройки", ("настройки", "настройка", "параметры")),
+    ("/settings/forms", "ИИ и анкеты", ("ии", "лимит", "ключ", "gemini", "groq",
+                                        "claude")),
+    ("/autopilot", "Автопилот", ("автопилот", "автоподача")),
+    ("/apply-by-link", "Подача по ссылке", ("подача по ссылке", "по ссылке",
+                                            "чужой сайт")),
+    ("/settings/lidl", "Кабинет Lidl", ("lidl", "лидл")),
+    ("/settings/salling", "Кабинет Salling", ("salling", "саллинг", "føtex",
+                                              "netto", "нетто")),
+    ("/help", "Помощь", ("помощь", "справка", "как пользоваться")),
+)
+
+
+def _tool_open_page(args: dict) -> dict:
+    """Открыть раздел приложения.
+
+    «Открой вакансии, хочу сам посмотреть» — это просьба перейти, а не искать.
+    Раньше такая фраза уходила в поиск по тексту объявлений и возвращала
+    «ничего не нашлось», хотя человек всего лишь просил кнопку.
+    """
+    wanted = " ".join(str(args.get("page") or args.get("query") or "").lower().split())
+    best = None
+    best_at = len(wanted) + 1
+    for href, human, aliases in PAGES:
+        for alias in aliases:
+            at = wanted.find(alias)
+            if at >= 0 and at < best_at:
+                best, best_at = (href, human), at
+    if best is None:
+        names = ", ".join(human.lower() for _href, human, _a in PAGES)
+        return {"ok": False, "kind": "text",
+                "reply": f"Не понял, какой раздел открыть. Есть: {names}."}
+    href, human = best
+    return {"ok": True, "kind": "text", "reply": f"Открываю раздел «{human}».",
+            "href": href, "button": human}
+
+
 def _tool_help(_args: dict) -> dict:
     """Что помощник умеет. Список берётся из самого каталога, а не из текста.
 
@@ -531,6 +576,7 @@ TOOLS: dict[str, Tool] = {
         Tool("update_profile", "Изменить профиль",
              {"field": ("str", 40), "value": ("str", 600)}, _tool_update_profile),
         Tool("undo_profile", "Вернуть как было", {}, _tool_undo_profile),
+        Tool("open_page", "Открыть раздел", {"page": ("str", 60)}, _tool_open_page),
         Tool("help", "Что я умею", {}, _tool_help),
     )
 }
@@ -574,6 +620,10 @@ _CHANGE_FILLER = frozenset({
 _NEGATION = re.compile(r"\bне\s+(?:готов|могу|хочу|буду)|\bнет\b", re.I)
 _UNDO_WORDS = ("верни как было", "верни обратно", "отмени изменение",
                "отмени правку", "верни назад")
+# «Открой вакансии» — просьба перейти, а не искать. Проверяется ПОСЛЕ команд
+# правки профиля: «открой профиль и поставь город» — это всё-таки правка.
+_OPEN_WORDS = ("открой", "открыть", "перейди", "покажи страницу", "зайди в",
+               "переключи на", "отведи")
 _GREETINGS = frozenset({
     "привет", "здравствуй", "здравствуйте", "хай", "ку", "hej", "hello", "hi",
     "добрый день", "доброе утро", "добрый вечер", "прив",
@@ -659,6 +709,8 @@ def guess_tool(text: str, *, job_id: str = "") -> tuple[str, dict]:
         return "update_profile", change
     if low.strip(" .!?…") in _GREETINGS or any(word in low for word in _HELP_WORDS):
         return "help", {}
+    if any(word in low for word in _OPEN_WORDS):
+        return "open_page", {"page": text}
     if any(word in low for word in _STATUS_WORDS):
         return "application_status", {}
     if any(word in low for word in _PROFILE_WORDS):
@@ -686,6 +738,7 @@ def _router_schema() -> dict:
                     "age": {"type": "integer", "minimum": 10, "maximum": 99},
                     "field": {"type": "string", "maxLength": 40},
                     "value": {"type": "string", "maxLength": 600},
+                    "page": {"type": "string", "maxLength": 60},
                 },
                 "additionalProperties": False,
             },
@@ -823,7 +876,8 @@ def _wording_prompt(text: str, result: dict, history=None) -> str:
     return (
         "Ты — помощник в приложении для поиска работы в Дании. Приложение уже "
         "выполнило запрос и прислало готовые данные. Напиши ответ человеку "
-        "по-русски: 1–3 коротких предложения, дружелюбно и по делу.\n"
+        "по-русски: 1–3 коротких предложения, дружелюбно и по делу. "
+        "Обращайся на «ты» — так говорит всё приложение; «вы» звучит чужеродно.\n"
         "Строгие правила:\n"
         "1. Опирайся ТОЛЬКО на присланные данные. Не добавляй вакансии, "
         "адреса, часы, зарплаты, названия магазинов и числа, которых в них нет.\n"
