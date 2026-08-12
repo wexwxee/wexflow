@@ -194,17 +194,28 @@ def parse(text: str, *, exact: bool = False, known_cities=None) -> Query:
     vocab = _city_vocabulary(known_cities)
     cities: list[str] = []
     leftovers: list[str] = []
-    for word in rest.split():
-        clean = word.strip(",.;:!?()")
-        if not clean:
+    words = [word.strip(",.;:!?()") for word in rest.split()]
+    words = [word for word in words if word]
+    max_city_words = max((len(key.split()) for key in vocab), default=1)
+    index = 0
+    while index < len(words):
+        matched_city = ""
+        matched_words = 0
+        # Prefer the longest known name: «Kongens Lyngby» must not become the
+        # free term «Kongens» plus a city (or two unrelated free terms).
+        for width in range(min(max_city_words, len(words) - index), 0, -1):
+            key = labels._fold(" ".join(words[index:index + width]))
+            if key in vocab:
+                matched_city = vocab[key]
+                matched_words = width
+                break
+        if matched_city:
+            if matched_city not in cities:
+                cities.append(matched_city)
+            index += matched_words
             continue
-        key = labels._fold(clean)
-        if key in vocab:
-            city = vocab[key]
-            if city not in cities:
-                cities.append(city)
-            continue
-        leftovers.append(clean)
+        leftovers.append(words[index])
+        index += 1
 
     # Занятость — только явные слова, иначе легко сузить лишнего.
     employment = ""
@@ -270,20 +281,27 @@ def parse(text: str, *, exact: bool = False, known_cities=None) -> Query:
                  terms=terms, rest=tail, notes=tuple(notes))
 
 
+def _escape_like(value: str) -> str:
+    """Escape a literal fragment for a SQL LIKE/ILIKE pattern."""
+    return str(value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def clauses(query: Query) -> list:
     """Условия для `select(Job).where(*clauses(q))`. Часы и возраст — не здесь."""
     out = []
     if query.brands:
         cond = None
         for term in query.brands:
-            part = Job.brand.ilike(f"%{term}%")
+            part = Job.brand.ilike(f"%{_escape_like(term)}%", escape="\\")
             cond = part if cond is None else (cond | part)
         out.append(cond)
     if query.cities:
         cond = None
         for city in query.cities:
             for term in labels.city_terms(city) or [city]:
-                part = Job.city.ilike(f"%{term.strip()}%")
+                part = Job.city.ilike(
+                    f"%{_escape_like(term.strip())}%", escape="\\"
+                )
                 cond = part if cond is None else (cond | part)
         out.append(cond)
     if query.employment:
@@ -291,9 +309,11 @@ def clauses(query: Query) -> list:
     if query.terms:
         cond = None
         for term in query.terms:
-            like = f"%{term}%"
-            part = (Job.title.ilike(like) | Job.description.ilike(like)
-                    | Job.city.ilike(like) | Job.street.ilike(like))
+            like = f"%{_escape_like(term)}%"
+            part = (Job.title.ilike(like, escape="\\")
+                    | Job.description.ilike(like, escape="\\")
+                    | Job.city.ilike(like, escape="\\")
+                    | Job.street.ilike(like, escape="\\"))
             cond = part if cond is None else (cond | part)
         out.append(cond)
     return out

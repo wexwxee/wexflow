@@ -30,6 +30,7 @@ def test_ingest_filters_non_danish_and_sets_source():
     engine, sessions = _factory()
     report = connector_sync.sync_items(
         "teamtailor", [_item(), _item("tt:demo:se", "Stockholm", "SE")], sessions)
+    assert report["raw_hits"] == 2
     assert report["hits"] == 1 and report["created"] == 1
     with Session(engine) as session:
         rows = session.exec(select(Job)).all()
@@ -51,7 +52,7 @@ def test_connector_closure_never_touches_salling():
         session.add(Job(id="salling-1", source="salling", title="Salling", status="new"))
         session.add(Job(
             id="tt:demo:old", source="teamtailor", title="Old", status="new",
-            last_seen=connector_sync.utcnow() - dt.timedelta(days=3),
+            country="DK", last_seen=connector_sync.utcnow() - dt.timedelta(days=3),
         ))
         session.commit()
     report = connector_sync.sync_items(
@@ -77,11 +78,11 @@ def test_failed_company_scope_does_not_close_its_stale_jobs():
     with Session(engine) as session:
         session.add(Job(
             id="tt:failed:old", source="teamtailor", brand="Failed ApS",
-            title="Old", status="new", last_seen=old,
+            title="Old", country="DK", status="new", last_seen=old,
         ))
         session.add(Job(
             id="tt:healthy:old", source="teamtailor", brand="Healthy ApS",
-            title="Old", status="new", last_seen=old,
+            title="Old", country="DK", status="new", last_seen=old,
         ))
         session.commit()
     current = _item("tt:healthy:new", "New role")
@@ -98,7 +99,7 @@ def test_sync_rejects_item_from_another_source():
     item = _item()
     item.source = "greenhouse"
     report = connector_sync.sync_items("teamtailor", [item], sessions)
-    assert report["hits"] == 0
+    assert report["raw_hits"] == 0 and report["hits"] == 0
     with Session(engine) as session:
         assert session.exec(select(Job)).all() == []
 
@@ -165,6 +166,113 @@ def test_update_preserves_application_state():
         assert job.status == "applied" and job.applied_at is not None
 
 
+def test_update_preserves_every_local_owned_field():
+    engine, sessions = _factory()
+    connector_sync.sync_items("teamtailor", [_item()], sessions)
+    marker = connector_sync.utcnow() - dt.timedelta(hours=2)
+    with Session(engine) as session:
+        job = session.get(Job, "tt:demo:1")
+        first_seen = job.first_seen
+        job.description_ru = "Локальный перевод"
+        job.description_ru_engine = "DeepL"
+        job.fit = "ok"
+        job.fit_reason = "Локальный вердикт"
+        job.fit_engine = "rules"
+        job.fit_hash = "local-hash"
+        job.fit_at = marker
+        job.status = "offer"
+        job.applied_at = marker
+        job.applied_confidence = "portal"
+        job.application_status_updated_at = marker
+        job.application_status_source = "email"
+        session.add(job)
+        session.commit()
+
+    connector_sync.sync_items("teamtailor", [_item(title="Updated title")], sessions)
+    with Session(engine) as session:
+        job = session.get(Job, "tt:demo:1")
+        assert job.title == "Updated title"
+        assert job.first_seen == first_seen
+        assert (job.description_ru, job.description_ru_engine) == (
+            "Локальный перевод", "DeepL")
+        assert (job.fit, job.fit_reason, job.fit_engine, job.fit_hash, job.fit_at) == (
+            "ok", "Локальный вердикт", "rules", "local-hash", marker)
+        assert (job.status, job.applied_at, job.applied_confidence) == (
+            "offer", marker, "portal")
+        assert (job.application_status_updated_at, job.application_status_source) == (
+            marker, "email")
+
+
+def test_hidden_job_stays_hidden_when_missing_then_reappears():
+    engine, sessions = _factory()
+    old = connector_sync.utcnow() - dt.timedelta(days=3)
+    with Session(engine) as session:
+        session.add(Job(
+            id="tt:demo:hidden", source="teamtailor", brand="Demo ApS",
+            title="Hidden", country="DK", status="hidden", last_seen=old,
+        ))
+        session.commit()
+
+    report = connector_sync.sync_items(
+        "teamtailor", [_item("tt:demo:current", "Current")], sessions)
+    assert report["closed"] == 0
+    with Session(engine) as session:
+        assert session.get(Job, "tt:demo:hidden").status == "hidden"
+
+    connector_sync.sync_items(
+        "teamtailor", [_item("tt:demo:hidden", "Hidden is back")], sessions)
+    with Session(engine) as session:
+        job = session.get(Job, "tt:demo:hidden")
+        assert job.title == "Hidden is back"
+        assert job.status == "hidden"
+
+
+def test_stale_close_respects_current_country_selection():
+    engine, sessions = _factory()
+    old = connector_sync.utcnow() - dt.timedelta(days=3)
+    with Session(engine) as session:
+        session.add(Job(
+            id="tt:demo:dk-old", source="teamtailor", brand="Demo ApS",
+            title="Old DK", country="DK", status="new", last_seen=old,
+        ))
+        session.add(Job(
+            id="tt:demo:se-old", source="teamtailor", brand="Demo ApS",
+            title="Old SE", country="SE", status="new", last_seen=old,
+        ))
+        session.commit()
+
+    with mock.patch.object(connector_sync.feed, "countries", return_value=["DK"]):
+        report = connector_sync.sync_items(
+            "teamtailor", [_item("tt:demo:current", "Current DK")], sessions)
+
+    assert report["closed"] == 1
+    with Session(engine) as session:
+        assert session.get(Job, "tt:demo:dk-old").status == "closed"
+        # Changing the feed from DK+SE to DK is presentation state, not proof
+        # that the Swedish vacancy disappeared upstream.
+        assert session.get(Job, "tt:demo:se-old").status == "new"
+
+
+def test_filtered_raw_hit_is_not_mistaken_for_disappearance():
+    engine, sessions = _factory()
+    old = connector_sync.utcnow() - dt.timedelta(days=3)
+    with Session(engine) as session:
+        session.add(Job(
+            id="tt:demo:moved", source="teamtailor", brand="Demo ApS",
+            title="Stored as DK", country="DK", status="new", last_seen=old,
+        ))
+        session.commit()
+
+    moved = _item("tt:demo:moved", "Now outside selection", "SE")
+    with mock.patch.object(connector_sync.feed, "countries", return_value=["DK"]):
+        report = connector_sync.sync_items("teamtailor", [moved], sessions)
+
+    assert report["raw_hits"] == 1 and report["hits"] == 0
+    assert report["closed"] == 0
+    with Session(engine) as session:
+        assert session.get(Job, "tt:demo:moved").status == "new"
+
+
 def test_partial_company_failures_are_reported():
     errors = []
 
@@ -205,6 +313,24 @@ def _sync_with_fake(total, failures):
             mock.patch.object(connector_sync, "geocode_missing", return_value=0), \
             mock.patch.object(connector_sync.connectors, "get", return_value=conn):
         return connector_sync.sync(["teamtailor"])
+
+
+def test_source_health_receives_raw_hits_before_country_filter():
+    conn = _FakeConnector(total=2, failures=0)
+    conn.search = lambda: [_item(), _item("tt:demo:se", "Stockholm", "SE")]
+    filtered = {
+        "source": "teamtailor", "raw_hits": 2, "hits": 1,
+        "created": 1, "updated": 0, "closed": 0,
+    }
+    with mock.patch.object(connector_sync, "init_db"), \
+            mock.patch.object(connector_sync, "sync_items", return_value=filtered), \
+            mock.patch.object(connector_sync, "geocode_missing", return_value=0), \
+            mock.patch.object(connector_sync.connectors, "get", return_value=conn), \
+            mock.patch.object(connector_sync, "_note_health") as note_health:
+        report = connector_sync.sync(["teamtailor"])
+
+    note_health.assert_called_once_with("teamtailor", hits=2, error="")
+    assert report["raw_hits"] == 2 and report["hits"] == 1
 
 
 def test_single_moved_company_is_a_note_not_a_source_failure():

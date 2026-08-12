@@ -22,6 +22,8 @@
 Build:  PyInstaller --onefile --windowed --icon app.ico --name WexFlow-Setup
         --add-data "installer/assets;assets" installer/installer.py
 """
+import hashlib
+import hmac
 import json
 import os
 import queue
@@ -218,11 +220,79 @@ def latest_zip():
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read().decode("utf-8"))
-    for a in data.get("assets", []):
-        name = (a.get("name") or "").lower()
-        if name.startswith("wexflow-") and name.endswith(".zip"):
-            return a["browser_download_url"], a["name"], data.get("tag_name", "")
+    assets = data.get("assets", []) or []
+    tag = data.get("tag_name", "")
+    asset = _select_zip_asset(assets, tag)
+    if asset:
+        expected = _expected_sha256(asset, assets)
+        if not expected:
+            raise RuntimeError(
+                f"у {asset.get('name') or 'архива'} нет проверяемой SHA-256 суммы"
+            )
+        return (
+            asset["browser_download_url"],
+            asset["name"],
+            tag,
+            expected,
+        )
     raise RuntimeError("в последнем релизе на GitHub нет zip-файла WexFlow")
+
+
+def _select_zip_asset(assets: list, tag: str) -> dict | None:
+    """Выбрать архив текущего тега и не угадывать между несколькими ZIP."""
+    candidates = [
+        asset for asset in (assets or [])
+        if str(asset.get("name") or "").lower().startswith("wexflow-")
+        and str(asset.get("name") or "").lower().endswith(".zip")
+    ]
+    version_tag = str(tag or "").strip()
+    if version_tag[:1].lower() == "v":
+        version_tag = version_tag[1:]
+    expected_name = f"wexflow-{version_tag}.zip".lower()
+    exact = [
+        asset for asset in candidates
+        if str(asset.get("name") or "").strip().lower() == expected_name
+    ]
+    if len(exact) == 1:
+        return exact[0]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _valid_sha256(value) -> str:
+    value = str(value or "").strip().lower()
+    return value if len(value) == 64 and all(c in "0123456789abcdef" for c in value) else ""
+
+
+def _expected_sha256(zip_asset: dict, assets: list) -> str:
+    digest = str((zip_asset or {}).get("digest") or "").strip().lower()
+    if digest.startswith("sha256:"):
+        parsed = _valid_sha256(digest.split(":", 1)[1])
+        if parsed:
+            return parsed
+
+    zip_name = str((zip_asset or {}).get("name") or "").strip().lower()
+    if not zip_name:
+        return ""
+    sidecar_name = zip_name + ".sha256"
+    for asset in assets or []:
+        if str(asset.get("name") or "").strip().lower() != sidecar_name:
+            continue
+        url = asset.get("browser_download_url")
+        if not url:
+            continue
+        req = urllib.request.Request(url, headers={"User-Agent": "WexFlow-Installer"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            fields = resp.read(4096).decode("ascii", errors="ignore").split()
+            return _valid_sha256(fields[0] if fields else "")
+    return ""
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def do_install(report):
@@ -232,7 +302,7 @@ def do_install(report):
     ensure_webview2(report)
 
     report(0.30, "Ищу последнюю версию WexFlow…")
-    url, name, tag = latest_zip()
+    url, name, tag, expected_sha256 = latest_zip()
     tmp_zip = os.path.join(tempfile.gettempdir(), name)
 
     def hook(block, block_size, total):
@@ -241,6 +311,14 @@ def do_install(report):
             report(0.30 + frac * 0.45, f"Скачиваю {tag or 'WexFlow'}… {int(frac * 100)}%")
     report(0.32, f"Скачиваю {tag or 'WexFlow'}…")
     urllib.request.urlretrieve(url, tmp_zip, reporthook=hook)
+
+    actual_sha256 = _sha256_file(tmp_zip)
+    if not hmac.compare_digest(actual_sha256, expected_sha256):
+        _rm(tmp_zip)
+        raise RuntimeError(
+            "Проверка загруженного обновления не пройдена: SHA-256 не совпадает. "
+            "Установка остановлена, файл удалён."
+        )
 
     report(0.78, f"Устанавливаю {tag or ''}…")
     os.makedirs(INSTALL_ROOT, exist_ok=True)

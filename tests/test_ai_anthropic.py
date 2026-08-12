@@ -52,6 +52,7 @@ def test_request_shape_matches_the_api():
     assert result.ok and result.data == {"answer": "ok"}
     assert body["model"] == DEFAULT_MODEL
     assert body["max_tokens"] >= 1, "max_tokens обязателен, иначе запрос не примут"
+    assert "temperature" not in body, "Sonnet 5 отклоняет non-default sampling parameters"
     assert isinstance(body.get("system"), str), "system — поле запроса, а не сообщение"
     assert all(m["role"] != "system" for m in body["messages"])
     assert headers["x-api-key"] == "sk-ant-test" and headers["anthropic-version"]
@@ -64,6 +65,23 @@ def test_usage_is_read_from_anthropic_names():
         lambda: AnthropicProvider("acct").generate_text("привет"), _resp(200, _ok_payload("текст")))
     assert result.usage == {"prompt_tokens": 12, "output_tokens": 7, "total_tokens": 19}
     assert result.reply == "текст"
+
+
+def test_every_sonnet5_operation_omits_temperature():
+    """validate/json/text/chat share one safe Sonnet 5 request shape."""
+    operations = (
+        lambda provider: provider.validate_key(),
+        lambda provider: provider.generate_json("дай json"),
+        lambda provider: provider.generate_text("привет"),
+        lambda provider: provider.chat([{"role": "user", "content": "привет"}]),
+    )
+    for operation in operations:
+        result, post, _rec = _with_key(
+            lambda operation=operation: operation(AnthropicProvider("acct")),
+            _resp(200, _ok_payload()),
+        )
+        assert result.ok
+        assert "temperature" not in post.call_args.kwargs["json"]
 
 
 def test_json_is_parsed_even_wrapped_in_fences():
@@ -84,6 +102,7 @@ def test_non_json_answer_is_an_honest_parse_error():
 def test_error_normalization():
     provider = AnthropicProvider("acct")
     assert provider.normalize_error(401, {"error": {"type": "authentication_error"}})[0] == base.INVALID_KEY
+    assert provider.normalize_error(402, {"error": {"type": "billing_error"}})[0] == base.BILLING_ERROR
     assert provider.normalize_error(403, {"error": {"type": "permission_error"}})[0] == base.PERMISSION_DENIED
     assert provider.normalize_error(404, {"error": {"type": "not_found_error"}})[0] == base.MODEL_NOT_FOUND
     assert provider.normalize_error(529, {"error": {"type": "overloaded_error"}})[0] == base.PROVIDER_UNAVAILABLE

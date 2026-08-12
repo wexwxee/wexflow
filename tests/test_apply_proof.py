@@ -103,6 +103,16 @@ def test_prepared_screenshots_go_to_separate_folder(tmp_path, monkeypatch):
     assert not (tmp_path / "logs" / "applied").exists()
 
 
+def test_failed_screenshots_go_to_diagnostics_not_applied(tmp_path, monkeypatch):
+    import config
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    page = mock.Mock()
+    job = mock.Mock(id="j-failed", requisition_id="req-failed")
+    path = apply._save_proof(page, job, subdir="failed")
+    assert path is not None and path.parent.name == "failed"
+    assert not (tmp_path / "logs" / "applied").exists()
+
+
 def test_successful_dry_run_is_reported_as_prepared():
     """Скрин 29.07: анкета была заполнена, а телефон писал «Прогон не удался».
     Причина — успех прогона считали по process_job, который возвращает

@@ -123,6 +123,7 @@ def _city_named(job, cities) -> bool:
 def why_not(jobs) -> dict[str, int]:
     """Почему вакансии магазина не подошли. Считаем ТЕМИ ЖЕ правилами, что фильтры."""
     import autopilot
+    import feed
     import relevance
 
     reasons = {"under18": 0, "leadership": 0, "language": 0}
@@ -132,19 +133,21 @@ def why_not(jobs) -> dict[str, int]:
             reasons["leadership"] += 1
         elif autopilot.job_is_under18(job):
             reasons["under18"] += 1
-        elif relevance.is_barrier(job):
+        elif feed.hide_barrier() and relevance.is_barrier(job):
             reasons["language"] += 1
     return {key: value for key, value in reasons.items() if value}
 
 
 def _offerable(jobs, exclude_ids):
     """Что вообще можно предложить: не спрятанное лентой и не показанное уже."""
+    import feed
     import relevance
 
     return [j for j in jobs
             if j.id not in exclude_ids
             and str(getattr(j, "status", "") or "") not in ("closed", "hidden", "applied")
-            and not relevance.is_barrier(j)]
+            and getattr(j, "applied_at", None) is None
+            and (not feed.hide_barrier() or not relevance.is_barrier(j))]
 
 
 def near_same_brand(pool, brands, points, *, radius_km=DEFAULT_RADIUS_KM,
@@ -193,7 +196,7 @@ def near_same_role(pool, role_keys, points, *, radius_km=DEFAULT_RADIUS_KM,
         if relevance.role_key(job) not in wanted:
             continue
         km = _km(points, job)
-        if points and km is not None and km > radius_km:
+        if points and (km is None or km > radius_km):
             continue
         found.append((job, km if km is not None else 9_999.0))
     found.sort(key=lambda pair: pair[1])
@@ -239,8 +242,13 @@ def suggestions(pool, *, parsed=None, job=None, home=None,
         point = [(home["lat"], home["lon"])]
 
     widened = False
-    same_brand = near_same_brand(pool, brands, point, radius_km=radius_km,
-                                 exclude_ids=exclude_ids, exclude_keys=anchor_keys) if brands else []
+    # A named city without coordinates is not a radius anchor.  Showing the
+    # same chain in another city would call an unknown (possibly country-wide)
+    # distance "nearby".  Same-city suggestions below still work by name.
+    same_brand = near_same_brand(
+        pool, brands, point, radius_km=radius_km,
+        exclude_ids=exclude_ids, exclude_keys=anchor_keys,
+    ) if brands and point else []
     if brands and not same_brand and point and radius_km < WIDEN_RADIUS_KM:
         same_brand = near_same_brand(pool, brands, point, radius_km=WIDEN_RADIUS_KM,
                                      exclude_ids=exclude_ids, exclude_keys=anchor_keys)

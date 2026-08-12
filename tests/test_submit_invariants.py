@@ -17,6 +17,7 @@ jobs.db и settings.json НЕ читаются и НЕ пишутся.
 import datetime
 import os
 import sys
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import autopilot
@@ -93,7 +94,7 @@ def _rule_on(**over):
     return r
 
 
-def _run_tick(rule, eligible_count=10, submitted_today=0):
+def _run_tick(rule, eligible_count=10, submitted_today=0, submitting_reserved=0):
     """Прогнать auto_submit_tick с подменёнными зависимостями (без БД/настроек).
     Возвращает {launched: ids|None, asked_for: сколько запрошено у eligible}."""
     import scheduler
@@ -107,6 +108,7 @@ def _run_tick(rule, eligible_count=10, submitted_today=0):
     fakes = {
         "get_rule": lambda: rule,
         "submitted_today": lambda: submitted_today,
+        "submitting_reserved": lambda: submitting_reserved,
         "within_schedule": lambda r=None: True,
         "eligible_for_submit": fake_eligible,
         "mark_submitting": lambda ids: None,
@@ -155,6 +157,51 @@ def test_tick_remaining_below_cap():
     cap = _run_tick(_rule_on(daily_limit=1), eligible_count=50, submitted_today=0)
     assert cap["asked_for"] == 1
     assert len(cap["launched"]) == 1
+
+
+def test_tick_reserves_slots_for_an_already_queued_batch():
+    cap = _run_tick(
+        _rule_on(daily_limit=3), eligible_count=50,
+        submitted_today=0, submitting_reserved=2,
+    )
+    assert cap["asked_for"] == 1
+    assert len(cap["launched"]) == 1
+
+
+def test_queued_silent_batch_is_cancelled_if_always_ask_was_enabled():
+    jobs = [Job(id="queued-1", source="salling", title="Salgsassistent", status="new")]
+    cancelled = []
+    with mock.patch.object(autopilot, "get_rule", return_value=_rule_on()), \
+            mock.patch.object(autopilot, "within_schedule", return_value=True), \
+            mock.patch.object(autopilot, "submitted_today", return_value=0), \
+            mock.patch.object(autopilot, "_jobs_in_order", return_value=jobs), \
+            mock.patch.object(autopilot, "_matches", return_value=True), \
+            mock.patch.object(autopilot.trust, "auto_allowed",
+                              return_value=(False, "спрашивать всегда")), \
+            mock.patch.object(autopilot, "clear_submitting",
+                              side_effect=lambda ids: cancelled.extend(ids)):
+        safe = autopilot.revalidate_queued_batch(["queued-1"], origin="autopilot")
+    assert safe == [] and cancelled == ["queued-1"]
+
+
+def test_executor_rechecks_lowered_daily_limit_before_submit():
+    jobs = [
+        Job(id="queued-1", source="salling", title="A", status="new"),
+        Job(id="queued-2", source="salling", title="B", status="new"),
+    ]
+    cancelled = []
+    with mock.patch.object(autopilot, "get_rule", return_value=_rule_on(daily_limit=2)), \
+            mock.patch.object(autopilot, "within_schedule", return_value=True), \
+            mock.patch.object(autopilot, "submitted_today", return_value=1), \
+            mock.patch.object(autopilot, "_jobs_in_order", return_value=jobs), \
+            mock.patch.object(autopilot, "_matches", return_value=True), \
+            mock.patch.object(autopilot.trust, "auto_allowed", return_value=(True, "")), \
+            mock.patch.object(autopilot, "clear_submitting",
+                              side_effect=lambda ids: cancelled.extend(ids)):
+        safe = autopilot.revalidate_queued_batch(
+            ["queued-1", "queued-2"], origin="autopilot"
+        )
+    assert safe == ["queued-1"] and cancelled == ["queued-2"]
 
 
 if __name__ == "__main__":

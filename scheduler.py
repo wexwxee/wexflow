@@ -14,6 +14,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 import feed
 import scraper
+import source_health
 from db import get_session, Job, select, utcnow
 
 
@@ -46,11 +47,34 @@ def notify(title: str, message: str):
     print(f"[notify] {title} - {message}")
 
 
-def job_tick():
+def _lookback_minutes(interval_minutes: int | float | None = None) -> int:
+    """Окно уведомлений не должно быть короче реального интервала запуска."""
+    try:
+        interval = max(1, int(interval_minutes or 30))
+    except (TypeError, ValueError):
+        interval = 30
+    return max(35, interval + 5)
+
+
+def job_tick(interval_minutes: int | float | None = None):
     print(f"\n[{datetime.now():%H:%M:%S}] ре-скрейп…")
-    scraper.sync()
-    # вакансии, впервые увиденные за последние 35 минут
-    cutoff = utcnow() - timedelta(minutes=35)
+    try:
+        result = scraper.sync() or {}
+    except Exception as exc:
+        source_health.report(
+            "salling",
+            hits=None,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        raise
+    else:
+        # scheduler.py может работать отдельно от веб-приложения. Поэтому он
+        # сам обязан оживить сторожа после успешного ответа источника.
+        source_health.report("salling", hits=result.get("hits"))
+
+    # При запуске раз в 60/120 минут прежнее фиксированное окно 35 минут
+    # навсегда теряло часть новых вакансий. Оставляем небольшой запас на дрейф.
+    cutoff = utcnow() - timedelta(minutes=_lookback_minutes(interval_minutes))
     with get_session() as s:
         fresh = s.exec(
             select(Job).where(Job.first_seen >= cutoff, *feed.visible_clauses())
@@ -61,9 +85,11 @@ def job_tick():
 
 if __name__ == "__main__":
     minutes = int(sys.argv[1]) if len(sys.argv) > 1 else 30
-    job_tick()  # сразу один прогон
+    if minutes <= 0:
+        raise SystemExit("Интервал должен быть положительным числом минут.")
+    job_tick(minutes)  # сразу один прогон
     sched = BlockingScheduler()
-    sched.add_job(job_tick, "interval", minutes=minutes)
+    sched.add_job(job_tick, "interval", minutes=minutes, args=[minutes])
     print(f"Расписание: каждые {minutes} мин. Ctrl+C для выхода.")
     try:
         sched.start()

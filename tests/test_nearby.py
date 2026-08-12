@@ -102,6 +102,43 @@ def test_far_away_is_not_nearby():
     assert "a1" not in suggested
 
 
+def test_same_role_with_anchor_coordinates_rejects_unknown_distance():
+    """Unknown coordinates are not evidence that a job is within the radius."""
+    import relevance
+
+    unknown = Job(id="unknown-distance", source="salling", title="1. assistent",
+                  brand="netto", country="DK", city="Gentofte", status="new",
+                  fit="ok")
+    role = relevance.role_key(unknown)
+    found = nearby.near_same_role([unknown], {role}, [WATERFRONT], radius_km=30.0)
+    assert found == []
+
+
+def test_disabled_language_filter_is_respected_by_nearby():
+    import relevance
+
+    blocked = _job("language", "Kasseassistent", "Lyngbyvej 1", GENTOFTE,
+                   city="Gentofte", fit="danish", engine="rules")
+    role = relevance.role_key(blocked)
+    with mock.patch("feed.hide_barrier", return_value=False):
+        found = nearby.near_same_role([blocked], {role}, [], radius_km=30.0)
+    assert [job.id for job in found] == ["language"]
+
+
+def test_named_city_without_coordinates_does_not_make_another_city_nearby():
+    anchor = Job(id="vejle", source="salling", title="Butiksassistent",
+                 brand="netto", country="DK", city="Vejle", status="new")
+    elsewhere = Job(id="herlev", source="salling", title="Butiksassistent",
+                    brand="netto", country="DK", city="Herlev", status="new")
+
+    class Parsed:
+        brands = ("netto",)
+        cities = ("Vejle",)
+
+    view = nearby.suggestions([anchor, elsewhere], parsed=Parsed())
+    assert not view or view["same_brand"] == []
+
+
 def test_other_brands_in_the_same_city_are_a_separate_layer():
     view = nearby.suggestions(_pool(), parsed=_Parsed())
     assert [j.id for j in view["same_city"]] == ["f1"]

@@ -141,26 +141,38 @@ def mark_failed(ids, source: str = SOURCE) -> None:
         s.commit()
 
 
+def record_submitted_in_session(session, jobs) -> list:
+    """Update the registry inside the caller's existing transaction.
+
+    Job/evidence and Application must commit together.  Opening a second
+    session here used to create two failure modes: partial state after a lock
+    error and tests accidentally writing through an unpatched imported alias.
+    The caller owns commit/rollback.
+    """
+    fresh = []
+    for j in jobs or []:
+        if j is None:
+            continue
+        jid = str(j.id)
+        source = str(getattr(j, "source", None) or SOURCE)
+        row = _get_or_create(session, jid, source)
+        if row.state == "submitted":
+            continue                         # уже зафиксирована
+        row.state = "submitted"
+        row.submitted_at = getattr(j, "applied_at", None) or utcnow()
+        row.confidence = getattr(j, "applied_confidence", None) or row.confidence
+        row.updated_at = utcnow()
+        session.add(row)
+        fresh.append(j)
+    return fresh
+
+
 def record_submitted(jobs) -> list:
     """Зафиксировать реально поданные (Job-объекты со status=applied).
     Возвращает список НОВЫХ фиксаций (для лога событий). Идемпотентно:
     повторный вызов по той же вакансии ничего не меняет."""
-    fresh = []
     with get_session() as s:
-        for j in jobs or []:
-            if j is None:
-                continue
-            jid = str(j.id)
-            source = str(getattr(j, "source", None) or SOURCE)
-            row = _get_or_create(s, jid, source)
-            if row.state == "submitted":
-                continue                     # уже зафиксирована
-            row.state = "submitted"
-            row.submitted_at = getattr(j, "applied_at", None) or utcnow()
-            row.confidence = getattr(j, "applied_confidence", None) or row.confidence
-            row.updated_at = utcnow()
-            s.add(row)
-            fresh.append(j)
+        fresh = record_submitted_in_session(s, jobs)
         s.commit()
     return fresh
 
@@ -283,24 +295,37 @@ def _local_day_utc_bounds(now=None) -> tuple[_dt.datetime, _dt.datetime]:
     return start.replace(tzinfo=None), end.replace(tzinfo=None)
 
 
-def submitted_today_count() -> int:
+def submitted_today_count(*, source: str | None = SOURCE) -> int:
     day_start, day_end = _local_day_utc_bounds()
+    conditions = [
+        Application.state == "submitted",
+        Application.submitted_at.is_not(None),
+        Application.submitted_at >= day_start,
+        Application.submitted_at < day_end,
+    ]
+    if source is not None:
+        conditions.insert(0, Application.source == str(source))
     with get_session() as s:
-        rows = s.exec(select(Application).where(
-            Application.source == SOURCE,
-            Application.state == "submitted",
-            Application.submitted_at.is_not(None),
-            Application.submitted_at >= day_start,
-            Application.submitted_at < day_end,
-        )).all()
+        rows = s.exec(select(Application).where(*conditions)).all()
     return len(rows)
 
 
-def submitted_total_count() -> int:
+def submitting_count(*, origin: str = "") -> int:
+    """Active reservations, used to keep concurrent ticks inside the quota."""
+    conditions = [Application.source == SOURCE, Application.state == "submitting"]
+    if origin:
+        conditions.append(Application.origin == str(origin))
+    with get_session() as session:
+        rows = session.exec(select(Application.id).where(*conditions)).all()
+    return len(rows)
+
+
+def submitted_total_count(*, source: str | None = SOURCE) -> int:
+    conditions = [Application.state == "submitted"]
+    if source is not None:
+        conditions.insert(0, Application.source == str(source))
     with get_session() as s:
-        rows = s.exec(select(Application).where(
-            Application.source == SOURCE, Application.state == "submitted",
-        )).all()
+        rows = s.exec(select(Application).where(*conditions)).all()
     return len(rows)
 
 

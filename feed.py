@@ -271,7 +271,11 @@ def source_clause():
     sources = broken_sources()
     if not sources:
         return None
-    return (Job.status == "applied") | Job.source.not_in(list(sources))
+    return (
+        Job.applied_at.is_not(None)
+        | (Job.status == "applied")
+        | Job.source.not_in(list(sources))
+    )
 
 
 def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
@@ -283,6 +287,8 @@ def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
     """
     statuses = list(CLOSED_STATUSES) + (["applied"] if exclude_applied else [])
     clauses = [Job.status.not_in(statuses)]
+    if exclude_applied:
+        clauses.append(Job.applied_at.is_(None))
     country = country_clause()
     if country is not None:
         clauses.append(country)
@@ -299,13 +305,17 @@ def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
 def visible(job, exclude_applied: bool = False, fit: bool = True) -> bool:
     """То же правило для уже загруженной вакансии (без похода в базу)."""
     status = str(getattr(job, "status", "") or "")
-    if status in CLOSED_STATUSES or (exclude_applied and status == "applied"):
+    post_application = status == "applied" or getattr(job, "applied_at", None) is not None
+    if status in CLOSED_STATUSES or (exclude_applied and post_application):
         return False
     if not allows(getattr(job, "country", None)):
         return False
-    if status != "applied" and str(getattr(job, "source", "") or "") in broken_sources():
+    if not post_application and str(getattr(job, "source", "") or "") in broken_sources():
         return False
     if fit and hide_barrier():
         import relevance
-        return str(getattr(job, "fit", "") or "") not in relevance.BARRIER
+        # Keep the in-memory rule identical to ``barrier_clause`` plus the
+        # Python leadership check.  AI guesses about ordinary work are soft
+        # warnings, not proof that the vacancy must disappear.
+        return not relevance.is_barrier(job)
     return True

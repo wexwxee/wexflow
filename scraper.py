@@ -15,6 +15,15 @@ from db import Job, init_db, get_session, select, utcnow
 
 PAGE_SIZE = 1000
 
+# Only these fields belong to the upstream Salling snapshot. Everything else
+# on Job is local WexFlow state and must survive every refresh.
+SOURCE_REFRESH_FIELDS = (
+    "title", "brand", "categories", "region", "city", "street", "zip",
+    "country", "hours", "employment_type", "job_level", "trainee",
+    "unsolicited", "pay_rate", "start_date", "published", "created",
+    "modified", "description", "application_link", "requisition_id",
+)
+
 
 def _algolia_page(page: int) -> dict:
     payload = {
@@ -157,12 +166,8 @@ def sync():
                 # нельзя) и вердикт «подойдёт без датского»: у свежего объекта
                 # поля fit_* пустые, и без этого исключения каждый синк стирал
                 # бы разметку и заставлял ИИ судить те же роли заново.
-                data = job.model_dump(exclude={
-                    "id", "first_seen", "status", "applied_at", "lat", "lon",
-                    "fit", "fit_reason", "fit_engine", "fit_hash", "fit_at",
-                })
-                for k, v in data.items():
-                    setattr(existing, k, v)
+                for field in SOURCE_REFRESH_FIELDS:
+                    setattr(existing, field, getattr(job, field))
                 existing.last_seen = now
                 # «подано» — нерушимый статус: даже если вакансия вернулась в
                 # ленту, не сбрасываем applied в seen (иначе можно подать повторно).
@@ -180,7 +185,7 @@ def sync():
         active = s.exec(
             select(Job).where(
                 Job.source == "salling",
-                Job.status.not_in(["closed", "applied"]),
+                Job.status.not_in(["closed", "applied", "hidden"]),
             )
         ).all()
         for job in active:

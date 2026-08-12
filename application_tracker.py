@@ -17,6 +17,7 @@ STATUS_LABELS = {
     "rejected": "Отказ",
     "no_response": "Нет ответа",
 }
+POST_APPLICATION_STATUSES = frozenset(STATUS_LABELS)
 
 STATUS_SOURCES = {
     "submission": "зафиксировано при подаче",
@@ -44,7 +45,7 @@ _STATUS_EMOJI = {
 CONFIRMATION_LABELS = {
     "portal": ("Подтверждено кабинетом", "official"),
     "receipt": ("Есть квитанция сайта", "strong"),
-    "email": ("Подтверждено письмом", "official"),
+    "email": ("Письмо сохранено без криптопроверки", "neutral"),
     "indirect": ("Подача не подтверждена", "warning"),
     "manual": ("Отмечено вручную", "neutral"),
 }
@@ -224,7 +225,10 @@ def set_status(job: Job, status: str, *, source: str, now=None) -> bool:
     moment = now or utcnow()
     changed = job.status != status
     job.status = status
-    if status == "applied" and job.applied_at is None:
+    # A later stage is itself evidence that an application existed.  Leaving
+    # applied_at empty made interview/offer/rejected jobs eligible for a second
+    # submission and hid them from the application journal.
+    if status in POST_APPLICATION_STATUSES and job.applied_at is None:
         job.applied_at = moment
     if changed or job.application_status_updated_at is None:
         job.application_status_updated_at = moment

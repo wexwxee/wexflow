@@ -31,6 +31,7 @@ _BACKOFF_CAP = 4.0
 _FALLBACK_ON = frozenset({
     base.RATE_LIMIT_RPD, base.RATE_LIMIT_TPD,
     base.PROVIDER_TIMEOUT, base.PROVIDER_UNAVAILABLE, base.OFFLINE,
+    base.BILLING_ERROR,
 })
 
 
@@ -121,16 +122,17 @@ def _dispatch(account_id: str | None, call, *, retries: int) -> AIResult:
     res = _with_retry(call, primary, retries=retries)
     if res.ok:
         return res
-    # Резерв — только для владельца (Gemini основной, Groq резерв) и только при
-    # разрешённых причинах. Для «только Groq» резерв модели уже внутри провайдера.
+    # После появления третьего провайдера нельзя останавливаться на одном
+    # неудачном резерве: Anthropic -> Gemini -> Groq должны пройти всю цепочку.
+    # Право на fallback определяет ошибка ОСНОВНОГО провайдера; если ни один
+    # резерв не сработал, возвращаем его наиболее информативную ошибку.
     if len(order) > 1 and res.error_code in _FALLBACK_ON:
-        fb_name, fb = order[1]
-        res2 = _with_retry(call, fb, retries=retries)
-        if res2.ok:
-            res2.request_id = res2.request_id or ""
-            res2.usage.setdefault("fell_back_from", primary_name)
-            return res2
-        # Возвращаем более информативную ошибку основного провайдера.
+        for _fallback_name, fallback in order[1:]:
+            fallback_result = _with_retry(call, fallback, retries=retries)
+            if fallback_result.ok:
+                fallback_result.request_id = fallback_result.request_id or ""
+                fallback_result.usage.setdefault("fell_back_from", primary_name)
+                return fallback_result
         return res
     return res
 

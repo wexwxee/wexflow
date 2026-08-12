@@ -56,8 +56,15 @@ def saved_profile():
         stored.clear()
         stored.update(profile_store.clean_profile(data))
 
+    def _mutate(updater):
+        current = dict(BASE_PROFILE)
+        changed = updater(current)
+        result = changed if changed is not None else current
+        _save(result)
+        return dict(stored)
+
     with mock.patch.object(profile_store, "load_profile", lambda: dict(BASE_PROFILE)), \
-            mock.patch.object(profile_store, "save_profile", _save):
+            mock.patch.object(profile_store, "mutate_profile", _mutate):
         yield stored
 
 

@@ -195,6 +195,24 @@ def test_indicator_script_contract():
         assert color in js
 
 
+def test_paid_provider_indicator_never_presents_a_fake_daily_percentage():
+    """Claude has pay-per-token billing, not a daily percentage budget."""
+    js = (ROOT / "static" / "ai_indicator.js").read_text(encoding="utf-8")
+
+    paid_chip = js.split("if (c.no_daily_cap) {", 1)[1].split("var pct =", 1)[0]
+    assert 'pctEl.textContent = "оплата по токенам"' in paid_chip
+    assert 'ring.style.display = "none"' in paid_chip
+    assert "percent_remaining" not in paid_chip
+    assert "процентов" not in paid_chip
+
+    assert 'var payPerToken = !!u.no_daily_cap' in js
+    assert 'meta = "<b>Оплата по токенам</b> — дневного лимита нет"' in js
+    assert 'var progress = payPerToken ? ""' in js
+    # Unknown free-tier RPD remains useful, but it must live only in the
+    # non-paid branch and therefore never appear in a Claude card.
+    assert "} else if (req.precise) {" in js
+
+
 def test_usage_endpoint_payload_has_no_secret_fields():
     usage = _usage_payload()
     with mock.patch.object(app.ai_gateway, "usage_payload", return_value=usage), \

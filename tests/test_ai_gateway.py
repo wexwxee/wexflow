@@ -87,6 +87,34 @@ def test_owner_falls_back_to_groq_on_gemini_daily_limit():
     assert gem.calls == 1 and groq.calls == 1
 
 
+def test_three_provider_chain_reaches_healthy_third_fallback():
+    anthropic = _Fake("anthropic", True, [_err("anthropic", base.PROVIDER_TIMEOUT)])
+    gem = _Fake("gemini", True, [_err("gemini", base.PROVIDER_UNAVAILABLE)])
+    groq = _Fake("groq", True, [_ok("groq")])
+    with mock.patch.object(ai_gateway, "AnthropicProvider", lambda acc, **kw: anthropic), \
+            mock.patch.object(ai_gateway, "GeminiProvider", lambda acc, **kw: gem), \
+            mock.patch.object(ai_gateway, "GroqProvider", lambda acc, **kw: groq), \
+            mock.patch.object(ai_gateway, "_consent_ok", return_value=True), \
+            mock.patch.object(ai_gateway.time, "sleep"):
+        res = ai_gateway.generate_json("x", account_id="a", retries=0)
+    assert res.ok and res.provider == "groq"
+    assert res.usage.get("fell_back_from") == "anthropic"
+    assert (anthropic.calls, gem.calls, groq.calls) == (1, 1, 1)
+
+
+def test_anthropic_billing_error_uses_a_free_fallback():
+    anthropic = _Fake("anthropic", True, [_err("anthropic", base.BILLING_ERROR)])
+    gem = _Fake("gemini", True, [_ok("gemini")])
+    groq = _Fake("groq", False, [])
+    with mock.patch.object(ai_gateway, "AnthropicProvider", lambda acc, **kw: anthropic), \
+            mock.patch.object(ai_gateway, "GeminiProvider", lambda acc, **kw: gem), \
+            mock.patch.object(ai_gateway, "GroqProvider", lambda acc, **kw: groq), \
+            mock.patch.object(ai_gateway, "_consent_ok", return_value=True):
+        res = ai_gateway.generate_json("x", account_id="a", retries=0)
+    assert res.ok and res.provider == "gemini"
+    assert (anthropic.calls, gem.calls) == (1, 1)
+
+
 def test_owner_does_not_fall_back_on_minute_limit():
     gem = _Fake("gemini", True, [_err("gemini", base.RATE_LIMIT_RPM)])
     groq = _Fake("groq", True, [_ok("groq")])

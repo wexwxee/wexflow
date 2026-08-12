@@ -6,13 +6,16 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlmodel import SQLModel, Session, create_engine
+from sqlalchemy.pool import StaticPool
 
 import application_tracker
-from db import Job
+from db import Application, Job
 
 
 def _database():
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool,
+    )
     SQLModel.metadata.create_all(engine)
     return engine, lambda: Session(engine)
 
@@ -48,6 +51,37 @@ def test_tracker_view_keeps_submission_age_and_due_date():
     assert data["age_days"] == 10
     assert data["no_response_due_at"] == applied_at + dt.timedelta(days=60)
     assert data["label"] == "Подано"
+
+
+def test_manual_later_stage_establishes_submission_and_blocks_duplicate():
+    import app as app_module
+    import autopilot
+    from fastapi.testclient import TestClient
+
+    _engine, sessions = _database()
+    with sessions() as session:
+        session.add(Job(id="fresh-interview", source="salling", title="Fresh", status="new"))
+        session.commit()
+
+    client = TestClient(app_module.app, base_url="http://127.0.0.1")
+    with mock.patch.object(app_module, "get_session", sessions), \
+            mock.patch.object(app_module, "_start_view_sync"):
+        response = client.post(
+            "/job/fresh-interview/status", data={"status": "interview"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 303
+    with sessions() as session:
+        job = session.get(Job, "fresh-interview")
+        registry = session.exec(
+            application_tracker.select(Application).where(
+                Application.source == "salling", Application.job_id == "fresh-interview"
+            )
+        ).one()
+    assert job.status == "interview" and job.applied_at is not None
+    assert job.applied_confidence == "manual"
+    assert registry.state == "submitted" and registry.confidence == "manual"
+    assert autopilot.can_submit(job) is False
 
 
 def test_tracker_advice_separates_silence_from_rejection():

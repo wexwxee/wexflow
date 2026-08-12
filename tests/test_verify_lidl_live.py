@@ -1,6 +1,9 @@
 """The safe Lidl verifier must use the selected installation and never stale data."""
 import sqlite3
 from pathlib import Path
+from unittest import mock
+
+import pytest
 
 import config
 import paths
@@ -125,6 +128,35 @@ def test_real_submit_requires_separate_arm_flag():
         assert "--arm-submit" in str(exc)
     else:
         raise AssertionError("submit without a separate arm flag was accepted")
+
+
+@pytest.mark.parametrize(("source", "brand"), [
+    ("salling", "Lidl Danmark"),
+    ("lidl", "Netto"),
+    ("salling", "Netto"),
+])
+def test_exact_foreign_job_is_rejected_before_profile_documents_or_browser(
+    source, brand,
+):
+    job = Job(
+        id="foreign:one",
+        source=source,
+        brand=brand,
+        title="Foreign vacancy",
+        application_link="https://example.test/apply",
+    )
+    with mock.patch.object(verify_lidl_live, "_job", return_value=job), \
+            mock.patch.object(profile_store, "load_profile") as load_profile, \
+            mock.patch.object(verify_lidl_live.document_rules, "resolve_profile") as resolve, \
+            mock.patch.object(verify_lidl_live, "sync_playwright") as playwright, \
+            mock.patch.object(verify_lidl_live.lidl_apply, "prepare") as prepare:
+        with pytest.raises(RuntimeError, match="не принадлежит Lidl"):
+            verify_lidl_live.run(job_id=job.id)
+
+    load_profile.assert_not_called()
+    resolve.assert_not_called()
+    playwright.assert_not_called()
+    prepare.assert_not_called()
 
 
 def test_receipt_is_recorded_in_legacy_installed_schema(tmp_path, monkeypatch):

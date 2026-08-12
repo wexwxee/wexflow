@@ -1680,6 +1680,9 @@
   const autosaveStatus = document.getElementById('autosaveStatus');
   const requiredInputs = [...document.querySelectorAll('#profileForm [data-required]')];
   let saveTimer = null;
+  let saveInFlight = false;
+  let saveQueued = false;
+  let saveController = null;
 
   function normalizeProfileValue(input) {
     const key = (input.name || '').toLowerCase();
@@ -1708,30 +1711,54 @@
 
   async function autosaveProfile() {
     if (!profileForm) return;
-    requiredInputs.forEach(normalizeProfileValue);
-    autosaveStatus.textContent = 'Сохраняю...';
-    autosaveStatus.className = 'autosave';
-    // Отправляем то, что реально есть в форме, а не переписанный список имён:
-    // раньше новое поле рисовалось, но молча не сохранялось, если его забыли
-    // дописать сюда. Что из присланного принять, решает сервер.
-    const fd = new FormData();
-    const seen = new Set();
-    profileForm.querySelectorAll('input[name], select[name], textarea[name]').forEach((input) => {
-      if (input.type === 'file' || input.disabled || seen.has(input.name)) return;
-      seen.add(input.name);
-      fd.append(input.name, input.value || '');
-    });
+    // Не даём двум autosave-запросам идти одновременно: медленный старый
+    // ответ иначе мог перетереть свежий. Пока идёт текущий, запоминаем,
+    // что нужен ещё один снимок самой новой формы.
+    if (saveInFlight) {
+      saveQueued = true;
+      autosaveStatus.textContent = 'Сохраню последние изменения...';
+      autosaveStatus.className = 'autosave';
+      return;
+    }
+
+    saveInFlight = true;
     try {
-      const res = await fetch('/settings/profile/autosave', { method:'POST', body:fd });
-      const data = await res.json();
-      if (!data.ok) throw new Error('save failed');
-      const missing = data.missing || [];
-      autosaveStatus.textContent = missing.length ? 'Сохранено, но нужно заполнить: ' + missing.join(', ') : 'Сохранено';
-      autosaveStatus.className = 'autosave saved';
-      validateProfile(false);
-    } catch (e) {
-      autosaveStatus.textContent = 'Не удалось автосохранить';
-      autosaveStatus.className = 'autosave error';
+      do {
+        saveQueued = false;
+        requiredInputs.forEach(normalizeProfileValue);
+        autosaveStatus.textContent = 'Сохраняю...';
+        autosaveStatus.className = 'autosave';
+        // Отправляем то, что реально есть в форме, а не переписанный список имён.
+        const fd = new FormData();
+        const seen = new Set();
+        profileForm.querySelectorAll('input[name], select[name], textarea[name]').forEach((input) => {
+          if (input.type === 'file' || input.disabled || seen.has(input.name)) return;
+          seen.add(input.name);
+          fd.append(input.name, input.value || '');
+        });
+        const controller = new AbortController();
+        saveController = controller;
+        try {
+          const res = await fetch('/settings/profile/autosave', {
+            method: 'POST', body: fd, signal: controller.signal
+          });
+          const data = await res.json();
+          if (!data.ok) throw new Error('save failed');
+          const missing = data.missing || [];
+          autosaveStatus.textContent = missing.length ? 'Сохранено, но нужно заполнить: ' + missing.join(', ') : 'Сохранено';
+          autosaveStatus.className = 'autosave saved';
+          validateProfile(false);
+        } catch (e) {
+          if (e.name !== 'AbortError') {
+            autosaveStatus.textContent = 'Не удалось автосохранить';
+            autosaveStatus.className = 'autosave error';
+          }
+        } finally {
+          if (saveController === controller) saveController = null;
+        }
+      } while (saveQueued);
+    } finally {
+      saveInFlight = false;
     }
   }
 
@@ -1748,7 +1775,14 @@
         autosaveStatus.textContent = 'Нужно заполнить: ' + missing.join(', ');
         autosaveStatus.className = 'autosave error';
         requiredInputs.find((input) => !input.value.trim())?.focus();
+      } else {
+        clearTimeout(saveTimer);
+        saveQueued = false;
+        if (saveController) saveController.abort();
       }
+    });
+    window.addEventListener('beforeunload', () => {
+      if (saveController) saveController.abort();
     });
     validateProfile(false);
   }

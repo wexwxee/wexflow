@@ -24,6 +24,16 @@ GEOCODE_BATCH = 40
 # экран. Тревога остаётся для настоящей поломки (лёг весь Teamtailor и т.п.).
 COMPANY_FAIL_SHARE = 0.2
 
+# Connector payloads may refresh only fields supplied by the ATS. Job also
+# carries local-only data (translations, relevance verdicts, application proof
+# and funnel metadata); fresh defaults must never erase that data.
+SOURCE_REFRESH_FIELDS = (
+    "title", "brand", "categories", "region", "city", "street", "zip",
+    "country", "hours", "employment_type", "job_level", "pay_rate",
+    "published", "modified", "description", "application_link",
+    "requisition_id",
+)
+
 
 def _text(value) -> str:
     if isinstance(value, dict):
@@ -48,13 +58,31 @@ def item_country(item: JobItem) -> str:
     return ""
 
 
-def _wanted(item: JobItem) -> bool:
+def _country_wanted(value, selected_countries=None) -> bool:
+    """Apply one stable country-selection snapshot to new and stale rows."""
+    selected = tuple(selected_countries or feed.countries())
+    if feed.ANY in selected:
+        return True
+    code = feed.normalize(value)
+    return bool(code) and code in selected
+
+
+def _wanted(item: JobItem, selected_countries=None) -> bool:
     """Берём ли вакансию в базу. Страна — настройка ленты (по умолчанию DK).
 
     Нераспознанную страну в базу не тащим: каталоги международные, и без
     опознания сюда полился бы весь мир.
     """
-    return feed.allows(item_country(item), unknown_ok=False)
+    return _country_wanted(item_country(item), selected_countries)
+
+
+def _structurally_valid(source: str, item) -> bool:
+    """A real ATS hit before country/presentation filtering."""
+    return (
+        getattr(item, "source", None) == source
+        and bool(_text(getattr(item, "id", None)))
+        and bool(_text(getattr(item, "title", None)))
+    )
 
 
 def job_from_item(item: JobItem, now=None) -> Job:
@@ -104,10 +132,17 @@ def _item_scope(source: str, item_id: str, company: str = "") -> str:
 def sync_items(source: str, items: Iterable[JobItem], session_factory=get_session) -> dict:
     """Upsert one complete connector snapshot and close only its missing rows."""
     now = utcnow()
-    clean = [item for item in items
-             if item.source == source and item.id and item.title and _wanted(item)]
-    seen_ids = {str(item.id) for item in clean}
-    seen_scopes = {_item_scope(source, item.id, item.company) for item in clean}
+    selected_countries = tuple(feed.countries())
+    structural = [item for item in items if _structurally_valid(source, item)]
+    clean = [item for item in structural if _wanted(item, selected_countries)]
+    # Staleness is based on the unfiltered source snapshot. A vacancy that is
+    # still present upstream must not look disappeared merely because the user
+    # changed the feed country setting.
+    seen_ids = {str(item.id) for item in structural}
+    seen_scopes = {
+        _item_scope(source, item.id, getattr(item, "company", ""))
+        for item in structural
+    }
     seen_scopes.discard("")
     created = updated = closed = 0
 
@@ -127,7 +162,8 @@ def sync_items(source: str, items: Iterable[JobItem], session_factory=get_sessio
                 "fit", "fit_reason", "fit_engine", "fit_hash", "fit_at",
             })
             for key, value in data.items():
-                setattr(existing, key, value)
+                if key in SOURCE_REFRESH_FIELDS:
+                    setattr(existing, key, value)
             # Most ATS feeds omit coordinates and rely on WexFlow geocoding.
             # Lidl provides precise coordinates, so accept them when present
             # without erasing an existing geocode for other connectors.
@@ -142,19 +178,20 @@ def sync_items(source: str, items: Iterable[JobItem], session_factory=get_sessio
 
         active = session.exec(select(Job).where(
             Job.source == source,
-            Job.status.not_in(["closed", "applied"]),
+            Job.status.not_in(["closed", "applied", "hidden"]),
             Job.last_seen < now - STALE_AFTER,
         )).all()
         for job in active:
             scope = _item_scope(source, job.id, job.brand or "")
             if (job.id not in seen_ids and scope in seen_scopes
+                    and _country_wanted(job.country, selected_countries)
                     and job.applied_at is None):
                 job.status = "closed"
                 session.add(job)
                 closed += 1
         session.commit()
 
-    return {"source": source, "hits": len(clean), "created": created,
+    return {"source": source, "raw_hits": len(structural), "hits": len(clean), "created": created,
             "updated": updated, "closed": closed}
 
 
@@ -214,8 +251,9 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
             report = sync_items(source, items)
             # Сторож источников (шаг 6): пустой ответ — такое же молчание, как
             # ошибка. Ни один наш каталог не бывает пустым в норме.
-            _note_health(source, hits=report["hits"],
-                         error=str(company_errors[0])[:180] if not report["hits"] and company_errors else "")
+            raw_hits = report.get("raw_hits", report["hits"])
+            _note_health(source, hits=raw_hits,
+                         error=str(company_errors[0])[:180] if not raw_hits and company_errors else "")
             if company_errors:
                 report["company_errors"] = company_errors[:20]
                 total = _enabled_companies(conn)
@@ -241,6 +279,7 @@ def sync(sources: Iterable[str] = DEFAULT_SOURCES) -> dict:
             errors.append(f"{source}: {str(exc)[:180]}")
             _note_health(source, error=str(exc)[:180])
     return {
+        "raw_hits": sum(row.get("raw_hits", row["hits"]) for row in reports),
         "hits": sum(row["hits"] for row in reports),
         "created": sum(row["created"] for row in reports),
         "updated": sum(row["updated"] for row in reports),

@@ -258,6 +258,17 @@ def _job(job_id: str = "") -> Job:
     return job
 
 
+def _validate_lidl_job(job: Job) -> None:
+    """Refuse an exact foreign vacancy before reading profile data or opening a browser."""
+    source = str(job.source or "").strip().casefold()
+    brand = document_rules.brand_key(job)
+    if source != "lidl" or brand != "lidl":
+        raise RuntimeError(
+            "Точный --job-id не принадлежит Lidl: "
+            f"source={source or '<пусто>'!r}, brand={brand or '<пусто>'!r}."
+        )
+
+
 def run(
     job_id: str = "",
     headless: bool = True,
@@ -267,6 +278,7 @@ def run(
     if submit and not arm_submit:
         raise RuntimeError("Реальная отправка требует отдельный флаг --arm-submit.")
     job = _job(job_id)
+    _validate_lidl_job(job)
     profile = document_rules.resolve_profile(profile_store.load_profile(), job)
     profile = profile_store.resolve_company_answers(profile, "lidl")
     selection = profile.get("_document_selection", {})

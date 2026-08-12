@@ -176,8 +176,14 @@ def test_remove_global_document_clears_only_selected_profile_field():
         "cv_path": "C:/private/uploads/cv.pdf",
         "cover_letter_path": "C:/private/uploads/cover.pdf",
     }
-    with mock.patch.object(app.profile_store, "load_profile", return_value=dict(profile)), \
-            mock.patch.object(app.profile_store, "save_profile", side_effect=lambda value: saved.update(value)), \
+    def mutate_profile(updater):
+        current = dict(profile)
+        changed = updater(current)
+        result = changed if changed is not None else current
+        saved.update(result)
+        return result
+
+    with mock.patch.object(app.profile_store, "mutate_profile", side_effect=mutate_profile), \
             mock.patch.object(app.profile_store, "remove_managed_document", return_value=True) as remove:
         response = app.settings_documents_save(
             cv_path="",

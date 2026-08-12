@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 
 import app as app_module
 import query_parse
@@ -87,6 +87,14 @@ def test_city_from_the_database_is_recognised():
     assert query_parse.parse("Tørring", known_cities=[]).cities == ()
 
 
+@pytest.mark.parametrize("city", ["Kongens Lyngby", "Nykøbing Falster"])
+def test_multiword_known_city_is_consumed_as_one_city_without_a_free_term(city):
+    q = query_parse.parse(city, known_cities=[city])
+    assert q.cities == (city,)
+    assert q.rest == ""
+    assert q.terms == ()
+
+
 # ── опечатки ───────────────────────────────────────────────────────────────
 
 def test_typo_is_fixed_and_reported():
@@ -115,6 +123,30 @@ def test_exact_disables_parsing():
     assert q.brands == () and q.cities == ()
     assert q.terms == ("Netto Herlev",)
     assert "буквально" in query_parse.describe(q)
+
+
+def test_literal_like_wildcards_do_not_expand_the_search_pattern():
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    jobs = [
+        _job("percent", "Stock 100% ready"),
+        _job("percent-wild", "Stock 1000 ready"),
+        _job("underscore", "zone_a"),
+        _job("underscore-wild", "zoneXa"),
+    ]
+    with Session(engine) as session:
+        session.add_all(jobs)
+        session.commit()
+        percent = session.exec(
+            select(Job).where(*query_parse.clauses(_parse("100%", exact=True)))
+        ).all()
+        underscore = session.exec(
+            select(Job).where(*query_parse.clauses(_parse("zone_a", exact=True)))
+        ).all()
+
+    assert {job.id for job in percent} == {"percent"}
+    assert {job.id for job in underscore} == {"underscore"}
 
 
 # ── отсев по часам и возрасту ──────────────────────────────────────────────

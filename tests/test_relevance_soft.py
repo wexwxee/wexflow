@@ -116,6 +116,19 @@ def test_describe_says_it_is_a_guess(feed_db):
     assert view["label"] == "возможно, нужен датский"
 
 
+def test_in_memory_feed_uses_the_same_soft_barrier_rule(feed_db):
+    """Background/phone helpers must agree with the SQL-backed web feed."""
+    guess = _job("g", "Butiksassistent", "danish", "ai:gemini-2.5-flash")
+    quoted = _job("q", "Kasseassistent", "danish", "rules")
+    lead = _job("l", "Souschef", "danish", "ai:gemini-2.5-flash")
+    with mock.patch.object(feed, "allows", return_value=True), \
+         mock.patch.object(feed, "broken_sources", return_value=()), \
+         mock.patch.object(feed, "hide_barrier", return_value=True):
+        assert feed.visible(guess) is True
+        assert feed.visible(quoted) is False
+        assert feed.visible(lead) is False
+
+
 def test_feed_page_shows_the_guess_with_a_mark(feed_db):
     """Человек видит вакансию и видит, что пометка — мнение, а не цитата."""
     from fastapi.testclient import TestClient

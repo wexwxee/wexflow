@@ -190,10 +190,14 @@ ANSWER_FIELDS: tuple[AnswerField, ...] = (
     ),
     AnswerField(
         "lidl_referral_name", "Lidl: имя сотрудника, который порекомендовал", "text",
+        scope=COMPANY,
     ),
-    AnswerField("lidl_current_employee", "Lidl: уже работаешь в Lidl", "yesno"),
+    AnswerField(
+        "lidl_current_employee", "Lidl: уже работаешь в Lidl", "yesno", scope=COMPANY,
+    ),
     AnswerField(
         "lidl_previous_employment", "Lidl: где и когда раньше работал(а) в Lidl", "text",
+        scope=COMPANY,
     ),
     AnswerField(
         "lidl_part_time_availability",
@@ -218,6 +222,7 @@ ANSWER_FIELDS: tuple[AnswerField, ...] = (
     AnswerField(
         "relevant_health_condition",
         "Lidl: заболевания, существенно влияющие на работу", "text",
+        scope=COMPANY,
     ),
     AnswerField(
         "lidl_newsletter", "Lidl: получать новости о вакансиях", "yesno", scope=CONSENT,
@@ -511,26 +516,37 @@ def clean_profile(data: dict) -> dict:
     consent = str(data.get("answer_reuse_consent") or "").strip().lower()
     data["answer_reuse_consent"] = consent if consent in {"yes", "no"} else ""
 
-    # 1.3.63 хранил юридические ответы Lidl плоско. Переносим их в правило Lidl,
-    # чтобы они никогда случайно не ушли другому работодателю.
+    # Versioned one-shot repair of the 1.3.63 flat Lidl fields.  The old
+    # migration accidentally snapshotted reusable answers (weekends, English,
+    # etc.) into a permanent Lidl override, so later edits in the main profile
+    # were silently ignored.  Shared answers must stay inherited; only fields
+    # whose meaning is company-specific move into the Lidl rule.
     overrides = company_overrides(data)
-    if "lidl" not in overrides:
-        legacy_lidl_keys = (
-            COMPANY_OVERRIDE_KEYS
-            if not data["answer_reuse_consent"]
-            else COMPANY_CONSENT_KEYS
-        )
-        lidl_legacy = {
-            key: clean_answer(key, data.get(key))
-            for key in legacy_lidl_keys
-            if clean_answer(key, data.get(key))
+    try:
+        migration_version = int(data.get("company_answers_migration") or 0)
+    except (TypeError, ValueError):
+        migration_version = 0
+    if migration_version < 2:
+        rule = overrides.get("lidl") or {
+            "label": "Lidl", "inherit_defaults": "yes", "answers": {},
         }
-        if lidl_legacy:
-            overrides["lidl"] = {
-                "label": "Lidl",
-                "inherit_defaults": "yes",
-                "answers": lidl_legacy,
-            }
+        current_answers = dict(rule.get("answers") or {})
+        # Values equal to the old flat shared value are migration snapshots,
+        # not intentional overrides.  Remove them so future edits propagate.
+        for key in REUSABLE_ANSWER_KEYS:
+            if (key in current_answers
+                    and current_answers[key] == clean_answer(key, data.get(key))):
+                current_answers.pop(key, None)
+        for key in COMPANY_LOCAL_KEYS:
+            value = clean_answer(key, data.get(key))
+            if value and key not in current_answers:
+                current_answers[key] = value
+        if current_answers:
+            rule["answers"] = current_answers
+            overrides["lidl"] = rule
+        elif "lidl" in overrides:
+            overrides["lidl"] = {**rule, "answers": {}}
+        data["company_answers_migration"] = 2
     data["company_answer_overrides"] = overrides
     city_key = str(data.get("city") or "").strip().lower()
     country_key = str(data.get("country") or "").strip().lower()
@@ -565,16 +581,31 @@ def _migrate_legacy_profile() -> None:
 _LOCK = threading.RLock()
 
 
+class _InvalidProfileError(ValueError):
+    """The file was read successfully, but is not a JSON object."""
+
+
 def _read_json(path: Path) -> dict | None:
-    """Прочитать JSON-словарь или вернуть None, если файла нет либо он битый —
-    без падения приложения."""
+    """Read a JSON object.
+
+    A missing file is ``None``. Invalid JSON/non-object content is a proven
+    corrupt profile and gets its own exception. An ``OSError`` is deliberately
+    allowed through: a temporarily locked/unavailable file must never be
+    renamed as corrupt or replaced with a default profile.
+    """
     try:
-        if not path.exists():
-            return None
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else None
-    except (ValueError, OSError):
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return None
+    except UnicodeDecodeError as exc:
+        raise _InvalidProfileError("profile is not UTF-8") from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise _InvalidProfileError("invalid JSON") from exc
+    if not isinstance(data, dict):
+        raise _InvalidProfileError("JSON root is not an object")
+    return data
 
 
 def _backup_corrupt(path: Path, err) -> None:
@@ -589,20 +620,26 @@ def _backup_corrupt(path: Path, err) -> None:
         pass
 
 
-def load_profile() -> dict:
+def _load_profile_unlocked() -> dict:
     _migrate_legacy_profile()
     path = config.SHARED_PROFILE_PATH
-    if path.exists():
+    try:
         data = _read_json(path)
-        if data is not None:
-            return clean_profile(data)
-        # основной файл битый: пробуем последнюю резервную копию, затем откладываем битый
-        backup = _read_json(path.with_name(path.name + ".bak"))
-        _backup_corrupt(path, "невалидный JSON")
+    except _InvalidProfileError as exc:
+        # Основной файл точно прочитан, но битый: только в этом случае
+        # его можно отложить как .corrupt. Ошибка ввода-вывода сюда не попадает.
+        try:
+            backup = _read_json(path.with_name(path.name + ".bak"))
+        except (OSError, _InvalidProfileError):
+            backup = None
+        _backup_corrupt(path, exc)
         if backup is not None:
             print("profile.json восстановлен из .bak")
-            save_profile(backup)          # вернём хороший профиль на место (атомарно)
+            _save_profile_unlocked(backup)  # вернём хорошую копию атомарно
             return clean_profile(backup)
+    else:
+        if data is not None:
+            return clean_profile(data)
     if (config.BASE_DIR / "profile.example.json").exists():
         data = json.loads((config.BASE_DIR / "profile.example.json").read_text(encoding="utf-8"))
         data["first_name"] = ""
@@ -619,21 +656,53 @@ def load_profile() -> dict:
     return {"cv_path": "", "cover_letter_path": ""}
 
 
-def save_profile(data: dict):
+def load_profile() -> dict:
+    """Return one consistent profile snapshot.
+
+    Transient read errors propagate so a caller cannot unknowingly turn an I/O
+    outage into an empty-profile save. The original file remains untouched.
+    """
+    with _LOCK:
+        return _load_profile_unlocked()
+
+
+def _save_profile_unlocked(data: dict) -> dict:
     data = clean_profile(data)
     path = config.SHARED_PROFILE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, ensure_ascii=False, indent=2)
     tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(payload, encoding="utf-8")   # атомарно: пишем во временный…
+    json_store.replace_file(tmp, path)           # …и подменяем одним движением
+    # зеркалим последний УСПЕШНО записанный профиль в .bak — если основной файл
+    # позже побьётся, load_profile восстановит из него свежее состояние
+    try:
+        shutil.copy2(path, path.with_name(path.name + ".bak"))
+    except OSError:
+        pass
+    return data
+
+
+def save_profile(data: dict) -> None:
     with _LOCK:
-        tmp.write_text(payload, encoding="utf-8")   # атомарно: пишем во временный…
-        json_store.replace_file(tmp, path)           # …и подменяем одним движением
-        # зеркалим последний УСПЕШНО записанный профиль в .bak — если основной файл
-        # позже побьётся, load_profile восстановит из него свежее состояние
-        try:
-            shutil.copy2(path, path.with_name(path.name + ".bak"))
-        except OSError:
-            pass
+        _save_profile_unlocked(data)
+
+
+def mutate_profile(updater) -> dict:
+    """Atomically read, update and save the candidate profile.
+
+    ``updater`` may mutate its dictionary in place and return ``None``, or
+    return a replacement dictionary. Holding one RLock across the complete
+    cycle prevents concurrent partial forms from dropping each other's fields.
+    """
+    with _LOCK:
+        profile = _load_profile_unlocked()
+        replacement = updater(profile)
+        if replacement is not None:
+            if not isinstance(replacement, dict):
+                raise TypeError("profile updater must return dict or None")
+            profile = replacement
+        return _save_profile_unlocked(profile)
 
 
 def validate_document_path(path: str) -> str:

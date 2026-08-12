@@ -368,10 +368,11 @@ def _persist_statuses(items: list[dict], transitions: list[dict] | None = None) 
                     job, stage_map[portal_status], source="salling_portal"
                 )
             session.add(job)
+            if first_confirmation:
+                applications.record_submitted_in_session(session, [job])
             session.commit()
             if first_confirmation:
                 session.refresh(job)
-                applications.record_submitted([job])
                 newly_confirmed.append({"id": job.id, "title": job.title or item.get("title") or "Вакансия"})
             after_status = str(job.status or "")
             if transitions is not None and before_status != after_status:

@@ -35,13 +35,15 @@
 """
 from __future__ import annotations
 
+import hashlib
 import re
+from pathlib import Path
 
 import config
 import email_evidence
 import labels as labels_mod
 import settings_store
-from db import Application, Job, get_session, select
+from db import Application, ApplicationEvidence, Job, get_session, select, utcnow
 
 SETTINGS_KEY = "trust"
 
@@ -97,6 +99,81 @@ def proof_for(job, proofs: dict[str, str] | None = None) -> str:
         if safe in proofs:
             return proofs[safe]
     return ""
+
+
+def _screen_fingerprint(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def record_receipt_screen(session, job: Job, path) -> ApplicationEvidence | None:
+    """Bind one successful receipt screenshot to one job inside a transaction."""
+    candidate = Path(path) if path else None
+    if candidate is None or not candidate.is_file():
+        return None
+    proof_root = (config.DATA_DIR / "logs" / "applied").resolve()
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(proof_root)
+    except (OSError, ValueError):
+        return None
+    fingerprint = _screen_fingerprint(resolved)
+    existing = session.exec(select(ApplicationEvidence).where(
+        ApplicationEvidence.fingerprint == fingerprint
+    )).first()
+    if existing is not None:
+        if (existing.kind == "receipt_screen"
+                and existing.source == str(job.source or "salling")
+                and existing.job_id == str(job.id)):
+            return existing
+        return None
+    row = ApplicationEvidence(
+        source=str(job.source or "salling"),
+        job_id=str(job.id),
+        kind="receipt_screen",
+        path=resolved.name,
+        fingerprint=fingerprint,
+        occurred_at=utcnow(),
+    )
+    session.add(row)
+    return row
+
+
+def attach_receipt_screen(job_id: str, path) -> bool:
+    """Best-effort connector hook; an unregistered file earns no trust."""
+    try:
+        with get_session() as session:
+            job = session.get(Job, str(job_id or ""))
+            if job is None or str(job.applied_confidence or "") != "receipt":
+                return False
+            row = record_receipt_screen(session, job, path)
+            if row is None:
+                return False
+            session.commit()
+            return True
+    except Exception:  # noqa: BLE001 — отсутствие proof безопасно блокирует auto
+        return False
+
+
+def valid_receipt_screens(session, source: str) -> dict[str, str]:
+    """Registered receipt screenshots whose current bytes match the DB hash."""
+    rows = session.exec(select(ApplicationEvidence).where(
+        ApplicationEvidence.source == str(source or ""),
+        ApplicationEvidence.kind == "receipt_screen",
+    )).all()
+    root = config.DATA_DIR / "logs" / "applied"
+    valid: dict[str, str] = {}
+    for row in rows:
+        path = root / Path(str(row.path or "")).name
+        try:
+            if path.is_file() and _screen_fingerprint(path) == str(row.fingerprint or ""):
+                valid[str(row.job_id)] = path.name
+        except OSError:
+            continue
+    return valid
 
 
 # ── Настройки ──────────────────────────────────────────────────────────────
@@ -206,6 +283,7 @@ def stats(source: str, proofs: dict[str, str] | None = None) -> dict:
                                       Application.state == "failed")
         ).all()
         submitted = len(jobs)
+        receipt_screens = valid_receipt_screens(session, source)
         proven_at = None
         proven_title = ""
         receipts = 0          # квитанция сайта + наш снимок экрана
@@ -219,7 +297,7 @@ def stats(source: str, proofs: dict[str, str] | None = None) -> dict:
             if confidence == "portal":
                 portal += 1   # подтверждает сам работодатель — снимок не нужен
             elif confidence == "receipt":
-                if proof_for(job, proofs):
+                if str(job.id) in receipt_screens:
                     receipts += 1
                 else:
                     without_proof += 1

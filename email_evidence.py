@@ -1,28 +1,29 @@
-"""Письмо работодателя как локальное доказательство подачи.
+"""Письмо работодателя как локальное ручное подтверждение подачи.
 
 WexFlow не подключается к почтовому ящику и не просит пароль от него. Человек
 скачивает исходное письмо в формате ``.eml`` и прикладывает его к конкретному
-отклику. Мы принимаем письмо в доказательства только когда одновременно есть:
+отклику. Заголовки загруженного файла редактируемы, поэтому такой импорт не
+доказывает площадку и не разблокирует тихую автоподачу. Он лишь помогает
+человеку восстановить собственный журнал, когда одновременно есть:
 
 * результат SPF/DKIM/DMARC ``pass`` в служебных заголовках;
 * фраза о получении заявки;
 * связь с выбранной вакансией (ID либо достаточно характерные слова названия);
 * разумная дата относительно уже известной подачи.
 
-Исходный файл остаётся только в ``logs/email`` на компьютере. В облако уезжает
-лишь агрегированное состояние доверия площадке, но не адрес, тема или текст.
+Исходный файл остаётся только в ``logs/email`` на компьютере.
 """
 from __future__ import annotations
 
 import hashlib
 import html
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from email import policy
 from email.parser import BytesParser
 from email.utils import parseaddr, parsedate_to_datetime
 from pathlib import Path
-from types import SimpleNamespace
 from urllib.parse import urlparse
 
 import application_tracker
@@ -52,11 +53,8 @@ _CONFIRMATION = re.compile(
     r")",
     re.IGNORECASE,
 )
-_AUTH = {
-    "dmarc": re.compile(r"\bdmarc\s*=\s*pass\b", re.IGNORECASE),
-    "dkim": re.compile(r"\bdkim\s*=\s*pass\b", re.IGNORECASE),
-    "spf": re.compile(r"\bspf\s*=\s*pass\b", re.IGNORECASE),
-}
+_DMARC = re.compile(r"\bdmarc\s*=\s*([a-z]+)\b", re.IGNORECASE)
+_HEADER_FROM = re.compile(r"\bheader\.from\s*=\s*([^\s;]+)", re.IGNORECASE)
 _SAFE = re.compile(r"[^0-9A-Za-zА-Яа-я._-]+")
 _WORD = re.compile(r"[0-9A-Za-zА-Яа-яÆØÅæøå]{3,}")
 _STOP = {
@@ -110,14 +108,41 @@ def _body(message) -> str:
     return " ".join(chunks)[:250_000]
 
 
-def _authentication(message) -> str:
-    headers: list[str] = []
-    for name in ("Authentication-Results", "ARC-Authentication-Results", "Received-SPF"):
-        headers.extend(str(value) for value in (message.get_all(name, []) or []))
-    joined = "\n".join(headers)
-    for kind in ("dmarc", "dkim", "spf"):
-        if _AUTH[kind].search(joined):
-            return kind
+def _aligned_domain(authenticated: str, sender: str) -> bool:
+    authenticated = str(authenticated or "").casefold().strip(" .")
+    sender = str(sender or "").casefold().strip(" .")
+    return bool(
+        authenticated and sender and (
+            authenticated == sender
+            or authenticated.endswith("." + sender)
+            or sender.endswith("." + authenticated)
+        )
+    )
+
+
+def _authentication(message, sender_domain: str, expected: set[str]) -> str:
+    """Accept only an aligned DMARC result as a useful *header signal*.
+
+    Authentication-Results is editable text in an uploaded .eml; without a
+    DNS-backed DKIM verifier or mailbox-provider metadata it is not
+    cryptographic proof.  We still reject obvious spoofing (bare SPF, foreign
+    alignment, conflicting DMARC failure), but persist a successful match as
+    ``unverified_header`` so it can never unlock silent auto-submit.
+    """
+    headers = [
+        str(value) for value in (message.get_all("Authentication-Results", []) or [])
+    ]
+    if any(match.group(1).casefold() == "fail"
+           for header in headers for match in _DMARC.finditer(header)):
+        return ""
+    for header in headers:
+        if not any(match.group(1).casefold() == "pass" for match in _DMARC.finditer(header)):
+            continue
+        domains = [match.group(1).casefold().strip(".")
+                   for match in _HEADER_FROM.finditer(header)]
+        if any(_aligned_domain(domain, sender_domain) and _domain_matches(domain, expected)
+               for domain in domains):
+            return "unverified_header"
     return ""
 
 
@@ -193,18 +218,18 @@ def analyse(raw: bytes, job: Job) -> dict:
     if not sender_domain:
         raise EvidenceError("В исходном письме нет адреса отправителя.")
 
-    authentication = _authentication(message)
-    if not authentication:
-        raise EvidenceError(
-            "Почтовый сервис не сохранил результат SPF/DKIM/DMARC. Нужен именно "
-            "оригинал .eml (в Gmail: «Показать оригинал» → «Скачать оригинал»)."
-        )
     expected = _expected_domains(job)
     source = str(job.source or "").lower()
     if source in _SOURCE_DOMAINS and not _domain_matches(sender_domain, expected):
         raise EvidenceError(
             f"Письмо пришло с домена {sender_domain}, а выбранная площадка — "
             f"{source}. Такое письмо нельзя автоматически связать с этой подачей."
+        )
+    authentication = _authentication(message, sender_domain, expected)
+    if not authentication:
+        raise EvidenceError(
+            "В оригинале письма нет согласованного DMARC=pass для домена отправителя. "
+            "Один SPF или заголовок чужого домена не подтверждает письмо."
         )
 
     body = _body(message)
@@ -257,7 +282,6 @@ def import_upload(job_id: str, upload) -> ApplicationEvidence:
     """Проверить и сохранить .eml, затем достроить факт подачи в реестре."""
     raw = _read_upload(upload)
     target: Path | None = None
-    submitted_snapshot = None
     with get_session() as session:
         job = session.get(Job, str(job_id or ""))
         if job is None:
@@ -268,13 +292,19 @@ def import_upload(job_id: str, upload) -> ApplicationEvidence:
         )).first()
         if existing is not None:
             if existing.source == str(job.source or "salling") and existing.job_id == str(job.id):
+                # Repair legacy/partially committed state on a retry.
+                applications.record_submitted_in_session(session, [job])
+                session.commit()
                 return existing
             raise EvidenceError("Это письмо уже прикреплено к другому отклику.")
 
         EMAIL_DIR.mkdir(parents=True, exist_ok=True)
         stamp = utcnow().strftime("%Y%m%d_%H%M%S")
         safe_job = _SAFE.sub("_", str(job.id or "job"))[:80].strip("._") or "job"
-        name = f"{stamp}_{safe_job}_{checked['fingerprint'][:10]}.eml"
+        # A per-attempt suffix means a losing concurrent transaction can only
+        # delete its own file, never the winner's evidence artifact.
+        name = (f"{stamp}_{safe_job}_{checked['fingerprint'][:10]}_"
+                f"{uuid.uuid4().hex[:8]}.eml")
         target = EMAIL_DIR / name
         target.write_bytes(raw)
 
@@ -300,24 +330,19 @@ def import_upload(job_id: str, upload) -> ApplicationEvidence:
                 job, "applied", source="email", now=checked["occurred_at"] or utcnow()
             )
         if str(job.applied_confidence or "") not in {"portal", "receipt"}:
-            job.applied_confidence = "email"
+            # User-provided .eml is a useful manual confirmation, but editable
+            # Authentication-Results cannot earn platform trust by itself.
+            job.applied_confidence = "manual"
         session.add(job)
+        applications.record_submitted_in_session(session, [job])
         try:
             session.commit()
             session.refresh(evidence)
-            submitted_snapshot = SimpleNamespace(
-                id=str(job.id),
-                source=str(job.source or "salling"),
-                applied_at=job.applied_at,
-                applied_confidence=job.applied_confidence,
-            )
         except Exception:
             if target is not None:
                 target.unlink(missing_ok=True)
             raise
 
-    # Реестр Applications остаётся единственной дверью для submitted-состояния.
-    applications.record_submitted([submitted_snapshot])
     return evidence
 
 
@@ -338,7 +363,7 @@ def existing_map(session, jobs) -> dict[tuple[str, str], dict]:
     for row in rows:
         key = (str(row.source), str(row.job_id))
         path = EMAIL_DIR / Path(str(row.path or "")).name
-        if key not in keys or key in result or not path.is_file():
+        if key not in keys or key in result or not _artifact_matches(row, path):
             continue
         result[key] = {
             "file": path.name,
@@ -351,12 +376,30 @@ def existing_map(session, jobs) -> dict[tuple[str, str], dict]:
 
 
 def valid_rows(session, source: str) -> list[ApplicationEvidence]:
-    """Проверенные письма площадки, для которых исходный локальный файл на месте."""
+    """Cryptographically/provider-verified email rows only.
+
+    Header-only imports use ``unverified_header`` and deliberately do not
+    appear here.  Future DKIM/OAuth verification may store one of the explicit
+    verified values below.
+    """
     rows = session.exec(select(ApplicationEvidence).where(
         ApplicationEvidence.source == str(source or ""),
         ApplicationEvidence.kind == "email",
     )).all()
     return [
         row for row in rows
-        if row.authentication and (EMAIL_DIR / Path(str(row.path or "")).name).is_file()
+        if row.authentication in {"dkim_verified", "provider_verified"}
+        and _artifact_matches(row, EMAIL_DIR / Path(str(row.path or "")).name)
     ]
+
+
+def _artifact_matches(row: ApplicationEvidence, path: Path) -> bool:
+    """Артефакт остаётся доказательством только пока совпадает сохранённый hash."""
+    expected = str(row.fingerprint or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected) or not path.is_file():
+        return False
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return False
+    return digest == expected

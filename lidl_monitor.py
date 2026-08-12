@@ -641,10 +641,10 @@ def _persist_statuses(items: list[dict], transitions: list[dict] | None = None) 
                 changed = before_status != str(job.status or "")
             if changed:
                 session.add(job)
+                if first_confirmation:
+                    applications.record_submitted_in_session(session, [job])
                 session.commit()
                 session.refresh(job)
-                if first_confirmation:
-                    applications.record_submitted([job])
                 if transitions is not None:
                     previous_status = "applied" if first_confirmation and job.status != "applied" else before_status
                     transitions.append({

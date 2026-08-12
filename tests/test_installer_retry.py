@@ -10,9 +10,21 @@
 """
 import os
 import sys
+import importlib.util
+from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "installer"))
-import installer as inst
+
+def _load_installer_module():
+    """Load the script by path so pytest package-import order cannot shadow it."""
+    path = Path(__file__).resolve().parent.parent / "installer" / "installer.py"
+    spec = importlib.util.spec_from_file_location("wexflow_installer_retry", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+inst = _load_installer_module()
 
 
 def _patch(monkey):

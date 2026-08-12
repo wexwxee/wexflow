@@ -236,6 +236,11 @@ def _proof_to_chat(
         safe_job_id = re.sub(r"[^0-9A-Za-zА-Яа-я._-]+", "_", str(job_id or "job"))
         path = out / f"{datetime.now():%Y%m%d_%H%M%S}_{safe_job_id}.png"
         page.screenshot(path=str(path), full_page=True)
+        if not prepared:
+            # Raw filenames are not proof.  Bind exact bytes to the submitted
+            # job in SQLite; failure here safely leaves platform trust locked.
+            import trust
+            trust.attach_receipt_screen(job_id, path)
         print(f"  скрин-пруф: logs/{out.name}/{path.name}")
 
         import apply as _apply

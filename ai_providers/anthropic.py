@@ -39,6 +39,16 @@ _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.S)
 _JSON_RULE = "Отвечай СТРОГО одним JSON-объектом, без пояснений и без markdown."
 
 
+def _accepts_temperature(model: str) -> bool:
+    """Whether the model accepts non-default sampling parameters.
+
+    Sonnet 5 returns HTTP 400 when ``temperature``/``top_p``/``top_k`` are set
+    to a non-default value.  Omitting the field is the forward-compatible API
+    shape recommended by Anthropic; Haiku 4.5 still accepts it.
+    """
+    return not str(model or "").casefold().startswith("claude-sonnet-5")
+
+
 class AnthropicProvider(base.BaseProvider):
     provider_name = "anthropic"
 
@@ -94,6 +104,8 @@ class AnthropicProvider(base.BaseProvider):
 
         if code == 401 or "authentication_error" in low:
             return base.INVALID_KEY, "Ключ Claude не принят.", retry_after
+        if code == 402 or "billing_error" in low:
+            return base.BILLING_ERROR, "У Claude нет доступного баланса или способа оплаты.", retry_after
         if code == 403 or "permission_error" in low:
             return base.PERMISSION_DENIED, "У ключа нет доступа к этой модели.", retry_after
         if code == 404 or "not_found_error" in low:
@@ -185,8 +197,9 @@ class AnthropicProvider(base.BaseProvider):
             "model": model,
             "messages": messages,
             "max_tokens": max(1, int(max_tokens)),   # обязательное поле
-            "temperature": max(0.0, min(float(temperature), 1.0)),
         }
+        if _accepts_temperature(model):
+            body["temperature"] = max(0.0, min(float(temperature), 1.0))
         if system:
             body["system"] = str(system)[:8000]      # отдельным полем, не сообщением
         try:

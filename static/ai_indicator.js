@@ -255,29 +255,42 @@
     var ai = (state.data && state.data.ai) || {};
     var pctEl = chip.querySelector(".wf-ai-pct");
     var lblEl = chip.querySelector(".wf-ai-lbl");
+    var ring = chip.querySelector(".wf-ai-ring");
     var ringFg = chip.querySelector(".wf-ai-ring .fg");
     if (!ai.connected || !ai.compact) {
       pctEl.textContent = "+";
       lblEl.textContent = "Подключить ИИ";
       chip.title = "ИИ не подключён — нажми, чтобы подключить бесплатно";
+      if (ring) ring.style.display = "";
       if (ringFg) { ringFg.style.stroke = "var(--muted,#9aa0a6)"; ringFg.style.strokeDashoffset = "56.5"; }
       chip.setAttribute("aria-label", "ИИ не подключён");
       return;
     }
     var c = ai.compact;
+    if (c.no_daily_cap) {
+      pctEl.textContent = "оплата по токенам";
+      pctEl.style.color = COLORS.normal;
+      lblEl.textContent = providerLabel(c.provider) + " · " + modelShort(c.model);
+      if (ring) ring.style.display = "none";
+      chip.title = providerLabel(c.provider) + " · " + modelShort(c.model)
+        + " — оплата по токенам, дневного лимита нет";
+      chip.setAttribute("aria-label", "Ресурс ИИ: " + providerLabel(c.provider)
+        + ", оплата по токенам");
+      return;
+    }
     var pct = Math.max(0, Math.min(100, c.percent_remaining | 0));
     var color = COLORS[c.color] || COLORS.green;
     pctEl.textContent = pct + "%";
     pctEl.style.color = color;
     lblEl.textContent = providerLabel(c.provider) + " · " + modelShort(c.model);
+    if (ring) ring.style.display = "";
     if (ringFg) {
       ringFg.style.stroke = color;
       ringFg.style.strokeDashoffset = String(56.5 * (1 - pct / 100));
     }
     var est = c.estimate ? " (оценка)" : "";
     chip.title = providerLabel(c.provider) + " · " + modelShort(c.model)
-      + (c.no_daily_cap ? " — дневного лимита нет, платишь за токены"
-                        : " — осталось " + pct + "%" + est);
+      + " — осталось " + pct + "%" + est;
     chip.setAttribute("aria-label", "Ресурс ИИ: " + providerLabel(c.provider) + ", осталось " + pct + " процентов");
   }
 
@@ -300,6 +313,7 @@
     }
 
     var u = card.usage || {};
+    var payPerToken = !!u.no_daily_cap;
     var pct = Math.max(0, Math.min(100, (u.percent_remaining | 0)));
     var color = COLORS[(u.color)] || COLORS.green;
     var role = card.role === "primary"
@@ -307,7 +321,10 @@
       : (card.role === "secondary" ? '<span class="role">резервный</span>' : '');
     var req = u.requests || {};
     var meta;
-    if (req.precise) {
+    if (payPerToken) {
+      meta = "<b>Оплата по токенам</b> — дневного лимита нет";
+      if (req.used) meta += "<br>Запросов сделано: <b>" + (req.used | 0) + "</b>";
+    } else if (req.precise) {
       meta = "Запросы за день: <b>" + req.remaining + "</b> из " + req.limit + " — точно";
     } else {
       meta = "Запросов сделано: <b>" + (req.used | 0) + "</b> — лимит уточнится после ответа провайдера";
@@ -321,10 +338,11 @@
     if (u.reset_at) meta += "<br>Сброс: " + fmtReset(u.reset_at);
     if (u.last_error_code) meta += "<br>Ошибка: " + safeErr(u.last_error_code);
 
-    return '<div class="wf-ai-card on" style="--wf-c:' + color + '">' + head(role, color) +
+    var progress = payPerToken ? "" :
       '<div class="wf-ai-bar"><i style="width:' + pct + '%;background:' + color + '"></i></div>' +
-      '<div class="wf-ai-meta"><b style="font-size:12.5px">' + pct + '%</b> ресурса осталось<br>' +
-      meta + '</div></div>';
+      '<div class="wf-ai-meta"><b style="font-size:12.5px">' + pct + '%</b> ресурса осталось<br>';
+    return '<div class="wf-ai-card on" style="--wf-c:' + color + '">' + head(role, color) +
+      progress + (payPerToken ? '<div class="wf-ai-meta">' : '') + meta + '</div></div>';
   }
 
   function renderPop() {

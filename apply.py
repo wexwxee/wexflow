@@ -1084,7 +1084,7 @@ def _cloud_proof(job, path, confidence: str = "receipt", ask_send: bool = False)
         print("  скрин не ушёл в чат:", str(e)[:120])
 
 
-def _mark_applied(job_id: str, confidence: str = "receipt"):
+def _mark_applied(job_id: str, confidence: str = "receipt", proof=None):
     """Отмечает вакансию как поданную после реальной отправки.
 
     confidence — способ подтверждения для журнала доверия: "receipt" (квитанция)
@@ -1096,7 +1096,8 @@ def _mark_applied(job_id: str, confidence: str = "receipt"):
     повторно. Поэтому при сбое (например, база кратковременно занята синком)
     повторяем несколько раз с нарастающей паузой, а не сдаёмся с первого раза (F34)."""
     import time as _time
-    from db import utcnow
+    import applications
+    import trust
     last_err = None
     for attempt in range(5):
         try:
@@ -1106,6 +1107,9 @@ def _mark_applied(job_id: str, confidence: str = "receipt"):
                     application_tracker.set_status(j, "applied", source="submission")
                     j.applied_confidence = confidence
                     s.add(j)
+                    if confidence == "receipt" and proof:
+                        trust.record_receipt_screen(s, j, proof)
+                    applications.record_submitted_in_session(s, [j])
                     s.commit()
             print("  ✔ отмечено «подано» в дашборде"
                   + (" (косвенное подтверждение — проверь письмо)" if confidence == "indirect" else ""))
@@ -1228,11 +1232,12 @@ def process_job(page, job, profile, submit: bool, ai_fill: bool = False,
             print("  ОТПРАВЛЕНО ✔" if outcome == "receipt" else "  ВЕРОЯТНО ОТПРАВЛЕНО — проверь письмо от Salling")
             proof = _save_proof(page, job)
             _warn_if_no_proof(job, proof, outcome)
-            _mark_applied(job.id, confidence=outcome)
+            _mark_applied(job.id, confidence=outcome,
+                          proof=proof if outcome == "receipt" else None)
             _cloud_proof(job, proof, outcome)
             sent = True
         else:
-            _save_proof(page, job)   # скрин даже при неуспехе — для разбора/восстановления
+            _save_proof(page, job, subdir="failed")  # только для разбора, не доказательство
             # Защита: если формы Salling больше нет в привычном виде — говорим
             # человеку правду («сайт изменился, нужно обновление»), а не общее
             # «не подтвердилось». Проверяем ТОЛЬКО после неудачи: до неё
@@ -1281,7 +1286,8 @@ def _finish_by_phone(page, job) -> bool:
     if outcome in ("receipt", "indirect"):
         proof = _save_proof(page, job)
         _warn_if_no_proof(job, proof, outcome)
-        _mark_applied(job.id, confidence=outcome)
+        _mark_applied(job.id, confidence=outcome,
+                      proof=proof if outcome == "receipt" else None)
         _cloud_report(
             job.id,
             "submitted" if outcome == "receipt" else "unconfirmed",
@@ -1292,7 +1298,7 @@ def _finish_by_phone(page, job) -> bool:
         _cloud_proof(job, proof, outcome)
         _close_requested = True
         return True
-    _save_proof(page, job)
+    _save_proof(page, job, subdir="failed")
     _cloud_report(job.id, "failed",
                   "Отправка не подтвердилась — анкета осталась открытой на ПК.")
     return False

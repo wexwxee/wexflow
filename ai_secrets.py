@@ -37,6 +37,11 @@ _LOCAL_ID_PATH = config.SHARED_DIR / "ai_account.json"
 _LOCK = threading.RLock()
 
 PROVIDERS = ("anthropic", "gemini", "groq")
+PROVIDER_ENV_VARS = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+}
 
 # In-memory кэш расшифрованных ключей per account — сбрасывается на logout/смену
 # аккаунта, чтобы провайдер прежнего пользователя не «пережил» выход.
@@ -201,8 +206,7 @@ def env_key(provider: str) -> str:
     """Ключ из окружения — ТОЛЬКО dev/CI (не в собранном приложении)."""
     if paths_is_frozen():
         return ""
-    name = {"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY"}.get(provider, "")
+    name = PROVIDER_ENV_VARS.get(provider, "")
     return (os.getenv(name) or "").strip() if name else ""
 
 

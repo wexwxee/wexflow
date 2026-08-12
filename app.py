@@ -579,7 +579,7 @@ def _report_apply_result_safe(job_id: str, state: str, msg: str = "") -> bool:
 # второй процесс apply.py — иначе два процесса дрались бы за один профиль
 # браузера (browser_profile) и подавалась бы только часть заявок. Новые id
 # встают в очередь и подаются сразу следом, как только освободится браузер.
-_apply_queue: list[list[str]] = []
+_apply_queue: list[dict] = []
 _apply_queue_lock = threading.Lock()
 _apply_runner_busy = False
 
@@ -709,7 +709,7 @@ def _release_connector_launch(job_id: str) -> None:
         _connector_processes.pop(key, None)
 
 
-def _enqueue_auto_submit(ids) -> None:
+def _enqueue_auto_submit(ids, *, origin: str = "autopilot") -> None:
     """Поставить пачку id в очередь автоматической подачи и при необходимости
     поднять воркер очереди. Дубликаты (id, который уже ждёт в очереди) отсеиваются."""
     clean, seen = [], set()
@@ -722,10 +722,10 @@ def _enqueue_auto_submit(ids) -> None:
         return
     global _apply_runner_busy
     with _apply_queue_lock:
-        queued = {jid for batch in _apply_queue for jid in batch}
+        queued = {jid for item in _apply_queue for jid in item.get("ids", [])}
         batch = [jid for jid in clean if jid not in queued]
         if batch:
-            _apply_queue.append(batch)
+            _apply_queue.append({"ids": batch, "origin": str(origin or "autopilot")})
         if not _apply_runner_busy and _apply_queue:
             _apply_runner_busy = True
             threading.Thread(target=_apply_runner_loop, daemon=True,
@@ -759,7 +759,13 @@ def _apply_runner_loop() -> None:
             if _tg_stop.is_set() or not _apply_queue:
                 _apply_runner_busy = False
                 return
-            batch = _apply_queue.pop(0)
+            item = _apply_queue.pop(0)
+        batch = autopilot.revalidate_queued_batch(
+            item.get("ids", []), origin=item.get("origin", "autopilot")
+        )
+        if not batch:
+            _sync_application_views_to_cloud(force=True)
+            continue
         spawn_ts = time.time()  # чтобы отличить НАШ файл прогресса от файла прошлой пачки
         proc = _spawn_salling_apply(batch, submit=True, auto_close=True)
         # следим за пачкой и шлём статусы, пока процесс жив
@@ -1299,7 +1305,9 @@ def _handle_tg_decisions(decisions: list) -> None:
 
     result = autopilot.tg_submit_batch(
         submit_ids,
-        launcher=lambda ids: _launch_salling_apply(ids, submit=True, track_autopilot=True),
+        launcher=lambda ids: _launch_salling_apply(
+            ids, submit=True, track_autopilot=True, queue_origin="telegram"
+        ),
     )
     for item in result.get("skipped") or []:
         jid = item.get("job_id")
@@ -4703,17 +4711,17 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
                 application_tracker.set_status(job, status, source="manual")
             else:
                 job.status = status
-            if status == "applied" and not was_submitted:
+            if status in application_tracker.POST_APPLICATION_STATUSES and not was_submitted:
                 # ручная пометка — не отправка: в журнале доверия она должна
                 # отличаться от заявок, которые WexFlow реально отправил
                 job.applied_confidence = "manual"
             s.add(job)
+            if status in application_tracker.POST_APPLICATION_STATUSES and not was_submitted:
+                applications.record_submitted_in_session(s, [job])
             s.commit()
             s.refresh(job)
         else:
             return _redirect_back(request, "/", error="Вакансия не найдена. Возможно, список обновился.")
-    if status == "applied" and not was_submitted:
-        applications.record_submitted([job])
     if status in application_tracker.STATUS_LABELS:
         _start_view_sync()
     return _redirect_back(request, "/", notice=status_labels.get(status, "Статус вакансии обновлён."))
@@ -5819,7 +5827,7 @@ def add_email_proof(
     request: Request,
     email_file: UploadFile = File(...),
 ):
-    """Принять только аутентифицированный .eml, связанный с этой вакансией."""
+    """Принять связанный с вакансией .eml как ручное локальное подтверждение."""
     try:
         evidence = email_evidence.import_upload(job_id, email_file)
     except email_evidence.EvidenceError as exc:
@@ -5840,8 +5848,8 @@ def add_email_proof(
     return _redirect_back(
         request, "/audit",
         notice=(
-            "Письмо работодателя проверено и сохранено локально. "
-            f"Подтверждение: {evidence.authentication.upper()}."
+            "Письмо связано с вакансией и сохранено локально как ручное подтверждение. "
+            "Заголовки .eml можно изменить, поэтому письмо само по себе не включает автоподачу."
         ),
     )
 
@@ -6731,7 +6739,7 @@ async def account_save(request: Request):
     missing = _profile_missing(profile)
     if missing:
         return RedirectResponse("/account?missing=" + quote_plus(",".join(missing)), status_code=303)
-    profile_store.save_profile(profile)
+    profile_store.mutate_profile(lambda current: _apply_profile_form(current, form))
     return RedirectResponse("/account?saved=1", status_code=303)
 
 
@@ -6752,15 +6760,16 @@ async def account_company_answers_save(request: Request):
         for key in profile_store.COMPANY_OVERRIDE_KEYS
     }
     answers = {key: value for key, value in answers.items() if value}
-    profile = profile_store.load_profile()
-    overrides = profile_store.company_overrides(profile)
-    overrides[company_key] = {
-        "label": label,
-        "inherit_defaults": inherit_defaults,
-        "answers": answers,
-    }
-    profile["company_answer_overrides"] = overrides
-    profile_store.save_profile(profile)
+    def update_company_answers(profile):
+        overrides = profile_store.company_overrides(profile)
+        overrides[company_key] = {
+            "label": label,
+            "inherit_defaults": inherit_defaults,
+            "answers": answers,
+        }
+        profile["company_answer_overrides"] = overrides
+
+    profile_store.mutate_profile(update_company_answers)
     return RedirectResponse("/account?saved=company#company-answers", status_code=303)
 
 
@@ -6768,11 +6777,13 @@ async def account_company_answers_save(request: Request):
 async def account_company_answers_delete(request: Request):
     form = await request.form()
     company_key = profile_store.normalize_company_key(str(form.get("company_key") or ""))
-    profile = profile_store.load_profile()
-    overrides = profile_store.company_overrides(profile)
-    overrides.pop(company_key, None)
-    profile["company_answer_overrides"] = overrides
-    profile_store.save_profile(profile)
+
+    def delete_company_answers(profile):
+        overrides = profile_store.company_overrides(profile)
+        overrides.pop(company_key, None)
+        profile["company_answer_overrides"] = overrides
+
+    profile_store.mutate_profile(delete_company_answers)
     return RedirectResponse("/account?saved=company-deleted#company-answers", status_code=303)
 
 
@@ -6872,9 +6883,15 @@ def _sync_profile_with_cloud():
         else:
             cloud = cloud_auth.pull_profile()
             if cloud:
-                merged = dict(local)
-                merged.update(cloud)
-                profile_store.save_profile(merged)
+                def merge_cloud_if_still_empty(profile):
+                    has_fresh_local = any(
+                        str(profile.get(key) or "").strip()
+                        for key in ("first_name", "last_name", "email", "phone")
+                    )
+                    if not has_fresh_local:
+                        profile.update(cloud)
+
+                profile_store.mutate_profile(merge_cloud_if_still_empty)
     except Exception:  # noqa: BLE001 — перенос не должен мешать входу
         pass
 
@@ -6986,24 +7003,28 @@ def settings_documents_save(
     remove_document: str = Form(""),
 ):
     """Global documents used when no store or brand rule overrides them."""
-    profile = profile_store.load_profile()
     remove_key = {
         "cv": "cv_path",
         "cover": "cover_letter_path",
     }.get(str(remove_document or "").strip())
     if remove_key:
-        old_path = str(profile.get(remove_key) or "")
-        profile[remove_key] = ""
-        profile_store.save_profile(profile)
-        profile_store.remove_managed_document(old_path)
+        removed_path = []
+
+        def remove_from_profile(profile):
+            removed_path.append(str(profile.get(remove_key) or ""))
+            profile[remove_key] = ""
+
+        profile_store.mutate_profile(remove_from_profile)
+        profile_store.remove_managed_document(removed_path[0] if removed_path else "")
         return RedirectResponse(
             "/settings/documents?saved=removed#document-rules",
             status_code=303,
         )
-    profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
+    _profile, file_error = _mutate_profile_files(
+        cv_path, cover_letter_path, cv_file, cover_letter_file
+    )
     if file_error:
         return RedirectResponse(_url_with_system_response("/settings/documents", error=file_error), status_code=303)
-    profile_store.save_profile(profile)
     return RedirectResponse("/settings/documents?saved=1#document-rules", status_code=303)
 
 
@@ -7662,9 +7683,9 @@ async def telegram_send_current(request: Request, panel: bool = False):
 @app.post("/settings/profile/autosave")
 async def settings_profile_autosave(request: Request):
     form = await request.form()
-    profile = _apply_profile_form(profile_store.load_profile(), form)
-    profile = profile_store.clean_profile(profile)
-    profile_store.save_profile(profile)
+    profile = profile_store.mutate_profile(
+        lambda current: _apply_profile_form(current, form)
+    )
     return JSONResponse({"ok": True, "missing": _profile_missing(profile), "profile": profile})
 
 
@@ -7928,6 +7949,23 @@ def _profile_files_result(profile: dict, cv_path: str, cover_letter_path: str, c
         return profile, str(exc)
 
 
+def _mutate_profile_files(cv_path: str, cover_letter_path: str,
+                          cv_file, cover_letter_file) -> tuple[dict, str]:
+    """Update document fields without a load/modify/save race."""
+    try:
+        def update(profile):
+            changed, error = _profile_files_result(
+                profile, cv_path, cover_letter_path, cv_file, cover_letter_file
+            )
+            if error:
+                raise ValueError(error)
+            return changed
+
+        return profile_store.mutate_profile(update), ""
+    except ValueError as exc:
+        return {}, str(exc)
+
+
 @app.post("/job/{job_id}/apply/save")
 def save_apply_files(
     job_id: str,
@@ -7936,14 +7974,14 @@ def save_apply_files(
     cv_file: UploadFile | None = File(None),
     cover_letter_file: UploadFile | None = File(None),
 ):
-    profile = profile_store.load_profile()
-    profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
+    _profile, file_error = _mutate_profile_files(
+        cv_path, cover_letter_path, cv_file, cover_letter_file
+    )
     if file_error:
         return RedirectResponse(
             _url_with_system_response(f"/job/{job_id}/apply", error=file_error),
             status_code=303,
         )
-    profile_store.save_profile(profile)
     return RedirectResponse(f"/job/{job_id}/apply?saved=files", status_code=303)
 
 
@@ -8022,7 +8060,9 @@ def _run_apply_worker(
     # Ключи ИИ НИКОГДА не передаются воркеру: ни аргументом, ни в окружении.
     # Воркер получает только идентификатор аккаунта и сам достаёт ключ из
     # account-specific защищённого хранилища (DPAPI).
-    for secret_var in ("GEMINI_API_KEY", "GROQ_API_KEY"):
+    # Один реестр с ai_secrets.env_key: новый провайдер нельзя добавить и
+    # случайно забыть вычистить его ключ из окружения дочернего процесса.
+    for secret_var in ai_secrets.PROVIDER_ENV_VARS.values():
         env.pop(secret_var, None)
     env["WEXFLOW_AI_ACCOUNT"] = ai_secrets.current_account_id()
     cmd = _salling_apply_cmd(ids + ["--web"])
@@ -8140,7 +8180,7 @@ def _spawn_salling_apply(ids: list[str], submit: bool = False, auto_close: bool 
 
 
 def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot: bool = False,
-                          phone_confirm: bool = False) -> None:
+                          phone_confirm: bool = False, queue_origin: str = "autopilot") -> None:
     """Запустить подачу Salling по списку id.
     submit=False — режим подготовки: WexFlow заполняет и останавливается перед отправкой.
     submit + track_autopilot — фоновая подача из Mini App/автопилота: идёт через
@@ -8148,7 +8188,7 @@ def _launch_salling_apply(ids: list[str], submit: bool = False, track_autopilot:
     процесса не дрались за один профиль браузера. Из-за этой драки раньше
     подавалась только одна вакансия, а остальные «зависали в процессе»."""
     if submit and track_autopilot:
-        _enqueue_auto_submit(list(ids))
+        _enqueue_auto_submit(list(ids), origin=queue_origin)
         return
     _spawn_salling_apply(ids, submit=submit, auto_close=False, phone_confirm=phone_confirm)
 
@@ -8188,14 +8228,14 @@ def start_apply(
             ),
             status_code=303,
         )
-    profile = profile_store.load_profile()
-    profile, file_error = _profile_files_result(profile, cv_path, cover_letter_path, cv_file, cover_letter_file)
+    _profile, file_error = _mutate_profile_files(
+        cv_path, cover_letter_path, cv_file, cover_letter_file
+    )
     if file_error:
         return RedirectResponse(
             _url_with_system_response(f"/job/{job_id}/apply", error=file_error),
             status_code=303,
         )
-    profile_store.save_profile(profile)
     # Не запускаем вторую подачу поверх идущей (пачка/автопилот/двойной клик):
     # два браузера на одном профиле дерутся и часть заявок может уйти повторно.
     if not _claim_apply_slot():
@@ -8266,9 +8306,7 @@ def apply_batch(
         (cv_file and cv_file.filename)
         or (cover_letter_file and cover_letter_file.filename)
     ):
-        profile = profile_store.load_profile()
-        profile, file_error = _profile_files_result(
-            profile,
+        _profile, file_error = _mutate_profile_files(
             "",
             "",
             cv_file,
@@ -8276,7 +8314,6 @@ def apply_batch(
         )
         if file_error:
             return _redirect_back(request, "/", error=file_error)
-        profile_store.save_profile(profile)
     # Гонка/двойной клик: если подача уже идёт (другая пачка или автопилот) —
     # второй процесс не запускаем, чтобы два браузера не дрались за профиль.
     if not _claim_apply_slot():

@@ -32,11 +32,15 @@ def _sha256_from_digest(asset: dict | None) -> str:
     return ""
 
 
-def _fetch_sha256_asset(assets: list) -> str:
-    """Запасной путь: рядом с zip лежит файл *.sha256 — скачиваем и читаем хэш."""
+def _fetch_sha256_asset(assets: list, zip_asset: dict | None = None) -> str:
+    """Скачать checksum именно выбранного ZIP, а не первого *.sha256 в релизе."""
+    zip_name = str((zip_asset or {}).get("name") or "").strip().lower()
+    if not zip_name:
+        return ""
+    expected_name = zip_name + ".sha256"
     for asset in assets or []:
         name = (asset.get("name") or "").lower()
-        if not name.endswith(".sha256"):
+        if name != expected_name:
             continue
         url = asset.get("browser_download_url")
         if not url:
@@ -47,15 +51,37 @@ def _fetch_sha256_asset(assets: list) -> str:
                 text = r.read(4096).decode("utf-8", "replace")
         except Exception:  # noqa: BLE001 — нет файла/сети — просто нет суммы
             return ""
-        m = re.search(r"[0-9a-fA-F]{64}", text)
-        if m:
-            return m.group(0).lower()
+        # publish_release пишет GNU-совместимый формат ``hash  filename``.
+        # Не выхватываем произвольные 64 hex-символа из комментария/имени.
+        fields = text.split()
+        if fields and re.fullmatch(r"[0-9a-fA-F]{64}", fields[0]):
+            return fields[0].lower()
     return ""
 
 
 def _resolve_sha256(zip_asset: dict | None, assets: list) -> str:
     """Ожидаемая контрольная сумма zip: сперва из digest GitHub, затем из *.sha256."""
-    return _sha256_from_digest(zip_asset) or _fetch_sha256_asset(assets)
+    return _sha256_from_digest(zip_asset) or _fetch_sha256_asset(assets, zip_asset)
+
+
+def _select_zip_asset(assets: list, tag: str) -> dict | None:
+    """Выбрать архив этого тега; неоднозначный набор не устанавливать."""
+    candidates = [
+        asset for asset in (assets or [])
+        if (asset.get("name") or "").lower().startswith("wexflow-")
+        and (asset.get("name") or "").lower().endswith(".zip")
+    ]
+    version_tag = str(tag or "").strip()
+    if version_tag[:1].lower() == "v":
+        version_tag = version_tag[1:]
+    expected_name = f"wexflow-{version_tag}.zip".lower()
+    exact = [
+        asset for asset in candidates
+        if (asset.get("name") or "").strip().lower() == expected_name
+    ]
+    if len(exact) == 1:
+        return exact[0]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def check() -> dict | None:
@@ -81,13 +107,9 @@ def check() -> dict | None:
     # ищем zip-ассет дистрибутива, иначе ссылку на страницу релиза
     assets = data.get("assets", []) or []
     download = data.get("html_url", "")
-    zip_asset = None
-    for asset in assets:
-        name = (asset.get("name") or "").lower()
-        if name.endswith(".zip"):
-            download = asset.get("browser_download_url", download)
-            zip_asset = asset
-            break
+    zip_asset = _select_zip_asset(assets, tag)
+    if zip_asset:
+        download = zip_asset.get("browser_download_url") or download
     return {
         "version": tag,
         "url": download,

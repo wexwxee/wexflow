@@ -7,8 +7,10 @@
 
 Часы подменяются явным аргументом now — тест не спит и не зависит от машины.
 """
+import datetime as dt
 import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -68,6 +70,15 @@ def test_silence_first_warns_and_only_then_hides(store):
     assert source_health.broken(now=T0 + 25 * HOUR) == ("lidl",)
 
 
+def test_silence_duration_starts_at_first_failure_not_old_success(store):
+    source_health.report("lidl", hits=188, now=T0 - 30 * 24 * HOUR)
+    _silence("lidl", attempts=3, start=T0)
+    row = source_health.state("lidl", now=T0 + 3 * HOUR)
+    assert row["state"] == "quiet"
+    assert 2 * HOUR <= row["silent_seconds"] <= 3 * HOUR
+    assert source_health.state("lidl", now=T0 + 25 * HOUR)["state"] == "broken"
+
+
 def test_source_that_never_answered_is_judged_from_its_first_failure(store):
     """У нового коннектора нет успеха в прошлом — считаем от первой ошибки."""
     for i in range(3):
@@ -94,6 +105,9 @@ def _feed_engine():
                         country="DK", status="new"))
         session.add(Job(id="l2", source="lidl", title="Поданная",
                         country="DK", status="applied"))
+        session.add(Job(id="l3", source="lidl", title="Собеседование",
+                        country="DK", status="interview",
+                        applied_at=dt.datetime(2026, 8, 1, 10, 0)))
         session.commit()
     return engine
 
@@ -106,13 +120,14 @@ def _feed_ids(engine) -> set:
 
 def test_broken_source_leaves_the_feed_but_never_takes_applied_with_it(store):
     engine = _feed_engine()
-    assert _feed_ids(engine) == {"s1", "l1", "l2"}
+    assert _feed_ids(engine) == {"s1", "l1", "l2", "l3"}
 
     _silence("lidl", attempts=3, start=T0)
     with mock.patch.object(source_health, "broken", lambda now=None: ("lidl",)):
         ids = _feed_ids(engine)
     assert "l1" not in ids, "вакансии сломанного источника остались в ленте"
     assert "l2" in ids, "поданная заявка пропала — это история человека"
+    assert "l3" in ids, "post-application stage with applied_at disappeared"
     assert "s1" in ids, "здоровый источник пострадал от чужой поломки"
 
 
@@ -125,11 +140,27 @@ def test_broken_source_does_not_touch_the_database(store):
         assert session.get(Job, "l1").status == "new"
 
 
+def test_hidden_count_does_not_include_post_application_rows(store):
+    engine = _feed_engine()
+
+    @contextmanager
+    def factory():
+        with Session(engine) as session:
+            yield session
+
+    import db as db_module
+    with mock.patch.object(db_module, "get_session", factory):
+        counts = source_health.hidden_counts(("lidl",))
+    assert counts == {"lidl": 1}
+
+
 def test_same_rule_for_a_loaded_job(store):
     with mock.patch.object(source_health, "broken", lambda now=None: ("lidl",)):
         assert feed.visible(Job(id="a", source="salling", country="DK", status="new"))
         assert not feed.visible(Job(id="b", source="lidl", country="DK", status="new"))
         assert feed.visible(Job(id="c", source="lidl", country="DK", status="applied"))
+        assert feed.visible(Job(id="d", source="lidl", country="DK", status="interview",
+                                applied_at=dt.datetime(2026, 8, 1, 10, 0)))
 
 
 def test_broken_source_is_named_out_loud_in_the_banner():

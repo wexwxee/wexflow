@@ -177,7 +177,10 @@ def _verdict(row: dict, now: float | None = None) -> str:
     if int(row.get("fail_streak") or 0) < QUIET_ATTEMPTS:
         return "ok"
     stamp = _now(now)
-    since = float(row.get("last_ok_at") or 0.0) or float(row.get("silent_since") or 0.0)
+    # Silence starts at the first consecutive failed/empty attempt.  A source
+    # may have last succeeded months ago and only started failing today; using
+    # last_ok_at would incorrectly declare it broken immediately.
+    since = float(row.get("silent_since") or 0.0)
     if not since:
         return "quiet"
     return "broken" if stamp - since >= BROKEN_AFTER_SECONDS else "quiet"
@@ -191,8 +194,7 @@ def states(now: float | None = None) -> dict[str, dict]:
         row = {**_blank(key), **(raw or {})}
         row["state"] = _verdict(row, stamp)
         row["silent_seconds"] = (
-            max(0.0, stamp - (float(row.get("last_ok_at") or 0.0)
-                              or float(row.get("silent_since") or 0.0)))
+            max(0.0, stamp - float(row.get("silent_since") or 0.0))
             if row["state"] != "ok" else 0.0
         )
         result[key] = row
@@ -236,6 +238,7 @@ def hidden_counts(sources=None) -> dict[str, int]:
                 select(func.count()).select_from(Job).where(
                     Job.source == key,
                     Job.status.not_in(["closed", "hidden", "applied"]),
+                    Job.applied_at.is_(None),
                 )
             ).one() or 0)
     return counts

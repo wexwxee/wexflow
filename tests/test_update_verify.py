@@ -17,6 +17,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import update_check
 import desktop_app
+from unittest import mock
 
 HEX = "a" * 64
 HEX2 = "b" * 64
@@ -43,6 +44,64 @@ def test_resolve_prefers_digest_no_network():
 def test_resolve_empty_when_nothing():
     # нет ни digest, ни *.sha256-ассета → пустая строка (установку делать нельзя)
     assert update_check._resolve_sha256(None, []) == ""
+
+
+def test_resolve_uses_sidecar_for_selected_zip_only():
+    zip_asset = {"name": "WexFlow-1.4.4.zip"}
+    assets = [
+        {"name": "WexFlow-Setup.exe.sha256", "browser_download_url": "https://bad/setup"},
+        {"name": "WexFlow-1.4.4.zip.sha256", "browser_download_url": "https://good/zip"},
+    ]
+    response = mock.MagicMock()
+    response.__enter__.return_value.read.return_value = (HEX + "  WexFlow-1.4.4.zip\n").encode()
+    with mock.patch.object(update_check.urllib.request, "urlopen", return_value=response) as opened:
+        assert update_check._resolve_sha256(zip_asset, assets) == HEX
+    assert opened.call_args.args[0].full_url == "https://good/zip"
+
+
+def test_sidecar_does_not_accept_hash_embedded_in_arbitrary_text():
+    zip_asset = {"name": "WexFlow-1.4.4.zip"}
+    assets = [
+        {"name": "WexFlow-1.4.4.zip.sha256", "browser_download_url": "https://good/zip"},
+    ]
+    response = mock.MagicMock()
+    response.__enter__.return_value.read.return_value = ("not-a-checksum " + HEX).encode()
+
+    with mock.patch.object(update_check.urllib.request, "urlopen", return_value=response):
+        assert update_check._resolve_sha256(zip_asset, assets) == ""
+
+
+def test_check_ignores_unrelated_zip_asset():
+    response = mock.MagicMock()
+    response.__enter__.return_value.read.return_value = (
+        b'{"tag_name":"v999.0.0","html_url":"https://release.example/",'
+        b'"assets":[{"name":"debug-symbols.zip",'
+        b'"browser_download_url":"https://release.example/debug-symbols.zip",'
+        b'"digest":"sha256:' + HEX.encode() + b'"}]}'
+    )
+    with mock.patch.object(update_check.urllib.request, "urlopen", return_value=response):
+        info = update_check.check()
+
+    assert info["url"] == "https://release.example/"
+    assert info["sha256"] == ""
+
+
+def test_select_zip_asset_prefers_archive_matching_release_tag():
+    assets = [
+        {"name": "WexFlow-1.4.3.zip"},
+        {"name": "WexFlow-1.4.4.zip"},
+    ]
+
+    assert update_check._select_zip_asset(assets, "v1.4.4")["name"] == "WexFlow-1.4.4.zip"
+
+
+def test_select_zip_asset_fails_closed_when_multiple_are_ambiguous():
+    assets = [
+        {"name": "WexFlow-alpha.zip"},
+        {"name": "WexFlow-beta.zip"},
+    ]
+
+    assert update_check._select_zip_asset(assets, "v1.4.4") is None
 
 
 def test_norm_sha_validation():

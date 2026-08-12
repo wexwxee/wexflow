@@ -117,12 +117,12 @@ class ApplicationEvidence(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     source: str = Field(default="salling", index=True)
     job_id: str = Field(index=True)
-    kind: str = Field(default="email", index=True)
+    kind: str = Field(default="email", index=True)  # email | receipt_screen
     path: str = ""                         # имя файла внутри logs/email
     fingerprint: str = Field(index=True)    # sha256 исходного .eml
     sender: str = ""                       # только адрес отправителя
     subject: str = ""                      # короткий заголовок для журнала
-    authentication: str = ""               # dmarc/dkim/spf, прошедший проверку
+    authentication: str = ""               # unverified_header | dkim_verified | provider_verified
     occurred_at: Optional[datetime] = None  # Date из письма, приведённый к UTC
     created_at: datetime = Field(default_factory=utcnow)
 

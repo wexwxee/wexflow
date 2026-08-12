@@ -91,12 +91,20 @@ def test_company_answer_override_endpoint_saves_sparse_rule(client):
         "company_answer_overrides": {},
     }
     saved = {}
+
+    def mutate_profile(updater):
+        current = dict(existing)
+        changed = updater(current)
+        result = changed if changed is not None else current
+        saved.update(result)
+        return result
+
     with (
         mock.patch.object(app_module.profile_store, "load_profile", return_value=existing),
         mock.patch.object(
             app_module.profile_store,
-            "save_profile",
-            side_effect=lambda profile: saved.update(profile),
+            "mutate_profile",
+            side_effect=mutate_profile,
         ),
     ):
         response = client.post(

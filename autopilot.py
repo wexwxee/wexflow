@@ -682,6 +682,11 @@ def submitted_today() -> int:
     return applications.submitted_today_count()
 
 
+def submitting_reserved() -> int:
+    """Auto-submit slots already claimed by queued/running batches."""
+    return applications.submitting_count(origin="autopilot")
+
+
 def submit_log() -> list:
     return applications.submit_log()
 
@@ -732,8 +737,10 @@ def auto_submit_block() -> str:
     Ответ показывается человеку словами: молчащий автопилот без объяснения —
     это ровно та немота, из-за которой перестают доверять программе.
     """
+    # The silent worker currently supports Salling only.  Trust earned by an
+    # assisted Lidl/ATS flow must not make the UI claim that auto-submit is free.
     reasons = []
-    for source in trust.SOURCES:
+    for source in (applications.SOURCE,):
         allowed, why = trust.auto_allowed(source)
         if allowed:
             return ""
@@ -769,6 +776,50 @@ def clear_submitting(ids) -> None:
     """Подача не подтвердилась: строки переходят в failed. Автоотправка сможет
     попробовать снова (как и раньше), а в TG повторно не предложим."""
     applications.mark_failed(ids)
+
+
+def _jobs_in_order(ids) -> list[Job]:
+    wanted = _dedupe_ids(ids)
+    if not wanted:
+        return []
+    with get_session() as session:
+        rows = session.exec(select(Job).where(Job.id.in_(wanted))).all()
+    by_id = {str(job.id): job for job in rows}
+    return [by_id[job_id] for job_id in wanted if job_id in by_id]
+
+
+def revalidate_queued_batch(ids, *, origin: str = "autopilot") -> list[str]:
+    """Last gate immediately before an irreversible browser submission.
+
+    Auto batches may wait behind another browser.  During that wait the user
+    can enable ``always_ask``, disable automation, change filters/schedule or
+    lower the daily limit.  A queued decision is therefore never authority to
+    submit later without re-checking current state.
+    """
+    wanted = _dedupe_ids(ids)
+    if not wanted:
+        return []
+    rule = get_rule()
+    jobs = _jobs_in_order(wanted)
+    if origin == "autopilot":
+        enabled = bool(rule.get("enabled") and rule.get("auto_submit"))
+        enabled = enabled and not rule.get("tg_approval") and within_schedule(rule)
+        capacity = max(0, int(rule.get("daily_limit") or 0) - submitted_today())
+        home = settings_store.get_home()
+        safe_jobs = [
+            job for job in jobs
+            if enabled and _matches(job, rule, home)
+            and trust.auto_allowed(getattr(job, "source", "salling"))[0]
+        ][:capacity]
+    else:
+        # Telegram button is explicit human authority, but freshness and source
+        # are still checked again after waiting in the queue.
+        safe_jobs = [job for job in jobs if can_submit(job)]
+    safe = [str(job.id) for job in safe_jobs]
+    blocked = [job_id for job_id in wanted if job_id not in set(safe)]
+    if blocked:
+        clear_submitting(blocked)
+    return safe
 
 
 def record_submitted(jobs) -> None:
@@ -1113,7 +1164,8 @@ def auto_submit_tick(launcher) -> None:
             return  # режим «по разрешению» главнее: тихую автоотправку не делаем
         if not within_schedule(r):
             return  # вне рабочих часов автопилота
-        remaining = int(r.get("daily_limit") or 0) - submitted_today()
+        remaining = (int(r.get("daily_limit") or 0) - submitted_today()
+                     - submitting_reserved())
         # жёсткий потолок за один скан: даже при большом дневном лимите за раз
         # отправляем не больше MAX_PER_SCAN — ничего не «улетает пачкой».
         remaining = min(remaining, MAX_PER_SCAN)

@@ -20,6 +20,7 @@ APP_NAME = "WexFlow"
 _MODULE = "salling"
 
 _PROJECT_DIR = Path(__file__).resolve().parent
+_TEST_DATA_DIR = os.environ.get("WEXFLOW_TEST_DATA_DIR", "").strip()
 
 
 def is_frozen() -> bool:
@@ -35,7 +36,11 @@ else:
 
 def data_root() -> Path:
     """Куда писать пользовательские данные (БД, профиль, логин браузера)."""
-    d = candidate_profiles.data_dir(candidate_profiles.active_profile_id())
+    # Pytest (including child processes started by tests) must not be able to
+    # touch the development or installed candidate data.  The variable is set
+    # only by tests/conftest.py; normal dev and frozen paths stay unchanged.
+    d = (Path(_TEST_DATA_DIR) if _TEST_DATA_DIR else
+         candidate_profiles.data_dir(candidate_profiles.active_profile_id()))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -50,7 +55,9 @@ def shared_root() -> Path:
     чтобы Salling и 7-Eleven читали один и тот же профиль. В dev — папка проекта
     (как и остальные данные), чтобы не засорять корень диска.
     """
-    if is_frozen():
+    if _TEST_DATA_DIR:
+        d = Path(_TEST_DATA_DIR)
+    elif is_frozen():
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
         d = Path(base) / APP_NAME
     else:

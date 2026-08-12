@@ -14,7 +14,9 @@ import json
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
@@ -75,6 +77,70 @@ def test_corrupt_without_backup_does_not_crash():
     assert any(p.name.startswith("profile.corrupt-") for p in d.iterdir()), "битый файл не отложен"
 
 
+def test_non_object_json_is_quarantined_as_corrupt():
+    d = _fresh_tmp()
+    (d / "profile.json").write_text('["not", "a", "profile"]', encoding="utf-8")
+    assert isinstance(profile_store.load_profile(), dict)
+    assert any(p.name.startswith("profile.corrupt-") for p in d.iterdir())
+
+
+def test_transient_read_oserror_keeps_the_original_profile():
+    d = _fresh_tmp()
+    profile_store.save_profile({"first_name": "Original", "email": "keep@example.com"})
+    path = d / "profile.json"
+    original = path.read_bytes()
+    real_read_text = Path.read_text
+
+    def transient_error(current, *args, **kwargs):
+        if current == path:
+            raise OSError("temporary sharing violation")
+        return real_read_text(current, *args, **kwargs)
+
+    with mock.patch.object(Path, "read_text", transient_error):
+        try:
+            profile_store.load_profile()
+        except OSError:
+            pass
+        else:
+            raise AssertionError("transient I/O error was mistaken for a usable empty profile")
+
+    assert path.exists()
+    assert path.read_bytes() == original
+    assert not any(p.name.startswith("profile.corrupt-") for p in d.iterdir())
+
+
+def test_concurrent_profile_mutations_preserve_both_fields():
+    _fresh_tmp()
+    profile_store.save_profile({"country": "Denmark"})
+    original_country = profile_store.load_profile()["country"]
+    start = threading.Barrier(3)
+    errors = []
+
+    def worker(key, value):
+        try:
+            start.wait(timeout=3)
+            profile_store.mutate_profile(lambda profile: profile.__setitem__(key, value))
+        except BaseException as exc:  # collect thread failures in the main test
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=("first_name", "Ivan")),
+        threading.Thread(target=worker, args=("email", "ivan@example.com")),
+    ]
+    for thread in threads:
+        thread.start()
+    start.wait(timeout=3)
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert not errors
+    assert not any(thread.is_alive() for thread in threads)
+    profile = profile_store.load_profile()
+    assert profile["country"] == original_country
+    assert profile["first_name"] == "Ivan"
+    assert profile["email"] == "ivan@example.com"
+
+
 def test_lidl_profile_scope_is_validated_and_legacy_yes_stays_local():
     assert profile_store.clean_answer("lidl_profile_scope", "international") == "international"
     assert profile_store.clean_answer("lidl_profile_scope", "country") == "country"
@@ -111,6 +177,37 @@ def test_company_answers_require_consent_and_keep_legal_choices_local():
     )
     assert denied["citizenship"] == ""
     assert denied["work_weekends"] == ""
+
+
+def test_cleaning_does_not_freeze_shared_answers_inside_lidl_override():
+    profile = profile_store.clean_profile({
+        "answer_reuse_consent": "yes",
+        "work_weekends": "yes",
+    })
+    assert "work_weekends" not in (
+        profile.get("company_answer_overrides", {}).get("lidl", {}).get("answers", {})
+    )
+    profile["work_weekends"] = "no"
+    assert profile_store.resolve_company_answers(profile, "Lidl")["work_weekends"] == "no"
+
+
+def test_legacy_lidl_local_answers_survive_but_never_reach_other_employers():
+    profile = profile_store.clean_profile({
+        "answer_reuse_consent": "yes",
+        "lidl_discovery": "LinkedIn",
+        "lidl_referral_name": "Lars",
+        "lidl_current_employee": "yes",
+        "lidl_previous_employment": "Lidl Herlev, 2024",
+        "relevant_health_condition": "none",
+    })
+    lidl = profile_store.resolve_company_answers(profile, "Lidl")
+    netto = profile_store.resolve_company_answers(profile, "Netto")
+    for key in (
+        "lidl_discovery", "lidl_referral_name", "lidl_current_employee",
+        "lidl_previous_employment", "relevant_health_condition",
+    ):
+        assert lidl[key]
+        assert netto[key] == ""
 
 
 def test_company_override_can_replace_or_disable_common_answers():
@@ -218,6 +315,9 @@ if __name__ == "__main__":
         test_backup_mirrors_last_good,
         test_corrupt_recovers_from_bak,
         test_corrupt_without_backup_does_not_crash,
+        test_non_object_json_is_quarantined_as_corrupt,
+        test_transient_read_oserror_keeps_the_original_profile,
+        test_concurrent_profile_mutations_preserve_both_fields,
         test_lidl_profile_scope_is_validated_and_legacy_yes_stays_local,
         test_company_answers_require_consent_and_keep_legal_choices_local,
         test_company_override_can_replace_or_disable_common_answers,

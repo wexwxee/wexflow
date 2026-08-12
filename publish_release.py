@@ -8,6 +8,7 @@ import hashlib
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 import changelog
 import version
@@ -22,6 +23,21 @@ def _sha256_of(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _write_sha256(path: Path) -> tuple[str, Path]:
+    checksum = _sha256_of(path)
+    sidecar = path.with_name(path.name + ".sha256")
+    sidecar.write_text(f"{checksum}  {path.name}\n", encoding="ascii")
+    return checksum, sidecar
+
+
+def _files_match_hashes(expected: dict[Path, str]) -> bool:
+    """Защититься от замены ассетов между расчётом хэша и ответом ``y``."""
+    try:
+        return all(_sha256_of(path) == digest for path, digest in expected.items())
+    except OSError:
+        return False
 
 
 def _run_text(cmd: list[str]) -> str:
@@ -49,7 +65,11 @@ def _tracked_worktree_clean() -> bool:
     return unstaged.returncode == 0 and staged.returncode == 0
 
 
-def _release_notes(ver: str) -> str:
+def _release_notes(
+    ver: str,
+    hashes: dict[str, str] | None = None,
+    virustotal_url: str = "",
+) -> str:
     entry = next(
         (item for item in changelog.ENTRIES if str(item.get("version")) == ver),
         None,
@@ -64,7 +84,48 @@ def _release_notes(ver: str) -> str:
         "Для нового компьютера скачай и запусти WexFlow-Setup.exe — он установит свежую версию целиком.",
         "ZIP предназначен для встроенного автообновления.",
     ])
+    if hashes:
+        lines.extend(["", "SHA-256:"])
+        lines.extend(f"- `{name}`: `{digest}`" for name, digest in hashes.items())
+    if virustotal_url:
+        lines.extend(["", f"VirusTotal (точный WexFlow-Setup.exe): {virustotal_url}"])
     return "\n".join(lines)
+
+
+def _virustotal_url(setup_path: Path, expected_sha256: str = "") -> str:
+    """Вернуть только отчёт VirusTotal, привязанный к точному установщику.
+
+    Маркер остаётся в ``dist`` между пересборками. Поэтому одной проверки домена
+    недостаточно: ссылка от предыдущего EXE дала бы релизным заметкам ложное
+    утверждение, что проверен текущий файл.
+    """
+    marker = setup_path.with_name(setup_path.name + ".virustotal.txt")
+    try:
+        value = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    if not value or len(value.splitlines()) != 1:
+        return ""
+
+    expected = str(expected_sha256 or "").strip().lower()
+    if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+        try:
+            expected = _sha256_of(setup_path)
+        except OSError:
+            return ""
+
+    parsed = urlparse(value)
+    if parsed.scheme.lower() != "https":
+        return ""
+    if parsed.netloc.lower() not in {"virustotal.com", "www.virustotal.com"}:
+        return ""
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 3 or parts[:2] != ["gui", "file"]:
+        return ""
+    scanned_sha256 = parts[2].lower()
+    if scanned_sha256 != expected:
+        return ""
+    return value
 
 
 def _setup_sources() -> list[Path]:
@@ -130,26 +191,49 @@ def main() -> int:
         print(setup_problem)
         return 1
 
+    zip_hash, zip_sha_path = _write_sha256(zip_path)
+    setup_hash, setup_sha_path = _write_sha256(setup_path)
+    hashes = {
+        zip_path.name: zip_hash,
+        setup_path.name: setup_hash,
+    }
+    print(f"SHA-256 ZIP:       {zip_hash}")
+    print(f"SHA-256 installer: {setup_hash}")
+
+    vt_url = _virustotal_url(setup_path, setup_hash)
+    if not vt_url:
+        marker = setup_path.with_name(setup_path.name + ".virustotal.txt")
+        print()
+        print(
+            "Перед публикацией проверь ТОЧНЫЙ WexFlow-Setup.exe на VirusTotal "
+            "и сохрани ссылку одной строкой в:"
+        )
+        print(f"  {marker}")
+        print("Файл автоматически никуда не отправлялся. Релиз не опубликован.")
+        return 1
+
     ans = input(f"Опубликовать релиз v{ver} на GitHub сейчас? (y/n): ").strip().lower()
     if ans != "y":
         print(f"Отменено. Архив лежит здесь: {zip_path}")
         return 0
 
-    # Контрольная сумма архива — приложение сверяет её при авто-обновлении и не
-    # ставит подменённый zip. Кладём рядом файл WexFlow-<версия>.zip.sha256.
-    checksum = _sha256_of(zip_path)
-    sha_path = zip_path.with_name(zip_path.name + ".sha256")
-    sha_path.write_text(f"{checksum}  {zip_path.name}\n", encoding="ascii")
-    print(f"SHA-256:     {checksum}")
+    if not _files_match_hashes({zip_path: zip_hash, setup_path: setup_hash}):
+        print("Ассеты изменились после расчёта SHA-256. Релиз не опубликован; пересобери и проверь их заново.")
+        return 1
 
-    assets = [str(zip_path), str(sha_path), str(setup_path)]
+    assets = [
+        str(zip_path),
+        str(zip_sha_path),
+        str(setup_path),
+        str(setup_sha_path),
+    ]
 
     cmd = [
         "gh", "release", "create", f"v{ver}", *assets,
         "--repo", repo,
         "--target", target,
         "--title", f"WexFlow {ver}",
-        "--notes", _release_notes(ver),
+        "--notes", _release_notes(ver, hashes=hashes, virustotal_url=vt_url),
     ]
     print("Публикую…")
     result = subprocess.run(cmd)

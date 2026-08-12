@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlmodel import SQLModel, Session, create_engine
 
 import lidl_monitor
+import applications
 from db import Job
 
 
@@ -167,7 +168,8 @@ def test_no_receipt_job_is_checked_and_portal_confirmation_becomes_submission():
         session.commit()
     with tempfile.TemporaryDirectory() as tmp, \
             mock.patch.object(lidl_monitor, "STATE_PATH", Path(tmp) / "monitor.json"), \
-            mock.patch("db.get_session", sessions):
+            mock.patch("db.get_session", sessions), \
+            mock.patch.object(applications, "get_session", sessions):
         assert lidl_monitor.queue_verification("lidl:verify") is True
         known = lidl_monitor._known_jobs()
         assert [item["id"] for item in known] == ["lidl:verify"]

@@ -6,10 +6,10 @@
 короткого белого списка, инструмент выполняет приложение по своей базе, и
 человеку показываются карточки из результата, а не текст модели.
 
-Порядок появления тоже осознанный: сначала (этап 4) помощник работает
+Порядок появления тоже осознанный: сначала (этап 4) помощник работал
 **вообще без ИИ** — просьбу разбирает `guess_tool` теми же словарями, что и
 поиск. Это значит, что помощник есть у всех, включая людей без ключа и с
-исчерпанной квотой. ИИ (этап 6) добавится сверху и будет уметь ровно одно:
+исчерпанной квотой. ИИ (этап 6) работает сверху и умеет ровно одно:
 выбрать имя инструмента и аргументы. Ни одного факта из модели.
 
 Три границы, которые нельзя переносить:
@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Callable
 
@@ -31,6 +32,7 @@ import labels
 
 MAX_RESULTS = 8
 MAX_QUERY = 120
+AI_ROUTER_TIMEOUT = 8.0
 
 # Что помощник вправе знать о человеке. Всё остальное — не его дело: адрес,
 # телефон, почта, дата рождения и CV к поиску работы в ленте отношения не имеют.
@@ -105,13 +107,19 @@ def _visible_jobs(clauses, *, limit=MAX_RESULTS, extra=None):
     from db import Job, get_session, select
 
     with get_session() as session:
-        stmt = select(Job).where(*feed.visible_clauses(), *(clauses or []))
+        stmt = select(Job).where(
+            *feed.visible_clauses(exclude_applied=True), *(clauses or [])
+        )
         if extra is not None:
             stmt = stmt.where(extra)
-        rows = list(session.exec(stmt.order_by(Job.published.desc()).limit(limit * 3)).all())
-    import relevance
-    rows = [j for j in rows if not relevance.is_barrier(j)]
-    return rows[:limit]
+        stmt = stmt.order_by(Job.published.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit * 3)
+        rows = list(session.exec(stmt).all())
+    if feed.hide_barrier():
+        import relevance
+        rows = [j for j in rows if not relevance.is_barrier(j)]
+    return rows[:limit] if limit is not None else rows
 
 
 # ── сами инструменты ───────────────────────────────────────────────────────
@@ -124,8 +132,12 @@ def _tool_search(args: dict) -> dict:
     with get_session() as session:
         known = [row for row in session.exec(select(Job.city).distinct()).all() if row]
     parsed = query_parse.parse(text, known_cities=known)
-    jobs = _visible_jobs(query_parse.clauses(parsed))
+    # Hours and age are stored in forms that only python_filter can interpret.
+    # Do not cap the SQL candidates before that filter: the first 24 rows may
+    # all fail while a valid result exists immediately after them.
+    jobs = _visible_jobs(query_parse.clauses(parsed), limit=None)
     jobs, _dropped = query_parse.python_filter(parsed, jobs)
+    jobs = jobs[:MAX_RESULTS]
     return {
         "ok": True,
         "kind": "jobs",
@@ -146,7 +158,9 @@ def _tool_nearby(args: dict) -> dict:
     with get_session() as session:
         known = [row for row in session.exec(select(Job.city).distinct()).all() if row]
         parsed = query_parse.parse(text, known_cities=known)
-        pool = list(session.exec(select(Job).where(*feed.visible_clauses(fit=False))).all())
+        pool = list(session.exec(select(Job).where(
+            *feed.visible_clauses(exclude_applied=True, fit=False)
+        )).all())
     home = settings_store.get_home()
     if not parsed.brands and not parsed.cities:
         # «что есть рядом» без названия места — самый частый вопрос. Отвечаем
@@ -169,6 +183,7 @@ def _tool_nearby(args: dict) -> dict:
 
 def _closest_to_home(pool, home) -> dict:
     """Ближайшие к дому вакансии — ответ на «а что есть рядом» без места."""
+    import feed
     import geo
     import relevance
 
@@ -178,7 +193,8 @@ def _closest_to_home(pool, home) -> dict:
                 "href": "/profile#home", "button": "Указать дом"}
     ranked = []
     for job in pool:
-        if job.lat is None or job.lon is None or relevance.is_barrier(job):
+        if (job.lat is None or job.lon is None
+                or (feed.hide_barrier() and relevance.is_barrier(job))):
             continue
         if str(getattr(job, "status", "") or "") in ("closed", "hidden", "applied"):
             continue
@@ -226,8 +242,11 @@ def _tool_recommend(args: dict) -> dict:
                 "href": "/profile#recommend", "button": "Открыть профиль"}
     with get_session() as session:
         jobs = list(session.exec(
-            select(Job).where(*feed.visible_clauses(exclude_applied=True)).limit(400)
+            select(Job).where(*feed.visible_clauses(exclude_applied=True))
         ).all())
+    if feed.hide_barrier():
+        import relevance
+        jobs = [job for job in jobs if not relevance.is_barrier(job)]
     ctx = recommend.build_context(home=settings_store.get_home())
     ranked = recommend.rank(jobs, ctx)[:MAX_RESULTS]
     return {"ok": True, "kind": "jobs",
@@ -296,8 +315,8 @@ def _tool_profile_gaps(_args: dict) -> dict:
 def _tool_application_status(_args: dict) -> dict:
     import applications
 
-    total = applications.submitted_total_count()
-    today = applications.submitted_today_count()
+    total = applications.submitted_total_count(source=None)
+    today = applications.submitted_today_count(source=None)
     if not total:
         return {"ok": True, "kind": "text", "reply": "Поданных заявок пока нет.",
                 "href": "/audit", "button": "Открыть журнал"}
@@ -366,9 +385,9 @@ def run(name: str, args: dict | None = None) -> dict:
     try:
         return {**tool.run(_clean_args(tool, args or {})), "tool": tool.name,
                 "tool_human": tool.human}
-    except Exception as exc:  # noqa: BLE001 — помощник не имеет права ронять страницу
+    except Exception:  # noqa: BLE001 — помощник не имеет права ронять страницу
         return {"ok": False, "kind": "text", "tool": tool.name, "tool_human": tool.human,
-                "reply": f"Не получилось это сделать: {str(exc)[:120]}"}
+                "reply": "Не получилось это сделать. Попробуй ещё раз."}
 
 
 # ── разбор просьбы без ИИ ──────────────────────────────────────────────────
@@ -405,14 +424,109 @@ def guess_tool(text: str, *, job_id: str = "") -> tuple[str, dict]:
     return "search_jobs", {"query": text}
 
 
+def _router_schema() -> dict:
+    """Единственный формат, который модель вправе вернуть."""
+    return {
+        "type": "object",
+        "properties": {
+            "tool": {"type": "string", "enum": list(TOOLS)},
+            "args": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "maxLength": MAX_QUERY},
+                    "job_id": {"type": "string", "maxLength": 220},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "required": ["tool", "args"],
+        "additionalProperties": False,
+    }
+
+
+def _router_prompt(text: str, job_id: str) -> str:
+    """Промпт содержит только запрос и разрешённый диспетчеру контекст."""
+    request = " ".join(str(text or "").split())[:MAX_QUERY]
+    current_job_id = " ".join(str(job_id or "").split())[:220]
+    context = {key: str(value)[:160] for key, value in person_context().items()}
+    payload = {
+        "request": request,
+        "catalog": catalog(),
+        "person_context": context,
+    }
+    if current_job_id:
+        payload["job_id"] = current_job_id
+    return (
+        "Ты диспетчер инструментов. Верни только JSON по схеме: выбери один "
+        "инструмент из catalog и только его аргументы. Не отвечай на вопрос, "
+        "не сообщай факты и не придумывай job_id.\n"
+        + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    )
+
+
+def _valid_ai_route(data, *, current_job_id: str) -> tuple[str, dict] | None:
+    """Проверить ответ локально: провайдеры не одинаково строго применяют schema."""
+    if not isinstance(data, dict) or set(data) != {"tool", "args"}:
+        return None
+    name = data.get("tool")
+    args = data.get("args")
+    tool = TOOLS.get(name) if isinstance(name, str) else None
+    if tool is None or not isinstance(args, dict):
+        return None
+    if not set(args).issubset(tool.args):
+        return None
+    for key, value in args.items():
+        spec = tool.args[key]
+        if spec[0] == "str" and not isinstance(value, str):
+            return None
+        if spec[0] == "int" and (not isinstance(value, int) or isinstance(value, bool)):
+            return None
+
+    clean = _clean_args(tool, args)
+    if set(clean) != set(args):
+        return None
+    if "job_id" in tool.args:
+        expected = " ".join(str(current_job_id or "").split())[:220]
+        # Идентификатор вакансии приходит только из открытой карточки, не от модели.
+        if not expected or clean.get("job_id") != expected:
+            return None
+    return name, clean
+
+
+def _ai_route(text: str, *, job_id: str) -> tuple[str, dict] | None:
+    """Попросить ИИ выбрать инструмент; любая ошибка означает обычный fallback."""
+    import ai_gateway
+
+    try:
+        if not ai_gateway.available():
+            return None
+        result = ai_gateway.generate_json(
+            _router_prompt(text, job_id),
+            schema=_router_schema(),
+            temperature=0.0,
+            max_tokens=160,
+            timeout=AI_ROUTER_TIMEOUT,
+            retries=0,
+        )
+    except Exception:  # noqa: BLE001 — отсутствие ИИ не должно ломать помощника
+        return None
+    if not getattr(result, "ok", False):
+        return None
+    return _valid_ai_route(getattr(result, "data", None), current_job_id=job_id)
+
+
 def ask(text: str, *, job_id: str = "") -> dict:
-    """Ответить на просьбу человека. Пока без ИИ — только словари и инструменты."""
-    name, args = guess_tool(text, job_id=job_id)
-    if not name:
+    """Ответить фактами приложения; ИИ вправе выбрать только инструмент и args."""
+    fallback_name, fallback_args = guess_tool(text, job_id=job_id)
+    if not fallback_name:
         return {"ok": True, "kind": "text", "used_ai": False,
                 "reply": "Напиши, что ищешь: «нетто херлев», «что есть рядом», "
                          "«что мне подходит» или «чего не хватает для подачи»."}
-    return {**run(name, args), "used_ai": False}
+    routed = _ai_route(text, job_id=job_id)
+    if routed is None:
+        return {**run(fallback_name, fallback_args), "used_ai": False}
+    name, args = routed
+    return {**run(name, args), "used_ai": True}
 
 
 def person_context() -> dict:

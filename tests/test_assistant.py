@@ -1,4 +1,4 @@
-"""Помощник сбоку (этап 4): диспетчер умений, а не рассказчик.
+"""Помощник сбоку (этап 6): ИИ-диспетчер умений, а не рассказчик.
 
 Чат, который «сам всё знает», врёт: модель придумает вакансию, адрес и часы, и
 человек поедет в несуществующий магазин. Поэтому помощник только выбирает
@@ -13,6 +13,7 @@
 import os
 import sys
 from contextlib import contextmanager
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,7 +23,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, Session, create_engine
 
 import assistant
-from db import Job
+from db import Application, Job, utcnow
 
 HOME = {"lat": 55.70, "lon": 12.55, "address": "Дом 1"}
 
@@ -43,6 +44,7 @@ def db():
         session.add(_job("a", "Kasseassistent"))
         session.add(_job("b", "1. assistent", city="Gentofte", point=(55.745, 12.552)))
         session.add(_job("hidden", "Butiksassistent", fit="danish", engine="rules"))
+        session.add(_job("applied", "AppliedOnly", point=(55.7001, 12.5501), status="applied"))
         session.commit()
 
     @contextmanager
@@ -50,10 +52,12 @@ def db():
         with Session(engine) as session:
             yield session
 
+    import applications
     import db as db_mod
     with mock.patch.object(db_mod, "get_session", factory), \
+            mock.patch.object(applications, "get_session", factory), \
             mock.patch("settings_store.get_home", lambda: HOME):
-        yield
+        yield engine
 
 
 # ── белый список и аргументы ───────────────────────────────────────────────
@@ -72,12 +76,14 @@ def test_arguments_are_cleaned_to_the_schema(db):
 
 
 def test_tool_failure_never_raises():
-    with mock.patch.object(assistant, "_tool_search", side_effect=RuntimeError("бум")):
+    secret = "DATABASE_PASSWORD=do-not-leak"
+    with mock.patch.object(assistant, "_tool_search", side_effect=RuntimeError(secret)):
         broken = assistant.Tool("search_jobs", "Поиск", {"query": ("str", 10)},
                                 assistant._tool_search)
         with mock.patch.dict(assistant.TOOLS, {"search_jobs": broken}):
             out = assistant.run("search_jobs", {"query": "нетто"})
     assert out["ok"] is False and "Не получилось" in out["reply"]
+    assert secret not in out["reply"]
 
 
 # ── разбор просьбы без ИИ ──────────────────────────────────────────────────
@@ -94,15 +100,152 @@ def test_guess_tool_understands_plain_russian():
 def test_works_without_any_ai(db):
     """У большинства людей ключа нет — помощник обязан работать и так."""
     with mock.patch("ai_gateway.available", return_value=False), \
-            mock.patch("ai_gateway.chat", side_effect=AssertionError("позвал ИИ")):
+            mock.patch("ai_gateway.generate_json", side_effect=AssertionError("позвал ИИ")):
         out = assistant.ask("нетто херлев")
     assert out["ok"] is True and out["used_ai"] is False
     assert out["results"], "поиск без ИИ ничего не вернул"
 
 
 def test_hidden_jobs_are_never_offered(db):
-    out = assistant.ask("Butiksassistent")
+    with mock.patch("ai_gateway.available", return_value=False):
+        out = assistant.ask("Butiksassistent")
     assert all(card["id"] != "hidden" for card in out.get("results", []))
+
+
+def test_ai_can_only_route_to_a_whitelisted_tool(db):
+    profile = {
+        "first_name": "Ivan", "city": "København", "languages": "English",
+        "email": "ivan@example.com", "phone": "+45 12 34 56 78",
+        "address": "Secret street 1", "cv_path": "C:/secret/cv.pdf",
+    }
+    response = SimpleNamespace(
+        ok=True,
+        data={"tool": "search_jobs", "args": {"query": "нетто херлев"}},
+    )
+    with mock.patch("profile_store.load_profile", return_value=profile), \
+            mock.patch("ai_gateway.available", return_value=True), \
+            mock.patch("ai_gateway.generate_json", return_value=response) as generate:
+        out = assistant.ask("найди работу в нетто херлев")
+
+    assert out["ok"] is True and out["used_ai"] is True
+    assert out["tool"] == "search_jobs"
+    prompt = generate.call_args.args[0]
+    assert "найди работу в нетто херлев" in prompt
+    assert "catalog" in prompt and "person_context" in prompt
+    for secret in ("ivan@example.com", "+45", "Secret street", "cv.pdf"):
+        assert secret not in prompt
+    assert generate.call_args.kwargs["retries"] == 0
+    assert generate.call_args.kwargs["timeout"] == assistant.AI_ROUTER_TIMEOUT
+    assert generate.call_args.kwargs["schema"]["properties"]["tool"]["enum"] == list(assistant.TOOLS)
+
+
+@pytest.mark.parametrize("response", [
+    SimpleNamespace(ok=False, data=None),
+    SimpleNamespace(ok=True, data=None),
+    SimpleNamespace(ok=True, data={"tool": "submit_application", "args": {}}),
+    SimpleNamespace(ok=True, data={"tool": "search_jobs", "args": {}, "reply": "выдумка"}),
+])
+def test_bad_ai_response_falls_back_to_deterministic_router(db, response):
+    with mock.patch("ai_gateway.available", return_value=True), \
+            mock.patch("ai_gateway.generate_json", return_value=response):
+        out = assistant.ask("что есть рядом")
+    assert out["ok"] is True and out["used_ai"] is False
+    assert out["tool"] == "nearby_jobs"
+
+
+def test_ai_exception_falls_back_to_deterministic_router(db):
+    with mock.patch("ai_gateway.available", return_value=True), \
+            mock.patch("ai_gateway.generate_json", side_effect=TimeoutError("late")):
+        out = assistant.ask("что есть рядом")
+    assert out["ok"] is True and out["used_ai"] is False
+    assert out["tool"] == "nearby_jobs"
+
+
+def test_ai_cannot_invent_or_replace_job_id(db):
+    response = SimpleNamespace(
+        ok=True,
+        data={"tool": "prepare_application", "args": {"job_id": "applied"}},
+    )
+    with mock.patch("ai_gateway.available", return_value=True), \
+            mock.patch("ai_gateway.generate_json", return_value=response):
+        out = assistant.ask("подайся на эту вакансию", job_id="a")
+    assert out["used_ai"] is False
+    assert out["tool"] == "prepare_application"
+    assert out["href"] == "/job/a"
+
+
+def test_search_and_nearby_never_include_applied_jobs(db):
+    found = assistant.run("search_jobs", {"query": ""})
+    assert found["results"]
+    assert all(card["id"] != "applied" for card in found.get("results", []))
+
+    captured = {}
+
+    def observe_pool(pool, **_kwargs):
+        captured["ids"] = {job.id for job in pool}
+        return None
+
+    with mock.patch("nearby.suggestions", side_effect=observe_pool):
+        assistant.run("nearby_jobs", {"query": "netto herlev"})
+    assert "applied" not in captured["ids"]
+
+
+def test_disabled_language_filter_is_respected_by_assistant(db):
+    """Turning the feed filter off must also turn off Python post-filtering."""
+    with mock.patch("feed.hide_barrier", return_value=False):
+        found = assistant.run("search_jobs", {"query": "Butiksassistent"})
+    assert "hidden" in {card["id"] for card in found["results"]}
+
+
+def test_structured_search_filters_before_taking_the_result_limit(db):
+    """A matching age/hour row after 24 newer rejects must still be found."""
+    with Session(db) as session:
+        for index in range(30):
+            job = _job(f"adult-{index}", "Butiksassistent")
+            job.published = f"2026-08-12T12:{index:02d}:00"
+            session.add(job)
+        match = _job("under-18-after-cap", "Servicemedarbejder under 18 år")
+        match.published = "2020-01-01T00:00:00"
+        session.add(match)
+        session.commit()
+
+    found = assistant.run("search_jobs", {"query": "до 18"})
+    assert "under-18-after-cap" in {card["id"] for card in found["results"]}
+
+
+def test_recommend_ranks_the_entire_visible_catalog(db):
+    """The best job may be beyond SQLite's first arbitrary 400 rows."""
+    with Session(db) as session:
+        for index in range(405):
+            session.add(_job(f"bulk-{index}", "Butiksassistent"))
+        session.commit()
+
+    captured = {}
+
+    def rank_all(jobs, _ctx):
+        captured["ids"] = {job.id for job in jobs}
+        target = next(job for job in jobs if job.id == "bulk-404")
+        return [(target, 100.0, ["test"])]
+
+    with mock.patch("recommend.enabled", return_value=True), \
+            mock.patch("recommend.build_context", return_value=object()), \
+            mock.patch("recommend.rank", side_effect=rank_all):
+        out = assistant.run("recommend_jobs", {})
+    assert "bulk-404" in captured["ids"]
+    assert out["results"][0]["id"] == "bulk-404"
+
+
+def test_application_status_counts_submissions_from_every_source(db):
+    with Session(db) as session:
+        session.add(Application(source="salling", job_id="s-one", state="submitted",
+                                submitted_at=utcnow()))
+        session.add(Application(source="lidl", job_id="l-one", state="submitted",
+                                submitted_at=utcnow()))
+        session.commit()
+
+    out = assistant.run("application_status", {})
+    assert out["ok"] is True
+    assert "2" in out["reply"]
 
 
 def test_nearby_without_a_place_answers_from_home(db):
@@ -156,10 +299,11 @@ def test_no_tool_can_ever_submit_an_application(db):
     }
     started = {name: patch.start() for name, patch in guards.items()}
     try:
-        for name in assistant.TOOLS:
-            assistant.run(name, {"query": "нетто", "job_id": "a"})
-        assistant.ask("подайся на эту вакансию", job_id="a")
-        assistant.ask("отправь заявку прямо сейчас", job_id="a")
+        with mock.patch("ai_gateway.available", return_value=False):
+            for name in assistant.TOOLS:
+                assistant.run(name, {"query": "нетто", "job_id": "a"})
+            assistant.ask("подайся на эту вакансию", job_id="a")
+            assistant.ask("отправь заявку прямо сейчас", job_id="a")
     finally:
         for patch in guards.values():
             patch.stop()

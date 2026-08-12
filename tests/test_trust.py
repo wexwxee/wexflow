@@ -14,6 +14,7 @@ PATH настроек подменяется на временный файл �
 import os
 import sys
 import tempfile
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -52,9 +53,9 @@ def _applied(job_id, source="salling", confidence="receipt", title="Kasseassiste
 
 
 def _proofs(*keys):
-    """Подменяет каталог снимков: ключ → имя файла."""
+    """Подменяет реестр валидных receipt-screen evidence: job id → файл."""
     return mock.patch.object(
-        trust, "proof_index",
+        trust, "valid_receipt_screens",
         return_value={key: f"20260808_120000_{key}.png" for key in keys})
 
 
@@ -106,36 +107,65 @@ def test_employer_portal_proves_without_our_screenshot():
     _with_temp_settings(body)
 
 
-def test_authenticated_employer_email_is_an_independent_proof():
-    """Письмо не заменяет запись счётчиком: trust видит живой артефакт реестра."""
+def test_unverified_email_headers_cannot_unlock_platform_trust():
+    """Editable Authentication-Results is useful evidence, not auto-submit proof."""
     def body():
         job = _applied("mail-1", confidence="email")
         evidence = ApplicationEvidence(
             source="salling", job_id=job.id, kind="email", path="mail.eml",
             fingerprint="a" * 64, sender="jobs@sallinggroup.com",
-            authentication="dmarc", occurred_at=job.applied_at,
+            authentication="unverified_header", occurred_at=job.applied_at,
         )
         email_row = SimpleNamespace(
             job_id=job.id, occurred_at=job.applied_at, created_at=job.applied_at,
         )
         with mock.patch.object(trust, "get_session", _db([job, evidence])), \
-                mock.patch.object(trust.email_evidence, "valid_rows", return_value=[email_row]), \
+                mock.patch.object(trust.email_evidence, "valid_rows", return_value=[]), \
                 _proofs():
             row = trust.stats("salling")
-        assert row["proven"] is True
-        assert row["emails"] == 1 and row["proofs"] == 1
+        assert row["proven"] is False
+        assert row["emails"] == 0 and row["proofs"] == 0
 
     _with_temp_settings(body)
 
 
-def test_connector_screenshot_name_is_matched():
-    """Коннекторы пишут снимок с заменой двоеточий: lidl:7 → lidl_7."""
+def test_connector_receipt_screen_is_bound_to_the_exact_job_id():
     def body():
         rows = [_applied("lidl:7", source="lidl")]
-        with mock.patch.object(trust, "get_session", _db(rows)), _proofs("lidl_7"):
+        with mock.patch.object(trust, "get_session", _db(rows)), _proofs("lidl:7"):
             assert trust.stats("lidl")["proven"] is True
 
     _with_temp_settings(body)
+
+
+def test_unregistered_failure_png_can_never_prove_a_receipt(tmp_path):
+    proof_dir = tmp_path / "logs" / "applied"
+    proof_dir.mkdir(parents=True)
+    (proof_dir / "20260808_120000_a.png").write_bytes(b"failed page screenshot")
+    with mock.patch.object(trust.config, "DATA_DIR", tmp_path), \
+            mock.patch.object(trust, "get_session", _db([_applied("a")])):
+        assert trust.proof_index().get("a")
+        row = trust.stats("salling")
+    assert row["proven"] is False and row["receipts_without_proof"] == 1
+
+
+def test_registered_receipt_screen_is_hash_checked(tmp_path):
+    proof_dir = tmp_path / "logs" / "applied"
+    proof_dir.mkdir(parents=True)
+    path = proof_dir / "20260808_120000_a.png"
+    path.write_bytes(b"real receipt bytes")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    job = _applied("a")
+    evidence = ApplicationEvidence(
+        source="salling", job_id="a", kind="receipt_screen", path=path.name,
+        fingerprint=digest, occurred_at=job.applied_at,
+    )
+    sessions = _db([job, evidence])
+    with mock.patch.object(trust.config, "DATA_DIR", tmp_path), \
+            mock.patch.object(trust, "get_session", sessions):
+        assert trust.stats("salling")["proven"] is True
+        path.write_bytes(b"truncated or replaced")
+        assert trust.stats("salling")["proven"] is False
 
 
 # ── Доверие не переносится между площадками ────────────────────────────────

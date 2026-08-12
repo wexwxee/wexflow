@@ -175,8 +175,12 @@ def test_worker_never_receives_keys_in_env_or_argv():
         captured["env"] = kwargs.get("env") or {}
         return _Proc()
 
-    with _Env(), mock.patch.dict(os.environ,
-                                 {"GEMINI_API_KEY": KEY_GEM_A, "GROQ_API_KEY": KEY_GROQ_B}):
+    anthropic_key = "sk-ant-secret-worker-sentinel"
+    with _Env(), mock.patch.dict(os.environ, {
+        "GEMINI_API_KEY": KEY_GEM_A,
+        "GROQ_API_KEY": KEY_GROQ_B,
+        "ANTHROPIC_API_KEY": anthropic_key,
+    }):
         with mock.patch.object(app, "_load_jobs_snapshot", return_value=[("job-1", None)]), \
              mock.patch.object(app.subprocess, "Popen", side_effect=fake_popen), \
              mock.patch("builtins.open", mock.mock_open()), \
@@ -184,11 +188,13 @@ def test_worker_never_receives_keys_in_env_or_argv():
             app._run_apply_worker(["job-1"], submit=False, ai_fill=True)
 
     env, cmd = captured["env"], captured["cmd"]
-    assert "GEMINI_API_KEY" not in env and "GROQ_API_KEY" not in env
+    assert all(name not in env for name in ai_secrets.PROVIDER_ENV_VARS.values())
     assert env["WEXFLOW_AI_ACCOUNT"] == "A"
     assert KEY_GEM_A not in " ".join(map(str, cmd))
     assert KEY_GROQ_B not in " ".join(map(str, cmd))
-    assert not any(KEY_GEM_A in str(v) or KEY_GROQ_B in str(v) for v in env.values())
+    secrets = (KEY_GEM_A, KEY_GROQ_B, anthropic_key)
+    assert not any(secret in " ".join(map(str, cmd)) for secret in secrets)
+    assert not any(any(secret in str(v) for secret in secrets) for v in env.values())
 
 
 def test_legacy_gemini_is_not_usable_by_unconfirmed_account():

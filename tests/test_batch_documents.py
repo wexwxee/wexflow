@@ -30,18 +30,20 @@ def test_batch_upload_is_saved_before_worker_starts():
         stack.enter_context(mock.patch.object(
             app, "_partition_submit_ids", return_value=(["job-1"], [], [])
         ))
-        stack.enter_context(mock.patch.object(
-            app.profile_store, "load_profile", return_value={"cv_path": "old.pdf"}
-        ))
         files_result = stack.enter_context(mock.patch.object(
             app,
             "_profile_files_result",
             side_effect=lambda *args: (events.append("documents") or saved_profile, ""),
         ))
-        save_profile = stack.enter_context(mock.patch.object(
-            app.profile_store,
-            "save_profile",
-            side_effect=lambda profile: events.append("saved"),
+
+        def mutate_profile(updater):
+            current = {"cv_path": "old.pdf"}
+            changed = updater(current)
+            events.append("saved")
+            return changed if changed is not None else current
+
+        mutate = stack.enter_context(mock.patch.object(
+            app.profile_store, "mutate_profile", side_effect=mutate_profile
         ))
         stack.enter_context(mock.patch.object(app, "_claim_apply_slot", return_value=True))
         worker = stack.enter_context(mock.patch.object(
@@ -61,7 +63,7 @@ def test_batch_upload_is_saved_before_worker_starts():
     assert response.headers["location"] == "/?batch=1&mode=dry"
     assert events == ["documents", "saved", "worker"]
     assert files_result.call_args.args[3] is cv
-    save_profile.assert_called_once_with(saved_profile)
+    mutate.assert_called_once()
     worker.assert_called_once_with(["job-1"], submit=False, ai_fill=False)
 
 
@@ -76,12 +78,11 @@ def test_invalid_batch_upload_does_not_start_worker():
             app, "_partition_submit_ids", return_value=(["job-1"], [], [])
         ))
         stack.enter_context(mock.patch.object(
-            app.profile_store, "load_profile", return_value={}
-        ))
-        stack.enter_context(mock.patch.object(
             app, "_profile_files_result", return_value=({}, "Можно загрузить только PDF.")
         ))
-        save_profile = stack.enter_context(mock.patch.object(app.profile_store, "save_profile"))
+        mutate = stack.enter_context(mock.patch.object(
+            app.profile_store, "mutate_profile", side_effect=lambda updater: updater({})
+        ))
         claim = stack.enter_context(mock.patch.object(app, "_claim_apply_slot"))
         worker = stack.enter_context(mock.patch.object(app, "_run_apply_worker"))
 
@@ -94,7 +95,7 @@ def test_invalid_batch_upload_does_not_start_worker():
 
     assert response.status_code == 303
     assert "error=" in response.headers["location"]
-    save_profile.assert_not_called()
+    mutate.assert_called_once()
     claim.assert_not_called()
     worker.assert_not_called()
 
