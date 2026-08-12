@@ -5188,6 +5188,43 @@ async def settings_recommend(request: Request):
     return _redirect_back(request, "/profile#recommend", notice=notice)
 
 
+def _underage_feed_count() -> int:
+    """Сколько открытых вакансий — только для тех, кому нет 18.
+
+    Считаем БЕЗ возрастного правила: цифра должна отвечать на вопрос «сколько
+    их вообще», а не «сколько осталось после того, как я их скрыл».
+    """
+    try:
+        with get_session() as session:
+            return int(session.exec(select(func.count(Job.id)).where(
+                Job.status.not_in(list(feed.CLOSED_STATUSES)),
+                Job.applied_at.is_(None),
+                (Job.job_level == feed.UNDER18_LEVEL)
+                | func.lower(func.coalesce(Job.title, "")).like("%under 18%")
+                | func.lower(func.coalesce(Job.title, "")).like("%under-18%"),
+            )).one() or 0)
+    except Exception:  # noqa: BLE001 — цифра для подписи не имеет права ронять страницу
+        return 0
+
+
+@app.post("/settings/age")
+async def settings_age(request: Request):
+    """Возраст человека: «детская» ставка взрослому — не предложение."""
+    form = await request.form()
+    raw = str(form.get("age") or "").strip()
+    saved = feed.set_viewer_age(raw or 0)
+    if saved is None:
+        notice = ("Возраст убран. Лента снова показывает и вакансии "
+                  "«under 18 år».")
+    elif saved < 18:
+        notice = (f"Запомнил: тебе {saved}. Тебе открыты и обычные ставки, "
+                  "и «under 18 år» — лента показывает все.")
+    else:
+        notice = (f"Запомнил: тебе {saved}. Вакансии «under 18 år» убраны "
+                  "из ленты — туда берут только тех, кому нет 18.")
+    return _redirect_back(request, "/profile#age", notice=notice)
+
+
 @app.post("/settings/language-barrier")
 async def settings_language_barrier(request: Request):
     """Скрывать ли из ленты вакансии, где точно нужен датский или диплом."""
@@ -6200,6 +6237,9 @@ def _render_account(request: Request, mode: str = "account", saved: str = "",
         "feed_any_country": feed.any_country(),
         # языковой барьер: тумблер и текущая картина по базе
         "hide_barrier": feed.hide_barrier(),
+        # возраст: без него треть ленты — ставки «under 18 år»
+        "viewer_age": feed.viewer_age(),
+        "underage_count": _underage_feed_count(),
         "fit_stats": relevance.stats(),
         "fit_ai_available": bool(ai_filters.available() or ai_filters.gemini_available()),
         # рекомендации: тумблер (по умолчанию выключено)

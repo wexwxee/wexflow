@@ -53,6 +53,15 @@ _RE_HOURS_BARE = re.compile(rf"\b(\d{{1,2}})\s*{_HOURS_WORD}\b", re.I)
 # границы слова там нет и всё выражение молча перестаёт срабатывать.
 _RE_UNDER18 = re.compile(r"\b(?:до\s*18|под\s*18|under\s*-?\s*18|школьник\w*|несовершеннолетн\w*)", re.I)
 _RE_ADULT = re.compile(r"\b(?:18\s*\+|от\s*18\b|взросл\w*|совершеннолетн\w*|adult\b)", re.I)
+# Человек чаще называет свой возраст, чем формулирует фильтр: «мне 20 лет»,
+# «мне 20», «20 лет», «я 1998 года» — это тот же факт другими словами. Число
+# без слова «лет» берём только после «мне/мне уже», иначе «нетто 18» стало бы
+# возрастом вместо номера магазина.
+_RE_MY_AGE = re.compile(
+    r"\b(?:мне|мне\s+уже|я)\s+(\d{1,2})\s*(?:лет|года|год|годика)?\b"
+    r"|\b(\d{1,2})\s*(?:лет|года|год|годика)\b",
+    re.I,
+)
 
 _FULL_TIME = ("полная", "полный", "фуллтайм", "fuldtid", "fulltime", "full-time")
 _PART_TIME = ("частичная", "подработка", "подработку", "неполная", "deltid",
@@ -161,6 +170,18 @@ def _take_hours(text: str, notes: list[str]) -> tuple[str, float | None, float |
 
 
 def _take_age(text: str, notes: list[str]) -> tuple[str, str]:
+    match = _RE_MY_AGE.search(text)
+    if match:
+        years = int(match.group(1) or match.group(2))
+        if 10 <= years <= 99:
+            rest = text[: match.start()] + " " + text[match.end():]
+            if years < 18:
+                # Подростку открыты и «детские», и обычные ставки, поэтому его
+                # возраст ничего не отсекает — он лишь снимает вопрос.
+                notes.append(f"тебе {years} — показываю и обычные вакансии, и «до 18»")
+                return rest, ""
+            notes.append(f"тебе {years} — без вакансий «только до 18 лет»")
+            return rest, "adult"
     match = _RE_UNDER18.search(text)
     if match:
         notes.append("только вакансии для тех, кому нет 18")
@@ -170,6 +191,19 @@ def _take_age(text: str, notes: list[str]) -> tuple[str, str]:
         notes.append("без вакансий «только до 18 лет»")
         return text[: match.start()] + " " + text[match.end():], "adult"
     return text, ""
+
+
+def stated_age(text: str) -> int | None:
+    """Возраст, который человек назвал прямо. None — не называл.
+
+    Отдельно от :func:`parse`, потому что это факт о человеке, а не фильтр
+    одного запроса: приложение вправе запомнить его насовсем.
+    """
+    match = _RE_MY_AGE.search(" ".join(str(text or "").split()))
+    if not match:
+        return None
+    years = int(match.group(1) or match.group(2))
+    return years if 10 <= years <= 99 else None
 
 
 def parse(text: str, *, exact: bool = False, known_cities=None) -> Query:

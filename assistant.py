@@ -12,6 +12,14 @@
 исчерпанной квотой. ИИ (этап 6) работает сверху и умеет ровно одно:
 выбрать имя инструмента и аргументы. Ни одного факта из модели.
 
+С 12.08.2026 у ИИ появилась вторая работа — **слова**. Раньше человек получал
+одну и ту же заготовку на любой случай («Ничего не нашлось. Попробуй назвать
+магазин или город»), и помощник справедливо казался тупым. Теперь, если ключ
+подключён, ИИ формулирует ответ — но строго ПОВЕРХ данных инструмента: список
+карточек, числа и статусы остаются те, что посчитало приложение, а модель лишь
+пересказывает их по-человечески. Нет ключа, кончилась квота, сбой сети —
+человек видит прежний детерминированный текст, и помощник продолжает работать.
+
 Три границы, которые нельзя переносить:
   1. **Только белый список.** Неизвестное имя инструмента или кривой аргумент
      — вежливый отказ, а не попытка догадаться. Никакого SQL «из текста».
@@ -21,10 +29,15 @@
   3. **О человеке — только по делу.** Наружу (в будущий промпт ИИ) уходит
      узкий список полей: город, языки, опыт. Ни почты, ни телефона, ни адреса,
      ни даты рождения, ни содержимого CV — по образцу `connectors/ai_fill`.
+  4. **Слова — можно, факты — нет.** ИИ переписывает только строку ответа и
+     только из того, что вернул инструмент. Карточки вакансий он не создаёт и
+     не меняет никогда, а карточку подтверждения подачи не трогает вовсе:
+     обещание «кнопку жмёшь ты» должно звучать дословно.
 """
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -32,7 +45,9 @@ import labels
 
 MAX_RESULTS = 8
 MAX_QUERY = 120
+MAX_REPLY = 600
 AI_ROUTER_TIMEOUT = 8.0
+AI_REPLY_TIMEOUT = 9.0
 
 # Что помощник вправе знать о человеке. Всё остальное — не его дело: адрес,
 # телефон, почта, дата рождения и CV к поиску работы в ленте отношения не имеют.
@@ -69,7 +84,11 @@ def _clean_args(tool: "Tool", args: dict) -> dict:
                 number = int(value)
             except (TypeError, ValueError):
                 continue
-            clean[name] = max(spec[1], min(spec[2], number))
+            # Число вне диапазона выбрасываем, а не подтягиваем к границе:
+            # «мне 3 года», записанное как 10, — это выдуманный факт о человеке.
+            # Потерянный аргумент честно превращается в «не понял».
+            if spec[1] <= number <= spec[2]:
+                clean[name] = number
     return clean
 
 
@@ -354,6 +373,65 @@ def _tool_prepare_application(args: dict) -> dict:
     }
 
 
+def _tool_help(_args: dict) -> dict:
+    """Что помощник умеет. Список берётся из самого каталога, а не из текста.
+
+    Без этого «привет» и «что ты умеешь» уходили в поиск по ленте и человек
+    получал «ничего не нашлось» — худший первый ответ из возможных.
+    """
+    skills = [tool.human for tool in TOOLS.values() if tool.name != "help"]
+    return {
+        "ok": True, "kind": "text",
+        "reply": ("Я ищу по твоей базе вакансий и объясняю, что в ней есть. "
+                  "Умею: " + ", ".join(skills).lower() + ". "
+                  "Заявку не отправляю — кнопку жмёшь ты."),
+    }
+
+
+def _tool_set_age(args: dict) -> dict:
+    """Запомнить возраст человека и сразу сказать, что это меняет в ленте.
+
+    Возраст — не поисковый запрос, а факт о человеке: почти треть датской
+    розницы это ставки «under 18 år», куда совершеннолетнего не возьмут.
+    Раньше фраза «мне 20 лет» уходила в поиск по тексту и возвращала
+    «ничего не нашлось» — при том что менять надо было всю ленту.
+    """
+    import feed
+    from db import Job, get_session, select
+
+    try:
+        years = int(args.get("age") or 0)
+    except (TypeError, ValueError):
+        years = 0
+    if not 10 <= years <= 99:
+        return {"ok": False, "kind": "text",
+                "reply": "Не понял возраст. Напиши, например, «мне 20 лет»."}
+
+    with get_session() as session:
+        before = len(list(session.exec(select(Job.id).where(
+            *feed.visible_clauses(exclude_applied=True)
+        )).all()))
+    feed.set_viewer_age(years)
+    with get_session() as session:
+        after = len(list(session.exec(select(Job.id).where(
+            *feed.visible_clauses(exclude_applied=True)
+        )).all()))
+
+    hidden = max(0, before - after)
+    if years < 18:
+        reply = (f"Запомнил: тебе {years}. Показываю и обычные вакансии, "
+                 "и те, что «under 18 år» — тебе открыты обе.")
+    elif hidden:
+        reply = (f"Запомнил: тебе {years}. Убрал из ленты {hidden} "
+                 + labels.plural(hidden, "вакансию", "вакансии", "вакансий")
+                 + " «under 18 år» — туда берут только тех, кому нет 18. "
+                 f"Осталось {after}. Спроси ещё раз, что есть рядом.")
+    else:
+        reply = (f"Запомнил: тебе {years}. Вакансий «только до 18 лет» "
+                 "в ленте сейчас нет — прятать было нечего.")
+    return {"ok": True, "kind": "text", "reply": reply}
+
+
 TOOLS: dict[str, Tool] = {
     tool.name: tool for tool in (
         Tool("search_jobs", "Поиск по ленте", {"query": ("str", MAX_QUERY)}, _tool_search),
@@ -365,6 +443,8 @@ TOOLS: dict[str, Tool] = {
         Tool("application_status", "Мои заявки", {}, _tool_application_status),
         Tool("prepare_application", "Подготовить заявку", {"job_id": ("str", 220)},
              _tool_prepare_application),
+        Tool("set_age", "Запомнить возраст", {"age": ("int", 10, 99)}, _tool_set_age),
+        Tool("help", "Что я умею", {}, _tool_help),
     )
 }
 
@@ -398,6 +478,37 @@ _WHY_WORDS = ("почему", "зачем", "объясни")
 _PROFILE_WORDS = ("профил", "чего не хватает", "что заполнить", "готов ли я")
 _STATUS_WORDS = ("мои заявки", "мои отклики", "что с подач", "статус подач")
 _APPLY_WORDS = ("подайся", "подать", "откликнись", "отправь заявку")
+_GREETINGS = frozenset({
+    "привет", "здравствуй", "здравствуйте", "хай", "ку", "hej", "hello", "hi",
+    "добрый день", "доброе утро", "добрый вечер", "прив",
+})
+_HELP_WORDS = ("что ты умеешь", "что умеешь", "чем поможешь", "что можешь",
+               "помощь", "как пользоваться", "что тут делать")
+# Слова-связки вокруг возраста: с ними фраза всё ещё «только про возраст».
+_AGE_FILLER = frozenset({
+    "мне", "я", "уже", "лет", "года", "год", "годика", "исполнилось",
+    "мой", "моя", "возраст", "а", "и", "кстати", "вообще", "то", "есть",
+    ".", ",", "!",
+})
+
+
+def _only_age_statement(low: str) -> int | None:
+    """Возраст, если человек сказал ТОЛЬКО его: «мне 20 лет», «20 лет».
+
+    Если во фразе есть и поиск («нетто херлев, мне 20»), возраст остаётся
+    фильтром одного запроса и вакансии ищет обычный поиск. Насовсем запоминаем
+    только тогда, когда человек больше ничего не просил, — иначе одна оговорка
+    молча меняла бы всю ленту.
+    """
+    import query_parse
+
+    years = query_parse.stated_age(low)
+    if years is None:
+        return None
+    rest = query_parse._RE_MY_AGE.sub(" ", low)
+    rest = " ".join(word for word in rest.replace("-", " ").split()
+                    if word not in _AGE_FILLER)
+    return years if not rest else None
 
 
 def guess_tool(text: str, *, job_id: str = "") -> tuple[str, dict]:
@@ -411,6 +522,11 @@ def guess_tool(text: str, *, job_id: str = "") -> tuple[str, dict]:
         return "", {}
     if any(word in low for word in _APPLY_WORDS) and job_id:
         return "prepare_application", {"job_id": job_id}
+    age = _only_age_statement(low)
+    if age is not None:
+        return "set_age", {"age": age}
+    if low.strip(" .!?…") in _GREETINGS or any(word in low for word in _HELP_WORDS):
+        return "help", {}
     if any(word in low for word in _STATUS_WORDS):
         return "application_status", {}
     if any(word in low for word in _PROFILE_WORDS):
@@ -435,6 +551,7 @@ def _router_schema() -> dict:
                 "properties": {
                     "query": {"type": "string", "maxLength": MAX_QUERY},
                     "job_id": {"type": "string", "maxLength": 220},
+                    "age": {"type": "integer", "minimum": 10, "maximum": 99},
                 },
                 "additionalProperties": False,
             },
@@ -515,8 +632,83 @@ def _ai_route(text: str, *, job_id: str) -> tuple[str, dict] | None:
     return _valid_ai_route(getattr(result, "data", None), current_job_id=job_id)
 
 
+def _wording_schema() -> dict:
+    return {
+        "type": "object",
+        "properties": {"reply": {"type": "string", "maxLength": MAX_REPLY}},
+        "required": ["reply"],
+        "additionalProperties": False,
+    }
+
+
+def _wording_prompt(text: str, result: dict) -> str:
+    """Промпт для формулировки: модель получает ТОЛЬКО данные инструмента."""
+    facts = {
+        "request": " ".join(str(text or "").split())[:MAX_QUERY],
+        "tool": str(result.get("tool_human") or ""),
+        "app_reply": str(result.get("reply") or "")[:600],
+        "found": len(result.get("results") or []),
+        "items": [
+            {key: str(card.get(key) or "")[:120]
+             for key in ("title", "subtitle") if card.get(key)}
+            for card in (result.get("results") or [])[:MAX_RESULTS]
+        ],
+    }
+    return (
+        "Ты — помощник в приложении для поиска работы в Дании. Приложение уже "
+        "выполнило запрос и прислало готовые данные. Напиши ответ человеку "
+        "по-русски: 1–3 коротких предложения, дружелюбно и по делу.\n"
+        "Строгие правила:\n"
+        "1. Опирайся ТОЛЬКО на присланные данные. Не добавляй вакансии, "
+        "адреса, часы, зарплаты, названия магазинов и числа, которых в них нет.\n"
+        "2. Карточки вакансий человек уже видит под твоим текстом — не "
+        "перечисляй их подряд, лучше скажи главное и подскажи следующий шаг.\n"
+        "3. Ничего не обещай отправить или подать: заявку человек отправляет сам.\n"
+        "4. Если данных мало или ничего не нашлось — так и скажи и предложи, "
+        "как переспросить.\n"
+        "Верни только JSON вида {\"reply\": \"…\"}.\n"
+        "ДАННЫЕ: " + json.dumps(facts, ensure_ascii=False, separators=(",", ":"))
+    )
+
+
+def _clean_wording(value) -> str:
+    """Оставить обычный текст: разметка и ссылки от модели нам не нужны."""
+    if not isinstance(value, str):
+        return ""
+    text = re.sub(r"<[^>]*>", " ", value)
+    text = re.sub(r"https?://\S+", " ", text)
+    return " ".join(text.split())[:MAX_REPLY]
+
+
+def _ai_wording(text: str, result: dict) -> str:
+    """Человеческая формулировка поверх фактов. Любой сбой — пустая строка."""
+    if not result.get("ok") or result.get("kind") == "confirm":
+        return ""
+    import ai_gateway
+
+    try:
+        if not ai_gateway.available():
+            return ""
+        answer = ai_gateway.generate_json(
+            _wording_prompt(text, result),
+            schema=_wording_schema(),
+            temperature=0.3,
+            max_tokens=220,
+            timeout=AI_REPLY_TIMEOUT,
+            retries=0,
+        )
+    except Exception:  # noqa: BLE001 — без ИИ помощник обязан остаться прежним
+        return ""
+    if not getattr(answer, "ok", False):
+        return ""
+    data = getattr(answer, "data", None)
+    if not isinstance(data, dict):
+        return ""
+    return _clean_wording(data.get("reply"))
+
+
 def ask(text: str, *, job_id: str = "") -> dict:
-    """Ответить фактами приложения; ИИ вправе выбрать только инструмент и args."""
+    """Ответить фактами приложения; ИИ выбирает инструмент и формулирует ответ."""
     fallback_name, fallback_args = guess_tool(text, job_id=job_id)
     if not fallback_name:
         return {"ok": True, "kind": "text", "used_ai": False,
@@ -524,9 +716,16 @@ def ask(text: str, *, job_id: str = "") -> dict:
                          "«что мне подходит» или «чего не хватает для подачи»."}
     routed = _ai_route(text, job_id=job_id)
     if routed is None:
-        return {**run(fallback_name, fallback_args), "used_ai": False}
-    name, args = routed
-    return {**run(name, args), "used_ai": True}
+        result = {**run(fallback_name, fallback_args), "used_ai": False}
+    else:
+        name, args = routed
+        result = {**run(name, args), "used_ai": True}
+    worded = _ai_wording(text, result)
+    if worded:
+        # Меняем ТОЛЬКО слова. Карточки, ссылки и кнопки остаются те, что
+        # посчитало приложение: модель не вправе создать вакансию текстом.
+        result = {**result, "reply": worded, "ai_wording": True}
+    return result
 
 
 def person_context() -> dict:

@@ -1053,6 +1053,21 @@
     <div class="actions"><button class="secondary" type="submit">Сохранить страны</button></div>
   </form>
 
+  <!-- Возраст: в датской рознице огромная доля ставок «under 18 år», куда
+       совершеннолетнего просто не возьмут. Пока возраст не назван, не прячем
+       ничего: молчание — не повод решать за человека. -->
+  <form id="age" class="panel" method="post" action="/settings/age">
+    <h2>{{ ic.i('user', 17) }} Возраст</h2>
+    <p class="hint">В Дании много ставок с пометкой «under 18 år» — это работа для тех, кому ещё нет 18, и взрослого туда не возьмут. Сейчас таких в ленте <b>{{ underage_count }}</b>. Назови возраст — и они перестанут занимать место.</p>
+    <div class="field" style="max-width:240px;">
+      <label class="lbl" for="viewer-age">Сколько тебе лет</label>
+      <input id="viewer-age" type="number" name="age" min="10" max="99" step="1"
+             value="{{ viewer_age or '' }}" placeholder="например, 20">
+    </div>
+    <p class="hint">{% if viewer_age and viewer_age >= 18 %}Вакансии «under 18 år» скрыты из ленты.{% elif viewer_age %}Тебе открыты и обычные ставки, и «under 18 år» — лента показывает все.{% else %}Пока не указан — лента показывает все вакансии, включая «under 18 år».{% endif %} Очисти поле, чтобы вернуть их. Поданные заявки не прячутся никогда. Если в профиле заполнена дата рождения, возраст берётся из неё.</p>
+    <div class="actions"><button class="secondary" type="submit">Сохранить возраст</button></div>
+  </form>
+
   <!-- Языковой барьер: вакансия, куда не возьмут без датского, — такой же мусор
        в ленте, как закрытая. Но скрываем только уверенное «не подойдёт». -->
   <form id="language" class="panel" method="post" action="/settings/language-barrier">

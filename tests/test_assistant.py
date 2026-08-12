@@ -129,14 +129,18 @@ def test_ai_can_only_route_to_a_whitelisted_tool(db):
 
     assert out["ok"] is True and out["used_ai"] is True
     assert out["tool"] == "search_jobs"
-    prompt = generate.call_args.args[0]
+    # С 12.08.2026 обращений к ИИ два: сначала выбор инструмента, затем
+    # формулировка ответа. Личных данных не должно быть НИ В ОДНОМ из них.
+    router = generate.call_args_list[0]
+    prompt = router.args[0]
     assert "найди работу в нетто херлев" in prompt
     assert "catalog" in prompt and "person_context" in prompt
-    for secret in ("ivan@example.com", "+45", "Secret street", "cv.pdf"):
-        assert secret not in prompt
-    assert generate.call_args.kwargs["retries"] == 0
-    assert generate.call_args.kwargs["timeout"] == assistant.AI_ROUTER_TIMEOUT
-    assert generate.call_args.kwargs["schema"]["properties"]["tool"]["enum"] == list(assistant.TOOLS)
+    for call in generate.call_args_list:
+        for secret in ("ivan@example.com", "+45", "Secret street", "cv.pdf"):
+            assert secret not in call.args[0]
+    assert router.kwargs["retries"] == 0
+    assert router.kwargs["timeout"] == assistant.AI_ROUTER_TIMEOUT
+    assert router.kwargs["schema"]["properties"]["tool"]["enum"] == list(assistant.TOOLS)
 
 
 @pytest.mark.parametrize("response", [

@@ -10,6 +10,11 @@
   лежит в settings.json. Заложено сразу, чтобы выход за пределы DK стоил
   галочки, а не переписывания запросов.
 
+- **Возраст — факт, а не догадка.** Почти треть датской розницы — ставки «under
+  18 år», куда совершеннолетнего не возьмут. Если человек назвал возраст (или
+  ввёл дату рождения для анкеты), такие вакансии из ленты уходят. Не назвал —
+  не прячем ничего: молчание не повод решать за него.
+
 - **Сломанный источник не показывает вакансии** (шаг 6). Если чужой API молчит
   дольше суток, его вакансии в базе — вчерашние: подать на них скорее всего
   уже нельзя. Решение принимает `source_health.py`, лента только исполняет.
@@ -252,6 +257,107 @@ def barrier_clause():
     )
 
 
+# ── Возраст: «детская» вакансия взрослому не предложение ──────────────────
+UNDER18_LEVEL = "employeeUnder18"
+
+
+def viewer_age() -> int | None:
+    """Сколько лет человеку, или None — если он этого не говорил.
+
+    Точная дата рождения из профиля сильнее: её человек вводил для анкеты, она
+    не устаревает и сама переводит его через день рождения. Названный возраст —
+    запасной вариант для того, кто дату не вводил (её просят не все анкеты).
+    """
+    from datetime import date
+
+    try:
+        import profile_store
+        raw = str(profile_store.load_profile().get("date_of_birth") or "").strip()
+    except Exception:  # noqa: BLE001 — профиль не имеет права ронять ленту
+        raw = ""
+    born = _parse_birth_date(raw)
+    if born is not None:
+        today = date.today()
+        years = today.year - born.year - (
+            (today.month, today.day) < (born.month, born.day)
+        )
+        if 0 <= years <= 120:
+            return years
+    value = _settings().get("viewer_age")
+    try:
+        years = int(value)
+    except (TypeError, ValueError):
+        return None
+    return years if 0 < years <= 120 else None
+
+
+def _parse_birth_date(raw: str):
+    """Дата рождения из профиля: ISO и обычные европейские написания."""
+    from datetime import datetime
+
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def set_viewer_age(years) -> int | None:
+    """Запомнить названный возраст. Пусто или мусор — забыть его совсем.
+
+    Диапазон тот же, что у помощника: моложе 10 работу не ищут, а «120» в поле
+    возраста — это опечатка, а не долгожитель. Лучше забыть возраст и показать
+    всё, чем спрятать треть ленты по случайной цифре.
+    """
+    try:
+        value = int(years)
+    except (TypeError, ValueError):
+        value = 0
+    value = value if 10 <= value <= 99 else 0
+    settings_store.mutate(lambda data: data.__setitem__("viewer_age", value))
+    _forget()
+    return value or None
+
+
+def underage_clause():
+    """Условие «вакансия не только для тех, кому нет 18» (или None).
+
+    Прячем лишь по СИЛЬНОМУ признаку — уровню должности из самого источника и
+    прямой пометке в названии. Слова «under 18» в глубине описания не годятся:
+    там они чаще про согласие родителей для юных коллег, а не про то, что
+    взрослого не возьмут. Ошибаться безопаснее в сторону «показать».
+
+    Подросток видит всё: ему открыты и «детские», и обычные вакансии. Правило
+    срабатывает только для совершеннолетних, которых на такую ставку не примут.
+
+    Поданная заявка не прячется никогда — это уже история человека.
+    """
+    age = viewer_age()
+    if age is None or age < 18:
+        return None
+    return (
+        Job.applied_at.is_not(None)
+        | (Job.status == "applied")
+        | (
+            ((Job.job_level.is_(None)) | (Job.job_level != UNDER18_LEVEL))
+            & ~func.lower(func.coalesce(Job.title, "")).like("%under 18%")
+            & ~func.lower(func.coalesce(Job.title, "")).like("%under-18%")
+        )
+    )
+
+
+def job_is_underage_only(job) -> bool:
+    """Тот же сильный признак для уже загруженной вакансии."""
+    if str(getattr(job, "job_level", "") or "") == UNDER18_LEVEL:
+        return True
+    title = str(getattr(job, "title", "") or "").lower()
+    return "under 18" in title or "under-18" in title
+
+
 # ── Сломанный источник (шаг 6): решение принимает source_health ───────────
 def broken_sources() -> tuple[str, ...]:
     """Источники, которые молчат так долго, что их вакансиям верить нельзя."""
@@ -295,6 +401,9 @@ def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
     broken = source_clause()
     if broken is not None:
         clauses.append(broken)
+    underage = underage_clause()
+    if underage is not None:
+        clauses.append(underage)
     if fit:
         barrier = barrier_clause()
         if barrier is not None:
@@ -312,6 +421,10 @@ def visible(job, exclude_applied: bool = False, fit: bool = True) -> bool:
         return False
     if not post_application and str(getattr(job, "source", "") or "") in broken_sources():
         return False
+    if not post_application and job_is_underage_only(job):
+        age = viewer_age()
+        if age is not None and age >= 18:
+            return False
     if fit and hide_barrier():
         import relevance
         # Keep the in-memory rule identical to ``barrier_clause`` plus the
