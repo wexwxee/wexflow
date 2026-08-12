@@ -307,6 +307,36 @@ def test_batch_worker_never_submits_without_the_explicit_flag():
     assert "lidl_apply.submit" in body
 
 
+def test_batch_receipt_persistence_failure_is_unconfirmed_not_submitted():
+    item = {"id": "lidl:persist-failed", "url": LIDL_URL}
+    page = mock.Mock()
+    result = {"state": "submitted", "message": "Lidl принял заявку."}
+    from connectors import lidl_apply
+
+    with mock.patch.object(lidl_apply, "prepare"), \
+            mock.patch.object(lidl_apply, "submit", return_value=result), \
+            mock.patch.object(
+                apply_dispatch, "_record_confirmed_submission", return_value=False,
+            ), \
+            mock.patch.object(
+                apply_dispatch, "_report_receipt_persist_failure",
+                return_value=apply_dispatch._RECEIPT_PERSIST_FAILURE,
+            ) as report, \
+            mock.patch.object(apply_dispatch, "_send_proof_to_chat") as proof, \
+            mock.patch.object(apply_dispatch, "_report_phone_status") as green, \
+            mock.patch.object(apply_dispatch, "_write_status") as status:
+        state, message = apply_dispatch._prepare_one(
+            page, item, {}, submit=True,
+        )
+
+    assert state == "no_receipt"
+    assert message == apply_dispatch._RECEIPT_PERSIST_FAILURE
+    report.assert_called_once_with(page, "lidl:persist-failed")
+    proof.assert_not_called()
+    green.assert_not_called()
+    status.assert_not_called()
+
+
 if __name__ == "__main__":
     tests = [
         value for name, value in sorted(globals().items())

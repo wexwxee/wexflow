@@ -19,8 +19,11 @@
 - ``portal``  — заявка найдена в официальном кабинете работодателя. Это второй,
   независимый уровень из плана: подтверждает не WexFlow, а сам работодатель,
   поэтому снимок экрана здесь не требуется;
-- ``email``   — исходное письмо ``.eml`` прошло SPF/DKIM/DMARC и совпало с
-  выбранной вакансией. WexFlow не читает ящик и хранит файл только локально;
+- ``email``   — только письмо, полученное напрямую через OAuth/API и
+  помеченное ``provider_verified``/``dkim_verified`` (такой коннектор пока не
+  входит в WexFlow). Загруженный человеком
+  ``.eml`` редактируем и поэтому остаётся ручным свидетельством: он помогает
+  вести журнал, но никогда сам не открывает автоподачу;
 - ``receipt`` — сайт показал квитанцию «ansøgning modtaget». Это НАШЕ
   утверждение о чужой странице, и засчитывается оно только вместе со снимком
   экрана: обещание «доказательство есть» без файла — это обещание, а не
@@ -136,6 +139,8 @@ def record_receipt_screen(session, job: Job, path) -> ApplicationEvidence | None
         kind="receipt_screen",
         path=resolved.name,
         fingerprint=fingerprint,
+        stage="applied",
+        stage_label="Квитанция сайта",
         occurred_at=utcnow(),
     )
     session.add(row)
@@ -143,15 +148,31 @@ def record_receipt_screen(session, job: Job, path) -> ApplicationEvidence | None
 
 
 def attach_receipt_screen(job_id: str, path) -> bool:
-    """Best-effort connector hook; an unregistered file earns no trust."""
+    """Atomically bind exact receipt bytes and upgrade submission confidence."""
     try:
+        import application_tracker
+        import applications
+
         with get_session() as session:
             job = session.get(Job, str(job_id or ""))
-            if job is None or str(job.applied_confidence or "") != "receipt":
+            if job is None or job.applied_at is None:
                 return False
             row = record_receipt_screen(session, job, path)
             if row is None:
                 return False
+            job.applied_confidence = "receipt"
+            application_tracker.record_status_in_session(
+                session,
+                job,
+                "applied",
+                source="submission",
+                occurred_at=row.occurred_at or utcnow(),
+                raw_label="Квитанция сайта сохранена",
+                evidence_fingerprint=str(row.fingerprint or ""),
+                event_key=f"receipt:{row.source}:{row.job_id}:{row.fingerprint}",
+            )
+            session.add(job)
+            applications.record_submitted_in_session(session, [job])
             session.commit()
             return True
     except Exception:  # noqa: BLE001 — отсутствие proof безопасно блокирует auto

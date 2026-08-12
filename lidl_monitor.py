@@ -6,6 +6,7 @@ monitor later reuses only that local browser session to read ``Søgte jobs``.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import time
@@ -38,6 +39,21 @@ _NO_AUTOFILL = [
     "--disable-save-password-bubble",
 ]
 _STATUS_PATTERNS = (
+    ("withdrawn", "Заявка отозвана", (
+        r"\bapplication withdrawn\b", r"\bwithdrawn\b",
+        r"\bansøgning(?:en)? (?:er )?trukket tilbage\b", r"\btrukket tilbage\b",
+    )),
+    ("rejected", "Отказ", (
+        r"\brejected\b", r"\bafslag\b", r"\bafvist\b",
+        r"\bnot selected\b", r"\bikke udvalgt\b",
+        r"\bikke taget i betragtning\b",
+    )),
+    ("hired", "Принят на работу", (
+        r"(?<!not )\bhired\b", r"\bdu er blevet ansat\b",
+        r"(?<!ikke )\bansat\b", r"\boffer accepted\b", r"\btilbud accepteret\b",
+        r"\bcontract signed\b",
+        r"\bkontrakt(?:en)? underskrevet\b",
+    )),
     ("offer", "Предложение о работе", (
         r"\bjob offer\b", r"\btilbud om ansættelse\b", r"\bansættelsestilbud\b",
         r"\btilbudt stilling\b",
@@ -46,17 +62,33 @@ _STATUS_PATTERNS = (
         r"\binterview\b", r"\bjobsamtale\b", r"\bsamtale\b",
         r"\btelefonisk samtale\b", r"\binviteret\b",
     )),
-    ("rejected", "Отказ", (
-        r"\brejected\b", r"\bafslag\b", r"\bafvist\b",
-        r"\bikke udvalgt\b", r"\bikke taget i betragtning\b",
-    )),
-    ("applied", "На рассмотрении", (
-        r"\bapplication received\b", r"\bansøgning modtaget\b",
-        r"\bmodtaget\b", r"\bunder behandling\b", r"\bbehandles\b",
+    ("reviewing", "На рассмотрении", (
+        r"\bunder behandling\b", r"\bbehandles\b",
         r"\bscreening\b", r"\bin process\b", r"\bi proces\b",
-        r"\bunder review\b",
+        r"\bunder review\b", r"\bunder consideration\b",
+    )),
+    ("applied", "Заявка получена", (
+        r"\bapplication received\b", r"\bansøgning modtaget\b",
+        r"\bsubmitted\b", r"\bansøgt\b",
+        # Deliberately no bare ``modtaget``: the profile also uses that word
+        # for documents and messages, which is not proof of an application.
     )),
 )
+_ROW_BREAK_MARKERS = (
+    r"\brequisition\s*id\b", r"\breq\.?\s*id\b", r"\bjob\s*-?\s*id\b",
+    r"\bstillings\s*-?\s*id\b", r"\bjobnr\.?\b",
+    r"\bansøgningsstatus\b", r"\bapplication\s+status\b",
+    r"\bsøgte jobs\b", r"\bgemte ansøgninger\b",
+)
+_STRONG_MATCH_STRENGTHS = frozenset({"exact_requisition"})
+_PIPELINE_RANK = {
+    "applied": 1,
+    "reviewing": 2,
+    "interview": 3,
+    "offer": 4,
+    "hired": 5,
+}
+_NEGATIVE_STAGES = frozenset({"rejected", "withdrawn"})
 _LOGIN_MARKERS = (
     "glemt adgangskode", "forgot password", "ny adgangskode",
     "brugernavn", "username",
@@ -256,23 +288,179 @@ def is_logged_in(body_text: str, has_password_field: bool = False) -> bool:
 
 
 def classify_status(text: str) -> dict:
-    normal = _normal(text)
+    collapsed = re.sub(r"\s+", " ", str(text or "")).strip().replace("\u00ad", "")
+    # Negation may be several words before "hired/ansat", so a one-token
+    # negative look-behind is not sufficient.  "Not yet" is not a rejection;
+    # a plain explicit "not hired" is.
+    pending_negative = re.search(
+        r"\bnot\s+yet\s+(?:been\s+)?hired\b|\bikke\s+endnu\s+(?:blevet\s+)?ansat\b",
+        collapsed, re.IGNORECASE,
+    )
+    if pending_negative:
+        return {
+            "code": "unknown", "label": "Статус не распознан",
+            "matched": "", "portal_status": "",
+        }
+    rejected_hire = re.search(
+        r"\bnot\s+(?:been\s+)?hired\b|\bikke\s+(?:blevet\s+)?ansat\b",
+        collapsed, re.IGNORECASE,
+    )
+    if rejected_hire:
+        return {
+            "code": "rejected", "label": "Отказ",
+            "matched": rejected_hire.group(0), "portal_status": rejected_hire.group(0),
+        }
     for code, label, patterns in _STATUS_PATTERNS:
         for pattern in patterns:
-            match = re.search(pattern, normal, re.IGNORECASE)
+            match = re.search(pattern, collapsed, re.IGNORECASE)
             if match:
                 return {
                     "code": code,
                     "label": label,
                     "matched": match.group(0),
+                    "portal_status": match.group(0),
                 }
-    return {"code": "unknown", "label": "Статус не распознан", "matched": ""}
+    return {
+        "code": "unknown",
+        "label": "Статус не распознан",
+        "matched": "",
+        "portal_status": "",
+    }
 
 
 def _title_tokens(title: str) -> list[str]:
     words = re.findall(r"[a-zA-ZÀ-ž0-9]+", _normal(title))
     ignored = {"og", "i", "til", "med", "the", "and", "timer"}
     return [word for word in words if len(word) >= 4 and word not in ignored][:7]
+
+
+def _bounded_position(text: str, value: str) -> int:
+    """Find an identifier without matching it inside a longer number/word."""
+    wanted = _normal(value)
+    if not wanted:
+        return -1
+    match = re.search(rf"(?<!\w){re.escape(wanted)}(?!\w)", text, re.IGNORECASE)
+    return match.start() if match else -1
+
+
+def _structured_status_titles(raw: str, known_jobs: list[dict]) -> dict[str, dict]:
+    """Complete title lines mapped to their adjacent explicit status field."""
+    lines = [line.strip() for line in str(raw or "").splitlines() if line.strip()]
+    normalized_lines = [_normal(line) for line in lines]
+    result: dict[str, dict] = {}
+    for job in known_jobs:
+        title = _normal(job.get("title") or "")
+        if not title:
+            continue
+        indexes = [index for index, line in enumerate(normalized_lines) if line == title]
+        if len(indexes) != 1:
+            continue
+        index = indexes[0]
+        for candidate in lines[max(0, index - 1):index + 5]:
+            match = re.search(
+                r"\b(?:ansøgningsstatus|application status|status)\s*:\s*(.+)$",
+                candidate,
+                re.IGNORECASE,
+            )
+            if match:
+                status = classify_status(match.group(1))
+                if status["code"] != "unknown":
+                    status["portal_status"] = re.sub(
+                        r"\s+", " ", match.group(1)
+                    ).strip()[:240]
+                    result[title] = status
+                    break
+    return result
+
+
+def _trim_status_value(value: str, matched: str = "") -> str:
+    """Cut a status field where the portal starts the next row or field."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    cut = len(text)
+    for marker in _ROW_BREAK_MARKERS:
+        found = re.search(marker, text, re.IGNORECASE)
+        if found and found.start() < cut:
+            cut = found.start()
+    text = text[:cut].strip(" -–—:•|").strip()
+    phrase = re.search(re.escape(matched), text, re.IGNORECASE) if matched else None
+    if phrase:
+        kept = text[:phrase.end()]
+        for word in text[phrase.end():].split():
+            # A portal status continues in lower case ("Inviteret til
+            # jobsamtale").  A capitalised word already belongs to the next
+            # row's title and must not be shown as this application's status.
+            if word[:1].isupper():
+                break
+            kept = f"{kept} {word}"
+        text = kept
+    return text.strip(" -–—:•|").strip()[:240]
+
+
+def _explicit_status_for_requisition(raw: str, requisition: str) -> dict | None:
+    """Read only the labelled status field belonging to one requisition.
+
+    The candidate page can contain applications unknown to the local DB, so a
+    broad excerpt risks borrowing the next row's rejection or hire.  Work on the
+    original line structure: stop at the next requisition id, and read a single
+    labelled field which ends with its own line.  Without such a field the row
+    stays unknown instead of guessing.
+    """
+    wanted = str(requisition or "").strip()
+    if not wanted:
+        return None
+    anchor = re.search(rf"(?<!\w){re.escape(wanted)}(?!\w)", raw, re.IGNORECASE)
+    if not anchor:
+        return None
+    tail = raw[anchor.end():]
+    following = re.search(r"(?<!\w)\d{4,}(?!\w)", tail)
+    boundary = following.start() if following else min(len(tail), 900)
+    match = re.search(
+        r"\b(?:ansøgningsstatus|application\s+status|status)\s*:\s*"
+        r"([^\n\r|;]{1,160})",
+        tail[:boundary], re.IGNORECASE,
+    )
+    if not match:
+        return None
+    value = _trim_status_value(match.group(1))
+    status = classify_status(value)
+    if status["code"] == "unknown":
+        return None
+    status["portal_status"] = _trim_status_value(value, status["matched"])
+    return status
+
+
+def _anchor_for_job(normal: str, job: dict, title_counts: dict[str, int],
+                    structured_titles) -> tuple[int, str]:
+    """Return a portal anchor and how safely it identifies one application.
+
+    Exact requisition IDs and a unique complete title are allowed to establish
+    portal proof.  A token fallback is display-only: common retail titles such
+    as ``Butiksassistent`` must never prove the wrong pending application.
+    """
+    requisition = str(job.get("requisition_id") or "").strip()
+    position = _bounded_position(normal, requisition)
+    if position >= 0:
+        return position, "exact_requisition"
+
+    full_title = _normal(job.get("title") or "")
+    if (len(full_title) >= 12 and title_counts.get(full_title, 0) == 1
+            and normal.count(full_title) == 1):
+        position = normal.find(full_title)
+        if position >= 0:
+            return position, (
+                "structured_title" if full_title in structured_titles else "exact_title"
+            )
+
+    candidates = []
+    for token in sorted(_title_tokens(full_title), key=len, reverse=True):
+        token_position = _bounded_position(normal, token)
+        if token_position >= 0:
+            # Prefer a distinctive token over the first occurrence of a very
+            # common role word.  It remains fuzzy and cannot create proof.
+            candidates.append((normal.count(token), -len(token), token_position))
+    if candidates:
+        return min(candidates)[2], "fuzzy_title"
+    return -1, "none"
 
 
 def extract_applications(body_text: str, known_jobs: list[dict]) -> list[dict]:
@@ -283,30 +471,29 @@ def extract_applications(body_text: str, known_jobs: list[dict]) -> list[dict]:
     a known status phrase occurs close to that application.
     """
     raw = str(body_text or "")
-    normal = _normal(raw)
-    anchors: dict[str, int] = {}
+    collapsed = re.sub(r"\s+", " ", raw).strip().replace("\u00ad", "")
+    normal = collapsed.lower()
+    structured_statuses = _structured_status_titles(raw, known_jobs)
+    title_counts: dict[str, int] = {}
+    for job in known_jobs:
+        title = _normal(job.get("title") or "")
+        if title:
+            title_counts[title] = title_counts.get(title, 0) + 1
+    anchors: dict[str, tuple[int, str]] = {}
     for job in known_jobs:
         key = str(job.get("id") or job.get("requisition_id") or job.get("title") or "")
-        requisition = str(job.get("requisition_id") or "").strip().lower()
-        full_title = _normal(job.get("title") or "")
-        position = normal.find(requisition) if requisition else -1
-        if position < 0 and full_title:
-            position = normal.find(full_title)
-        if position < 0:
-            positions = [
-                normal.find(token) for token in _title_tokens(full_title)
-                if normal.find(token) >= 0
-            ]
-            position = min(positions) if positions else -1
+        position, strength = _anchor_for_job(
+            normal, job, title_counts, structured_statuses
+        )
         if key and position >= 0:
-            anchors[key] = position
-    ordered_positions = sorted(set(anchors.values()))
+            anchors[key] = (position, strength)
+    ordered_positions = sorted({position for position, _strength in anchors.values()})
     result = []
     for job in known_jobs:
         title = str(job.get("title") or "").strip()
         requisition = str(job.get("requisition_id") or "").strip()
         key = str(job.get("id") or requisition or title)
-        anchor = anchors.get(key, -1)
+        anchor, match_strength = anchors.get(key, (-1, "none"))
         if anchor < 0:
             continue
         index = ordered_positions.index(anchor)
@@ -317,8 +504,17 @@ def extract_applications(body_text: str, known_jobs: list[dict]) -> list[dict]:
             len(normal),
             (anchor + following) // 2 if following is not None else anchor + 700,
         )
-        excerpt = normal[start:end]
-        status = classify_status(excerpt)
+        excerpt = collapsed[start:end]
+        if match_strength == "structured_title":
+            status = structured_statuses.get(_normal(title))
+        elif match_strength == "exact_requisition":
+            status = _explicit_status_for_requisition(raw, requisition)
+        else:
+            status = classify_status(excerpt)
+        status = status or {
+            "code": "unknown", "label": "Статус не распознан",
+            "matched": "", "portal_status": "",
+        }
         result.append({
             "job_id": str(job.get("id") or ""),
             "title": title,
@@ -326,6 +522,8 @@ def extract_applications(body_text: str, known_jobs: list[dict]) -> list[dict]:
             "status": status["code"],
             "status_label": status["label"],
             "matched": status["matched"],
+            "portal_status": status["portal_status"],
+            "match_strength": match_strength,
             "excerpt": excerpt[:900],
         })
     return result
@@ -533,7 +731,11 @@ def run_login(max_seconds: int = 600) -> bool:
         if not acquired:
             save_state(phase="error", last_error="Окно Lidl уже открыто.")
             return False
-        save_state(enabled=True, connected=False, phase="connecting", last_error="")
+        # The parent enables monitoring before spawning this worker. If the
+        # user disabled it while the child was starting, do not turn it back on.
+        if not load_state().get("enabled"):
+            return False
+        save_state(connected=False, phase="connecting", last_error="")
         try:
             from playwright.sync_api import sync_playwright
 
@@ -553,7 +755,6 @@ def run_login(max_seconds: int = 600) -> bool:
                         text, has_password = _body(page)
                         if is_logged_in(text, has_password):
                             save_state(
-                                enabled=True,
                                 connected=True,
                                 phase="connected",
                                 last_success_at=_now(),
@@ -598,67 +799,159 @@ def _application_map(items: list[dict]) -> dict:
             "status": item.get("status", "unknown"),
             "status_label": item.get("status_label", ""),
             "matched": item.get("matched", ""),
+            "portal_status": item.get("portal_status") or item.get("matched", ""),
+            "match_strength": item.get("match_strength", ""),
             "seen_at": _now(),
         }
     return output
 
 
+def _is_strong_portal_match(item: dict) -> bool:
+    return str(item.get("match_strength") or "") in _STRONG_MATCH_STRENGTHS
+
+
+def _current_stage(job, application_tracker) -> str:
+    helper = getattr(application_tracker, "current_stage", None)
+    if callable(helper):
+        return str(helper(job) or "")
+    return str(getattr(job, "application_stage", None) or job.status or "")
+
+
+def _supported_stage(portal_status: str, application_tracker) -> str:
+    labels = getattr(application_tracker, "STATUS_LABELS", {})
+    if portal_status in labels:
+        return portal_status
+    # Compatibility while an older shared tracker is still running. Seeing an
+    # exact row proves submission, but must not invent an unsupported outcome.
+    return "applied" if portal_status == "reviewing" else ""
+
+
+def _may_set_stage(current: str, target: str) -> bool:
+    if not target or current == target:
+        return bool(target)
+    if target == "applied":
+        return current in {"", "new", "seen", "closed", "hidden", "applied"}
+    if current == "hired":
+        return False
+    if target == "hired":
+        return True
+    if target in _NEGATIVE_STAGES:
+        return True
+    if current in _NEGATIVE_STAGES:
+        return False
+    current_rank = _PIPELINE_RANK.get(current, 0)
+    target_rank = _PIPELINE_RANK.get(target, 0)
+    return target_rank > 0 and (current_rank == 0 or target_rank >= current_rank)
+
+
+def _record_portal_confirmation(session, job, applications, Application, select) -> None:
+    """Upgrade Job and Application proof together without weakening receipts."""
+    applications.record_submitted_in_session(session, [job])
+    session.flush()
+    row = session.exec(select(Application).where(
+        Application.source == str(job.source or "lidl"),
+        Application.job_id == str(job.id),
+    )).first()
+    confidence = "receipt" if (
+        str(job.applied_confidence or "") == "receipt"
+        or (row is not None and str(row.confidence or "") == "receipt")
+    ) else "portal"
+    job.applied_confidence = confidence
+    session.add(job)
+    if row is not None and str(row.confidence or "") != confidence:
+        row.confidence = confidence
+        session.add(row)
+
+
+def _record_portal_stage(session, job, target_status: str, before_status: str,
+                         item: dict, application_tracker) -> dict:
+    if not target_status:
+        return {"accepted": False, "changed": False, "stage": before_status}
+    if (before_status == target_status
+            and str(job.application_status_source or "") == "lidl_portal"):
+        # The same exact row is read every 30 minutes. Its first event is
+        # already durable; do not create a second ``stage -> same stage`` alert.
+        return {"accepted": True, "changed": False, "stage": before_status}
+    raw = str(item.get("portal_status") or item.get("matched") or "").strip()
+    digest = hashlib.sha256(_normal(raw).encode("utf-8")).hexdigest()[:16]
+    event_key = f"portal:lidl:{job.id}:{target_status}:{digest}"
+    recorder = getattr(application_tracker, "record_status_in_session", None)
+    if callable(recorder):
+        return recorder(
+            session,
+            job,
+            target_status,
+            source="lidl_portal",
+            origin="lidl_portal",
+            raw_label=raw,
+            event_key=event_key,
+        )
+    if not _may_set_stage(before_status, target_status):
+        return {"accepted": False, "changed": False, "stage": before_status}
+    accepted = bool(application_tracker.set_status(
+        job, target_status, source="lidl_portal"
+    ))
+    session.add(job)
+    return {
+        "accepted": accepted,
+        "changed": accepted and before_status != _current_stage(job, application_tracker),
+        "stage": _current_stage(job, application_tracker),
+    }
+
+
 def _persist_statuses(items: list[dict], transitions: list[dict] | None = None) -> None:
     """Persist recognised portal stages, including the very first snapshot."""
-    from db import Job, get_session
+    from db import Application, Job, get_session, select
     import applications
     import application_tracker
 
-    status_updates = {
-        "interview": "interview",
-        "offer": "offer",
-        "rejected": "rejected",
-    }
     verified: set[str] = set()
     for item in items:
         new_status = str(item.get("status") or "")
         job_id = str(item.get("job_id") or "")
-        if not job_id or new_status in ("", "unknown"):
+        strong_match = _is_strong_portal_match(item)
+        if not job_id or not strong_match:
+            # Fuzzy title matches remain useful diagnostic snapshots, but they
+            # can neither mutate an application nor clear pending verification.
             continue
         with get_session() as session:
             job = session.get(Job, job_id)
             if not job:
                 continue
-            before_status = str(job.status or "")
+            before_status = _current_stage(job, application_tracker)
             first_confirmation = job.applied_at is None
-            changed = False
-            if new_status == "applied" and first_confirmation:
-                application_tracker.set_status(job, "applied", source="lidl_portal")
-                job.applied_confidence = "portal"
-                changed = True
-            elif new_status in status_updates and job.status not in ("offer", "closed"):
-                if first_confirmation:
-                    application_tracker.set_status(job, "applied", source="lidl_portal")
-                    job.applied_confidence = "portal"
-                application_tracker.set_status(
-                    job, status_updates[new_status], source="lidl_portal"
+            target_status = _supported_stage(new_status, application_tracker)
+            if first_confirmation and not target_status:
+                # An exact row in "Søgte jobs" proves the application even if
+                # Lidl introduced a status label this build does not know yet.
+                target_status = "applied"
+            _record_portal_stage(
+                session, job, target_status, before_status, item, application_tracker
+            )
+            _record_portal_confirmation(
+                session, job, applications, Application, select
+            )
+            session.commit()
+            session.refresh(job)
+            after_status = _current_stage(job, application_tracker)
+            if transitions is not None and before_status != after_status:
+                previous_status = (
+                    "applied" if first_confirmation and after_status != "applied"
+                    else before_status
                 )
-                changed = before_status != str(job.status or "")
-            if changed:
-                session.add(job)
-                if first_confirmation:
-                    applications.record_submitted_in_session(session, [job])
-                session.commit()
-                session.refresh(job)
-                if transitions is not None:
-                    previous_status = "applied" if first_confirmation and job.status != "applied" else before_status
-                    transitions.append({
-                        "source": "lidl",
-                        "job_id": job.id,
-                        "title": job.title or item.get("title") or "Вакансия Lidl",
-                        "brand": job.brand or "Lidl",
-                        "city": job.city or "",
-                        "url": job.application_link or "",
-                        "previous_status": previous_status,
-                        "previous_label": application_tracker.STATUS_LABELS.get(previous_status, ""),
-                        "status": job.status,
-                        "status_label": item.get("status_label") or application_tracker.STATUS_LABELS.get(job.status, job.status),
-                    })
+                transitions.append({
+                    "source": "lidl",
+                    "job_id": job.id,
+                    "title": job.title or item.get("title") or "Вакансия Lidl",
+                    "brand": job.brand or "Lidl",
+                    "city": job.city or "",
+                    "url": job.application_link or "",
+                    "previous_status": previous_status,
+                    "previous_label": application_tracker.STATUS_LABELS.get(previous_status, ""),
+                    "status": after_status,
+                    "status_label": item.get("status_label") or application_tracker.STATUS_LABELS.get(after_status, after_status),
+                    "portal_status": item.get("portal_status") or item.get("matched") or "",
+                })
             verified.add(job_id)
     if verified:
         state = load_state()
@@ -706,15 +999,26 @@ def _flush_notifications() -> bool:
 def _apply_changes(changes: list[dict], *, durable: bool = False) -> list[dict]:
     if not changes:
         if durable:
+            # Drain the pre-1.4.5 JSON queue once, then use the transactional
+            # DB outbox for all newly observed portal events.
             _flush_notifications()
+            import application_tracker
+            application_tracker.flush_pending_notifications(
+                origin="lidl_portal", source_name="Lidl"
+            )
         return []
     import application_tracker
 
     transitions: list[dict] = []
     _persist_statuses(changes, transitions)
     if durable:
-        _queue_notifications(transitions)
+        # Do not enqueue ``transitions`` in JSON: record_status_in_session has
+        # already committed the same notification atomically with the status.
+        # Only drain legacy JSON items left by an older build.
         _flush_notifications()
+        application_tracker.flush_pending_notifications(
+            origin="lidl_portal", source_name="Lidl"
+        )
     elif transitions:
         application_tracker.notify_status_changes(transitions, source_name="Lidl")
     return transitions
@@ -766,7 +1070,6 @@ def run_check() -> bool:
             merged = dict(previous)
             merged.update(current)
             save_state(
-                enabled=True,
                 connected=True,
                 phase="connected",
                 last_checked_at=_now(),

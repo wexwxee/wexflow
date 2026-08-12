@@ -56,7 +56,7 @@ import recommend
 import relevance
 import source_health
 import trust
-from db import Application, Job, init_db, get_session, select, utcnow
+from db import Application, ApplicationEvidence, Job, init_db, get_session, select, utcnow
 import db as db_mod
 import scraper
 import connector_sync
@@ -97,8 +97,8 @@ PROFILE_REQUIRED = [
 ]
 
 SAFE_JOB_STATUSES = {
-    "new", "seen", "applied", "hidden", "interview", "offer",
-    "rejected", "no_response", "closed",
+    "new", "seen", "applied", "hidden", "reviewing", "interview",
+    "offer", "hired", "rejected", "withdrawn", "no_response", "closed",
 }
 JOB_SOURCE_LABELS = {
     "salling": "Salling Group",
@@ -886,7 +886,10 @@ def _watch_and_report_apply_batch(job_ids: list[str], proc=None,
         with get_session() as s:
             for jid in list(pending):
                 job = s.get(Job, jid)
-                if job is not None and job.status == "applied":
+                if job is not None and (
+                    job.applied_at is not None
+                    or bool(application_tracker.current_stage(job))
+                ):
                     autopilot.record_submitted([job])
                     confidence = str(job.applied_confidence or "").lower()
                     if confidence == "receipt":
@@ -1401,7 +1404,7 @@ def _sync_applied_to_cloud(force: bool = False) -> bool:
                 "url": job.application_link or "",
                 "ts": ts,
                 "confidence": str(job.applied_confidence or "").strip().lower(),
-                "status": str(job.status or "applied"),
+                "status": application_tracker.current_stage(job) or "applied",
             })
         digest = _sync_digest(items)
         if not force and digest and _cloud_sync_sent_hash.get("applied") == digest:
@@ -2661,11 +2664,14 @@ def _lidl_followup_tick_unlocked() -> None:
         return
     try:
         with get_session() as session:
-            jobs = session.exec(select(Job).where(
+            submitted_jobs = session.exec(select(Job).where(
                 Job.source == "lidl",
-                Job.status == "applied",
                 Job.applied_at.is_not(None),
             )).all()
+            jobs = [
+                job for job in submitted_jobs
+                if application_tracker.current_stage(job) == "applied"
+            ]
         for reminder in lidl_followup.due_reminders(jobs):
             if cloud_auth.send_digest(reminder["text"]):
                 lidl_followup.mark_sent(reminder["job_id"], reminder["code"])
@@ -2771,15 +2777,15 @@ def _application_tracking_tick() -> None:
         return
     try:
         changed = application_tracker.mark_no_response()
-        if not changed:
-            return
-        _start_view_sync()
+        if changed:
+            _start_view_sync()
         if _cloud_profile_enabled():
-            titles = ", ".join(item["title"] for item in changed[:3])
-            suffix = f" и ещё {len(changed) - 3}" if len(changed) > 3 else ""
-            cloud_auth.send_digest(
-                "⏳ WexFlow: 60 дней без ответа. Статус «Нет ответа» поставлен для: "
-                f"{titles}{suffix}. Если работодатель ответит позже, статус обновится."
+            # Portal outboxes have one owner each: the corresponding monitor
+            # worker drains them before opening the employer site.  Keeping
+            # that ownership single avoids duplicate Telegram delivery when
+            # this scheduler tick overlaps a portal check.
+            application_tracker.flush_pending_notifications(
+                origin="automatic", source_name="WexFlow",
             )
     except Exception as exc:  # noqa: BLE001
         print("application-tracker: не удалось обновить статусы —", str(exc)[:140])
@@ -3294,6 +3300,11 @@ def _seven_eleven_state() -> dict:
 def hub(request: Request):
     connector_sources = connector_sync.DEFAULT_SOURCES
     with get_session() as s:
+        submitted_clause = (
+            Job.applied_at.is_not(None)
+            | Job.application_stage.in_(tuple(application_tracker.POST_APPLICATION_STATUSES))
+            | Job.status.in_(tuple(application_tracker.POST_APPLICATION_STATUSES))
+        )
         total_jobs = (
             s.exec(select(func.count(Job.id)).where(Job.source == "salling")).one() or 0
         )
@@ -3310,7 +3321,7 @@ def hub(request: Request):
             s.exec(
                 select(func.count(Job.id)).where(
                     Job.source == "salling",
-                    Job.status == "applied",
+                    submitted_clause,
                 )
             ).one()
             or 0
@@ -3337,7 +3348,9 @@ def hub(request: Request):
         last_applied = None
         try:
             last = s.exec(
-                select(Job).where(Job.status == "applied").order_by(Job.modified.desc())
+                select(Job).where(
+                    submitted_clause
+                ).order_by(Job.applied_at.desc(), Job.modified.desc())
             ).first()
             if last:
                 last_applied = {"title": last.title, "brand": last.brand}
@@ -4007,14 +4020,16 @@ def connector_apply_result(
             return _redirect_back(request, f"/job/{job_id}", error="Этот результат относится только к внешним анкетам.")
         source = job.source
         if outcome == "submitted":
-            application_tracker.set_status(job, "applied", source="manual")
+            application_tracker.record_status_in_session(
+                session, job, "applied", source="manual",
+            )
             job.applied_confidence = "manual"
             session.add(job)
+            applications.record_submitted_in_session(session, [job])
             session.commit()
             session.refresh(job)
     _release_connector_launch(job_id)
     if outcome == "submitted":
-        applications.record_submitted([job])
         _start_view_sync()
         return RedirectResponse(_url_with_system_response(
             target,
@@ -4181,7 +4196,13 @@ def index(
                     resurfaced = (
                         (Job.applied_at <= revisit_cutoff)
                         & (Job.last_seen >= listing_fresh_cutoff)
-                        & Job.status.in_(REVISITABLE_APPLICATION_STATUSES)
+                        & (
+                            Job.application_stage.in_(REVISITABLE_APPLICATION_STATUSES)
+                            | (
+                                Job.application_stage.is_(None)
+                                & Job.status.in_(REVISITABLE_APPLICATION_STATUSES)
+                            )
+                        )
                     )
                     active_or_unsubmitted = active_or_unsubmitted | resurfaced
                 stmt = stmt.where(active_or_unsubmitted)
@@ -4190,6 +4211,14 @@ def index(
             # Страну здесь НЕ фильтруем: поданная заявка — история человека, и
             # она не должна исчезать из-за смены настройки стран.
             stmt = stmt.where(Job.applied_at.is_not(None))
+        elif status in application_tracker.STATUS_LABELS:
+            stmt = stmt.where(
+                (Job.application_stage == status)
+                | (Job.application_stage.is_(None) & (Job.status == status))
+            )
+            country_only = feed.country_clause()
+            if country_only is not None:
+                stmt = stmt.where(country_only)
         elif status:
             stmt = stmt.where(Job.status == status)
             country_only = feed.country_clause()
@@ -4524,9 +4553,13 @@ def index(
         "new": "Новые (не просмотрены)",
         "seen": "Просмотренные",
         "applied": "Поданные",
+        "reviewing": "На рассмотрении",
         "interview": "Собеседование",
         "offer": "Оффер",
+        "hired": "Принят",
         "rejected": "Отказ",
+        "withdrawn": "Отозвана",
+        "no_response": "Нет ответа",
         "hidden": "Скрытые",
     }
     _chip_values = {
@@ -4698,18 +4731,34 @@ def set_status(job_id: str, request: Request, status: str = Form(...)):
         "applied": "Статус обновлён: вакансия отмечена как поданная.",
         "hidden": "Вакансия скрыта. Её можно вернуть из статуса «Скрытые».",
         "seen": "Статус сброшен: вакансия снова в просмотренных.",
+        "reviewing": "Статус обновлён: заявка на рассмотрении.",
         "interview": "Статус обновлён: собеседование.",
         "offer": "Статус обновлён: оффер.",
+        "hired": "Статус обновлён: предложение принято, трудоустройство подтверждено.",
         "rejected": "Статус обновлён: отказ.",
+        "withdrawn": "Статус обновлён: заявка отозвана.",
         "no_response": "Статус обновлён: ответа от работодателя пока нет.",
     }
     with get_session() as s:
         job = s.get(Job, job_id)
         if job:
             was_submitted = job.applied_at is not None
+            if was_submitted and status in {"new", "seen", "closed"}:
+                return _redirect_back(
+                    request, f"/job/{job_id}",
+                    error=(
+                        "Историю поданной заявки нельзя сбросить в статус вакансии. "
+                        "Выбери фактический этап отклика; скрытие остаётся отдельным действием."
+                    ),
+                )
             if status in application_tracker.STATUS_LABELS:
-                application_tracker.set_status(job, status, source="manual")
+                application_tracker.record_status_in_session(
+                    s, job, status, source="manual",
+                )
             else:
+                # hidden/new/seen/closed describe the listing, not the hiring
+                # pipeline.  In particular, hiding an already submitted card
+                # must not erase its application_stage or its history.
                 job.status = status
             if status in application_tracker.POST_APPLICATION_STATUSES and not was_submitted:
                 # ручная пометка — не отправка: в журнале доверия она должна
@@ -5631,27 +5680,26 @@ def _audit_groups(entries, now):
     return groups
 
 
-def _applied_proofs() -> dict:
-    """Карта «id вакансии/requisition → имя файла-скриншота» из logs/applied.
+def _applied_proofs(session, jobs) -> dict[str, str]:
+    """Validated receipt screenshots keyed by the exact local job id.
 
-    Воркер подачи сохраняет скрин результата как YYYYmmdd_HHMMSS_<rid>.png
-    (apply._save_proof), где rid = requisition_id или job.id. Файлы отсортированы
-    по имени = по времени, поэтому последний в списке — самый свежий скрин."""
-    proof_dir = config.DATA_DIR / "logs" / "applied"
+    A PNG filename is not evidence.  Only ``ApplicationEvidence`` rows whose
+    current bytes still match the recorded SHA-256 are allowed to appear as a
+    receipt screenshot in the application centre.
+    """
+    sources = {
+        str(getattr(job, "source", None) or "salling")
+        for job in jobs or [] if getattr(job, "id", None)
+    }
     proofs: dict[str, str] = {}
-    try:
-        for f in sorted(proof_dir.glob("*.png")):
-            m = re.match(r"\d{8}_\d{6}_(.+)\.png$", f.name)
-            if m:
-                proofs[m.group(1)] = f.name
-    except OSError:
-        pass
+    for source in sources:
+        proofs.update(trust.valid_receipt_screens(session, source))
     return proofs
 
 
 _APPLICATION_CENTER_FILTERS = {
-    "active", "action", "waiting", "interview", "offer",
-    "rejected", "no_response", "all",
+    "active", "action", "waiting", "reviewing", "interview", "offer",
+    "hired", "rejected", "withdrawn", "no_response", "all",
 }
 
 
@@ -5665,9 +5713,12 @@ def _application_center_counts(entries: list[dict]) -> dict:
 
     incomplete = sum(row.get("activity") != "submitted" for row in entries)
     waiting = submitted("applied")
+    reviewing = submitted("reviewing")
     interview = submitted("interview")
     offer = submitted("offer")
+    hired = submitted("hired")
     rejected = submitted("rejected")
+    withdrawn = submitted("withdrawn")
     no_response = submitted("no_response")
     action = sum(
         row.get("activity") != "submitted"
@@ -5676,12 +5727,15 @@ def _application_center_counts(entries: list[dict]) -> dict:
     )
     return {
         "all": len(entries),
-        "active": len(entries) - rejected - no_response,
+        "active": len(entries) - hired - rejected - withdrawn - no_response,
         "waiting": waiting,
         "action": action,
+        "reviewing": reviewing,
         "interview": interview,
         "offer": offer,
+        "hired": hired,
         "rejected": rejected,
+        "withdrawn": withdrawn,
         "no_response": no_response,
         "incomplete": incomplete,
     }
@@ -5695,7 +5749,7 @@ def _application_center_filter(entries: list[dict], selected: str) -> list[dict]
         result = [
             row for row in entries
             if row.get("activity") != "submitted"
-            or row.get("status") not in ("rejected", "no_response")
+            or row.get("status") not in ("hired", "rejected", "withdrawn", "no_response")
         ]
     elif selected == "action":
         result = [
@@ -5795,12 +5849,24 @@ def _portal_snapshot(job: Job, portal_states: dict[str, dict]) -> dict:
 
 @app.get("/applied-proof/{name}")
 def applied_proof(name: str):
-    """Отдаёт скрин-доказательство подачи из logs/applied. Только просмотр;
-    имя строго проверяется, чтобы нельзя было выбраться из папки скринов."""
+    """Serve only a registered receipt whose current bytes still validate."""
     if not re.fullmatch(r"[\w.\-]+\.png", name) or ".." in name:
         raise HTTPException(status_code=404)
     p = config.DATA_DIR / "logs" / "applied" / name
-    if not p.exists():
+    with get_session() as session:
+        evidence = session.exec(select(ApplicationEvidence).where(
+            ApplicationEvidence.kind == "receipt_screen",
+            ApplicationEvidence.path == name,
+        )).first()
+        valid = (
+            trust.valid_receipt_screens(session, evidence.source)
+            if evidence is not None else {}
+        )
+        registered = bool(
+            evidence is not None
+            and valid.get(str(evidence.job_id)) == name
+        )
+    if not registered or not p.is_file():
         raise HTTPException(status_code=404)
     return FileResponse(p, media_type="image/png")
 
@@ -5858,7 +5924,6 @@ def add_email_proof(
 def audit_log(request: Request):
     """Application center: sourced stages, silence, next actions and proofs."""
     from db import utcnow
-    proofs = _applied_proofs()
     now = utcnow()
     portal_states = {
         "salling": salling_monitor.load_state(),
@@ -5868,22 +5933,28 @@ def audit_log(request: Request):
         rows = s.exec(
             select(Job).where(Job.applied_at.is_not(None)).order_by(Job.applied_at.desc())
         ).all()
+        proofs = _applied_proofs(s, rows)
         email_map = email_evidence.existing_map(s, rows)
+        email_history = email_evidence.history_map(s, rows)
+        status_history = application_tracker.history_map(s, rows)
         entries = []
         for j in rows:
             tracker = application_tracker.view(j, now=now)
+            key = (str(j.source or "salling"), str(j.id))
+            stage = application_tracker.current_stage(j)
             entries.append({
                 "id": j.id, "title": j.title, "city": j.city, "brand": j.brand,
-                "status": j.status, "applied_at": j.applied_at,
+                "status": stage, "applied_at": j.applied_at,
                 "confidence": j.applied_confidence or "",
                 "source": j.source, "activity": "submitted",
-                "proof": proofs.get(str(j.requisition_id or "")) or proofs.get(str(j.id)) or "",
-                "email": email_map.get((str(j.source or "salling"), str(j.id))) or {},
+                "proof": proofs.get(str(j.id)) or "",
+                "email": email_map.get(key) or {},
+                "emails": (email_history.get(key) or [])[:8],
+                "history": (status_history.get(key) or [])[:8],
                 "tracker": tracker,
                 "portal": _portal_snapshot(j, portal_states),
             })
         pending = s.exec(select(Application).where(
-            Application.source != "salling",
             Application.state.in_(("submitting", "failed")),
         ).order_by(Application.updated_at.desc())).all()
         applied_keys = {(row["source"], row["id"]) for row in entries}
@@ -5896,13 +5967,15 @@ def audit_log(request: Request):
                 "title": job.title if job else application.job_id,
                 "city": job.city if job else "",
                 "brand": job.brand if job else "",
-                "status": job.status if job else "",
+                "status": application_tracker.current_stage(job) if job else "",
                 "applied_at": application.updated_at,
                 "confidence": "",
                 "source": application.source,
                 "activity": "preparing" if application.state == "submitting" else "incomplete",
                 "proof": "",
                 "email": {},
+                "emails": [],
+                "history": [],
                 "portal": {},
                 "tracker": {
                     "label": "Анкета открыта" if application.state == "submitting" else "Не завершено",
@@ -6449,6 +6522,7 @@ def _settings_context(
         "citizenship_options": profile_store.CITIZENSHIP_OPTIONS,
         "creds": credentials_store.status(), "home": settings_store.get_home(),
         "salling_monitor": salling_monitor.view(),
+        "monitor_interval_minutes": PORTAL_MONITOR_INTERVAL_MINUTES,
         "salling_applied_count": salling_applied_count,
         "lidl_credentials": lidl_credentials_store.status(profile.get("email") or ""),
         "lidl_monitor": lidl_monitor.view(),
@@ -7731,6 +7805,10 @@ def settings_document_rule_file(rule_id: str, kind: str):
 @app.get("/job/{job_id}", response_class=HTMLResponse)
 def detail(request: Request, job_id: str, trerror: str = ""):
     nearby_view = {}
+    application_stage = ""
+    application_history = []
+    application_email = {}
+    application_emails = []
     with get_session() as s:
         job = s.get(Job, job_id)
         if job and job.status == "new":
@@ -7739,6 +7817,14 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             s.commit()
             s.refresh(job)
         if job:
+            application_stage = application_tracker.current_stage(job)
+            history = application_tracker.history_map(s, [job])
+            email_latest = email_evidence.existing_map(s, [job])
+            email_history = email_evidence.history_map(s, [job])
+            application_key = (str(job.source or "salling"), str(job.id))
+            application_history = (history.get(application_key) or [])[:8]
+            application_email = email_latest.get(application_key) or {}
+            application_emails = (email_history.get(application_key) or [])[:8]
             # «В этом магазине и рядом»: берём только свою сеть и свой город,
             # а не всю базу — страница вакансии не должна тянуть тысячи строк.
             scope = None
@@ -7821,8 +7907,12 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             "source_labels": JOB_SOURCE_LABELS,
             "application_state": (
                 applications.state_of(job.id, source=job.source)
-                if job and job.source != "salling" else ""
+                if job else ""
             ),
+            "application_stage": application_stage,
+            "application_history": application_history,
+            "application_email": application_email,
+            "application_emails": application_emails,
             "selected_documents": selected_documents,
             # «в этом магазине и рядом» — этап 2
             "nearby": nearby_view,
@@ -7830,6 +7920,7 @@ def detail(request: Request, job_id: str, trerror: str = ""):
             "application_tracking": (
                 application_tracker.view(job) if job and job.applied_at else None
             ),
+            "monitor_interval_minutes": PORTAL_MONITOR_INTERVAL_MINUTES,
             "distance": distance,
             "has_home": bool(home),
             "maps_url": maps_url,

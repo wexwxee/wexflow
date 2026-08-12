@@ -116,9 +116,11 @@ def test_positive_lidl_receipt_is_persisted_as_real_submission():
             Application.source == "lidl",
         )).one()
         assert job.status == "applied"
-        assert job.applied_confidence == "receipt"
+        # Seeing the receipt establishes the application, but the platform is
+        # trusted only after exact screenshot bytes are registered.
+        assert job.applied_confidence == "indirect"
         assert row.state == "submitted"
-        assert row.confidence == "receipt"
+        assert row.confidence == "indirect"
 
 
 def test_connector_routes_track_incomplete_then_submitted_result():

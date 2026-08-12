@@ -148,3 +148,18 @@ def test_multiple_status_changes_are_sent_as_one_calm_digest():
 
     send.assert_called_once()
     assert "4 обновления" in send.call_args.args[0]
+
+
+def test_automatic_digest_never_claims_an_official_portal_source():
+    changes = [
+        {
+            "source": "salling", "origin": "automatic", "job_id": str(i),
+            "title": f"Job {i}", "status": "no_response",
+        }
+        for i in range(2)
+    ]
+    with mock.patch("cloud_auth.send_digest", return_value=True) as send:
+        assert application_tracker.notify_status_changes(changes) is True
+    text = send.call_args.args[0]
+    assert "локальное правило WexFlow" in text
+    assert "официальный кабинет" not in text

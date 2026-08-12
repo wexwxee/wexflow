@@ -1025,7 +1025,7 @@
   <input type="hidden" name="period" value="{{ f.period }}">
   {% if active_preset %}<input type="hidden" name="profile" value="{{ active_preset.id }}">{% endif %}
   {# «Закрытые» из выбора убраны: закрытая вакансия в ленту не попадает — подать на неё нельзя. #}
-  {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Все поданные','interview':'Собеседование','offer':'Оффер','rejected':'Отказ','no_response':'Нет ответа','hidden':'Скрытые'} %}
+  {% set statuses = {'active':'Активные','new':'Новые','seen':'Просмотренные','applied':'Все поданные','reviewing':'На рассмотрении','interview':'Собеседование','offer':'Оффер','hired':'Принят','rejected':'Отказ','withdrawn':'Отозвана','no_response':'Нет ответа','hidden':'Скрытые'} %}
   {# «сначала подходящие мне» появляется только когда рекомендации включены:
      пункт, который ничего не делает, хуже отсутствующего. #}
   {% set sorts = {'published':'↓ по дате','distance':'ближе по прямой','commute':'быстрее добраться','title':'по названию','city':'по городу'} %}
@@ -1234,7 +1234,7 @@
       <span class="selbox-ui"></span>
     </label>
     {% endif %}
-    {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','interview':'собес','offer':'оффер','rejected':'отказ','no_response':'нет ответа','hidden':'скрыто','closed':'закрыта'} %}
+    {% set st_ru = {'new':'новая','seen':'смотрел','applied':'подано','reviewing':'рассмотрение','interview':'собес','offer':'оффер','hired':'принят','rejected':'отказ','withdrawn':'отозвана','no_response':'нет ответа','hidden':'скрыто','closed':'закрыта'} %}
     <div class="badges">
       {% set short_sources = {'lidl':'Lidl','teamtailor':'Teamtailor','greenhouse':'Greenhouse','ashby':'Ashby','manual_link':'По ссылке'} %}
       {% if j.source != 'salling' %}<span class="badge source-badge source-{{ j.source }}">{{ short_sources.get(j.source, j.source) }}</span>{% endif %}

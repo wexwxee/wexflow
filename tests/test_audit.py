@@ -53,7 +53,11 @@ def test_application_center_counts_and_filters_do_not_mix_silence_with_rejection
     rows = [
         {"id": "wait", "activity": "submitted", "status": "applied", "tracker": {"action_required": False}},
         {"id": "follow", "activity": "submitted", "status": "applied", "tracker": {"action_required": True, "urgency": 2}},
+        {"id": "review", "activity": "submitted", "status": "reviewing", "tracker": {"action_required": False}},
+        {"id": "offer", "activity": "submitted", "status": "offer", "tracker": {"action_required": True}},
+        {"id": "hired", "activity": "submitted", "status": "hired", "tracker": {"action_required": False}},
         {"id": "reject", "activity": "submitted", "status": "rejected", "tracker": {"action_required": False}},
+        {"id": "withdrawn", "activity": "submitted", "status": "withdrawn", "tracker": {"action_required": False}},
         {"id": "silent", "activity": "submitted", "status": "no_response", "tracker": {"action_required": False}},
         {"id": "failed", "activity": "incomplete", "status": "new", "tracker": {"action_required": True, "urgency": 4}},
     ]
@@ -61,9 +65,16 @@ def test_application_center_counts_and_filters_do_not_mix_silence_with_rejection
 
     assert counts["rejected"] == 1
     assert counts["no_response"] == 1
-    assert counts["action"] == 2
-    assert {row["id"] for row in app._application_center_filter(rows, "active")} == {"wait", "follow", "failed"}
+    assert counts["reviewing"] == 1
+    assert counts["offer"] == 1
+    assert counts["hired"] == 1
+    assert counts["withdrawn"] == 1
+    assert counts["action"] == 3
+    assert {row["id"] for row in app._application_center_filter(rows, "active")} == {
+        "wait", "follow", "review", "offer", "failed",
+    }
     assert [row["id"] for row in app._application_center_filter(rows, "waiting")] == ["wait", "follow"]
+    assert [row["id"] for row in app._application_center_filter(rows, "hired")] == ["hired"]
 
 
 if __name__ == "__main__":

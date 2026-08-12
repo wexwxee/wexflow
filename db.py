@@ -74,6 +74,12 @@ class Job(SQLModel, table=True):
     # подачи определяется applied_at и не исчезает при interview/offer/rejected.
     application_status_updated_at: Optional[datetime] = None
     application_status_source: Optional[str] = None
+    # Current recruitment stage is deliberately separate from ``status``.
+    # ``status`` also describes the listing itself (new/seen/hidden/closed),
+    # while an application can remain at interview/offer after the advert is
+    # closed.  application_tracker keeps a temporary legacy mirror where it is
+    # safe, but this field is the source of truth for the hiring pipeline.
+    application_stage: Optional[str] = Field(default=None, index=True)
 
 
 class Application(SQLModel, table=True):
@@ -123,8 +129,40 @@ class ApplicationEvidence(SQLModel, table=True):
     sender: str = ""                       # только адрес отправителя
     subject: str = ""                      # короткий заголовок для журнала
     authentication: str = ""               # unverified_header | dkim_verified | provider_verified
+    stage: str = ""                        # stage described by this artifact, if any
+    stage_label: str = ""                  # short raw/detected label for the local journal
     occurred_at: Optional[datetime] = None  # Date из письма, приведённый к UTC
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class ApplicationStatusEvent(SQLModel, table=True):
+    """Append-only application timeline and durable notification outbox.
+
+    The current stage is cached on :class:`Job`, but every factual transition
+    lives here.  ``event_key`` makes repeated portal scans and repeated email
+    uploads idempotent.  Portal events are committed together with the stage;
+    ``notified_at`` is filled only after Telegram accepts the notification, so
+    a crash cannot silently lose it.
+    """
+    __table_args__ = (
+        UniqueConstraint("event_key", name="uq_application_status_event_key"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source: str = Field(default="salling", index=True)
+    job_id: str = Field(index=True)
+    stage: str = Field(index=True)
+    previous_stage: str = ""
+    origin: str = Field(default="manual", index=True)
+    raw_label: str = ""
+    evidence_fingerprint: str = ""
+    event_key: Optional[str] = Field(default=None, index=True)
+    occurred_at: datetime = Field(default_factory=utcnow, index=True)
+    observed_at: datetime = Field(default_factory=utcnow)
+    notification_required: bool = False
+    notified_at: Optional[datetime] = None
+    notification_attempts: int = 0
+    notification_error: str = ""
 
 
 class RoleVerdict(SQLModel, table=True):
@@ -371,6 +409,7 @@ def _migrate():
             ("applied_confidence", "applied_confidence TEXT"),
             ("application_status_updated_at", "application_status_updated_at DATETIME"),
             ("application_status_source", "application_status_source VARCHAR"),
+            ("application_stage", "application_stage VARCHAR"),
             ("fit", "fit VARCHAR"),
             ("fit_reason", "fit_reason TEXT"),
             ("fit_engine", "fit_engine VARCHAR"),
@@ -379,6 +418,21 @@ def _migrate():
         ]:
             if name not in cols:
                 conn.execute(text(f"ALTER TABLE job ADD COLUMN {ddl}"))
+        evidence_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(applicationevidence)"))
+        }
+        for name, ddl in [
+            ("stage", "stage VARCHAR NOT NULL DEFAULT ''"),
+            ("stage_label", "stage_label VARCHAR NOT NULL DEFAULT ''"),
+        ]:
+            if evidence_cols and name not in evidence_cols:
+                conn.execute(text(f"ALTER TABLE applicationevidence ADD COLUMN {ddl}"))
+        conn.execute(text(
+            "UPDATE job SET application_stage = CASE "
+            "WHEN status IN ('applied','reviewing','interview','offer','hired','rejected','withdrawn','no_response') "
+            "THEN status WHEN applied_at IS NOT NULL THEN 'applied' ELSE NULL END "
+            "WHERE application_stage IS NULL"
+        ))
         # вид транспорта у сохранённых маршрутов: у старых записей пусто,
         # интерфейс до пересчёта угадывает его по номеру линии
         troute = {row[1] for row in conn.execute(text("PRAGMA table_info(transitroute)"))}
@@ -386,6 +440,26 @@ def _migrate():
             conn.execute(text("ALTER TABLE transitroute ADD COLUMN kinds VARCHAR NOT NULL DEFAULT ''"))
         conn.commit()
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_job_source ON job (source)"))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_job_application_stage ON job (application_stage)"
+        ))
+        # Seed one non-notifying event for pre-1.4.5 applications.  The
+        # append-only timeline then starts with an honest recovered fact and
+        # future portal/email/manual transitions can be audited normally.
+        conn.execute(text(
+            "INSERT OR IGNORE INTO applicationstatusevent "
+            "(source, job_id, stage, previous_stage, origin, raw_label, "
+            " evidence_fingerprint, event_key, occurred_at, observed_at, "
+            " notification_required, notification_attempts, notification_error) "
+            "SELECT COALESCE(source, 'salling'), id, application_stage, '', "
+            " 'recovered', 'Состояние до обновления 1.4.5', '', "
+            " 'backfill:' || COALESCE(source, 'salling') || ':' || id, "
+            " COALESCE(application_status_updated_at, applied_at, CURRENT_TIMESTAMP), "
+            " CURRENT_TIMESTAMP, 0, 0, '' FROM job "
+            "WHERE application_stage IS NOT NULL AND NOT EXISTS ("
+            " SELECT 1 FROM applicationstatusevent e "
+            " WHERE e.source = COALESCE(job.source, 'salling') AND e.job_id = job.id)"
+        ))
         _deduplicate_applications(conn)
         # Контракт реестра — ровно одна строка на source + job_id. Закрепляем
         # его в SQLite, чтобы параллельные потоки не создавали две истории.

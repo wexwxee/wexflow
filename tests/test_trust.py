@@ -21,7 +21,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 
 import settings_store
 import trust
@@ -166,6 +166,30 @@ def test_registered_receipt_screen_is_hash_checked(tmp_path):
         assert trust.stats("salling")["proven"] is True
         path.write_bytes(b"truncated or replaced")
         assert trust.stats("salling")["proven"] is False
+
+
+def test_attaching_exact_receipt_atomically_upgrades_indirect_submission(tmp_path):
+    proof_dir = tmp_path / "logs" / "applied"
+    proof_dir.mkdir(parents=True)
+    path = proof_dir / "20260812_120000_lidl_7.png"
+    path.write_bytes(b"confirmed receipt")
+    job_id = "lidl:7"
+    job = _applied(job_id, source="lidl", confidence="indirect")
+    sessions = _db([job])
+
+    with mock.patch.object(trust.config, "DATA_DIR", tmp_path), \
+            mock.patch.object(trust, "get_session", sessions):
+        assert trust.attach_receipt_screen(job_id, path) is True
+
+    with sessions() as session:
+        stored = session.get(Job, job_id)
+        evidence = session.exec(select(ApplicationEvidence)).one()
+        application = session.exec(select(Application)).one()
+        assert stored.applied_confidence == "receipt"
+        assert evidence.fingerprint == hashlib.sha256(path.read_bytes()).hexdigest()
+        assert evidence.stage == "applied"
+        assert application.state == "submitted"
+        assert application.confidence == "receipt"
 
 
 # ── Доверие не переносится между площадками ────────────────────────────────

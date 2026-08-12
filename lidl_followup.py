@@ -92,12 +92,54 @@ def view(job, email: str = "") -> dict:
     with _LOCK:
         entry = _entry(_all(), job.id)
     checks = entry.get("checks", {})
+    confidence = str(getattr(job, "applied_confidence", "") or "").strip().lower()
+    submission_facts = {
+        "receipt": {
+            "title": "Сайт показал квитанцию о подаче",
+            "text": (
+                "Lidl показал экран подтверждения. Зарегистрированный снимок, если он "
+                "сохранился без изменений, доступен в «Моих откликах»."
+            ),
+            "done": True,
+        },
+        "portal": {
+            "title": "Заявка найдена в кабинете Lidl",
+            "text": (
+                "Официальный раздел «Søgte jobs» подтвердил, что заявка связана "
+                "с кандидатским профилем."
+            ),
+            "done": True,
+        },
+        "indirect": {
+            "title": "Подачу нужно подтвердить",
+            "text": (
+                "Форма завершилась без видимой квитанции. Проверь «Søgte jobs» и "
+                "письмо работодателя; WexFlow не выдаёт эту попытку за доказанную подачу."
+            ),
+            "done": False,
+        },
+        "manual": {
+            "title": "Подача отмечена вручную",
+            "text": (
+                "Это запись пользователя, а не квитанция сайта. Проверь заявку в "
+                "«Søgte jobs» или добавь исходное письмо работодателя."
+            ),
+            "done": False,
+        },
+    }.get(confidence, {
+        "title": "Подтверждение подачи не найдено",
+        "text": (
+            "В истории есть дата подачи, но WexFlow не знает её источник. Проверь "
+            "кандидатский кабинет или добавь исходное письмо работодателя."
+        ),
+        "done": False,
+    })
     steps = [
         {
-            "key": "receipt",
-            "title": "Заявка получена Lidl",
-            "text": "WexFlow увидел квитанцию «Tak for din ansøgning!» и сохранил пруф.",
-            "done": bool(getattr(job, "applied_at", None)),
+            "key": "submission_evidence",
+            "title": submission_facts["title"],
+            "text": submission_facts["text"],
+            "done": submission_facts["done"],
             "automatic": True,
         },
         {
@@ -145,6 +187,8 @@ def view(job, email: str = "") -> dict:
     ]
     return {
         "steps": steps,
+        "confidence": confidence,
+        "submission_confirmed": bool(submission_facts["done"]),
         "reminders": bool(entry.get("reminders")),
         "portal_url": PORTAL_URL,
         "gmail_url": GMAIL_SEARCH_URL,
@@ -183,7 +227,11 @@ def due_reminders(jobs: list, now: datetime | None = None) -> list[dict]:
     result = []
     for job in jobs:
         entry = _entry(data, job.id)
-        if not entry.get("reminders") or getattr(job, "status", "") != "applied":
+        stage = (
+            getattr(job, "application_stage", "")
+            or getattr(job, "status", "")
+        )
+        if not entry.get("reminders") or stage != "applied":
             continue
         applied_at = getattr(job, "applied_at", None)
         if not applied_at:

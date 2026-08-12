@@ -187,25 +187,82 @@ def _record_confirmed_submission(job_id: str) -> bool:
     wanted = str(job_id or "").strip()
     if not wanted:
         return False
-    try:
-        import applications
-        import application_tracker
-        from db import Job, get_session, utcnow
+    import time
 
-        with get_session() as session:
-            job = session.get(Job, wanted)
-            if job is None:
-                return False
-            application_tracker.set_status(job, "applied", source="submission")
-            job.applied_confidence = "receipt"
-            session.add(job)
-            session.commit()
-            session.refresh(job)
-        applications.record_submitted([job])
-        return True
-    except Exception as exc:
-        print("  не удалось записать подтверждённую подачу:", str(exc)[:120])
-        return False
+    last_error = None
+    for attempt in range(5):
+        try:
+            import applications
+            import application_tracker
+            from db import Job, get_session, utcnow
+
+            with get_session() as session:
+                job = session.get(Job, wanted)
+                if job is None:
+                    raise RuntimeError("вакансия временно недоступна в локальной базе")
+                moment = utcnow()
+                application_tracker.record_status_in_session(
+                    session,
+                    job,
+                    "applied",
+                    source="submission",
+                    occurred_at=moment,
+                    raw_label="Lidl показал подтверждение; сохраняю снимок",
+                    event_key=(
+                        f"submission:{job.source}:{job.id}:"
+                        f"{moment.isoformat(timespec='microseconds')}"
+                    ),
+                )
+                # A visible confirmation establishes the application, but
+                # platform trust is earned only after exact screenshot bytes
+                # are bound in SQLite. Never downgrade stronger old evidence.
+                if str(job.applied_confidence or "") not in {"portal", "receipt"}:
+                    job.applied_confidence = "indirect"
+                session.add(job)
+                applications.record_submitted_in_session(session, [job])
+                session.commit()
+            return True
+        except Exception as exc:
+            last_error = exc
+            if attempt < 4:
+                time.sleep(0.5 * (attempt + 1))
+    # The employer has already shown a receipt.  Persist a durable portal
+    # verification request so the next monitor run can recover Job/Application
+    # instead of allowing an accidental duplicate submission.
+    try:
+        import lidl_monitor
+        lidl_monitor.queue_verification(wanted)
+    except Exception:
+        pass
+    print("  не удалось записать подтверждённую подачу; поставил восстановление через кабинет:",
+          str(last_error)[:120])
+    return False
+
+
+_RECEIPT_PERSIST_FAILURE = (
+    "сайт показал квитанцию, локальная запись не сохранилась; проверим кабинет"
+)
+
+
+def _report_receipt_persist_failure(page, job_id: str) -> str:
+    """Report a receipt as unconfirmed when its durable local write failed."""
+    message = _RECEIPT_PERSIST_FAILURE
+    phone_reported = _notify_terminal(
+        page,
+        job_id,
+        prepared=True,
+        note=message,
+        state="unconfirmed",
+        message=message,
+    )
+    _write_status(
+        job_id,
+        "no_receipt",
+        message,
+        phone_reported=phone_reported,
+    )
+    print("  КВИТАНЦИЯ ЕСТЬ, НО ЛОКАЛЬНАЯ ЗАПИСЬ НЕ СОХРАНИЛАСЬ; проверим кабинет")
+    return message
 
 
 def _send_prepared_proof_to_chat(page, job_id: str) -> bool:
@@ -413,14 +470,21 @@ def _wait_until_closed(
             if browser_requested:
                 print("  подтверждение в окне — отправляю заявку Lidl доверенным кликом")
                 result = lidl_apply.submit(page, profile or {})
-                lidl_apply.show_explicit_submit_result(
-                    page,
-                    result["state"],
-                    result["message"],
-                )
                 if result["state"] == "submitted":
+                    persisted = bool(
+                        job_id and _record_confirmed_submission(job_id)
+                    )
+                    if not persisted:
+                        lidl_apply.show_explicit_submit_result(
+                            page, "no_receipt", _RECEIPT_PERSIST_FAILURE,
+                        )
+                        if job_id:
+                            _report_receipt_persist_failure(page, job_id)
+                        return
+                    lidl_apply.show_explicit_submit_result(
+                        page, result["state"], result["message"],
+                    )
                     if job_id:
-                        _record_confirmed_submission(job_id)
                         proof_ready = bool(result.get("proof_ready", True))
                         if not proof_ready:
                             proof_ready = lidl_apply.prepare_submission_proof(page)
@@ -439,6 +503,11 @@ def _wait_until_closed(
                         )
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
                     return
+                lidl_apply.show_explicit_submit_result(
+                    page,
+                    result["state"],
+                    result["message"],
+                )
                 if result["state"] == "blocked":
                     if job_id:
                         note = (
@@ -499,7 +568,9 @@ def _wait_until_closed(
                 print("  подтверждение из Telegram — отправляю заявку Lidl")
                 result = lidl_apply.submit(page, profile or {})
                 if result["state"] == "submitted":
-                    _record_confirmed_submission(job_id)
+                    if not _record_confirmed_submission(job_id):
+                        _report_receipt_persist_failure(page, job_id)
+                        return
                     proof_ready = bool(result.get("proof_ready", True))
                     if not proof_ready:
                         proof_ready = lidl_apply.prepare_submission_proof(page)
@@ -554,6 +625,9 @@ def _wait_until_closed(
                 if lidl_apply.submission_receipt_visible(page):
                     proof_ready = lidl_apply.prepare_submission_proof(page)
                     recorded = _record_confirmed_submission(job_id)
+                    if not recorded:
+                        _report_receipt_persist_failure(page, job_id)
+                        return
                     print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
                     phone_reported = False
                     if proof_ready:
@@ -646,7 +720,9 @@ def _prepare_one(page, item: dict, profile: dict, submit: bool) -> tuple[str, st
     state = result["state"]
     message = result["message"]
     if state == "submitted":
-        _record_confirmed_submission(job_id)
+        if not _record_confirmed_submission(job_id):
+            message = _report_receipt_persist_failure(page, job_id)
+            return "no_receipt", message
         proof_ready = bool(result.get("proof_ready", True))
         if not proof_ready:
             proof_ready = lidl_apply.prepare_submission_proof(page)
@@ -869,7 +945,13 @@ def run(
 
                     result = lidl_apply.submit(page, profile)
                     if result["state"] == "submitted":
-                        _record_confirmed_submission(job_id)
+                        if not _record_confirmed_submission(job_id):
+                            _report_receipt_persist_failure(page, job_id)
+                            try:
+                                ctx.close()
+                            except Exception:
+                                pass
+                            return
                         _write_status(job_id, "submitted", result["message"])
                         print("  ПОДТВЕРЖДЕНО: Lidl показал квитанцию о получении.")
                         _send_proof_to_chat(page, job_id)

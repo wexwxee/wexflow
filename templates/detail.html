@@ -30,6 +30,16 @@
   .st { background:var(--glass); border:1px solid var(--glass-line); color:var(--txt); border-radius:10px; padding:8px 12px; font-size:13px; font-weight:600; cursor:pointer; transition:border-color .15s; }
   .st:hover { border-color:var(--accent); }
   .st.cur { background:var(--ok-bg); border-color:var(--ok-line); color:var(--ok-txt); }
+  .status-history { margin-top:12px; padding:12px 14px; border:1px solid var(--glass-line); border-radius:11px; background:var(--glass); }
+  .status-history summary { cursor:pointer; color:var(--txt-strong); font-weight:750; }
+  .status-history-list { display:grid; gap:8px; margin-top:10px; }
+  .status-history-item { display:grid; grid-template-columns:112px 1fr; gap:10px; padding-top:8px; border-top:1px solid var(--glass-line); }
+  .status-history-item time { color:var(--muted); font-size:11px; }
+  .status-history-item b { color:var(--txt-strong); }
+  .status-history-item small { display:block; margin-top:2px; color:var(--muted); line-height:1.4; }
+  .email-evidence-card { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px; }
+  .email-evidence-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .email-evidence-actions input { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
   .topline { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--glass-line); }
   .detail-brand { margin:18px 0 12px; }
   .lidl-after { margin:18px 0; padding:18px; border:1px solid rgba(0,92,169,.55);
@@ -103,11 +113,12 @@
   {% if not job %}
     <p>Вакансия не найдена.</p>
   {% else %}
-    {% set st_ru = {'new':'новая','seen':'просмотрено','applied':'подано','interview':'собеседование','offer':'оффер','rejected':'отказ','no_response':'нет ответа','closed':'закрыта'} %}
+    {% set current_application_stage = application_tracking.status if application_tracking else application_stage %}
+    {% set st_ru = {'new':'новая','seen':'просмотрено','applied':'подано','reviewing':'на рассмотрении','interview':'собеседование','offer':'оффер','hired':'принят','rejected':'отказ','withdrawn':'отозвана','no_response':'нет ответа','closed':'закрыта'} %}
     <h1 style="font-size:26px;margin:14px 0 8px;">{{ job.title }}</h1>
     {% set cat0 = (job.categories or '').split(',')[0] %}
     <div>
-      <span class="badge">{{ st_ru.get(job.status, job.status) }}</span>
+      <span class="badge">{{ st_ru.get(current_application_stage or job.status, current_application_stage or job.status) }}</span>
       {% if job.source != 'salling' %}<span class="badge" style="border-color:#6b66ff;color:#9c98ff;">{{ source_labels.get(job.source, job.source) }}</span>{% endif %}
       {% if cat0 %}<span class="badge" style="color:var(--info-txt);">{{ L.label_or_pretty(L.CATEGORY, cat0) }}</span>{% endif %}
       {% if L.is_leadership(job.title) %}<span class="badge lead" title="Автопилот и пакетная подача такие не отправляют — подать можно только вручную">{{ ic.i('alert', 12) }} руководящая</span>{% endif %}
@@ -123,12 +134,13 @@
     {% endif %}
     <div class="status-row">
       <span class="lbl">Статус заявки:</span>
-      {% set sticons = {'applied':'check','interview':'phone','offer':'award','rejected':'x','no_response':'clock','seen':'undo'} %}
+      {% set sticons = {'applied':'check','reviewing':'clock','interview':'phone','offer':'award','hired':'check','rejected':'x','withdrawn':'undo','no_response':'clock','seen':'undo'} %}
       <form method="post" action="/job/{{ job.id }}/status" style="display:inline-flex;gap:7px;flex-wrap:wrap;">
-        {% for val,txt in [('applied','Подано'),('interview','Собеседование'),('offer','Оффер'),('rejected','Отказ'),('no_response','Нет ответа'),('seen','Сброс')] %}
-          <button class="st {{ 'cur' if job.status==val }}" name="status" value="{{ val }}"
-                  {% if val == 'applied' and job.status != 'applied' %}onclick="return confirm('Отметить как поданную ВРУЧНУЮ?\n\nЗаявка при этом НЕ отправляется — это пометка для списка. Чтобы подать по-настоящему, нажми «Подать заявку» ниже.')"{% endif %}>{{ ic.i(sticons[val], 13) }} {{ txt }}</button>
+        {% for val,txt in [('applied','Подано'),('reviewing','На рассмотрении'),('interview','Собеседование'),('offer','Оффер'),('hired','Принят'),('rejected','Отказ'),('withdrawn','Отозвана'),('no_response','Нет ответа')] %}
+          <button class="st {{ 'cur' if current_application_stage==val }}" name="status" value="{{ val }}"
+                  {% if val == 'applied' and current_application_stage != 'applied' %}onclick="return confirm('Отметить как поданную ВРУЧНУЮ?\n\nЗаявка при этом НЕ отправляется — это пометка для списка. Чтобы подать по-настоящему, нажми «Подать заявку» ниже.')"{% endif %}>{{ ic.i(sticons[val], 13) }} {{ txt }}</button>
         {% endfor %}
+        {% if not job.applied_at %}<button class="st {{ 'cur' if job.status=='seen' }}" name="status" value="seen">{{ ic.i('undo',13) }} Сброс</button>{% endif %}
       </form>
     </div>
     {% if application_tracking %}
@@ -138,13 +150,38 @@
       {% if application_tracking.source_label %} Последнее изменение: {{ application_tracking.source_label }}.{% endif %}
     </div>
     {% endif %}
-    {% if job.source != 'salling' and application_state in ['submitting', 'failed'] %}
+    {% if application_history %}
+    <details class="status-history">
+      <summary>История этапов · {{ application_history|length }}</summary>
+      <div class="status-history-list">
+        {% for event in application_history %}
+        <div class="status-history-item">
+          <time>{{ (event.occurred_at or event.observed_at).strftime('%d.%m.%Y %H:%M') if (event.occurred_at or event.observed_at) else 'без даты' }}</time>
+          <div><b>{% if event.previous_label %}{{ event.previous_label }} → {% endif %}{{ event.label }}</b><small>{{ event.origin_label or 'Сохранено в WexFlow' }}{% if event.raw_label %} · в источнике: {{ event.raw_label }}{% endif %}{% if event.evidence_fingerprint %} · доказательство сохранено{% endif %}</small></div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+    {% if job.applied_at %}
+    <div class="notice email-evidence-card">
+      <div><b>Письма работодателя{% if application_email.count %} · {{ application_email.count }}{% endif %}</b><br><small>{% if application_email %}Последнее: {{ application_email.stage_label or 'связано с откликом' }}{% if application_email.subject %} · {{ application_email.subject }}{% endif %}{% else %}Можно приложить исходный .eml; WexFlow сохранит его только на этом компьютере.{% endif %}</small></div>
+      <div class="email-evidence-actions">
+        {% if application_email.file %}<a class="st" href="/email-proof/{{ application_email.file }}" download>Скачать последнее</a>{% endif %}
+        <form method="post" enctype="multipart/form-data" action="/job/{{ job.id }}/email-proof"><label class="st" for="detail-email-proof">{{ 'Добавить ещё письмо' if application_email else 'Добавить письмо' }}</label><input id="detail-email-proof" type="file" name="email_file" accept=".eml,message/rfc822" required onchange="this.form.submit()"></form>
+      </div>
+    </div>
+    {% endif %}
+    {% if application_state in ['submitting', 'failed'] %}
     <div class="notice" style="margin-top:14px;">
       {% if application_state == 'submitting' %}
         <b>Анкета открыта.</b> Когда закончишь на сайте компании, отметь результат — WexFlow сам ничего не считает отправленным.
       {% else %}
         <b>Анкета не завершена.</b> Запись сохранена в журнале, можно продолжить позже.
       {% endif %}
+      {% if job.source == 'salling' %}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"><a class="primary" href="/job/{{ job.id }}/apply">Открыть подачу Salling</a></div>
+      {% else %}
       <form method="post" action="/job/{{ job.id }}/connector/result" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
         <button class="primary" type="submit" name="outcome" value="submitted"
                   onclick="return confirm('Подтвердить, что ты сам отправил анкету на сайте компании?')">{{ ic.i('check', 13) }} Я отправил анкету</button>
@@ -152,6 +189,7 @@
         <button class="secondary" type="submit" name="outcome" value="incomplete">Не завершил</button>
         {% endif %}
       </form>
+      {% endif %}
     </div>
     {% endif %}
     {% if lidl_post_apply %}
@@ -160,16 +198,19 @@
         <div>
           <div class="lidl-kicker">После подачи · Lidl Danmark</div>
           <h2>Что делать дальше</h2>
-          <p>Заявка уже отправлена. Теперь Lidl ведёт процесс через письма и кандидатский кабинет.</p>
+          {% if lidl_post_apply.confidence == 'portal' %}<p>Заявка найдена в официальном кабинете Lidl. Дальнейшие этапы появляются там и в письмах.</p>
+          {% elif lidl_post_apply.confidence == 'receipt' %}<p>Сайт показал квитанцию о подаче. Дальнейшие этапы Lidl ведёт через письма и кандидатский кабинет.</p>
+          {% elif lidl_post_apply.confidence == 'indirect' %}<p>Форма завершилась без видимой квитанции. Проверь заявку в кабинете или письме работодателя.</p>
+          {% else %}<p>Подача отмечена вручную и пока не подтверждена кабинетом или квитанцией сайта.</p>{% endif %}
         </div>
-        <span class="badge" style="border-color:var(--ok-line);color:var(--ok-txt);">{{ ic.i('check', 12) }} заявка получена</span>
+        <span class="badge" style="border-color:{{ 'var(--ok-line)' if lidl_post_apply.submission_confirmed else 'var(--warn-line)' }};color:{{ 'var(--ok-txt)' if lidl_post_apply.submission_confirmed else 'var(--warn-txt)' }};">{{ ic.i('check' if lidl_post_apply.submission_confirmed else 'alert', 12) }} {{ 'подача подтверждена' if lidl_post_apply.submission_confirmed else 'нужна проверка' }}</span>
       </div>
 
       <div class="lidl-steps">
         {% for step in lidl_post_apply.steps %}
           {% if step.automatic %}
-          <div class="lidl-step done auto">
-            <span class="lidl-check">✓</span>
+          <div class="lidl-step {{ 'done' if step.done else '' }} auto">
+            <span class="lidl-check">{{ '✓' if step.done else '' }}</span>
             <span><b>{{ step.title }}</b><small>{{ step.text }}</small></span>
           </div>
           {% else %}
@@ -238,7 +279,7 @@
             <b>Автомониторинг кабинета · {{ mon.phase_label }}</b>
           </span>
           <small>
-            WexFlow раз в 3 часа проверяет только раздел «Søgte jobs» и пишет в Telegram,
+            WexFlow каждые {{ monitor_interval_minutes }} мин проверяет только раздел «Søgte jobs», пока приложение запущено, и пишет в Telegram,
             если Lidl изменил статус. Сохранённый пароль зашифрован Windows DPAPI,
             а сессия входа находится в отдельном локальном профиле браузера.
             {% if mon.last_success_at %}<br>Последняя успешная проверка: {{ mon.last_success_at }}.{% endif %}

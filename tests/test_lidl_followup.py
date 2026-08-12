@@ -116,6 +116,25 @@ def test_enabling_old_application_sends_only_the_current_reminder():
     assert due[0]["code"] == "week1"
 
 
+def test_reminders_follow_application_stage_not_listing_visibility():
+    now = dt.datetime(2026, 8, 12, 12, 0)
+    job = Job(
+        id="lidl:hidden-live",
+        source="lidl",
+        status="hidden",
+        application_stage="applied",
+        applied_at=now - dt.timedelta(days=3),
+    )
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(lidl_followup, "PATH", Path(tmp) / "followups.json"):
+        lidl_followup.set_reminders(job.id, True)
+        due = lidl_followup.due_reminders([job], now=now)
+        assert len(due) == 1 and due[0]["code"] == "day3"
+
+        job.application_stage = "hired"
+        assert lidl_followup.due_reminders([job], now=now) == []
+
+
 def test_submitted_lidl_detail_renders_the_full_followup_card():
     _engine, sessions = _database()
     with sessions() as session:
@@ -152,7 +171,7 @@ def test_submitted_lidl_detail_renders_the_full_followup_card():
         "Включить напоминания",
         "Автомониторинг кабинета",
         "Подключить кабинет",
-        "раз в 3 часа",
+        "каждые 30 мин",
         "Вход в кабинет Lidl",
         "Сохранить и подключить",
         "Windows DPAPI",
@@ -165,6 +184,26 @@ def test_submitted_lidl_detail_renders_the_full_followup_card():
         assert phrase in html
     assert "Открыть кабинет Lidl" in html
     assert "career5.successfactors.eu" in html
+
+
+def test_manual_lidl_mark_never_claims_a_receipt_or_confirmed_submission():
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(lidl_followup, "PATH", Path(tmp) / "followups.json"):
+        job = Job(
+            id="lidl:manual-proof",
+            source="lidl",
+            status="applied",
+            applied_at=dt.datetime(2026, 8, 12, 9, 0),
+            applied_confidence="manual",
+        )
+        guide = lidl_followup.view(job, "ivan@example.com")
+
+    first = guide["steps"][0]
+    assert first["done"] is False
+    assert guide["submission_confirmed"] is False
+    assert "вручную" in first["title"].lower()
+    assert "квитанц" not in first["title"].lower()
+    assert "квитанция сайта" in first["text"].lower()
 
 
 def test_followup_tick_marks_reminder_only_after_telegram_accepts_it():

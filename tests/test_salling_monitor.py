@@ -11,8 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlmodel import SQLModel, Session, create_engine
 
 import applications
+import application_tracker
 import salling_monitor
-from db import Job
+from db import Application, ApplicationStatusEvent, Job, select
 
 
 def _database():
@@ -57,8 +58,11 @@ def test_real_cockpit_table_is_parsed_by_requisition_id():
     assert rows[0]["job_id"] == "job:a"
     assert rows[0]["title"] == "Local title"
     assert rows[0]["status"] == "applied"
+    assert rows[0]["portal_status"] == "Applied"
+    assert rows[0]["match_strength"] == "exact_requisition"
     assert rows[1]["status"] == "interview"
     assert rows[2]["job_id"] == ""
+    assert rows[2]["match_strength"] == "external_requisition"
     assert rows[2]["status"] == "rejected"
 
 
@@ -122,6 +126,16 @@ def test_candidate_profile_markers_require_a_real_logged_in_page():
     assert salling_monitor.is_logged_in("Email Password Log ind") is False
 
 
+def test_salling_classifies_reviewing_hired_and_withdrawn_statuses():
+    assert salling_monitor.classify_status("Under review")["code"] == "reviewing"
+    assert salling_monitor.classify_status("Hired")["code"] == "hired"
+    assert salling_monitor.classify_status("Application accepted")["code"] == "unknown"
+    assert salling_monitor.classify_status("You have not been hired")["code"] == "rejected"
+    assert salling_monitor.classify_status("You have not yet been hired")["code"] == "unknown"
+    assert salling_monitor.classify_status("Du er ikke blevet ansat")["code"] == "rejected"
+    assert salling_monitor.classify_status("Application withdrawn")["code"] == "withdrawn"
+
+
 def test_portal_restores_a_submission_missed_by_wexflow():
     _engine, sessions = _database()
     with sessions() as session:
@@ -139,6 +153,8 @@ def test_portal_restores_a_submission_missed_by_wexflow():
         "title": "Salgsassistent",
         "status": "applied",
         "status_label": "Заявка подана",
+        "portal_status": "Applied",
+        "match_strength": "exact_requisition",
     }
     with mock.patch("db.get_session", sessions), \
             mock.patch.object(applications, "get_session", sessions):
@@ -169,12 +185,48 @@ def test_portal_stage_updates_an_existing_application():
             "job_id": "salling:interview",
             "status": "interview",
             "status_label": "Приглашение на собеседование",
+            "portal_status": "Invited to interview",
+            "match_strength": "exact_requisition",
         }])
     assert restored == []
     with sessions() as session:
         job = session.get(Job, "salling:interview")
         assert job.status == "interview"
         assert job.application_status_source == "salling_portal"
+
+
+def test_salling_portal_upgrades_existing_provenance_and_persists_hired():
+    _engine, sessions = _database()
+    applied_at = dt.datetime(2026, 7, 1, 9, 0)
+    with sessions() as session:
+        session.add(Job(
+            id="salling:hired", source="salling", title="Salgsassistent",
+            requisition_id="203999", status="offer", application_stage="offer",
+            applied_at=applied_at, applied_confidence="manual",
+            application_status_source="manual",
+        ))
+        session.add(Application(
+            source="salling", job_id="salling:hired", state="submitted",
+            confidence="manual", submitted_at=applied_at,
+        ))
+        session.commit()
+    snapshot = {
+            "job_id": "salling:hired", "requisition_id": "203999",
+            "status": "hired", "status_label": "Принят на работу",
+            "portal_status": "Hired", "match_strength": "exact_requisition",
+    }
+    with mock.patch("db.get_session", sessions):
+        salling_monitor._persist_statuses([snapshot])
+        salling_monitor._persist_statuses([snapshot])
+    with sessions() as session:
+        job = session.get(Job, "salling:hired")
+        application = session.exec(select(Application)).one()
+        event = session.exec(select(ApplicationStatusEvent)).one()
+    assert job.application_stage == "hired"
+    assert job.applied_confidence == "portal"
+    assert job.application_status_source == "salling_portal"
+    assert application.confidence == "portal"
+    assert event.stage == "hired" and event.raw_label == "Hired"
 
 
 def test_first_snapshot_is_baseline_but_later_stage_change_notifies():
@@ -195,3 +247,31 @@ def test_monitor_state_contains_no_credentials():
         raw = salling_monitor.STATE_PATH.read_text(encoding="utf-8").lower()
     assert "password" not in raw
     assert "email" not in raw
+
+
+def test_disabling_salling_during_check_is_not_undone_by_worker_completion():
+    fake_page = mock.MagicMock()
+    fake_context = mock.MagicMock()
+    fake_context.pages = [fake_page]
+    with tempfile.TemporaryDirectory() as tmp, \
+            mock.patch.object(salling_monitor, "STATE_PATH", Path(tmp) / "monitor.json"), \
+            mock.patch.object(salling_monitor, "LOCK_PATH", Path(tmp) / "monitor.lock"), \
+            mock.patch("playwright.sync_api.sync_playwright") as sync_playwright, \
+            mock.patch.object(salling_monitor, "_launch_context", return_value=fake_context), \
+            mock.patch.object(salling_monitor, "_open_portal"), \
+            mock.patch.object(salling_monitor, "_page_text", return_value="Ingen data"), \
+            mock.patch.object(salling_monitor, "_open_applied"), \
+            mock.patch.object(salling_monitor, "_known_jobs", return_value=[]), \
+            mock.patch.object(salling_monitor, "parse_applied_jobs", return_value=[]), \
+            mock.patch.object(salling_monitor, "_persist_statuses", return_value=[]), \
+            mock.patch.object(salling_monitor, "_notify_changes", return_value=True):
+        sync_playwright.return_value.__enter__.return_value = mock.MagicMock()
+        salling_monitor.save_state(enabled=True, connected=True, phase="connected")
+
+        def login_and_disable(_page):
+            salling_monitor.set_enabled(False)
+            return True
+
+        with mock.patch.object(salling_monitor, "_login", side_effect=login_and_disable):
+            assert salling_monitor.run_check() is True
+        assert salling_monitor.load_state()["enabled"] is False

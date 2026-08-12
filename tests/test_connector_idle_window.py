@@ -114,7 +114,9 @@ def test_telegram_submit_finishes_the_open_lidl_form():
     result = {"state": "submitted", "message": "Lidl принял заявку."}
     with mock.patch.object(apply, "read_phone_decision", return_value="submit"), \
             mock.patch.object(lidl_apply, "submit", return_value=result) as submit, \
-            mock.patch.object(apply_dispatch, "_record_confirmed_submission") as record, \
+            mock.patch.object(
+                apply_dispatch, "_record_confirmed_submission", return_value=True,
+            ) as record, \
             mock.patch.object(apply_dispatch, "_send_proof_to_chat", return_value=True) as proof, \
             mock.patch.object(apply_dispatch, "_report_phone_status") as report, \
             mock.patch.object(apply_dispatch, "_write_status") as status, \
@@ -147,7 +149,9 @@ def test_review_card_submit_signal_uses_worker_and_records_receipt():
     with mock.patch.object(lidl_apply, "take_explicit_submit_request", return_value=True), \
             mock.patch.object(lidl_apply, "submit", return_value=result) as submit, \
             mock.patch.object(lidl_apply, "show_explicit_submit_result") as show, \
-            mock.patch.object(apply_dispatch, "_record_confirmed_submission") as record, \
+            mock.patch.object(
+                apply_dispatch, "_record_confirmed_submission", return_value=True,
+            ) as record, \
             mock.patch.object(apply_dispatch, "_send_proof_to_chat", return_value=True) as proof, \
             mock.patch.object(apply_dispatch, "_report_phone_status") as report, \
             mock.patch.object(apply_dispatch, "_write_status") as status, \
@@ -215,6 +219,52 @@ def test_detected_lidl_receipt_is_cleaned_before_telegram_proof():
             raise AssertionError("receipt loop did not finish the proof check")
 
     assert events == ["accepted", "recorded", "proof"]
+
+
+def test_telegram_receipt_is_not_green_when_local_persistence_fails():
+    import apply
+    from connectors import lidl_apply
+
+    page = _Page(activity_ms=1_000_000)
+    ctx = _PersistentContext(page)
+    result = {"state": "submitted", "message": "Lidl принял заявку."}
+    with mock.patch.object(apply, "read_phone_decision", return_value="submit"), \
+            mock.patch.object(lidl_apply, "submit", return_value=result), \
+            mock.patch.object(
+                apply_dispatch, "_record_confirmed_submission", return_value=False,
+            ) as record, \
+            mock.patch.object(
+                apply_dispatch, "_notify_terminal", return_value=True,
+            ) as notify, \
+            mock.patch.object(apply_dispatch, "_send_proof_to_chat") as proof, \
+            mock.patch.object(apply_dispatch, "_report_phone_status") as green, \
+            mock.patch.object(apply_dispatch, "_write_status") as status, \
+            mock.patch.object(apply_dispatch.time, "time", return_value=1001.0):
+        apply_dispatch._wait_until_closed(
+            ctx,
+            page=page,
+            platform="lidl_easy_apply",
+            job_id="lidl:persist-failed",
+            profile={},
+        )
+
+    record.assert_called_once_with("lidl:persist-failed")
+    notify.assert_called_once_with(
+        page,
+        "lidl:persist-failed",
+        prepared=True,
+        note=apply_dispatch._RECEIPT_PERSIST_FAILURE,
+        state="unconfirmed",
+        message=apply_dispatch._RECEIPT_PERSIST_FAILURE,
+    )
+    status.assert_called_once_with(
+        "lidl:persist-failed",
+        "no_receipt",
+        apply_dispatch._RECEIPT_PERSIST_FAILURE,
+        phone_reported=True,
+    )
+    proof.assert_not_called()
+    green.assert_not_called()
 
 
 def test_prepared_connector_proof_requests_telegram_buttons():

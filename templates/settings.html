@@ -462,7 +462,7 @@
 
   <div class="panel" data-monitor-settings="lidl">
     <h2>{{ ic.i('clock', 17) }} Отслеживание заявок Lidl</h2>
-    <p class="hint">WexFlow проверяет раздел <b>Søgte jobs</b> каждые 30 минут и переносит найденные этапы в «Мои отклики». Окно можно закрыть после успешного входа — дальше проверка работает в фоне.</p>
+    <p class="hint">WexFlow проверяет раздел <b>Søgte jobs</b> каждые {{ monitor_interval_minutes }} мин, пока приложение запущено, и переносит найденные этапы в «Мои отклики». Окно входа можно закрыть после успешной авторизации.</p>
     <div class="actions" style="margin-bottom:12px;">
       <span class="badge {{ 'ok' if lidl_monitor.connected and lidl_monitor.enabled else '' }}" data-monitor-phase>Кабинет: {{ lidl_monitor.phase_label }}</span>
       <span class="badge">Подано в Lidl: {{ lidl_applied_count }}</span>
@@ -1077,7 +1077,7 @@
         {{ salling_monitor.phase_label }}
       </span>
       <span class="hint" style="margin:0;" data-monitor-checked>
-        В кабинете: {{ salling_monitor.application_count }} · в WexFlow подано: {{ salling_applied_count }}
+        Найдено связанных откликов: {{ salling_monitor.application_count }} · пока WexFlow запущен
         {% if salling_monitor.last_success_at %} · проверено {{ salling_monitor.last_success_at }}{% endif %}
       </span>
     </div>
@@ -1093,7 +1093,7 @@
       <form method="post" action="/settings/salling-monitor/login"><button class="secondary" type="submit">Открыть кабинет / войти снова</button></form>
       <a class="crosslink" href="https://candidatecareercockpit-a3r1eyssyw.dispatcher.hana.ondemand.com/" target="_blank" rel="noopener">Открыть профиль Salling →</a>
     </div>
-    <p class="hint" style="margin:10px 0 0;">Проверка запускается при старте WexFlow и затем каждые 30 минут. Во время открытой анкеты она ждёт, чтобы два окна не использовали один браузерный профиль одновременно.</p>
+    <p class="hint" style="margin:10px 0 0;">Проверка запускается при старте WexFlow и затем каждые {{ monitor_interval_minutes }} мин, пока приложение открыто. Во время открытой анкеты она ждёт, чтобы два окна не использовали один браузерный профиль одновременно.</p>
   </div>
 
   <div id="documents" class="panel">
@@ -3012,7 +3012,7 @@
           if (checked) {
             checked.hidden = !state.last_success_at;
             checked.textContent = source === 'salling'
-              ? 'В кабинете: ' + state.application_count + (state.last_success_at ? ' · проверено ' + state.last_success_at : '')
+              ? 'Найдено связанных откликов: ' + state.application_count + ' · пока WexFlow запущен' + (state.last_success_at ? ' · проверено ' + state.last_success_at : '')
               : 'Последняя проверка: ' + (state.last_success_at || '');
           }
           const problem = state.last_error || state.last_notification_error || '';

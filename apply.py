@@ -36,7 +36,7 @@ import application_tracker
 import profile_store
 import document_rules
 from connectors import site_contract
-from db import Job, get_session, init_db
+from db import Job, get_session, init_db, utcnow
 
 
 def load_profile() -> dict:
@@ -1104,11 +1104,38 @@ def _mark_applied(job_id: str, confidence: str = "receipt", proof=None):
             with get_session() as s:
                 j = s.get(Job, job_id)
                 if j:
-                    application_tracker.set_status(j, "applied", source="submission")
-                    j.applied_confidence = confidence
-                    s.add(j)
+                    moment = utcnow()
+                    evidence = None
                     if confidence == "receipt" and proof:
-                        trust.record_receipt_screen(s, j, proof)
+                        evidence = trust.record_receipt_screen(s, j, proof)
+                    actual_confidence = "receipt" if evidence is not None else (
+                        "indirect" if confidence == "receipt" else confidence
+                    )
+                    application_tracker.record_status_in_session(
+                        s,
+                        j,
+                        "applied",
+                        source="submission",
+                        occurred_at=moment,
+                        raw_label=(
+                            "Квитанция сайта сохранена"
+                            if actual_confidence == "receipt"
+                            else "Сайт не показал проверяемую квитанцию"
+                        ),
+                        evidence_fingerprint=(
+                            str(evidence.fingerprint or "") if evidence is not None else ""
+                        ),
+                        event_key=(
+                            f"submission:{j.source}:{j.id}:"
+                            + (
+                                str(evidence.fingerprint or "")
+                                if evidence is not None
+                                else moment.isoformat(timespec="microseconds")
+                            )
+                        ),
+                    )
+                    j.applied_confidence = actual_confidence
+                    s.add(j)
                     applications.record_submitted_in_session(s, [j])
                     s.commit()
             print("  ✔ отмечено «подано» в дашборде"

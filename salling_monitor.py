@@ -1,6 +1,7 @@
 """Read application truth from the official Salling Candidate Career Cockpit."""
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import time
@@ -16,21 +17,44 @@ STATE_PATH = config.DATA_DIR / "salling_monitor.json"
 LOCK_PATH = config.DATA_DIR / "salling_monitor.lock"
 
 _STATUS_PATTERNS = (
+    ("withdrawn", "Заявка отозвана", (
+        r"application withdrawn", r"^withdrawn$",
+        r"ansøgning(?:en)? (?:er )?trukket tilbage", r"trukket tilbage",
+    )),
+    ("rejected", "Отказ", (
+        r"\brejected\b", r"not selected", r"no longer under consideration",
+        r"afslag", r"afvist", r"ikke udvalgt", r"ikke længere i betragtning",
+    )),
+    ("hired", "Принят на работу", (
+        r"^hired$",
+        r"(?<!ikke )\bansat\b", r"offer accepted", r"tilbud accepteret",
+        r"contract signed",
+        r"kontrakt(?:en)? underskrevet",
+    )),
     ("offer", "Предложение о работе", (
         r"\boffer\b", r"job offer", r"tilbud om ansættelse", r"ansættelsestilbud",
     )),
     ("interview", "Приглашение на собеседование", (
         r"\binterview\b", r"jobsamtale", r"invited", r"inviteret", r"samtale",
     )),
-    ("rejected", "Отказ", (
-        r"\brejected\b", r"not selected", r"no longer under consideration",
-        r"afslag", r"afvist", r"ikke udvalgt", r"ikke længere i betragtning",
+    ("reviewing", "На рассмотрении", (
+        r"screening", r"under behandling", r"in process", r"under review",
+        r"under consideration", r"i proces",
     )),
     ("applied", "Заявка подана", (
-        r"^applied$", r"application received", r"ansøgning modtaget",
-        r"under behandling", r"in process", r"under review",
+        r"^applied$", r"^submitted$", r"^ansøgt$",
+        r"application received", r"ansøgning modtaget",
     )),
 )
+_STRONG_MATCH_STRENGTHS = frozenset({"exact_requisition"})
+_PIPELINE_RANK = {
+    "applied": 1,
+    "reviewing": 2,
+    "interview": 3,
+    "offer": 4,
+    "hired": 5,
+}
+_NEGATIVE_STAGES = frozenset({"rejected", "withdrawn"})
 _ACCOUNT_MARKERS = (
     "min profil", "søgte stillinger", "jobs applied", "my profile",
     "du kan følge dine ansøgninger her", "log ud",
@@ -220,6 +244,16 @@ def _exclusive_run():
 
 def classify_status(text: str) -> dict:
     normal = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    if re.search(
+        r"\bnot\s+yet\s+(?:been\s+)?hired\b|\bikke\s+endnu\s+(?:blevet\s+)?ansat\b",
+        normal, re.I,
+    ):
+        return {"code": "unknown", "label": str(text or "Статус не распознан").strip()}
+    if re.search(
+        r"\bnot\s+(?:been\s+)?hired\b|\bikke\s+(?:blevet\s+)?ansat\b",
+        normal, re.I,
+    ):
+        return {"code": "rejected", "label": "Отказ"}
     for code, label, patterns in _STATUS_PATTERNS:
         for pattern in patterns:
             if re.search(pattern, normal, re.I):
@@ -283,6 +317,9 @@ def parse_applied_jobs(body_text: str, known_jobs: list[dict]) -> list[dict]:
             "status": status["code"],
             "status_label": status["label"],
             "portal_status": status_text,
+            "match_strength": (
+                "exact_requisition" if known.get("id") else "external_requisition"
+            ),
         })
     return output
 
@@ -337,44 +374,132 @@ def _application_map(items: list[dict]) -> dict:
             "status": item.get("status", "unknown"),
             "status_label": item.get("status_label", ""),
             "portal_status": item.get("portal_status", ""),
+            "match_strength": item.get("match_strength", ""),
             "seen_at": _now(),
         }
     return result
 
 
+def _is_strong_portal_match(item: dict) -> bool:
+    return str(item.get("match_strength") or "") in _STRONG_MATCH_STRENGTHS
+
+
+def _current_stage(job, application_tracker) -> str:
+    helper = getattr(application_tracker, "current_stage", None)
+    if callable(helper):
+        return str(helper(job) or "")
+    return str(getattr(job, "application_stage", None) or job.status or "")
+
+
+def _supported_stage(portal_status: str, application_tracker) -> str:
+    labels = getattr(application_tracker, "STATUS_LABELS", {})
+    if portal_status in labels:
+        return portal_status
+    return "applied" if portal_status == "reviewing" else ""
+
+
+def _may_set_stage(current: str, target: str) -> bool:
+    if not target or current == target:
+        return bool(target)
+    if target == "applied":
+        return current in {"", "new", "seen", "closed", "hidden", "applied"}
+    if current == "hired":
+        return False
+    if target == "hired":
+        return True
+    if target in _NEGATIVE_STAGES:
+        return True
+    if current in _NEGATIVE_STAGES:
+        return False
+    current_rank = _PIPELINE_RANK.get(current, 0)
+    target_rank = _PIPELINE_RANK.get(target, 0)
+    return target_rank > 0 and (current_rank == 0 or target_rank >= current_rank)
+
+
+def _record_portal_confirmation(session, job, applications, Application, select) -> None:
+    applications.record_submitted_in_session(session, [job])
+    session.flush()
+    row = session.exec(select(Application).where(
+        Application.source == str(job.source or "salling"),
+        Application.job_id == str(job.id),
+    )).first()
+    confidence = "receipt" if (
+        str(job.applied_confidence or "") == "receipt"
+        or (row is not None and str(row.confidence or "") == "receipt")
+    ) else "portal"
+    job.applied_confidence = confidence
+    session.add(job)
+    if row is not None and str(row.confidence or "") != confidence:
+        row.confidence = confidence
+        session.add(row)
+
+
+def _record_portal_stage(session, job, target_status: str, before_status: str,
+                         item: dict, application_tracker) -> dict:
+    if not target_status:
+        return {"accepted": False, "changed": False, "stage": before_status}
+    if (before_status == target_status
+            and str(job.application_status_source or "") == "salling_portal"):
+        return {"accepted": True, "changed": False, "stage": before_status}
+    raw = str(item.get("portal_status") or "").strip()
+    normalized = re.sub(r"\s+", " ", raw).strip().casefold()
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+    event_key = f"portal:salling:{job.id}:{target_status}:{digest}"
+    recorder = getattr(application_tracker, "record_status_in_session", None)
+    if callable(recorder):
+        return recorder(
+            session,
+            job,
+            target_status,
+            source="salling_portal",
+            origin="salling_portal",
+            raw_label=raw,
+            event_key=event_key,
+        )
+    if not _may_set_stage(before_status, target_status):
+        return {"accepted": False, "changed": False, "stage": before_status}
+    accepted = bool(application_tracker.set_status(
+        job, target_status, source="salling_portal"
+    ))
+    session.add(job)
+    return {
+        "accepted": accepted,
+        "changed": accepted and before_status != _current_stage(job, application_tracker),
+        "stage": _current_stage(job, application_tracker),
+    }
+
+
 def _persist_statuses(items: list[dict], transitions: list[dict] | None = None) -> list[dict]:
     import applications
     import application_tracker
-    from db import Job, get_session
+    from db import Application, Job, get_session, select
 
-    stage_map = {"interview": "interview", "offer": "offer", "rejected": "rejected"}
     newly_confirmed = []
     for item in items:
         job_id = str(item.get("job_id") or "")
         portal_status = str(item.get("status") or "")
-        if not job_id or portal_status in ("", "unknown"):
+        if not job_id or not _is_strong_portal_match(item):
             continue
         with get_session() as session:
             job = session.get(Job, job_id)
             if not job:
                 continue
-            before_status = str(job.status or "")
+            before_status = _current_stage(job, application_tracker)
             first_confirmation = job.applied_at is None
-            if first_confirmation:
-                application_tracker.set_status(job, "applied", source="salling_portal")
-                job.applied_confidence = "portal"
-            if portal_status in stage_map and job.status not in ("offer", "closed"):
-                application_tracker.set_status(
-                    job, stage_map[portal_status], source="salling_portal"
-                )
-            session.add(job)
-            if first_confirmation:
-                applications.record_submitted_in_session(session, [job])
+            target_status = _supported_stage(portal_status, application_tracker)
+            if first_confirmation and not target_status:
+                target_status = "applied"
+            _record_portal_stage(
+                session, job, target_status, before_status, item, application_tracker
+            )
+            _record_portal_confirmation(
+                session, job, applications, Application, select
+            )
             session.commit()
             if first_confirmation:
                 session.refresh(job)
                 newly_confirmed.append({"id": job.id, "title": job.title or item.get("title") or "Вакансия"})
-            after_status = str(job.status or "")
+            after_status = _current_stage(job, application_tracker)
             if transitions is not None and before_status != after_status:
                 previous_status = "applied" if first_confirmation and after_status != "applied" else before_status
                 transitions.append({
@@ -388,6 +513,7 @@ def _persist_statuses(items: list[dict], transitions: list[dict] | None = None) 
                     "previous_label": application_tracker.STATUS_LABELS.get(previous_status, ""),
                     "status": after_status,
                     "status_label": item.get("status_label") or application_tracker.STATUS_LABELS.get(after_status, after_status),
+                    "portal_status": item.get("portal_status") or "",
                 })
     return newly_confirmed
 
@@ -430,8 +556,14 @@ def _notify_changes(changes: list[dict], *, durable: bool = False) -> bool:
     import application_tracker
 
     if durable:
-        _queue_notifications(changes)
-        return _flush_notifications()
+        # New portal events already live in the SQLite outbox in the same
+        # transaction as Job/Application. Drain only old JSON items, then the
+        # DB queue; writing ``changes`` to JSON here would send every event twice.
+        legacy_ok = _flush_notifications()
+        outbox_ok = application_tracker.flush_pending_notifications(
+            origin="salling_portal", source_name="Salling Group"
+        )
+        return legacy_ok and outbox_ok
     return application_tracker.notify_status_changes(changes, source_name="Salling Group")
 
 
@@ -507,7 +639,12 @@ def _open_applied(page) -> None:
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         body = _page_text(page)
-        if re.search(r"(?:^|\n)\s*\d{4,}\s+(?:Applied|Interview|Rejected|Offer)", body, re.I):
+        if re.search(
+            r"(?:^|\n)\s*\d{4,}\s+(?:Applied|Submitted|Interview|Rejected|Offer|"
+            r"Hired|Accepted|Withdrawn|Screening|Under\b|I proces|Afslag|Ansat|Trukket)",
+            body,
+            re.I,
+        ):
             return
         page.wait_for_timeout(750)
 
@@ -516,7 +653,9 @@ def run_login(max_seconds: int = 600) -> bool:
     with _exclusive_run() as acquired:
         if not acquired:
             return False
-        save_state(enabled=True, phase="connecting", last_error="")
+        if not load_state().get("enabled"):
+            return False
+        save_state(phase="connecting", last_error="")
         try:
             from playwright.sync_api import sync_playwright
 
@@ -535,7 +674,7 @@ def run_login(max_seconds: int = 600) -> bool:
                             break
                         if authenticated or is_logged_in(_page_text(page)):
                             save_state(
-                                enabled=True, connected=True, phase="connected",
+                                connected=True, phase="connected",
                                 last_success_at=_now(), last_error="",
                             )
                             return True
@@ -582,7 +721,6 @@ def run_check() -> bool:
             snapshots = parse_applied_jobs(body, _known_jobs())
             if expected_count and not snapshots:
                 save_state(
-                    enabled=True,
                     connected=True,
                     phase="error",
                     last_checked_at=_now(),
@@ -600,7 +738,7 @@ def run_check() -> bool:
             merged = dict(previous)
             merged.update(current)
             save_state(
-                enabled=True, connected=True, phase="connected",
+                connected=True, phase="connected",
                 last_checked_at=_now(), last_success_at=_now(),
                 last_error="" if snapshots else (
                     "Кабинет открыт, но таблица Søgte stillinger пока пуста."
