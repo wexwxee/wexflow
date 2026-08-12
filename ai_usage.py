@@ -401,6 +401,17 @@ def provider_status(provider: str, account_id: str, fingerprint: str = "",
     used = max(0, int(day.get("requests") or 0))
     rpd_exhausted = bool(day.get("daily_exhausted"))
     tpd_exhausted = bool(day.get("tpd_exhausted"))
+    if provider == "gemini":
+        # Ключ Google в приложении ОДИН, но ходят им двое: провайдер помощника
+        # и ИИ-фильтры ленты, которые пишут только в общий дневной счётчик.
+        # Считать их порознь — значит показывать «90% осталось» ровно в тот
+        # день, когда Google уже ответил RESOURCE_EXHAUSTED и всё держалось на
+        # резервном провайдере. Окно суток у них общее (Pacific), поэтому ключ
+        # дня совпадает и цифры складываются честно.
+        shared = (data.get("days") or {}).get(key)
+        if isinstance(shared, dict):
+            used = max(used, max(0, int(shared.get("requests") or 0)))
+            rpd_exhausted = rpd_exhausted or bool(shared.get("daily_exhausted"))
 
     # --- запросы за день (RPD): точные заголовки > локальная оценка ---------- #
     req_precise = False

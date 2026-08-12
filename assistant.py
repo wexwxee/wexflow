@@ -375,6 +375,88 @@ def _tool_prepare_application(args: dict) -> dict:
     }
 
 
+# Последняя правка профиля — чтобы «верни как было» работало сразу, без
+# копания в файле руками. Живёт в памяти процесса: это удобство одного
+# разговора, а не история изменений.
+_last_profile_change: dict = {}
+
+
+def _tool_update_profile(args: dict) -> dict:
+    """Изменить поле профиля по просьбе человека.
+
+    Мягкие поля меняем сразу и показываем «было → стало»: подтверждать каждую
+    мелочь утомительно, а вернуть можно одной фразой. Личные и юридические поля
+    не трогаем даже по прямой просьбе — см. модуль assistant_profile.
+    """
+    global _last_profile_change
+    import assistant_profile
+
+    field = str(args.get("field") or "").strip()
+    value = args.get("value")
+    if field not in assistant_profile.SOFT_FIELDS and field not in assistant_profile.HARD_FIELDS:
+        field = assistant_profile.guess_field(f"{field} {value or ''}")
+    if not field:
+        return {"ok": False, "kind": "text",
+                "reply": "Не понял, какое поле менять. Скажи, например: "
+                         "«поставь город Копенгаген» или «я готов на вечерние смены»."}
+
+    if field in assistant_profile.HARD_FIELDS:
+        human = assistant_profile.HARD_FIELDS[field]
+        return {
+            "ok": True, "kind": "text",
+            "reply": (f"Поле «{human}» я не меняю — оно уходит в настоящую анкету "
+                      "под твоим именем, и опечатку там заметить поздно. "
+                      "Открой профиль, там это поле видно целиком."),
+            "href": "/profile", "button": "Открыть профиль",
+        }
+
+    result = assistant_profile.apply_change(field, value)
+    if not result.get("ok"):
+        human = assistant_profile.human_name(field)
+        if result.get("reason") == "bad_value":
+            return {"ok": False, "kind": "text",
+                    "reply": f"Не смог записать «{human}»: {result['problem']}."}
+        return {"ok": False, "kind": "text",
+                "reply": f"Поле «{human}» менять не умею."}
+
+    _last_profile_change = dict(result)
+    was = assistant_profile.display(field, result["before"])
+    now = assistant_profile.display(field, result["after"])
+    return {
+        "ok": True, "kind": "text",
+        "reply": (f"Готово: «{result['human']}» — было {was}, стало {now}. "
+                  "Скажи «верни как было», если это не то."),
+        "href": "/profile", "button": "Посмотреть профиль",
+    }
+
+
+def _tool_undo_profile(_args: dict) -> dict:
+    """Вернуть последнее изменение профиля, сделанное помощником."""
+    global _last_profile_change
+    import assistant_profile
+
+    change = dict(_last_profile_change or {})
+    if not change.get("field"):
+        return {"ok": True, "kind": "text",
+                "reply": "В этом разговоре я ничего в профиле не менял."}
+    back = assistant_profile.apply_change(change["field"], change.get("before") or "")
+    if not back.get("ok") and str(change.get("before") or "").strip():
+        return {"ok": False, "kind": "text",
+                "reply": "Не получилось вернуть. Открой профиль и поправь вручную.",
+                "href": "/profile", "button": "Открыть профиль"}
+    if not str(change.get("before") or "").strip():
+        # Поле было пустым — возвращаем пустоту напрямую, минуя проверку значения.
+        import profile_store
+        profile_store.mutate_profile(
+            lambda profile: profile.__setitem__(change["field"], "") or profile
+        )
+    _last_profile_change = {}
+    human = assistant_profile.human_name(change["field"])
+    was = assistant_profile.display(change["field"], change.get("before") or "")
+    return {"ok": True, "kind": "text",
+            "reply": f"Вернул: «{human}» снова {was}."}
+
+
 def _tool_help(_args: dict) -> dict:
     """Что помощник умеет. Список берётся из самого каталога, а не из текста.
 
@@ -446,6 +528,9 @@ TOOLS: dict[str, Tool] = {
         Tool("prepare_application", "Подготовить заявку", {"job_id": ("str", 220)},
              _tool_prepare_application),
         Tool("set_age", "Запомнить возраст", {"age": ("int", 10, 99)}, _tool_set_age),
+        Tool("update_profile", "Изменить профиль",
+             {"field": ("str", 40), "value": ("str", 600)}, _tool_update_profile),
+        Tool("undo_profile", "Вернуть как было", {}, _tool_undo_profile),
         Tool("help", "Что я умею", {}, _tool_help),
     )
 }
@@ -480,6 +565,15 @@ _WHY_WORDS = ("почему", "зачем", "объясни")
 _PROFILE_WORDS = ("профил", "чего не хватает", "что заполнить", "готов ли я")
 _STATUS_WORDS = ("мои заявки", "мои отклики", "что с подач", "статус подач")
 _APPLY_WORDS = ("подайся", "подать", "откликнись", "отправь заявку")
+_CHANGE_WORDS = ("поставь", "измени", "поменяй", "запиши", "исправь", "укажи",
+                 "смени", "обнови", "сохрани", "выстави")
+_CHANGE_FILLER = frozenset({
+    "мой", "моя", "моё", "мне", "в", "на", "у", "меня", "это", "теперь",
+    "пожалуйста", "будет", "равно", "как", "профиле", "профиль",
+})
+_NEGATION = re.compile(r"\bне\s+(?:готов|могу|хочу|буду)|\bнет\b", re.I)
+_UNDO_WORDS = ("верни как было", "верни обратно", "отмени изменение",
+               "отмени правку", "верни назад")
 _GREETINGS = frozenset({
     "привет", "здравствуй", "здравствуйте", "хай", "ку", "hej", "hello", "hi",
     "добрый день", "доброе утро", "добрый вечер", "прив",
@@ -492,6 +586,37 @@ _AGE_FILLER = frozenset({
     "мой", "моя", "возраст", "а", "и", "кстати", "вообще", "то", "есть",
     ".", ",", "!",
 })
+
+
+def _guess_profile_change(low: str) -> dict | None:
+    """Просьба изменить профиль, разобранная без ИИ.
+
+    Требуем явное слово-команду («поставь», «измени»): иначе «в моём городе
+    ничего нет» превратилось бы в правку профиля. Значение — то, что идёт
+    после названия поля.
+    """
+    import assistant_profile
+
+    if not any(word in low for word in _CHANGE_WORDS):
+        return None
+    field = assistant_profile.guess_field(low)
+    if not field:
+        return None
+    alias = max(
+        (name for name, key in assistant_profile.ALIASES.items()
+         if key == field and name in low),
+        key=len, default="",
+    )
+    tail = low.split(alias, 1)[1] if alias else ""
+    value = " ".join(
+        word for word in tail.replace("=", " ").split()
+        if word not in _CHANGE_FILLER
+    ).strip(" -–—:,.")
+    if not value and assistant_profile.SOFT_FIELDS.get(field, ("", ""))[1] == "yesno":
+        # «поставь готовность к ночным сменам» без ответа — считаем это «да»,
+        # потому что человек просит именно включить, а не спросить.
+        value = "нет" if _NEGATION.search(low) else "да"
+    return {"field": field, "value": value} if value else None
 
 
 def _only_age_statement(low: str) -> int | None:
@@ -527,6 +652,11 @@ def guess_tool(text: str, *, job_id: str = "") -> tuple[str, dict]:
     age = _only_age_statement(low)
     if age is not None:
         return "set_age", {"age": age}
+    if any(word in low for word in _UNDO_WORDS):
+        return "undo_profile", {}
+    change = _guess_profile_change(low)
+    if change is not None:
+        return "update_profile", change
     if low.strip(" .!?…") in _GREETINGS or any(word in low for word in _HELP_WORDS):
         return "help", {}
     if any(word in low for word in _STATUS_WORDS):
@@ -554,6 +684,8 @@ def _router_schema() -> dict:
                     "query": {"type": "string", "maxLength": MAX_QUERY},
                     "job_id": {"type": "string", "maxLength": 220},
                     "age": {"type": "integer", "minimum": 10, "maximum": 99},
+                    "field": {"type": "string", "maxLength": 40},
+                    "value": {"type": "string", "maxLength": 600},
                 },
                 "additionalProperties": False,
             },
