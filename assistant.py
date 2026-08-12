@@ -43,6 +43,13 @@ from typing import Callable
 
 import labels
 
+# Помощник ищет по ВСЕЙ ленте и не знает про фильтры, выставленные на странице.
+# Молчать об этом нельзя: человек видит в чате вакансии, которых нет в списке
+# перед ним, и решает, что список сломан. Так и случилось 12.08.2026 — на
+# странице стояли «Найдены сегодня» и «Уровень: Сотрудник», а помощник показал
+# ученические ставки, найденные в июне.
+SCOPE_NOTE = "искал по всей ленте — фильтры страницы тут не действуют"
+
 MAX_RESULTS = 8
 MAX_QUERY = 120
 MAX_REPLY = 600
@@ -164,6 +171,7 @@ def _tool_search(args: dict) -> dict:
         "kind": "jobs",
         "understood": query_parse.describe(parsed),
         "results": [job_card(job) for job in jobs],
+        "scope_note": SCOPE_NOTE,
         "empty_hint": "Ничего не нашлось. Попробуй назвать магазин или город.",
     }
 
@@ -199,7 +207,7 @@ def _tool_nearby(args: dict) -> dict:
              for g in view["same_brand"]]
     cards += [job_card(j) for j in view["same_role"][:3]]
     return {"ok": True, "kind": "cards", "results": cards,
-            "reply": _nearby_words(view)}
+            "scope_note": SCOPE_NOTE, "reply": _nearby_words(view)}
 
 
 def _closest_to_home(pool, home) -> dict:
@@ -226,6 +234,7 @@ def _closest_to_home(pool, home) -> dict:
                 "reply": "Рядом ничего не нашлось. Попробуй назвать магазин или город."}
     return {"ok": True, "kind": "jobs",
             "reply": "Вот что ближе всего к дому:",
+            "scope_note": SCOPE_NOTE,
             "results": [job_card(job, why=[f"{km:g} км от дома"], distance=km)
                         for km, job in ranked[:MAX_RESULTS]]}
 
@@ -272,6 +281,7 @@ def _tool_recommend(args: dict) -> dict:
     ranked = recommend.rank(jobs, ctx)[:MAX_RESULTS]
     return {"ok": True, "kind": "jobs",
             "results": [job_card(job, why=why) for job, _score, why in ranked],
+            "scope_note": SCOPE_NOTE,
             "reply": "Вот что подходит тебе больше всего — под каждой написано почему."}
 
 

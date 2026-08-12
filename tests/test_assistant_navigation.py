@@ -69,6 +69,24 @@ def test_panel_shows_the_empty_hint_only_when_the_app_wrote_the_answer():
     assert "data.empty_hint && !data.ai_wording" in source
 
 
+def test_job_answers_say_that_page_filters_do_not_apply():
+    """Помощник смотрит всю ленту — иначе его находки выглядят как ошибка списка."""
+    from unittest import mock
+
+    import feed
+
+    with mock.patch.object(assistant, "_visible_jobs", return_value=[]), \
+            mock.patch.object(feed, "hide_barrier", return_value=False):
+        out = assistant.run("search_jobs", {"query": "нетто"})
+    assert out["scope_note"] == assistant.SCOPE_NOTE
+    assert "фильтры страницы" in assistant.SCOPE_NOTE
+
+    source = (Path(__file__).resolve().parent.parent
+              / "static" / "assistant.js").read_text(encoding="utf-8")
+    # Строку показываем только когда есть что показывать.
+    assert "data.scope_note && list.length" in source
+
+
 def test_wording_prompt_asks_for_informal_russian():
     prompt = assistant._wording_prompt("что есть рядом", {
         "ok": True, "kind": "jobs", "tool_human": "Поиск по ленте", "results": [],

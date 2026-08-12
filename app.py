@@ -416,9 +416,12 @@ def _relevance_tick() -> None:
 
 def _ai_usage_payload() -> dict:
     # Легаси-блок (индикатор Gemini в хабе 1.3.21) — семантика прежняя: Gemini.
-    payload = ai_usage.status()
+    # Модель передаём явно: дневная квота у Google своя на каждую, и без этого
+    # упёршаяся flash-lite гасила показания работающей flash.
+    active_model = ai_filters.model_name() if ai_filters.gemini_available() else ""
+    payload = ai_usage.status(model=active_model)
     payload["connected"] = ai_filters.gemini_available()
-    payload["model"] = ai_filters.model_name() if payload["connected"] else ""
+    payload["model"] = active_model
     # Новый мультипровайдерный блок (sidebar-индикатор, раздел «ИИ и лимиты»).
     try:
         payload["ai"] = ai_gateway.usage_payload()

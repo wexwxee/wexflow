@@ -92,6 +92,11 @@
     if (data.understood) {
       body.appendChild(el("div", "wf-ask-tool", "понял так: " + data.understood));
     }
+    // Помощник смотрит всю ленту, а на странице могут стоять свои фильтры.
+    // Без этой строки его находки выглядят как «в списке этого нет».
+    if (data.scope_note && list.length) {
+      body.appendChild(el("div", "wf-ask-tool", data.scope_note));
+    }
     scrollDown();
   }
 

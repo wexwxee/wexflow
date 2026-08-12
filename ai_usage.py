@@ -88,21 +88,63 @@ def _load() -> dict:
     return read_json(PATH, default={}, expected_type=dict) or {}
 
 
+_DAILY_MARKERS = ("perday", "per_day", "per day", "requestsperday",
+                  "requests per day", "rpd")
+_MINUTE_MARKERS = ("perminute", "per_minute", "per minute", "rpm", "tpm")
+
+
+def _violations(payload: dict | None):
+    """Нарушения квоты из ответа Google, как отдельные записи.
+
+    Google присылает их списком в ``error.details`` с типом QuotaFailure и
+    полями ``quotaId``/``quotaMetric``/``quotaValue``. Разбирать их по одному
+    обязательно: в одном ответе бывает и минутное, и дневное ограничение сразу.
+    """
+    details = ((payload or {}).get("error") or {}).get("details")
+    for item in details if isinstance(details, list) else []:
+        if not isinstance(item, dict):
+            continue
+        rows = item.get("violations")
+        for row in rows if isinstance(rows, list) else []:
+            if isinstance(row, dict):
+                yield row
+
+
 def _daily_quota_failure(payload: dict | None) -> tuple[bool, int | None]:
+    """Отказ Google: кончились ли СУТКИ и какой у них лимит.
+
+    Раньше и признак, и число искались регуляркой по всему JSON. В ответе с
+    двумя нарушениями сразу это давало ложь дважды: минутный отказ считался
+    концом суток, а «limit 20» из минутной строки записывался как дневной
+    лимит. Так у Ивана 12.08.2026 появилось «0 из 20 запросов» при живой квоте.
+    """
+    daily = False
+    observed_limit = None
+    saw_structured = False
+    for row in _violations(payload):
+        saw_structured = True
+        marker = f"{row.get('quotaId', '')} {row.get('quotaMetric', '')}".casefold()
+        if not any(word in marker for word in _DAILY_MARKERS):
+            continue
+        daily = True
+        try:
+            value = int(re.sub(r"\D", "", str(row.get("quotaValue") or "")) or 0)
+        except ValueError:
+            value = 0
+        if value:
+            observed_limit = value if observed_limit is None else min(observed_limit, value)
+    if saw_structured:
+        return daily, observed_limit
+
+    # Ответ без разбора по нарушениям: беднее, но лучше, чем ничего. Число
+    # берём только когда о минутах речи вообще нет — иначе можно записать
+    # минутный лимит в дневной.
     try:
         raw = json.dumps(payload or {}, ensure_ascii=False).casefold()
-    except Exception:
+    except Exception:  # noqa: BLE001
         raw = ""
-    daily = any(marker in raw for marker in (
-        "perday",
-        "per_day",
-        "per day",
-        "requestsperday",
-        "requests per day",
-        "rpd",
-    ))
-    observed_limit = None
-    if daily:
+    daily = any(marker in raw for marker in _DAILY_MARKERS)
+    if daily and not any(marker in raw for marker in _MINUTE_MARKERS):
         match = re.search(r"\blimit\b[^0-9]{0,8}([0-9][0-9_,.]*)", raw)
         if match:
             try:
@@ -159,8 +201,18 @@ def record_response(model: str, status_code: int, payload: dict | None = None) -
         model_row["requests"] = int(model_row.get("requests") or 0) + 1
         if code == 200:
             model_row["success"] = int(model_row.get("success") or 0) + 1
+            # Успешный ответ той же моделью означает, что дневная квота ЖИВА:
+            # прошлый 429 был про другую модель или про минутный лимит.
+            model_row["daily_exhausted"] = False
         if code == 429:
             model_row["rate_limited"] = int(model_row.get("rate_limited") or 0) + 1
+        if daily_exhausted:
+            # Дневная квота у Google СВОЯ на каждую модель. Один общий флаг
+            # гасил индикатор целиком: упёрлись в лимит flash-lite — интерфейс
+            # писал «0% осталось», пока flash спокойно отвечал дальше.
+            model_row["daily_exhausted"] = True
+            if observed_limit and 1 <= observed_limit <= MAX_DAILY_LIMIT:
+                model_row["daily_limit"] = observed_limit
         by_model[model_key] = model_row
         day["by_model"] = by_model
         days[key] = day
@@ -181,20 +233,47 @@ def set_daily_limit(value: int) -> int:
     return limit
 
 
-def status(now: dt.datetime | None = None) -> dict:
+def _model_row(day: dict, model: str) -> dict:
+    row = (day.get("by_model") or {}).get(str(model or ""))
+    return row if isinstance(row, dict) else {}
+
+
+def status(now: dt.datetime | None = None, *, model: str = "") -> dict:
+    """Сколько осталось у Gemini за сутки.
+
+    ``model`` — та модель, которой приложение пользуется сейчас. Дневная квота
+    у Google своя на каждую модель, поэтому упёршийся в лимит flash-lite не
+    должен гасить показания работающего flash: без этого индикатор писал «0%
+    осталось», а ответы продолжали приходить.
+    """
     key, reset_at = _window(now)
     with _file_lock():
         data = _load()
-    try:
-        limit = int(data.get("daily_limit") or DEFAULT_DAILY_LIMIT)
-    except (TypeError, ValueError):
-        limit = DEFAULT_DAILY_LIMIT
-    limit = max(1, min(limit, MAX_DAILY_LIMIT))
     day = data.get("days", {}).get(key)
     if not isinstance(day, dict):
         day = _empty_day()
-    used = max(0, int(day.get("requests") or 0))
-    exhausted = bool(day.get("daily_exhausted"))
+    # Лимит, вычитанный из отказа Google, относится к ОДНОЙ модели. Переносить
+    # его на другую нельзя: так «20 запросов» от flash-lite обнуляли показания
+    # flash. Заданный человеком лимит — общий, его переносим.
+    detected = bool(data.get("limit_detected_from_google"))
+    shared_limit = None if (model and detected) else data.get("daily_limit")
+    if model:
+        row = _model_row(day, model)
+        try:
+            limit = int(row.get("daily_limit") or shared_limit or DEFAULT_DAILY_LIMIT)
+        except (TypeError, ValueError):
+            limit = DEFAULT_DAILY_LIMIT
+        used = max(0, int(row.get("requests") or 0))
+        # Нет строки модели — нет и доказательства, что её квота кончилась.
+        exhausted = bool(row.get("daily_exhausted"))
+    else:
+        try:
+            limit = int(shared_limit or DEFAULT_DAILY_LIMIT)
+        except (TypeError, ValueError):
+            limit = DEFAULT_DAILY_LIMIT
+        used = max(0, int(day.get("requests") or 0))
+        exhausted = bool(day.get("daily_exhausted"))
+    limit = max(1, min(limit, MAX_DAILY_LIMIT))
     remaining = 0 if exhausted else max(0, limit - used)
     percent = 0 if remaining <= 0 else max(1, min(100, int(remaining * 100 / limit)))
     return {
@@ -411,7 +490,19 @@ def provider_status(provider: str, account_id: str, fingerprint: str = "",
         shared = (data.get("days") or {}).get(key)
         if isinstance(shared, dict):
             used = max(used, max(0, int(shared.get("requests") or 0)))
-            rpd_exhausted = rpd_exhausted or bool(shared.get("daily_exhausted"))
+            # Дневная квота у Google своя на каждую модель: если известно, чем
+            # мы ходим сейчас, верим строке этой модели, а не общему флагу.
+            row = _model_row(shared, model) if model else {}
+            if model:
+                used = max(0, int(row.get("requests") or 0))
+                rpd_exhausted = rpd_exhausted or bool(row.get("daily_exhausted"))
+                if rpd_limit is None and row.get("daily_limit"):
+                    rpd_limit = int(row["daily_limit"])
+                elif rpd_limit is None and data.get("limit_detected_from_google"):
+                    # Автолимит принадлежит другой модели — не переносим.
+                    rpd_limit = DEFAULT_DAILY_LIMIT
+            else:
+                rpd_exhausted = rpd_exhausted or bool(shared.get("daily_exhausted"))
 
     # --- запросы за день (RPD): точные заголовки > локальная оценка ---------- #
     req_precise = False
