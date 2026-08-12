@@ -5159,7 +5159,13 @@ async def api_assistant_ask(request: Request):
         body = {}
     text = str(body.get("text") or "")[:400]
     job_id = str(body.get("job_id") or "")[:220]
-    return JSONResponse(assistant.ask(text, job_id=job_id))
+    # Хвост диалога приходит от панели: без него помощник читает каждое
+    # сообщение как первое. Чистит и обрезает его сам assistant.
+    history = body.get("history")
+    return JSONResponse(assistant.ask(
+        text, job_id=job_id,
+        history=history if isinstance(history, list) else None,
+    ))
 
 
 @app.post("/api/assistant/tool")

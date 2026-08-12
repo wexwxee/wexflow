@@ -59,8 +59,19 @@
     return link;
   }
 
+  // Хвост диалога: без него сервер читает каждое сообщение как первое, и
+  // «мне 20 лет» после «что есть рядом» теряет всякий смысл. Держим только
+  // текст — карточки вакансий модели пересказывать незачем.
+  var history = [];
+
+  function remember(role, text) {
+    if (!text) return;
+    history.push({ role: role, text: String(text).slice(0, 200) });
+    if (history.length > 6) history = history.slice(-6);
+  }
+
   function render(data) {
-    if (data.reply) say(data.reply, "bot");
+    if (data.reply) { say(data.reply, "bot"); remember("bot", data.reply); }
     var list = data.results || [];
     list.forEach(function (item) { body.appendChild(card(item)); });
     if (!list.length && data.kind === "jobs" && data.empty_hint) {
@@ -95,13 +106,15 @@
   function ask(text) {
     if (!text) return;
     say(text, "me");
+    var sent = history.slice();          // без только что заданного вопроса
+    remember("me", text);
     if (input) input.value = "";
     var pending = say("Смотрю…", "bot");
     fetch("/api/assistant/ask", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ text: text, job_id: jobId() })
+      body: JSON.stringify({ text: text, job_id: jobId(), history: sent })
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {

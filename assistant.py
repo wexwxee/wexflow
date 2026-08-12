@@ -46,6 +46,8 @@ import labels
 MAX_RESULTS = 8
 MAX_QUERY = 120
 MAX_REPLY = 600
+MAX_HISTORY = 6                 # сколько реплик диалога помнит помощник
+MAX_HISTORY_CHARS = 200
 AI_ROUTER_TIMEOUT = 8.0
 AI_REPLY_TIMEOUT = 9.0
 
@@ -561,7 +563,25 @@ def _router_schema() -> dict:
     }
 
 
-def _router_prompt(text: str, job_id: str) -> str:
+def clean_history(history) -> list[dict]:
+    """Последние реплики диалога в безопасном виде.
+
+    Без них помощник читает каждое сообщение как первое: «мне 20 лет» после
+    «что есть рядом» превращалось в поиск по тексту вакансий. Держим короткий
+    хвост — этого хватает на уточнения и не раздувает запрос к модели.
+    """
+    turns = []
+    for item in list(history or [])[-MAX_HISTORY:]:
+        if not isinstance(item, dict):
+            continue
+        role = "me" if str(item.get("role") or "") == "me" else "bot"
+        text = " ".join(str(item.get("text") or "").split())[:MAX_HISTORY_CHARS]
+        if text:
+            turns.append({"role": role, "text": text})
+    return turns
+
+
+def _router_prompt(text: str, job_id: str, history=None, avoid: str = "") -> str:
     """Промпт содержит только запрос и разрешённый диспетчеру контекст."""
     request = " ".join(str(text or "").split())[:MAX_QUERY]
     current_job_id = " ".join(str(job_id or "").split())[:220]
@@ -571,6 +591,16 @@ def _router_prompt(text: str, job_id: str) -> str:
         "catalog": catalog(),
         "person_context": context,
     }
+    turns = clean_history(history)
+    if turns:
+        payload["history"] = turns
+    if avoid:
+        payload["already_tried"] = avoid
+        payload["hint"] = (
+            "Предыдущий инструмент ничего не нашёл. Выбери другой или те же "
+            "поиск с более простым запросом — например, только город или "
+            "только название магазина."
+        )
     if current_job_id:
         payload["job_id"] = current_job_id
     return (
@@ -610,7 +640,8 @@ def _valid_ai_route(data, *, current_job_id: str) -> tuple[str, dict] | None:
     return name, clean
 
 
-def _ai_route(text: str, *, job_id: str) -> tuple[str, dict] | None:
+def _ai_route(text: str, *, job_id: str, history=None,
+              avoid: str = "") -> tuple[str, dict] | None:
     """Попросить ИИ выбрать инструмент; любая ошибка означает обычный fallback."""
     import ai_gateway
 
@@ -618,7 +649,7 @@ def _ai_route(text: str, *, job_id: str) -> tuple[str, dict] | None:
         if not ai_gateway.available():
             return None
         result = ai_gateway.generate_json(
-            _router_prompt(text, job_id),
+            _router_prompt(text, job_id, history=history, avoid=avoid),
             schema=_router_schema(),
             temperature=0.0,
             max_tokens=160,
@@ -641,7 +672,7 @@ def _wording_schema() -> dict:
     }
 
 
-def _wording_prompt(text: str, result: dict) -> str:
+def _wording_prompt(text: str, result: dict, history=None) -> str:
     """Промпт для формулировки: модель получает ТОЛЬКО данные инструмента."""
     facts = {
         "request": " ".join(str(text or "").split())[:MAX_QUERY],
@@ -654,6 +685,9 @@ def _wording_prompt(text: str, result: dict) -> str:
             for card in (result.get("results") or [])[:MAX_RESULTS]
         ],
     }
+    turns = clean_history(history)
+    if turns:
+        facts["history"] = turns
     return (
         "Ты — помощник в приложении для поиска работы в Дании. Приложение уже "
         "выполнило запрос и прислало готовые данные. Напиши ответ человеку "
@@ -680,7 +714,7 @@ def _clean_wording(value) -> str:
     return " ".join(text.split())[:MAX_REPLY]
 
 
-def _ai_wording(text: str, result: dict) -> str:
+def _ai_wording(text: str, result: dict, history=None) -> str:
     """Человеческая формулировка поверх фактов. Любой сбой — пустая строка."""
     if not result.get("ok") or result.get("kind") == "confirm":
         return ""
@@ -690,7 +724,7 @@ def _ai_wording(text: str, result: dict) -> str:
         if not ai_gateway.available():
             return ""
         answer = ai_gateway.generate_json(
-            _wording_prompt(text, result),
+            _wording_prompt(text, result, history=history),
             schema=_wording_schema(),
             temperature=0.3,
             max_tokens=220,
@@ -707,20 +741,40 @@ def _ai_wording(text: str, result: dict) -> str:
     return _clean_wording(data.get("reply"))
 
 
-def ask(text: str, *, job_id: str = "") -> dict:
-    """Ответить фактами приложения; ИИ выбирает инструмент и формулирует ответ."""
+def _found_nothing(result: dict) -> bool:
+    """Инструмент отработал, но показывать нечего — повод попробовать иначе."""
+    return bool(result.get("ok")) and result.get("kind") in ("jobs", "cards") \
+        and not (result.get("results") or [])
+
+
+def ask(text: str, *, job_id: str = "", history=None) -> dict:
+    """Ответить фактами приложения; ИИ выбирает инструмент и формулирует ответ.
+
+    Порядок ровно такой, как принято у продуктовых ассистентов: модель видит
+    хвост диалога и каталог умений, выбирает действие, приложение выполняет его
+    ПО СВОЕЙ БАЗЕ, а модель пересказывает результат словами. Если первый выбор
+    ничего не нашёл, ей дают ровно одну вторую попытку — это заметно умнее
+    ответа «ничего не нашлось» и при этом не превращается в бесконечный цикл.
+    """
+    turns = clean_history(history)
     fallback_name, fallback_args = guess_tool(text, job_id=job_id)
     if not fallback_name:
         return {"ok": True, "kind": "text", "used_ai": False,
                 "reply": "Напиши, что ищешь: «нетто херлев», «что есть рядом», "
                          "«что мне подходит» или «чего не хватает для подачи»."}
-    routed = _ai_route(text, job_id=job_id)
+    routed = _ai_route(text, job_id=job_id, history=turns)
     if routed is None:
         result = {**run(fallback_name, fallback_args), "used_ai": False}
     else:
         name, args = routed
         result = {**run(name, args), "used_ai": True}
-    worded = _ai_wording(text, result)
+        if _found_nothing(result):
+            retry = _ai_route(text, job_id=job_id, history=turns, avoid=name)
+            if retry is not None and retry != (name, args):
+                second = {**run(retry[0], retry[1]), "used_ai": True}
+                if not _found_nothing(second):
+                    result = {**second, "retried": True}
+    worded = _ai_wording(text, result, history=turns)
     if worded:
         # Меняем ТОЛЬКО слова. Карточки, ссылки и кнопки остаются те, что
         # посчитало приложение: модель не вправе создать вакансию текстом.
