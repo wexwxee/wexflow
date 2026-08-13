@@ -857,11 +857,25 @@ def _ansog_present(page) -> bool:
 
 
 def _submission_confirmed(page) -> bool:
-    """Признаки, что заявка реально ушла (страница благодарности/квитанция)."""
+    """Признаки, что заявка реально ушла (страница благодарности/квитанция).
+
+    ⚠️ 13.08.2026: сайт Salling показывает диалог «Udført · Ansøgningen er
+    sendt», а правило требовало притяжательное «DIN ansøgning er sendt». Из-за
+    одной формы слова квитанция не засчитывалась НИ РАЗУ: каждая подача уходила
+    как «отправлено без квитанции», доверие площадке не росло, а человек получал
+    предупреждение там, где всё прошло идеально. Поэтому здесь принимается и
+    определённая форма («ansøgningen»), и безличная («ansøgning er sendt»).
+
+    Одно слово «Udført» («выполнено») намеренно НЕ считается квитанцией: это
+    общий заголовок диалога SAP, он появляется и в других местах формы.
+    """
     rx = re.compile(
-        r"tak for din ansøgning|din ansøgning er (modtaget|sendt|registreret)|"
-        r"modtaget din ansøgning|kvittering|tak,? fordi du (søgte|ansøgte)|"
-        r"thank you for your application|application (received|submitted)|ansøgning sendt",
+        r"tak for din ans(?:ø|o)gning|"
+        r"(?:din\s+)?ans(?:ø|o)gning(?:en)?\s+(?:er\s+)?(?:blevet\s+)?"
+        r"(?:modtaget|sendt|afsendt|registreret|indsendt)|"
+        r"modtaget din ans(?:ø|o)gning|kvittering|tak,? fordi du (?:søgte|ansøgte)|"
+        r"thank you for your application|"
+        r"(?:your\s+)?application\s+(?:has\s+been\s+)?(?:received|submitted|sent)",
         re.I)
     for fr in _all_frames(page):
         try:

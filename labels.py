@@ -398,6 +398,25 @@ def with_count(label: str, count: int | None = None) -> str:
     return f"{label} — {count}"
 
 
+def commute_label(minutes) -> str:
+    """Время в пути словами: «47 мин», «1 ч 43 мин», «21 ч».
+
+    Дорога через всю Данию с пересадками честно занимает часы, но подпись
+    «1276 мин» человек читает как ошибку программы, а не как «сутки в пути».
+    Часы появляются с 90 минут — до этого минуты привычнее.
+    """
+    try:
+        total = int(round(float(minutes)))
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return ""
+    if total < 90:
+        return f"{total} мин"
+    hours, rest = divmod(total, 60)
+    return f"{hours} ч {rest} мин" if rest else f"{hours} ч"
+
+
 def hours_label(value) -> str:
     """«15» → «15 ч/нед»; ноль и пустота → «» (подпись просто не рисуем).
 

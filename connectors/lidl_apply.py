@@ -758,9 +758,14 @@ _SUBMIT_TEXT_RE = re.compile(
     re.I,
 )
 _RECEIPT_RE = re.compile(
-    r"(tak\s+for\s+din\s+ansøgning|ansøgning(?:en)?\s+er\s+modtaget|"
+    # «sendt/afsendt/indsendt» рядом с «modtaget»: датские формы прощания с
+    # анкетой равнозначны, и пропуск одной из них стоил Salling всех квитанций
+    # (см. apply._submission_confirmed, 13.08.2026).
+    r"(tak\s+for\s+din\s+ansøgning|"
+    r"ansøgning(?:en)?\s+er\s+(?:blevet\s+)?(?:modtaget|sendt|afsendt|indsendt)|"
     r"vi\s+har\s+modtaget\s+din\s+ansøgning|tak\s+for\s+din\s+interesse|"
-    r"thank\s+you\s+for\s+your\s+application|application\s+(?:has\s+been\s+)?received|"
+    r"thank\s+you\s+for\s+your\s+application|"
+    r"application\s+(?:has\s+been\s+)?(?:received|submitted|sent)|"
     r"спасибо\s+за\s+(?:вашу|твою)\s+заявку|заявк[ау]\s+(?:была\s+)?получен[ао])",
     re.I,
 )
