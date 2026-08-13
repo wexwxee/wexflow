@@ -43,6 +43,25 @@ config.BROWSER_PROFILE_DIR = _TEST_DATA / "browser_profile"
 config.SECRETS_PATH = _TEST_DATA / "secrets.json"
 
 
+@pytest.fixture(autouse=True)
+def _account_gate_open():
+    """Считать пользователя вошедшим во всех тестах, кроме тестов самой двери.
+
+    Вход через Telegram обязателен с 1.4.13, и без этой заглушки каждый тест
+    ленты, настроек и журнала ловил бы редирект на ``/account`` вместо своей
+    страницы — проверяя дверь вместо того, что он должен проверять.
+    Сама дверь живёт в ``test_account_gate.py``: там ``access_state``
+    подменяется явно, и локальный патч перекрывает этот.
+    """
+    from unittest import mock
+
+    import account
+
+    with mock.patch.object(account, "access_state",
+                           return_value={"state": "ok", "reason": ""}):
+        yield
+
+
 def _fingerprint(path: Path) -> tuple[int, str] | None:
     if not path.is_file():
         return None

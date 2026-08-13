@@ -24,6 +24,9 @@ DEFAULT = {
     # После явного «Выйти» фоновый poller не должен тут же залогинить человека
     # обратно из всё ещё живой облачной сессии.
     "cloud_sync_paused": False,
+    # Блокировка аккаунта решается в облаке; здесь только последний её ответ.
+    "banned": False,
+    "ban_reason": None,
 }
 _LOCK = threading.RLock()
 
@@ -76,6 +79,8 @@ def _apply_session(user: dict, *, respect_pause: bool) -> dict | None:
             "username": (user.get("username") or "").strip() or None,
             "plan": plan,
             "cloud_sync_paused": False,
+            "banned": bool(user.get("banned")),
+            "ban_reason": (str(user.get("banReason") or "").strip() or None),
         })
         save(data)
         _sync_subscription(plan)
@@ -113,6 +118,35 @@ def sign_out() -> None:
 
 def cloud_sync_paused() -> bool:
     return bool(load().get("cloud_sync_paused"))
+
+
+def is_banned() -> bool:
+    return bool(load().get("banned"))
+
+
+def access_state() -> dict:
+    """Пускать ли человека в приложение и почему нет.
+
+    Три состояния и ровно одно правило на каждое:
+
+    ``login_required`` — вход не выполнен. Аккаунт нужен, чтобы у подписки и
+    блокировок вообще был владелец: без него нельзя ни выдать Pro, ни закрыть
+    доступ нарушителю.
+
+    ``banned`` — облако сказало, что аккаунт закрыт. Решение принимает сервер,
+    приложение только исполняет.
+
+    ``ok`` — всё остальное, ВКЛЮЧАЯ случай «облако недоступно». Это сознательно:
+    приложение работает на компьютере человека и не имеет права запирать его
+    поиск работы из-за упавшего Vercel или исчерпанного Upstash. Блокировка
+    доедет со следующим успешным опросом.
+    """
+    data = load()
+    if not data.get("signed_in"):
+        return {"state": "login_required", "reason": ""}
+    if data.get("banned"):
+        return {"state": "banned", "reason": str(data.get("ban_reason") or "")}
+    return {"state": "ok", "reason": ""}
 
 
 def _initial(name: str, email: str) -> str:

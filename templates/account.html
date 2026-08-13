@@ -364,6 +364,21 @@
   {% if unlink_warning %}<div class="err">На этом ПК Telegram отключён, но облако не подтвердило очистку привязки. В Telegram компьютер может временно отображаться как офлайн; команды выполняться не будут.</div>{% endif %}
   {% if missing_fields %}<div class="err">Нужно заполнить: {{ missing_fields|join(', ') }}.</div>{% endif %}
 
+  {# Человека сюда привёл гейт, а не его клик: без объяснения это выглядит как
+     поломка приложения, которое «вдруг перестало открываться». #}
+  {% if gate == 'login' %}
+  <div class="notice" style="margin-bottom:14px;">
+    <b>{{ ic.i('user', 15) }} Нужен вход через Telegram.</b><br>
+    <small>Аккаунт нужен, чтобы у подписки был владелец: без него нельзя ни включить Pro, ни восстановить доступ, если что-то пойдёт не так. Вход занимает одну минуту и не требует пароля — Telegram просто подтверждает, что это ты. После входа приложение продолжит работать, даже когда интернета нет.</small>
+  </div>
+  {% elif gate == 'banned' %}
+  <div class="err" style="margin-bottom:14px;">
+    <b>Доступ к аккаунту закрыт.</b>
+    {% if gate_reason %}<br>{{ gate_reason }}{% endif %}
+    <br><small>Если это ошибка — напиши в поддержку: <a href="https://t.me/wexwxeee">@wexwxeee</a>. Твои данные на этом компьютере не тронуты.</small>
+  </div>
+  {% endif %}
+
   <!-- Заметный пошаговый вход и привязка Telegram -->
 {% if mode != 'profile' %}
   <section class="panel tg-setup-card" id="telegram-setup" data-signed-in="{{ '1' if telegram_ready else '0' }}">

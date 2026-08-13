@@ -2893,6 +2893,50 @@ async def _lifespan(app):
 app = FastAPI(title="Salling Jobs", lifespan=_lifespan)
 
 
+# Что доступно ДО входа. Список намеренно узкий и явный: всё остальное закрыто.
+# Сюда входит ровно то, без чего невозможно войти или починить вход, плюс
+# статика и служебные проверки — иначе экран входа окажется без стилей, а
+# установщик не сможет спросить версию.
+_OPEN_PREFIXES = (
+    "/account", "/static/", "/favicon", "/help",
+    "/api/version", "/api/health", "/api/telegram/status",
+)
+
+
+def _gate_open_path(path: str) -> bool:
+    return any(path == prefix or path.startswith(prefix) for prefix in _OPEN_PREFIXES)
+
+
+@app.middleware("http")
+async def _require_account(request, call_next):
+    """Вход через Telegram обязателен: у подписки и блокировки нужен владелец.
+
+    Гейт стоит здесь, а не в каждом маршруте: пропущенный маршрут — это дыра,
+    про которую узнаёшь последним. Исключения перечислены в ``_OPEN_PREFIXES``.
+
+    Приложение НЕ запирается, когда облако недоступно (см. account.access_state):
+    человек ищет работу на своём компьютере, и падение чужого сервиса не должно
+    отнимать у него доступ к собственным данным.
+    """
+    path = str(request.url.path or "")
+    if _gate_open_path(path):
+        return await call_next(request)
+    access = account_mod.access_state()
+    if access["state"] == "ok":
+        return await call_next(request)
+    if path.startswith("/api/"):
+        return JSONResponse(
+            {"ok": False, "code": access["state"], "error": (
+                "Аккаунт заблокирован. " + (access["reason"] or "Напиши в поддержку.")
+                if access["state"] == "banned"
+                else "Сначала войди через Telegram."
+            ), "setupUrl": "/account"},
+            status_code=403 if access["state"] == "banned" else 401,
+        )
+    target = "/account?gate=banned" if access["state"] == "banned" else "/account?gate=login"
+    return RedirectResponse(target, status_code=303)
+
+
 @app.middleware("http")
 async def _no_cache(request, call_next):
     if not _allowed_local_write(request):
@@ -6218,7 +6262,7 @@ def api_transit(job_id: str):
 
 def _render_account(request: Request, mode: str = "account", saved: str = "",
                     missing: str = "", deleted: str = "", delete_error: str = "",
-                    unlinked: str = "", unlink_warning: str = ""):
+                    unlinked: str = "", unlink_warning: str = "", gate: str = ""):
     """Аккаунт и профиль кандидата — одна страница на две половины.
 
     Раньше всё жило на одном полотне: вход через Telegram, облако, подписка,
@@ -6287,6 +6331,9 @@ def _render_account(request: Request, mode: str = "account", saved: str = "",
     return templates.TemplateResponse("account.html", {
         "request": request, "profile": profile,
         "mode": mode,
+        # почему человек здесь: сам пришёл или его не пустили дальше
+        "gate": str(gate or ""),
+        "gate_reason": account_mod.access_state()["reason"],
         # домашний адрес общий для всех источников и живёт теперь здесь
         "home": settings_store.get_home(),
         # страны ленты — тоже общая настройка поиска, рядом с домом
@@ -6325,11 +6372,17 @@ def _render_account(request: Request, mode: str = "account", saved: str = "",
 @app.get("/account", response_class=HTMLResponse)
 def account_page(request: Request, saved: str = "", missing: str = "",
                  deleted: str = "", delete_error: str = "",
-                 unlinked: str = "", unlink_warning: str = ""):
-    """Вход в WexFlow: Telegram, облако и подписка."""
+                 unlinked: str = "", unlink_warning: str = "",
+                 gate: str = ""):
+    """Вход в WexFlow: Telegram, облако и подписка.
+
+    ``gate`` ставит середина: сюда человека привёл закрытый доступ, а не его
+    собственный клик, и страница обязана объяснить, почему.
+    """
     return _render_account(request, "account", saved=saved, missing=missing,
                            deleted=deleted, delete_error=delete_error,
-                           unlinked=unlinked, unlink_warning=unlink_warning)
+                           unlinked=unlinked, unlink_warning=unlink_warning,
+                           gate=gate)
 
 
 @app.get("/profile", response_class=HTMLResponse)
