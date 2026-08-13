@@ -82,6 +82,10 @@ _STAGE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
         r"\bikke\s+(?:l(?:æ|a)ngere\s+)?taget\s+i\s+betragtning\b",
         r"\bvi\s+har\s+(?:desv(?:æ|a)rre\s+)?valgt\s+at\s+g(?:å|a)\s+videre\s+med\s+(?:en\s+)?anden\b",
         r"\bvi\s+har\s+(?:desv(?:æ|a)rre\s+)?besluttet\s+at\s+g(?:å|a)\s+videre\s+med\s+andre\b",
+        # Самая частая датская формулировка отказа: «мы выбрали/нашли другого
+        # кандидата». Без неё обычное письмо-отказ вообще не распознавалось.
+        r"\bvi\s+har\s+(?:desv(?:æ|a)rre\s+)?(?:valgt|fundet)\s+(?:en\s+)?anden\s+kandidat\b",
+        r"\bstillingen\s+er\s+(?:desv(?:æ|a)rre\s+)?(?:nu\s+)?besat\b",
     )),
     ("hired", (
         r"\byou\s+have\s+been\s+hired\b",

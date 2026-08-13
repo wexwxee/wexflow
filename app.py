@@ -2489,6 +2489,25 @@ def _handle_tg_remote_command(command: dict) -> str:
             _sync_filters_to_cloud(force=True)   # карточка автопилота в панели — сразу свежая
             return _remote_status_text("⏸ Автопилот поставлен на паузу.")
 
+        if action == "letter":
+            # Письмо, пересланное боту. Разбор и запись делает ПК по своей базе:
+            # облако только донесло текст, решать по нему оно не вправе.
+            import email_forward
+
+            try:
+                result = email_forward.import_text(
+                    str(command.get("text") or ""),
+                    job_id=str(command.get("jobId") or ""),
+                )
+            except Exception as exc:  # noqa: BLE001 — письмо не роняет пульт
+                print("письмо из Telegram: не разобрал —", str(exc)[:140])
+                return ("📄 Не получилось разобрать письмо. "
+                        "Попробуй приложить его в приложении к нужному отклику.")
+            if result.get("status") == "saved":
+                _start_view_sync()
+                _sync_applied_to_cloud(force=True)
+            return email_forward.reply_text(result)
+
         if action == "ai_chat":
             # ИИ-диалог настройки фильтров: панель шлёт реплики, ПК спрашивает
             # Gemini своим ключом и кладёт ответ в облако (панель заберёт по reqId).
