@@ -3308,8 +3308,10 @@ def _distinct(session, column):
     return sorted([r for r in rows if r])
 
 
-def _active_counts(session):
-    rows = session.exec(select(Job).where(*feed.visible_clauses(exclude_applied=True))).all()
+def _active_counts(session, *, age: bool = True):
+    rows = session.exec(select(Job).where(
+        *feed.visible_clauses(exclude_applied=True, age=age)
+    )).all()
     counts = {
         "source": Counter(),
         "brand": Counter(),
@@ -4189,6 +4191,7 @@ def index(
     skipped: str = "",
     dup: str = "",
     reset: str = "",
+    age: str = "",
 ):
     # запоминаем фильтры в cookie и восстанавливаем при заходе на голую "/"
     if not request.query_params and not reset:
@@ -4208,6 +4211,7 @@ def index(
                 revisit = saved.get("revisit", revisit)
                 period = saved.get("period", period)
                 fit = saved.get("fit", fit)
+                age = saved.get("age", age)
             except Exception:
                 pass
 
@@ -4254,10 +4258,10 @@ def index(
         if source_key:
             stmt = stmt.where(Job.source == source_key)
         if status == "active":
-            # Языковой барьер отсекаем не здесь, а в Python после всех прочих
-            # фильтров — тогда строка «скрыто N» относится именно к этому
-            # запросу, а не ко всей базе.
-            stmt = stmt.where(*feed.visible_clauses(fit=False))
+            # Языковой барьер и возраст отсекаем не здесь, а в Python после
+            # всех прочих фильтров — тогда строки «скрыто N» относятся именно к
+            # этому запросу, а не ко всей базе.
+            stmt = stmt.where(*feed.visible_clauses(fit=False, age=False))
             if not show_applied:
                 active_or_unsubmitted = Job.applied_at.is_(None)
                 if revisit_cutoff is not None and period == "all":
@@ -4361,6 +4365,20 @@ def index(
         if level_code in ("employee", "employeeUnder18", "apprentice"):
             jobs = [j for j in jobs if not labels.is_leadership(j.title)]
 
+        # Возраст: ставки «under 18 år» взрослому не предложение. Считаем это
+        # здесь, а не в SQL, ровно по той же причине, что и языковой барьер —
+        # чтобы сказать вслух, сколько скрыто, и дать это показать. Иначе из
+        # фильтра «Уровень» молча исчезает сам пункт «до 18», и человек решает,
+        # что приложение сломалось (так и случилось 13.08.2026).
+        age_total = sum(1 for j in jobs if feed.job_is_underage_only(j))
+        age_hidden = 0
+        viewer_age = feed.viewer_age()
+        age_rule_on = bool(viewer_age and viewer_age >= 18)
+        if status != "applied" and age != "all" and age_rule_on:
+            age_hidden = age_total
+            if age_hidden:
+                jobs = [j for j in jobs if not feed.job_is_underage_only(j)]
+
         # Языковой барьер: вакансии, где точно нужен датский или местный диплом.
         # «Поданные» не трогаем никогда — это история человека. Скрытое всегда
         # посчитано и показано строкой, ничего не пропадает молча.
@@ -4417,7 +4435,9 @@ def index(
         levels = _distinct(s, Job.job_level)
         cat_rows = _distinct(s, Job.categories)
         cats = sorted({c for row in cat_rows for c in row.split(",") if c})
-        counts = _active_counts(s)
+        # Когда человек попросил показать «под 18», счётчики в фильтрах обязаны
+        # считать их тоже — иначе пункт «Сотрудник до 18» так и не вернётся.
+        counts = _active_counts(s, age=(age != "all"))
         total_active = s.exec(
             select(func.count()).select_from(Job).where(
                 *feed.visible_clauses(),
@@ -4609,6 +4629,7 @@ def index(
         "period": period,
         "fit": fit,
         "exact": exact,
+        "age": age,
     }
     _current_filter_query = _filter_query(_f)
     _preset_views = []
@@ -4748,6 +4769,13 @@ def index(
         # поля, которые заполняет не каждый источник: сколько вакансий осталось
         # в выдаче именно потому, что источник промолчал
         "unset_kept": unset_kept,
+        # возраст: сколько «под 18» скрыто этим запросом и куда нажать
+        "age_hidden": age_hidden,
+        "age_total": age_total,
+        "age_rule_on": age_rule_on,
+        "viewer_age": viewer_age,
+        "age_show_url": "/?" + _filter_query({**_f, "age": "all"}),
+        "age_hide_url": "/?" + _filter_query({**_f, "age": ""}),
         # языковой барьер: сколько скрыто этим запросом и куда нажать, чтобы увидеть
         "barrier_hidden": barrier_hidden,
         "barrier_total": barrier_total,

@@ -384,12 +384,16 @@ def source_clause():
     )
 
 
-def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
+def visible_clauses(exclude_applied: bool = False, fit: bool = True,
+                    age: bool = True) -> list:
     """Условия ленты для `select(Job).where(*feed.visible_clauses())`.
 
     exclude_applied=True — ещё и без уже поданных (списки «активных»).
     fit=False — не применять языковой фильтр: нужно самому оценщику
     (relevance.py), иначе скрытая вакансия никогда бы не переоценивалась.
+    age=False — не применять возрастное правило. Нужно странице ленты: она
+    считает скрытое сама, чтобы честно написать «скрыто N — показать». Правило,
+    которое молча уносит треть списка, обязано себя называть.
     """
     statuses = list(CLOSED_STATUSES) + (["applied"] if exclude_applied else [])
     clauses = [Job.status.not_in(statuses)]
@@ -401,9 +405,10 @@ def visible_clauses(exclude_applied: bool = False, fit: bool = True) -> list:
     broken = source_clause()
     if broken is not None:
         clauses.append(broken)
-    underage = underage_clause()
-    if underage is not None:
-        clauses.append(underage)
+    if age:
+        underage = underage_clause()
+        if underage is not None:
+            clauses.append(underage)
     if fit:
         barrier = barrier_clause()
         if barrier is not None:
