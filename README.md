@@ -1,192 +1,43 @@
 # WexFlow
 
-WexFlow is a Windows desktop app for finding and applying to entry-level jobs in Denmark.
+Собирает вакансии Salling, Lidl и других фирм в Дании в один список, отбирает подходящие и заполняет анкеты за тебя. Кнопку «Отправить» всегда нажимаешь ты сам.
 
-It combines two local tools in one app:
+*A Windows app that gathers entry-level jobs in Denmark into one list and fills in applications for you. The interface is in Russian.*
 
-- **Salling Jobs**: job feed, filters, job states, routes, profile data, CV/cover letter handling, and assisted applications.
-- **7-Eleven Apply Studio**: profile, store selection, address/location tools, and assisted Typeform applications.
+**[⬇ Скачать WexFlow-Setup.exe](https://github.com/wexwxee/wexflow/releases/latest/download/WexFlow-Setup.exe)** · Windows 10 и 11 · [все версии](https://github.com/wexwxee/wexflow/releases)
 
-The app runs locally on your PC. Your profile, documents, credentials, and job state are stored on your machine, not in this repository.
+![Первый экран WexFlow](docs/welcome.jpg)
 
-> WexFlow is an independent helper app. It is not affiliated with Salling Group, 7-Eleven, or their hiring platforms.
+## Что умеет
 
-## Download
+- **Один список вместо десяти сайтов.** Вакансии Salling Group, Lidl и компаний, которые нанимают через Teamtailor, Greenhouse и Ashby, обновляются сами, закрытые исчезают.
+- **Видно, как далеко ехать.** Реальное время в пути от твоего дома, с пересадками.
+- **Заполняет анкеты.** Берёт данные из твоего профиля, прикладывает резюме и останавливается перед отправкой.
+- **Ответ работодателя не потеряется.** Приглашение, оффер или отказ приходят в Telegram.
+- **Обновляется само.** Когда выходит новая версия, в приложении появляется кнопка обновления.
 
-1. Open the latest release:
-   [github.com/wexwxee/wexflow/releases/latest](https://github.com/wexwxee/wexflow/releases/latest)
-2. Download the file named like:
-   `WexFlow-Setup-1.0.14.exe`
-3. Run `WexFlow-Setup-1.0.14.exe`.
-4. The installer extracts WexFlow to your Windows user folder, creates a desktop shortcut, and starts the app.
+## Как начать
 
-On first launch Windows may show a security warning because the app is not code-signed yet. Choose **More info** -> **Run anyway** if you trust this build.
+1. Скачай и запусти **WexFlow-Setup.exe**. Он сам поставит всё, что нужно для работы.
+2. Если Windows покажет «Система Windows защитила ваш компьютер», нажми **Подробнее** → **Выполнить в любом случае**. Так бывает, потому что у приложения пока нет цифровой подписи.
+3. Войди через Telegram. Это займёт минуту, пароль не нужен.
+4. Заполни профиль и добавь резюме.
 
-## Requirements
+## Это безопасно?
 
-- Windows 10 or Windows 11.
-- Internet connection.
-- Microsoft Edge WebView2 Runtime. The setup file checks and installs it when needed.
-- .NET Framework 4.8. The setup file checks and installs it when needed.
-- For automatic applications, WexFlow may download a Playwright Chromium browser on first use. This is saved in your Windows user data folder.
+- Пароль не спрашиваем и не храним. Вход подтверждает сам Telegram.
+- Из Telegram приходят только имя и номер аккаунта. Переписка, телефон и контакты недоступны.
+- Файл резюме никуда не загружается: он лежит на твоём компьютере, и приложение прикрепляет его прямо к анкете.
+- Анкетные данные (имя, почта, телефон, адрес) хранятся в облаке и привязаны к твоему Telegram, чтобы не заполнять их заново на другом компьютере. Стереть их можно кнопкой «Удалить данные из облака».
+- Заявки сами никуда не уходят: WexFlow заполняет анкету и останавливается, отправляешь ты.
 
-You do **not** need Python, Node.js, Git, or any developer tools to use the release version.
+## Если что-то не работает
 
-## Updating
+- **Приложение не открывается или показывает старый экран.** Закрой все процессы WexFlow в диспетчере задач и открой приложение снова.
+- **Не определяется местоположение.** Включи его в Параметрах Windows: Конфиденциальность и защита → Расположение. Или введи адрес вручную.
+- **Анкета не заполнилась.** Сайты работодателей иногда меняют свои формы. Проверь, что профиль заполнен и резюме на месте, и попробуй ещё раз.
+- **Нужна помощь** — пиши в Telegram: [@wexwxeee](https://t.me/wexwxeee).
 
-WexFlow checks GitHub Releases for a newer version.
+---
 
-When an update is available:
-
-1. Open WexFlow.
-2. Use the update button/banner on the main screen.
-3. The app downloads the new zip.
-4. WexFlow closes, replaces its files, and opens again.
-
-You can also update manually:
-
-1. Download the newest `WexFlow-Setup-*.exe` from [Releases](https://github.com/wexwxee/wexflow/releases).
-2. Close WexFlow.
-3. Run the setup file again.
-
-Your personal data is kept separately in `%AppData%\WexFlow`, so updating the app should not delete your profile or documents.
-
-## First Setup
-
-After opening WexFlow:
-
-1. Go to **Settings**.
-2. Fill in your profile:
-   - name
-   - email
-   - Danish phone number
-   - address
-   - postal code
-   - city
-   - country
-3. Add your CV and optional cover letter.
-4. Save the profile.
-5. Open **Salling Jobs** or **7-Eleven Apply Studio**.
-
-The app autosaves most profile changes, but important missing fields are still checked before running application flows.
-
-## Salling Jobs
-
-Salling Jobs helps you browse and manage vacancies from Salling Group brands.
-
-Main features:
-
-- Filter jobs by search text, city, brand, region, category, job type, level, status, and radius.
-- Sort jobs by distance, date, title, or city.
-- Show routes from your home address to the job location.
-- Mark jobs as viewed, applied, hidden, interview, offer, or rejected.
-- Hide already-applied jobs or show them together with all jobs.
-- Use profile data and documents while preparing applications.
-
-Job cards use calm visual states:
-
-- new
-- viewed
-- applied
-- hidden
-- selected for batch action
-
-## 7-Eleven Apply Studio
-
-7-Eleven Apply Studio helps prepare applications for selected stores.
-
-Main features:
-
-- Fill and save the applicant profile.
-- Select stores across Denmark.
-- Search stores by city, address, region, or area.
-- Use your location or a custom starting address.
-- Sort stores by city or distance.
-- Choose transport mode for routes.
-- Prepare and run assisted Typeform applications.
-
-Each selected store gets its own application run.
-
-## Where Data Is Stored
-
-User data is stored locally on your PC.
-
-Common locations:
-
-- `%AppData%\WexFlow` - app user data and downloaded browser files.
-- WexFlow app folder - application files from the extracted zip.
-
-Depending on the version and migration state, local project files may include:
-
-- `jobs.db` - local job database.
-- `profile.json` / settings files - saved profile values.
-- `uploads` - selected CV and cover letter copies.
-- log files - last run and troubleshooting information.
-
-Do not share your local profile, credentials, documents, or logs publicly.
-
-## Troubleshooting
-
-### The app does not open
-
-Try this:
-
-1. Make sure the zip was extracted before running `WexFlow.exe`.
-2. Close all old WexFlow processes in Task Manager.
-3. Run `WexFlow.exe` again.
-4. If Windows blocks it, use **More info** -> **Run anyway**.
-
-### The screen is blank or old
-
-Close WexFlow completely and reopen it.
-
-WexFlow uses local background servers. If an old process is still running, the app may show an old cached interface. Newer versions try to clean these processes automatically at startup.
-
-### Location does not work
-
-Check Windows settings:
-
-1. Open Windows **Settings**.
-2. Go to **Privacy & security** -> **Location**.
-3. Enable location services.
-4. Reopen WexFlow and try again.
-
-You can always enter an address manually if Windows location is unavailable.
-
-### Auto-apply fails
-
-Hiring websites can change their forms at any time. If an application flow fails:
-
-1. Check that your profile fields are filled.
-2. Check that CV and cover letter paths are valid.
-3. Try a preparation/dry-run flow first if available.
-4. Review the final form before submitting.
-
-## Developer Notes
-
-This repository contains the source code and build scripts.
-
-For normal users, use `WexFlow-Setup-*.exe` from GitHub Releases. Do not clone the repository unless you want to develop or debug the app.
-
-Development build commands may use:
-
-```powershell
-cd C:\saling
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-The distributable Windows app is produced with PyInstaller and packaged as:
-
-```text
-dist\WexFlow-<version>.zip
-dist\WexFlow-Setup-<version>.exe
-```
-
-## Privacy And Safety
-
-WexFlow is designed as a local personal assistant.
-
-- Keep your documents and credentials private.
-- Check application forms before submitting.
-- Use the tool responsibly and follow the rules of the hiring websites you interact with.
+WexFlow — независимый помощник. Он не связан с Salling Group, Lidl и их платформами найма. Исходный код закрыт, здесь публикуются готовые версии.
